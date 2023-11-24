@@ -1,0 +1,39 @@
+{
+  "name": "electron",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "debug": "electron --inspect=5858 ."
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "amqplib": "^0.10.3",
+    "bootstrap": "^5.3.2",
+    "file-saver": "^2.0.5",
+    "fs": "^0.0.1-security",
+    "jquery": "^3.7.1",
+    "path": "^0.12.7",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "split.js": "^1.6.5",
+    "unzipper": "^0.10.14"
+  },
+  "build": {
+    "appId": "com.example.testapp",
+    "productName": "TestApp",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "devDependencies": {
+    "electron": "^27.0.2",
+    "electron-builder": "^24.6.4"
+  }
+}

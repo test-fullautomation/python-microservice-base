@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Connect to Broker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f5f5f5;
+    }
+
+    .login-form {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px 0px rgba(0,0,0,0.1);
+    }
+
+    .login-form label {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .login-form input[type="text"],
+    .login-form input[type="password"] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 15px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+
+    .login-form input[type="submit"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 4px;
+      border: none;
+      background-color: #007bff;
+      color: #fff;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    .login-form input[type="submit"]:hover {
+      background-color: #0056b3;
+    }
+    /* Define a class to style placeholder text */
+    .placeholder-gray::placeholder {
+      color: #999; /* Gray color for placeholder */
+      opacity: 1; /* Ensure full visibility */
+    }
+
+    /* For older browsers compatibility */
+    .placeholder-gray:-ms-input-placeholder {
+      color: #999;
+    }
+    .placeholder-gray::-ms-input-placeholder {
+      color: #999;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="login-form">
+    <h2>Connect to broker</h2>
+    <form id="loginForm" action="submit_login_data_to_server.php" method="post">
+      <label for="brokerUrl">Broker URL:</label>
+      <input type="text" id="brokerUrl" name="brokerUrl" required  placeholder="localhost:5672" class="placeholder-gray">
+      <!-- <label for="registryServiceName">Registry Service Name:</label>
+      <input type="text" id="registryServiceName" name="registryServiceName" required> -->
+      <label for="routingKey">Routing Key:</label>
+      <input type="text" id="routingKey" name="routingKey" required placeholder="Routing Key bound to Registry Service queue" class="placeholder-gray">
+      <input type="submit" value="Connect">
+    </form>
+  </div>
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    document.getElementById('loginForm').addEventListener('submit', (event) => {
+      event.preventDefault(); // Prevent the default form submission
+
+      const formData = new FormData(event.target); // Get the form data
+
+      // Convert form data to an object
+      const formObject = {};
+      formData.forEach((value, key) => {
+        formObject[key] = value;
+      });
+
+      // Send the form data back to the main process
+      ipcRenderer.send('login-form-data', formObject);
+      // Close the window after form submission
+      window.close();
+    });
+  </script>
+</body>
+</html>

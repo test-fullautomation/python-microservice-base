@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Electron: Main",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/electron.exe",
+      "windows": {
+        "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/electron.exe"
+      },
+      "args": ["."],
+      "outputCapture": "std",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\b(listening on port \\d+\\b)",
+        "uriFormat": "http://localhost:%s"
+      },
+      "sourceMaps": true,
+      "protocol": "inspector"
+    },
+    {
+      "name": "Electron: Renderer",
+      "type": "pwa-node",
+      "request": "attach",
+      "protocol": "inspector",
+      "port": 9222,
+      "timeout": 30000,
+      "restart": true,
+      "sourceMaps": true,
+      "stopOnEntry": false,
+      "webRoot": "${workspaceFolder}",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}
