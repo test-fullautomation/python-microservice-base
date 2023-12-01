@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+  <link rel=”stylesheet” href=”https://use.fontawesome.com/releases/v5.7.0/css/all.css” integrity=”sha384-lZN37f5QGtY3VHgisS14W3ExzMWZxybE1SJSEsQp9S+oqd12jhcu+A56Ebc1zFSJ” crossorigin=”anonymous”>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" integrity="sha512-3/3HcKb2HTzd3ehViQpxr5u+bp7edAJZT6Jr3+jiN5fL5c8eovipu5c5oS0tt+AIwKUJqQ5ydjVoKw8q3cmEUQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <style>
+    .splitter {
+      cursor: ew-resize;
+    }
+    .card {
+      margin-top: 20px; /* Adjust the top padding as needed */
+      margin-bottom: 20px;
+    }
+    .container {
+        display: flex;
+        margin-top: 40px;
+        /* Misc */
+        border: 0px solid #cbd5e0;
+        height: 42rem;
+        width: 100%;
+    }
+    .container__left {
+        /* Initially, the left takes 3/4 width */
+        width: 40%;
+    
+        /* Misc */
+        /* align-items: center; */
+        display: flex;
+        justify-content: center;
+    }
+    .resizer {
+        /* background-color: #cbd5e0; */
+        cursor: ew-resize;
+        margin-top: 21rem;
+        margin-left: 10px;
+        margin-right: 10px;
+        /* height: 100%;
+        width: 1px; */
+        border-left: 3px double #000; /* 3px double line on the left with black color */
+        height: 30px; /* Set the height of the line */
+        /*margin: 50 0px; /* Just for visualization */        
+        /* padding: 20px;  */
+    }
+    .container__right {
+        /* Take the remaining width */
+        flex: 1;
+    
+        /* Misc */
+        /* align-items: center; */
+        display: flex;
+        justify-content: center;
+    }
+    button:focus {
+      outline-color: black;
+    }
+    .accordion-button:focus {
+        box-shadow: none;
+    }
+    .led-indicator {
+      width: 40px;
+      height: 20px;
+      background-color: #e0e0e0;
+      border: 1px solid #a0a0a0;
+      border-radius: 10px; /* Adjust the border-radius to control the roundness */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      margin: 15px;
+    }
+    .group-box {
+      text-align: center;
+      margin: 10px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .led-container {
+      display: flex;
+      justify-content: center;
+      margin-top: 10px;
+    }
+
+    .led-on {
+      background-color: #00ff00; /* Set the color for the "on" state */
+      color: #ffffff;
+    }
+
+    /* Flex container for the LED row */
+    .led-row {
+        display: flex;
+        gap: 25px; /* Adjust the gap between LEDs */
+    }
+
+    /* Styling for the individual LED */
+    .led {
+        width: 20px; /* Adjust the size of the LED */
+        height: 20px; /* Ensure width and height are equal for a circular shape */
+        border-radius: 50%; /* Create a circular shape */
+        background-color: #ccc; /* Default color for the LED */
+    }
+    /* Styling for the LED when it's turned on */
+    .led.led-on {
+        background-color: #00ff00 !important; /* Set the color for the "on" state */
+        color: #ffffff;
+    }
+
+    .icon {
+        width: 20px; /* Adjust the width as needed */
+        height: 20px; /* Adjust the height as needed */
+        margin-right: 10px; /* Adjust the margin as needed */
+    }
+    .toolbar {
+      background-color: #f5f5f5;
+      border-bottom: 1px solid #ccc;
+      display: flex;
+      justify-content: left;
+      align-items: center; /* Vertically align items in the center */
+      padding: 8px;
+    }
+
+    .toolbar button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      margin-right: 10px;
+      position: relative;
+      padding: 5px 10px;
+      margin: 0 5px; /* Adjust the margin as needed */
+    }
+
+    /* Example icon styles (Replace with your icon images or classes) */
+    .toolbar button img {
+      width: 24px;
+      height: 24px;
+      vertical-align: middle;
+    }
+
+    /* Tooltip styles */
+    .tooltip {
+      visibility: hidden;
+      width: 120px;
+      background-color: black;
+      color: white;
+      text-align: center;
+      padding: 5px 0;
+      border-radius: 6px;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .toolbar button:hover .tooltip {
+      visibility: visible;
+      opacity: 1;
+    }
+
+    /* Press effect */
+    .toolbar button:active {
+      transform: translateY(2px);
+    }
+  </style>
+  <title>Microservice Manager</title>
+</head>
+<body>
+  <div class="toolbar">
+    <!-- Example icon buttons -->
+    <button id="btnConnect" title="Connect"><img src="Image/connected.png" alt="Icon 1"></button>
+    <!-- <button id="btn2"><img src="Image/unconnected.png" alt="Icon 2"></button> -->
+    <!-- Add more buttons with icons as needed -->
+  </div>
+  <div class="container">
+    <div class="container__left">
+      <div class="card" style="height: 100%; width: 100%;">
+        <div class="card-header">
+          <h5 class="card-title">Components</h5>
+        </div>
+        <div class="card-body">
+          <div class="input-group mb-3">
+            <input type="text" class="form-control" id="searchText" placeholder="Search">
+            <button class="btn btn-outline-secondary" type="button" id="searchButton">Search</button>
+          </div>
+          <div class="accordion" id="servicesList">
+            <!-- <div class="accordion-item my-3 shadow">
+                <h2 class="accordion-header">
+                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#content-accordion-1" aria-expanded="true">Switch Boxes</button>
+                </h2>
+                <div id="content-accordion-1" class="accordion-collapse collapse show" data-bs-parent="#servicesList">
+                    <div class="accordion-body">
+                      <div class="list-group">
+                        <button type="button" class="list-group-item list-group-item-action" aria-current="true" onclick="activateItemAndLoadContent(this,'cleware')">
+                          <img src="Image/not_ready.png" alt="Icon" class="icon"> Cleware Controllers
+                        </button>
+                      </div>
+                    </div>
+                </div>
+            </div> -->
+          </div>
+          
+        </div>
+      </div>
+    </div>
+    <div class="resizer" id="dragMe">
+    </div>
+    <div class="container__right">
+      <div class="col-12 mt-1"  id="serviceContent" style="top:0"></div>
+    </div>
+  </div>
+
+  <script>require('electron').remote.getCurrentWebContents().openDevTools();</script>
+  <script src="node_modules/jquery/dist/jquery.slim.min.js"></script>
+  <script src="node_modules/jquery/dist/jquery.min.js"></script>
+  <script src="node_modules/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+  <!-- Select2 JS -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js" integrity="sha512-m38j9OnGS0yOAeHd/DUUQ5NJhuvqgtcmU5umTPUHTvJfW7QgOzpCxO9Uv7Q5YbP2Hh9A+uIvBR/Z5Adp6BR6GQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    $('.card-header').click(function() {
+        $(this).find('i').toggleClass('fas fa-plus fas fa-minus');
+    });
+  </script>
+  <script>
+    document.querySelectorAll('.accordion-header button').forEach(button => {
+      button.addEventListener('click', () => {
+        const isExpanded = button.getAttribute('aria-expanded') === 'true';
+        button.setAttribute('aria-expanded', !isExpanded);
+      });
+    });
+  </script>
+  <!-- <script>
+    $(document).ready(function () {
+      // Apply Select2 to the combobox elements
+      $('#deviceNumber, #deviceType').select2();
+    });
+  </script> -->
+  
+  <!-- <script>
+    // Function to load external content
+    async function loadExternalContent() {
+      try {
+        const response = await fetch('src/Multiplexer.html');
+        const htmlContent = await response.text();
+        document.getElementById('serviceContent').innerHTML = htmlContent;
+      } catch (error) {
+        console.error('Error loading external content:', error);
+      }
+    }
+
+    // Load external content when the page loads
+    window.onload = loadExternalContent;
+  </script> -->
+  <script src="index.js"></script>
+</body>
+</html>
