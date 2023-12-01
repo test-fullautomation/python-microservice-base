@@ -92,6 +92,25 @@
       color: #ffffff;
     }
 
+    /* Flex container for the LED row */
+    .led-row {
+        display: flex;
+        gap: 25px; /* Adjust the gap between LEDs */
+    }
+
+    /* Styling for the individual LED */
+    .led {
+        width: 20px; /* Adjust the size of the LED */
+        height: 20px; /* Ensure width and height are equal for a circular shape */
+        border-radius: 50%; /* Create a circular shape */
+        background-color: #ccc; /* Default color for the LED */
+    }
+    /* Styling for the LED when it's turned on */
+    .led.led-on {
+        background-color: #00ff00 !important; /* Set the color for the "on" state */
+        color: #ffffff;
+    }
+
     .icon {
         width: 20px; /* Adjust the width as needed */
         height: 20px; /* Adjust the height as needed */
