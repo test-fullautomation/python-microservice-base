@@ -179,6 +179,9 @@ class ServiceBase:
 
       return file_content
 
+   def on_specific_request(self, body):
+      raise Exception("Not suppoted request")
+
    def on_request(self, ch, method, props, body):
       """
 
@@ -197,11 +200,17 @@ class ServiceBase:
 
          request_api = body['method']
          if body['method'] in self._api_dict:
+            print(" [x] Args:%s" % body['args'])
+            print(" [x] Args type: %s" % type(body['args']))
             if body['args'] is None:
                response = self._api_dict[body['method']]()
+            elif isinstance(body['args'], str):
+               response = self._api_dict[body['method']](body['args'])
             else:
                response = self._api_dict[body['method']](*body['args'])
             result_type = ResultType.PASS
+         else:
+            self.on_specific_request(body)
       except Exception as ex:
          result_type = ResultType.EXCEPT
          response = str(ex)
