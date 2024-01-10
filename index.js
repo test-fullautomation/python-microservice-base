@@ -153,7 +153,7 @@ function activateItemAndLoadContent(element, serviceName) {
  * @param {string} dynamicContentName - The name of the div where the service content will be loaded.
  * @param {string} callbackName - The name of the function to be called after loading the content.
  */
- function loadServiceContent(serviceName, dynamicContentName, callbackName = '') {
+function loadServiceContent(serviceName, dynamicContentName, callbackName = '') {
   const folderPath = `${SERVICES_GUI_FOLDER}/${serviceName}${global.servicesInfor[serviceName].version}`;
   const externalContentFile = `${folderPath}/${serviceName}.html`;
   loadContent(externalContentFile, dynamicContentName, callbackName);
@@ -387,6 +387,9 @@ function connect() {
   ipcRenderer.send('open-popup-window');
   ipcRenderer.on("login-data", (event, formData) => {
     console.log('Received login form data in index:', formData);
+
+    // Add Alias service at beginning
+    addAliasService();
     
     // Handle the received form data here
     setRegistryServiceInfo(formData);
@@ -394,11 +397,43 @@ function connect() {
   });
 }
 
+function addAliasService() {
+  const aliasServiceData = [
+    {
+      title: 'Alias Manager',
+      contentId: 'content-accordion-alias',
+      items: [
+        {
+          label: 'Alias',
+          iconSrc: IMAGE_PATH.NOT_READY,
+          onClickFunction: 'activateItemAndLoadContent(listItem, "ServiceAlias")'
+        },
+      ]
+    },
+  ];
+
+  createAccordionItems(aliasServiceData);
+  if (!global.servicesInfor) {
+    global.servicesInfor = {};
+  }
+
+  global.servicesInfor.ServiceAlias = {
+    description : "Service to alias specific sevice api to a api name.",
+    group : "",
+    gui_support : true,
+    methods : [],
+    name : "ServiceRegistry",
+    routing_key: "",
+    shortdesc : "Alias service",
+    tag: "",
+    version: "1.0.0"
+  }
+}
+
 /**
  * Disconnect to Registry Service and clean services information.
  */
-function disconnect()
-{
+function disconnect() {
   global.brokerUrl = null;
   global.routingKey = null;
   global.servicesInfor = null;
@@ -493,7 +528,8 @@ function requestServicesInfor() {
   requestService(requestData, SERVICES_EXCHANGE_NAME, global.routingKey).then(function (data) {
     console.log("Received service infor: ", data);    
     const servicesInfor = JSON.parse(data.result_data);
-    global.servicesInfor = servicesInfor;
+    // global.servicesInfor = servicesInfor;
+    global.servicesInfor = { ...global.servicesInfor, ...servicesInfor };
     const serviceItems = extractServicesInformation(servicesInfor);
     createAccordionItems(serviceItems);
     changeConnectButtonState(CONNECTION_STATUS.CONNECTED);
@@ -608,6 +644,7 @@ function requestService(requestData, exchangeName, routingKey) {
             noAck: true
           });
 
+          console.log(' [x] Requesting data in string:',JSON.stringify(requestData));
           channel.publish(exchangeName, routingKey, Buffer.from(JSON.stringify(requestData)),{
                 correlationId: correlationId,
                 replyTo: q.queue

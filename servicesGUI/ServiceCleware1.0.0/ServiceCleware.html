@@ -1,0 +1,53 @@
+<div class="card" style="height: 100%; width: 100%; top: 0;" ">
+   <div class="card-header">
+     <h5 class="card-title">Cleware Configuration</h5>
+   </div>
+   <div class="card-body">
+      <div class="mt-5 mt-1">
+         <!-- Init button with image icon -->
+         <div class="col-12 mt-2 mb-3">
+           <button type="button" class="btn btn-primary" onclick="getAllDevicesState()">
+             <img src="Image/initialize.png" alt="Initialize" width="20" height="20">
+             Initialize
+           </button>
+         </div>
+      
+         <!-- Device Number label and combobox -->
+         <div class="mb-3">
+           <label for="deviceNumber">Device Number:</label>
+           <select class="form-control" id="deviceNumber">
+            <option disabled selected style="color: lightgray;">Please select the Device number</option>
+             <!-- Add dynamically loaded options here -->
+           </select>
+         </div>
+      
+         <!-- Device Type label and combobox -->
+         <div class="mb-3">
+            <label for="deviceType">Device Type:</label>
+            <select class="form-control" id="deviceType">
+               <option disabled selected style="color: lightgray;">Please select the Device Type</option>
+               <!-- Add dynamically loaded options here -->
+               <option value="cleware_multiplexer">Cleware USB Multiplexer</option>
+               <option value="cleware_switch_box">Cleware Switch Box</option>
+            </select>
+         </div>
+      
+         <!-- Apply button with image icon -->
+         <div class="mb-3">
+           <button type="button" class="btn btn-success"  onclick="loadDetailCleware()">
+             <img src="Image/apply.png" alt="Apply" width="20" height="20">
+             Apply
+           </button>
+         </div>
+      
+         <!-- Padding -->
+         <div class="mb-3"></div>
+      
+         <!-- Dynamic content area -->
+         <div id="SpecificClewareDevice">
+           <!-- Dynamically loaded content will be placed here -->
+         </div>
+      </div>
+   </div>
+</div>
+<script src="ServiceCleware.js"></script>

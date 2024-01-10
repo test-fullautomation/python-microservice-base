@@ -169,6 +169,44 @@
     .toolbar button:active {
       transform: translateY(2px);
     }
+
+    .table-container {
+      overflow-x: auto; /* Enable horizontal scrolling for overflow */
+    }
+
+    /* Style for the table */
+    #data-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: none; /* Remove border */
+    }
+
+    /* Style for table headers */
+    #data-table th {
+      border: none;
+      padding: 8px;
+      text-align: center;
+    }
+
+    /* Style for table cells */
+    #data-table td {
+      border: none;
+      padding: 8px;
+    }
+
+    /* Style for the add button */
+    .add-btn {
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+
+    .error {
+      border-color: red; /* Adding red border to empty textboxes */
+    }
+
+    .combobox {
+      width: 100%;
+    }
   </style>
   <title>Microservice Manager</title>
 </head>
