@@ -20,10 +20,18 @@ class ServiceRegistry(ServiceBase):
       'methods': []
    }
 
+   ALIAS_CONF_PATH = "alias.json"
+
    def __init__(self, **conn_params):
       super(ServiceRegistry, self).__init__(**conn_params)
       self.services_information = dict()
       self.realtime_update_exchange = 'registry_update' + str(uuid.uuid4())
+      self._alias_dict = {}
+      try:
+         with open(ServiceRegistry.ALIAS_CONF_PATH, 'r') as file:
+            self._alias_dict = json.load(file)
+      except Exception as ex:
+         pass
       thread_worker = threading.Thread(target=self.receive_services_information)
       thread_worker.daemon = True
       thread_worker.name = "recv_services_infor"
@@ -90,6 +98,21 @@ class ServiceRegistry(ServiceBase):
    def svc_api_get_realtime_update_exchange(self):
       return self.realtime_update_exchange
 
+   def svc_api_update_alias_conf(self, alias_string):
+      with open(ServiceRegistry.ALIAS_CONF_PATH, 'w') as file:
+         file.write(alias_string)
+         
+      with open(ServiceRegistry.ALIAS_CONF_PATH, 'r') as file:
+         self._alias_dict = json.load(file)
+
+   def svc_api_get_alias_conf(self):
+      alias_json = json.dumps(self._alias_dict)
+      return alias_json
+
+   def on_specific_request(self, body):
+      if body['method'] in self._alias_dict:
+         service = self._alias_dict[body['method']]["Service name"]
+         method = self._alias_dict[body['method']]["Method name"]
 
 def signal_handler(sig, frame, obj):
    # This function will be called when a SIGINT signal (Ctrl+C) is received

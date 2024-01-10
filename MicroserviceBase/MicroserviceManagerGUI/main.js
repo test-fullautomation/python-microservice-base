@@ -27,6 +27,21 @@ function createPopupWindow(parentWindow) {
   });
 }
 
+// Function to parse command line arguments
+function parseArgs(argName, defaultValue) {
+  const arg = process.argv.find(arg => arg.startsWith(`--${argName}=`));
+  if (arg) {
+    return arg.split('=')[1]; // Get the value part after '='
+  }
+  return defaultValue;
+}
+
+// Get the value of "--abc" argument or use false as default
+const debugValue = parseArgs('devTools', false);
+
+// Use the parsed value as needed
+// console.log('Value of "--devTools":', debugValue);
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 800,
@@ -40,7 +55,9 @@ function createWindow() {
   });
 
   // Enable debugging for the main process
-  // mainWindow.webContents.openDevTools();
+  if (debugValue == 'true') {
+    mainWindow.webContents.openDevTools();
+  }
 
   mainWindow.loadFile(path.join(__dirname, 'index.html')); // Load index.html from the same directory as index.js
 
