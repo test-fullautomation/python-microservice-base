@@ -109,10 +109,43 @@ class ServiceRegistry(ServiceBase):
       alias_json = json.dumps(self._alias_dict)
       return alias_json
 
-   def on_specific_request(self, body):
-      if body['method'] in self._alias_dict:
-         service = self._alias_dict[body['method']]["Service name"]
-         method = self._alias_dict[body['method']]["Method name"]
+   def is_specific_request(self, request):
+      return request in self._alias_dict
+
+   def on_specific_request(self, ch, method, props, body):
+      service = self._alias_dict[body['method']]["Service name"]
+      api = self._alias_dict[body['method']]["Method name"]
+      routing_key = self.services_information[service]['routing_key']
+      channel = self.connection.channel()
+      alias_args_string = self._alias_dict[body['method']]["Arguments"]
+      try:
+         replacement_list = body['args']
+         if isinstance(replacement_list, str):
+            replacement_list = [replacement_list]
+         # Perform replacements
+         modified_string = alias_args_string.replace("${input}", "{}").format(*replacement_list)
+
+         # Split the modified string into a list
+         args_list = modified_string.split(',')
+
+         request_data = {
+            'method': api,
+            'args': args_list
+         }
+
+         print(f" [x] Call method {api} of '{service}' with params {args_list}")
+         resp = self.request_service(request_data, ServiceBase._SERVICE_REQUEST_EXCHANGE, routing_key)
+         # resp = ResponseMessage(request_api, result_type, ret)
+         # print(props.reply_to)
+         ch.basic_publish(exchange='',
+                        routing_key=props.reply_to,
+                        properties=pika.BasicProperties(correlation_id=props.correlation_id),
+                        body=json.dumps(resp))
+         ch.basic_ack(delivery_tag=method.delivery_tag)
+
+      except ValueError as e:
+         print(f"ValueError: {e}")
+      
 
 def signal_handler(sig, frame, obj):
    # This function will be called when a SIGINT signal (Ctrl+C) is received

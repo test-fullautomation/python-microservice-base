@@ -5,6 +5,7 @@ import collections
 import zipfile
 import os
 import base64
+import uuid
 
 
 class ResultType:
@@ -59,6 +60,8 @@ class ServiceBase:
       'methods': []
    }
 
+   _SERVICE_REQUEST_EXCHANGE = 'services_request'
+
    def __init__(self, **conn_params):
       self.connection = None
       self._kw_args = conn_params
@@ -81,7 +84,7 @@ class ServiceBase:
    def serve(self):
       channel = self.connection.channel()
 
-      channel.exchange_declare(exchange='services_request', exchange_type='direct')
+      channel.exchange_declare(exchange=ServiceBase._SERVICE_REQUEST_EXCHANGE, exchange_type='direct')
       channel.queue_declare(queue=self.name)
 
       # Purge the queue
@@ -89,7 +92,7 @@ class ServiceBase:
       print(f"Queue '{self.name}' purged")
 
       # Bind the queue to the exchange with a routing key
-      channel.queue_bind(exchange='services_request', queue=self.name, routing_key=self._SERVICE_INFO['routing_key'])
+      channel.queue_bind(exchange=ServiceBase._SERVICE_REQUEST_EXCHANGE, queue=self.name, routing_key=self._SERVICE_INFO['routing_key'])
 
       channel.basic_qos(prefetch_count=1)
       channel.basic_consume(queue=self.name, on_message_callback=self.on_request)
@@ -153,6 +156,39 @@ class ServiceBase:
 
       print(" [x] Unregistered service from Registry Service")
 
+   def request_service(self, request_data, exchange_name, routing_key):
+      connection = pika.BlockingConnection(pika.ConnectionParameters(**self._kw_args))
+      channel = connection.channel()
+      result = channel.queue_declare(queue='', exclusive=True)
+      callback_queue = result.method.queue
+      correlation_id = str(uuid.uuid4())
+      resp = None
+      def on_response(ch, method, properties, body):
+         if properties.correlation_id == correlation_id:
+            response = json.loads(body.decode())
+            print(f" [.] Got response: {response}")
+            nonlocal resp
+            resp = response
+            ch.stop_consuming()
+
+      channel.basic_consume(queue=callback_queue, on_message_callback=on_response, auto_ack=True)
+      print(f" [x] Requesting Service with data: {request_data}")
+      channel.basic_publish(
+         exchange=exchange_name,
+         routing_key=routing_key,
+         properties=pika.BasicProperties(
+            reply_to=callback_queue,
+            correlation_id=correlation_id,
+         ),
+         body=json.dumps(request_data),
+      )
+
+      channel.start_consuming()
+      # while resp is None:
+      #    connection.process_data_events()
+      connection.close()
+      return resp
+
    def get_svc_api_methods_dict(self):
       methods = {method: getattr(self, method) for method in dir(self) if method.startswith('svc_api') and callable(getattr(self, method))}
       if not self._SERVICE_INFO['gui_support']:
@@ -179,7 +215,10 @@ class ServiceBase:
 
       return file_content
 
-   def on_specific_request(self, body):
+   def is_specific_request(self, request):
+      return False
+
+   def on_specific_request(self, ch, method, props, body):
       raise Exception("Not suppoted request")
 
    def on_request(self, ch, method, props, body):
@@ -202,7 +241,7 @@ class ServiceBase:
          if body['method'] in self._api_dict:
             print(" [x] Args:%s" % body['args'])
             print(" [x] Args type: %s" % type(body['args']))
-            if body['args'] is None:
+            if not body['args']:
                response = self._api_dict[body['method']]()
             elif isinstance(body['args'], str):
                response = self._api_dict[body['method']](body['args'])
@@ -210,22 +249,25 @@ class ServiceBase:
                response = self._api_dict[body['method']](*body['args'])
             result_type = ResultType.PASS
          else:
-            self.on_specific_request(body)
+            self.on_specific_request(ch, method, props, body)
       except Exception as ex:
          result_type = ResultType.EXCEPT
          response = str(ex)
 
-      if isinstance(response, bytes):
-         # Convert bytes data to base64 encoded string
-         response = base64.b64encode(response).decode('utf-8')
+      if response == "Non-supported request" and self.is_specific_request(request_api):
+         self.on_specific_request(ch, method, props, body)
+      else:
+         if isinstance(response, bytes):
+            # Convert bytes data to base64 encoded string
+            response = base64.b64encode(response).decode('utf-8')
 
-      resp = ResponseMessage(request_api, result_type, response)
-      # print(props.reply_to)
-      ch.basic_publish(exchange='',
-                       routing_key=props.reply_to,
-                       properties=pika.BasicProperties(correlation_id=props.correlation_id),
-                       body=resp.get_json())
-      ch.basic_ack(delivery_tag=method.delivery_tag)
+         resp = ResponseMessage(request_api, result_type, response)
+         # print(props.reply_to)
+         ch.basic_publish(exchange='',
+                        routing_key=props.reply_to,
+                        properties=pika.BasicProperties(correlation_id=props.correlation_id),
+                        body=resp.get_json())
+         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 if __name__ == '__main__':
