@@ -15,7 +15,7 @@ const obj = {
   prop_level1_B: { prop_level2_B1: 'Value 3', prop_level2_B2: 'Value 4' }
 };
 
-const headers = ['Header 1', 'Header 2', 'Header 3', 'Header 4'];
+// const headers = ['Header 1', 'Header 2', 'Header 3', 'Header 4'];
 
 const jsonData = {};
 // const jsonData = {
@@ -35,6 +35,7 @@ const jsonData = {};
 function populateTable(data) {
   const table = document.getElementById('data-table');
   const tbody = table.getElementsByTagName('tbody')[0];
+  const headers = Array.from(table.querySelector('thead tr').children).map(th => th.textContent).slice(0,4);
 
   if (data === null || data == "" || data.length === 0 || JSON.stringify(data) === '{}')
   {
@@ -49,12 +50,14 @@ function populateTable(data) {
         const input = document.createElement('input');
         input.type = 'text';
         input.value = key;
+        input.dataset.type = 'name';
         cell.appendChild(input);
       } else if (colIndex === 3)
       {
         const input = document.createElement('input');
         input.type = 'text';
         input.value = data[key][header];
+        input.dataset.type = 'args';
         cell.appendChild(input);
       } else {
         const select = document.createElement('select');
@@ -165,10 +168,10 @@ function addRow() {
   const newRow = document.createElement('tr');
   
   newRow.innerHTML = `
-    <td class="col-3"><input type="text" class="textbox" placeholder="Declare alias name here..."/></td>
+    <td class="col-3"><input type="text" class="textbox" data-type="name" placeholder="Declare alias name here..."/></td>
     <td class="col-3" style="width:100px"><select class="combobox combobox1"></select></td>
     <td class="col-3" style="width:100px"><select class="combobox combobox2"></select></td>
-    <td class="col-3"><input type="text" class="textbox" /></td>
+    <td class="col-3"><input type="text" class="textbox" data-type="args" /></td>
   `;
   
   // Add a "-" button to remove the row
@@ -246,9 +249,14 @@ document.getElementById('applyButton').addEventListener('click', function() {
   for (var i = 0; i < rows.length; i++) {
     var textboxes = rows[i].querySelectorAll('input[type="text"]');
     for (var j = 0; j < textboxes.length; j++) {
+      
       if (textboxes[j].value.trim() === '') {
-        isAnyTextBoxEmpty = true;
-        textboxes[j].classList.add('is-invalid'); // Adding Bootstrap validation class
+        if (textboxes[j].dataset.type === "args") {
+          textboxes[j].value = null;
+        } else {
+          isAnyTextBoxEmpty = true;
+          textboxes[j].classList.add('is-invalid'); // Adding Bootstrap validation class
+        }
       } else {
         textboxes[j].classList.remove('is-invalid');
       }

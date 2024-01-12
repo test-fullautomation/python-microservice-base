@@ -17,10 +17,11 @@
     }
     .container {
         display: flex;
+        padding-left: 0%;
         margin-top: 40px;
         /* Misc */
         border: 0px solid #cbd5e0;
-        height: 42rem;
+        height: 100%;
         width: 100%;
     }
     .container__left {
@@ -29,6 +30,7 @@
     
         /* Misc */
         /* align-items: center; */
+
         display: flex;
         justify-content: center;
     }
@@ -210,7 +212,7 @@
   </style>
   <title>Microservice Manager</title>
 </head>
-<body>
+<body style="height: 80vh;">
   <div class="toolbar">
     <!-- Example icon buttons -->
     <button id="btnConnect" title="Connect"><img src="Image/connected.png" alt="Icon 1"></button>

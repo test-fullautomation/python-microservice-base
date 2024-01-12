@@ -644,7 +644,7 @@ function requestService(requestData, exchangeName, routingKey) {
             noAck: true
           });
 
-          console.log(' [x] Requesting data in string:',JSON.stringify(requestData));
+          // console.log(' [x] Requesting data in string:',JSON.stringify(requestData));
           channel.publish(exchangeName, routingKey, Buffer.from(JSON.stringify(requestData)),{
                 correlationId: correlationId,
                 replyTo: q.queue
