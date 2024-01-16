@@ -23,6 +23,7 @@ function createPopupWindow(parentWindow) {
   popupWindow.loadFile(path.join(__dirname, 'login.html')); // Load an HTML file for the popup window
 
   popupWindow.on('closed', () => {
+    console.log("Closing login window....")
     popupWindow = null;
   });
 }

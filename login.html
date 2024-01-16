@@ -92,9 +92,10 @@
       formData.forEach((value, key) => {
         formObject[key] = value;
       });
-
+      console.log("Sending login infor.....");
       // Send the form data back to the main process
       ipcRenderer.send('login-form-data', formObject);
+      console.log("Sent login infor.");
       // Close the window after form submission
       window.close();
     });
