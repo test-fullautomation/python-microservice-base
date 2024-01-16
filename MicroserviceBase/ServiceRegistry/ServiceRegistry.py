@@ -114,37 +114,47 @@ class ServiceRegistry(ServiceBase):
 
    def on_specific_request(self, ch, method, props, body):
       service = self._alias_dict[body['method']]["Service name"]
-      api = self._alias_dict[body['method']]["Method name"]
-      routing_key = self.services_information[service]['routing_key']
-      channel = self.connection.channel()
-      alias_args_string = self._alias_dict[body['method']]["Arguments"]
+      request_api = self._alias_dict[body['method']]["Method name"]
+      response = "Non-supported request"
+      result_type = ResultType.FAIL
+      
       try:
-         replacement_list = body['args']
-         if isinstance(replacement_list, str):
-            replacement_list = [replacement_list]
+         if service in self.services_information:
+            routing_key = self.services_information[service]['routing_key']
+         else:
+            raise Exception(f"Service {service} is unavailable!!!")
+
+         # channel = self.connection.channel()
+         alias_args_string = self._alias_dict[body['method']]["Arguments"]
+         actual_args_list = body['args']
+         if isinstance(actual_args_list, str):
+            actual_args_list = [actual_args_list]
+
          # Perform replacements
-         modified_string = alias_args_string.replace("${input}", "{}").format(*replacement_list)
+         modified_string = alias_args_string.replace("${input}", "{}").format(*actual_args_list)
 
          # Split the modified string into a list
          args_list = modified_string.split(',')
 
          request_data = {
-            'method': api,
+            'method': request_api,
             'args': args_list
          }
 
-         print(f" [x] Call method {api} of '{service}' with params {args_list}")
+         print(f" [x] Call method {request_api} of '{service}' with params {args_list}")
          resp = self.request_service(request_data, ServiceBase._SERVICE_REQUEST_EXCHANGE, routing_key)
          # resp = ResponseMessage(request_api, result_type, ret)
          # print(props.reply_to)
-         ch.basic_publish(exchange='',
+      except Exception as ex:
+         result_type = ResultType.EXCEPT
+         response = str(ex)
+         resp = ResponseMessage(request_api, result_type, response)
+      
+      ch.basic_publish( exchange='',
                         routing_key=props.reply_to,
                         properties=pika.BasicProperties(correlation_id=props.correlation_id),
                         body=json.dumps(resp))
-         ch.basic_ack(delivery_tag=method.delivery_tag)
-
-      except ValueError as e:
-         print(f"ValueError: {e}")
+      ch.basic_ack(delivery_tag=method.delivery_tag)
       
 
 def signal_handler(sig, frame, obj):

@@ -78,6 +78,14 @@ class ServiceBase:
       self.unregister_service()
       self.close()
 
+   @staticmethod
+   def create_request_data(method_name, args):
+      request_data = {
+            'method': request_api,
+            'args': args_list
+      }
+      return  request_data
+
    def connect_broker(self, **kwargs):
       self.connection = pika.BlockingConnection(pika.ConnectionParameters(**kwargs))
 
@@ -248,8 +256,6 @@ class ServiceBase:
             else:
                response = self._api_dict[body['method']](*body['args'])
             result_type = ResultType.PASS
-         else:
-            self.on_specific_request(ch, method, props, body)
       except Exception as ex:
          result_type = ResultType.EXCEPT
          response = str(ex)

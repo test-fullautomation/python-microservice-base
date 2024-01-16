@@ -66,6 +66,21 @@ const templateItem = {
   ]
 };
 
+var connectedStatus = false;
+var unloadFunction = null;
+
+ipcRenderer.on("login-data", (event, formData) => {
+  console.log('Received login form data in index:', formData);
+  if (connectedStatus === false)
+  {
+    // Add Alias service at beginning
+    addAliasService();
+    
+    // Handle the received form data here
+    setRegistryServiceInfo(formData);
+    requestServicesInfor();
+  }
+});
 
 /************************************************************
  *               Functions: GUI Element Handling             *
@@ -123,9 +138,11 @@ function changeConnectButtonState(status) {
     if (status === CONNECTION_STATUS.CONNECTED) {
         btnConnect.title = 'Disconnect'; // Update the title
         btnConnect.querySelector('img').src = 'Image/unconnected.png'; // Update the icon
+        connectedStatus = true;
     } else if (status === CONNECTION_STATUS.DISCONNECTED) {
         btnConnect.title = 'Connect'; // Update the title
         btnConnect.querySelector('img').src = 'Image/connected.png'; // Update the icon
+        connectedStatus = false;
     }
 }
 
@@ -159,6 +176,39 @@ function loadServiceContent(serviceName, dynamicContentName, callbackName = '') 
   loadContent(externalContentFile, dynamicContentName, callbackName);
 }
 
+
+
+function normalizePath(path) {
+  // Convert backslashes to forward slashes
+  path = path.replace(/\\/g, '/');
+
+  // If the path is relative, convert it to an absolute path
+  if (!path.startsWith('/') && !path.match(/^\w+:/)) {
+      // Assuming base URL is the same as the current page's URL
+      const baseURL = new URL(window.location.href);
+      path = new URL(path, baseURL).href;
+  }
+
+  // Add 'file://' prefix if it's a file system path
+  if (path.match(/^\w:/)) {
+      path = 'file:///' + path;
+  }
+
+  return path;
+}
+
+function isScriptAlreadyAdded(scriptPath) {
+  const absoluteScriptPath = normalizePath(scriptPath);
+
+  // Check if a script with the specified absolute source is already present
+  Array.from(document.head.querySelectorAll('script')).forEach(scripObj => {
+    console.log(`script child: ${normalizePath(scripObj.src)}`);
+    console.log(`compare: ${absoluteScriptPath}`);
+  });
+  return Array.from(document.head.querySelectorAll('script'))
+      .some(script => normalizePath(script.src) === absoluteScriptPath);
+}
+
 /**
  * Loads external content from an HTML file into a specified div.
  *
@@ -176,15 +226,21 @@ function loadContent(externalContentFile, dynamicContentName, callbackName = '')
     fetch(externalContentFile)
       .then(response => response.text())
       .then(htmlContent => {
-        
+        if (dynamicContentName === "serviceContent" && typeof unloadFunction === 'function') {
+          unloadFunction();
+       }
         dynamicContentDiv.innerHTML = htmlContent;      
         // Check if the script has been loaded
         const scriptSrc = externalContentFile.replace('.html', '.js');
-        if (!document.querySelector(`script[src="${scriptSrc}"]`)) {
+        // if (!document.querySelector(`script[src="${scriptSrc}"]`)) {
+        if (!isScriptAlreadyAdded(scriptSrc)) {
+          
           // Create a new script element and set its attributes
           const script = document.createElement('script');
           script.src = scriptSrc;
           script.type = 'text/javascript';
+          
+          
 
           // Append the script to the document head
           document.head.appendChild(script);
@@ -192,14 +248,44 @@ function loadContent(externalContentFile, dynamicContentName, callbackName = '')
           script.onload = function() {
             if (callbackName !== '') {
               // callback();
-              window[callbackName]()
+              window[callbackName]();
+            }
+
+            if (dynamicContentName === "serviceContent") {
+              // Extract the filename without extension
+              const filename = externalContentFile.split(/[\\/]/).pop().replace(/\..+$/, '');
+  
+              // Add the "load" prefix
+              const functionName = "unload" + filename;
+              unloadFunction = window[functionName];
             }
           };
         } else {
+          // if (typeof unloadFunction === 'function') {
+          //     unloadFunction();
+          // }
           console.log(`Script '${scriptSrc}' has already been loaded.`);
+          const filename = externalContentFile.split(/[\\/]/).pop().replace(/\..+$/, '');
+
+            // Add the "load" prefix
+          const functionName = "load" + filename;
+          const loadFunction = window[functionName];
+          if (typeof loadFunction === 'function') {
+            loadFunction();
+          }
+
           if (callbackName !== '') {
             // callback();
-            window[callbackName]()
+            window[callbackName]();
+          }
+
+          if (dynamicContentName === "serviceContent") {
+            // Extract the filename without extension
+            const filename = externalContentFile.split(/[\\/]/).pop().replace(/\..+$/, '');
+
+            // Add the "load" prefix
+            const functionName = "unload" + filename;
+            unloadFunction = window[functionName];
           }
         }
   
@@ -385,16 +471,18 @@ document.addEventListener('DOMContentLoaded', function () {
  */
 function connect() {
   ipcRenderer.send('open-popup-window');
-  ipcRenderer.on("login-data", (event, formData) => {
-    console.log('Received login form data in index:', formData);
-
-    // Add Alias service at beginning
-    addAliasService();
-    
-    // Handle the received form data here
-    setRegistryServiceInfo(formData);
-    requestServicesInfor();
-  });
+  // ipcRenderer.on("login-data", (event, formData) => {
+  //   console.log('Received login form data in index:', formData);
+  //   if (connectedStatus === false)
+  //   {
+  //     // Add Alias service at beginning
+  //     addAliasService();
+      
+  //     // Handle the received form data here
+  //     setRegistryServiceInfo(formData);
+  //     requestServicesInfor();
+  //   }
+  // });
 }
 
 function addAliasService() {
@@ -437,6 +525,7 @@ function disconnect() {
   global.brokerUrl = null;
   global.routingKey = null;
   global.servicesInfor = null;
+  unloadFunction = null;
   clearServiceList();
   clearServiceContent();
   changeConnectButtonState(CONNECTION_STATUS.DISCONNECTED);

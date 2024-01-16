@@ -1,9 +1,13 @@
 // var amqp = require('amqplib/callback_api');
 // var path = require('path');
 
-global.clewareState = null;
-const VERSION = "1.0.0";
-const SERVICE_NAME = "ServiceAlias";
+// global.clewareState = null;
+// component1.js
+var ServiceAlias = {
+  VERSION: "1.0.0",
+  SERVICE_NAME: "ServiceAlias"
+};
+
 
 // const SERVICES_EXCHANGE_NAME = "services_request";
 
@@ -61,6 +65,7 @@ function populateTable(data) {
         cell.appendChild(input);
       } else {
         const select = document.createElement('select');
+        select.classList.add("form-control");
         const option = document.createElement('option');
         option.value = data[key][header];
         option.style.width = "100px";
@@ -92,6 +97,39 @@ function populateTable(data) {
       row.insertCell();
     }
   });
+}
+
+function unloadServiceAlias() {
+
+
+}
+
+function loadServiceAlias() {
+  requestAliasInfor();
+
+}
+
+function saveAliasState(){
+  // const dataTable = document.getElementById('data-table');
+  // const savedState = JSON.parse(localStorage.getItem('ServiceCleware')) || {};
+  // const jsonData = {};
+
+  //               dataTable.rows().every(function (index, element) {
+  //                   const columns = this.cells().nodes();
+  //                   const firstColumnValue = columns[0].querySelector('input').value;
+  //                   const rowData = {};
+
+  //                   for (let i = 1; i < columns.length; i++) {
+  //                       const columnHeader = document.querySelector(`#data-table thead th:nth-child(${i + 1})`).innerText;
+  //                       const cellValue = columns[i].querySelector('input').value;
+  //                       rowData[columnHeader] = cellValue;
+  //                   }
+
+  //                   jsonData[firstColumnValue] = rowData;
+  //               });
+
+
+  // localStorage.setItem('ServiceCleware', JSON.stringify(savedState));
 }
 
 // Call the function with your JSON data
@@ -169,8 +207,8 @@ function addRow() {
   
   newRow.innerHTML = `
     <td class="col-3"><input type="text" class="textbox" data-type="name" placeholder="Declare alias name here..."/></td>
-    <td class="col-3" style="width:100px"><select class="combobox combobox1"></select></td>
-    <td class="col-3" style="width:100px"><select class="combobox combobox2"></select></td>
+    <td class="col-3" style="width:100px"><select class="form-control combobox1"></select></td>
+    <td class="col-3" style="width:100px"><select class="form-control combobox2"></select></td>
     <td class="col-3"><input type="text" class="textbox" data-type="args" /></td>
   `;
   
