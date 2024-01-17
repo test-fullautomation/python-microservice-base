@@ -88,6 +88,7 @@ function handleSwitchBoxContent() {
     requestClewareService(jsonData)
       .then(function (data) {
          console.log(`Set sw return: ${data}`);
+         getAllDevicesState();
       })
       .catch(function (error) {
         console.error('Error loading data:', error);
