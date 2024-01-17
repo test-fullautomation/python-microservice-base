@@ -127,6 +127,9 @@ class ServiceRegistry(ServiceBase):
          # channel = self.connection.channel()
          alias_args_string = self._alias_dict[body['method']]["Arguments"]
          actual_args_list = body['args']
+         # print(" [x] alias_args_string:%s" % alias_args_string)
+         # print(" [x] actual_args_list:%s" % actual_args_list)
+         # print(" [x] actual_args_list type: %s" % type(actual_args_list))
          if isinstance(actual_args_list, str):
             actual_args_list = [actual_args_list]
 
@@ -148,8 +151,10 @@ class ServiceRegistry(ServiceBase):
       except Exception as ex:
          result_type = ResultType.EXCEPT
          response = str(ex)
-         resp = ResponseMessage(request_api, result_type, response)
+         resp = ResponseMessage(request_api, result_type, response).get_json()
       
+      # print(" [x] resp:%s" % resp)
+      # print(" [x] resp type: %s" % type(resp))
       ch.basic_publish( exchange='',
                         routing_key=props.reply_to,
                         properties=pika.BasicProperties(correlation_id=props.correlation_id),
