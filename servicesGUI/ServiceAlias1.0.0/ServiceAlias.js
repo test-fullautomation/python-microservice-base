@@ -8,33 +8,11 @@ var ServiceAlias = {
   SERVICE_NAME: "ServiceAlias"
 };
 
-
-// const SERVICES_EXCHANGE_NAME = "services_request";
-
 let rowIndex = 1; // Track the index of rows
 
-
-const obj = {
-  prop_level1_A: { prop_level2_A1: 'Value 1', prop_level2_A2: 'Value 2' },
-  prop_level1_B: { prop_level2_B1: 'Value 3', prop_level2_B2: 'Value 4' }
-};
-
-// const headers = ['Header 1', 'Header 2', 'Header 3', 'Header 4'];
-
 const jsonData = {};
-// const jsonData = {
-//   "Textbox Value 1": {
-//     "Header 2": "ComboBox 1 Value 1",
-//     "Header 3": "ComboBox 2 Value 1",
-//     "Header 4": "TextBox Column 4 Value 1"
-//   },
-//   "Textbox Value 2": {
-//     "Header 2": "ComboBox 1 Value 2",
-//     "Header 3": "ComboBox 2 Value 2",
-//     "Header 4": "TextBox Column 4 Value 2"
-//   },
-//   // More data
-// };
+
+requestAliasInfor();
 
 function populateTable(data) {
   const table = document.getElementById('data-table');
@@ -100,41 +78,14 @@ function populateTable(data) {
 }
 
 function unloadServiceAlias() {
-
-
 }
 
 function loadServiceAlias() {
   requestAliasInfor();
-
 }
 
 function saveAliasState(){
-  // const dataTable = document.getElementById('data-table');
-  // const savedState = JSON.parse(localStorage.getItem('ServiceCleware')) || {};
-  // const jsonData = {};
-
-  //               dataTable.rows().every(function (index, element) {
-  //                   const columns = this.cells().nodes();
-  //                   const firstColumnValue = columns[0].querySelector('input').value;
-  //                   const rowData = {};
-
-  //                   for (let i = 1; i < columns.length; i++) {
-  //                       const columnHeader = document.querySelector(`#data-table thead th:nth-child(${i + 1})`).innerText;
-  //                       const cellValue = columns[i].querySelector('input').value;
-  //                       rowData[columnHeader] = cellValue;
-  //                   }
-
-  //                   jsonData[firstColumnValue] = rowData;
-  //               });
-
-
-  // localStorage.setItem('ServiceCleware', JSON.stringify(savedState));
 }
-
-// Call the function with your JSON data
-
-requestAliasInfor();
 
 // Function to populate options for combobox1
 function populateServiceCombobox(combobox) {
@@ -276,18 +227,42 @@ function removeRow(row) {
   }
 }
 
-// Initial call to add a row with the "+" button
-// addRow();
+function getAliasConfiguration()
+{
+  document.getElementById('errorMessage').style.display = 'none';
+  // Perform other actions if all textboxes are filled
+  const table = document.getElementById('data-table');
+  const rows = table.querySelectorAll('tbody tr');
 
-document.getElementById('applyButton').addEventListener('click', function() {
+  const jsonData = {};
+
+  rows.forEach((row) => {
+    const columns = row.querySelectorAll('td');
+    const firstColumnValue = columns[0].querySelector('input').value;
+    const rowData = {};
+
+    for (let i = 1; i < columns.length - 2; i++) {
+      const columnHeader = document.querySelector(`#data-table thead th:nth-child(${i + 1})`).innerText;
+      const cellValue = columns[i].querySelector('input, select').value;
+      rowData[columnHeader] = cellValue;
+    }
+
+    jsonData[firstColumnValue] = rowData;
+  });
+
+  console.log(jsonData);  
+  return jsonData;
+}
+
+function validateConfigurations()
+{
+  var isValid = false;
+  var isAnyTextBoxEmpty = false;  
   var table = document.getElementById('data-table');
   var rows = table.getElementsByTagName('tr');
-  var isAnyTextBoxEmpty = false;
-
   for (var i = 0; i < rows.length; i++) {
     var textboxes = rows[i].querySelectorAll('input[type="text"]');
-    for (var j = 0; j < textboxes.length; j++) {
-      
+    for (var j = 0; j < textboxes.length; j++) {      
       if (textboxes[j].value.trim() === '') {
         if (textboxes[j].dataset.type === "args") {
           textboxes[j].value = null;
@@ -305,28 +280,16 @@ document.getElementById('applyButton').addEventListener('click', function() {
     document.getElementById('errorMessage').style.display = 'block';
   } else {
     document.getElementById('errorMessage').style.display = 'none';
-    // Perform other actions if all textboxes are filled
-    const table = document.getElementById('data-table');
-    const rows = table.querySelectorAll('tbody tr');
-  
-    const jsonData = {};
-  
-    rows.forEach((row) => {
-      const columns = row.querySelectorAll('td');
-      const firstColumnValue = columns[0].querySelector('input').value;
-      const rowData = {};
-  
-      for (let i = 1; i < columns.length - 2; i++) {
-        const columnHeader = document.querySelector(`#data-table thead th:nth-child(${i + 1})`).innerText;
-        const cellValue = columns[i].querySelector('input, select').value;
-        rowData[columnHeader] = cellValue;
-      }
-  
-      jsonData[firstColumnValue] = rowData;
-    });
-  
-    console.log(jsonData);
+    isValid = true;
+  }
+
+  return isValid;
+}
+
+function applyAliasConfig() {
+  if (validateConfigurations()) {
+    const jsonData = getAliasConfiguration();
     const jsonString = JSON.stringify(jsonData);
     requestUpdateAliasInfor(jsonString);
   }
-});
+}
