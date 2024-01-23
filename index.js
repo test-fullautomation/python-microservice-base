@@ -17,10 +17,11 @@ const fs = require('fs');
 const unzipper = require('unzipper');
 const { saveAs } = require('file-saver');
 const path = require('path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, Notification} = require('electron');
 const { ipcRenderer } = require('electron');
 const { dialog } = require('electron');
 const { title } = require('process');
+const notifier = require('node-notifier');
 
 /************************************************************
  *                    Global Variables                      *
@@ -68,6 +69,8 @@ const templateItem = {
 
 var connectedStatus = false;
 var unloadFunction = null;
+
+
 
 ipcRenderer.on("login-data", (event, formData) => {
   console.log('Received login form data in index:', formData);

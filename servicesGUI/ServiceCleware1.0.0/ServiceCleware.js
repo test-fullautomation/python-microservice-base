@@ -25,6 +25,12 @@ var ServiceCleware = {
 //     });
 // });
 var isInitialized = false;
+function initializeServiceCleware()
+{
+  
+}
+
+
 function onInitizlizeCleware()
 {
   getAllDevicesState();
@@ -61,17 +67,13 @@ function loadDetailCleware (){
       console.log('Selected Device Type: Cleware USB Multiplexer');
       const clewareDetailPath = path.resolve(`servicesGUI/${ServiceCleware.SERVICE_NAME}${ServiceCleware.VERSION}/Multiplexer.html`);
       loadContent(clewareDetailPath, 'SpecificClewareDevice', 'handleMultiplexerContent');
-      
-      // Add your specific logic here
       break;
     case 2:
       // Action for the second index
       console.log('Selected Device Type: Cleware Switch Box');
       const swBoxPath = path.resolve(`servicesGUI/${ServiceCleware.SERVICE_NAME}${ServiceCleware.VERSION}/SwitchBox.html`);
       loadContent(swBoxPath, 'SpecificClewareDevice', 'handleSwitchBoxContent');
-      // Add your specific logic here
       break;
-    // Add more cases as needed
 
     default:
       // Default action if index doesn't match any case
