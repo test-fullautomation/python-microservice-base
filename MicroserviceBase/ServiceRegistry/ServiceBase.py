@@ -6,6 +6,7 @@ import zipfile
 import os
 import base64
 import uuid
+import re
 
 
 class ResultType:
@@ -57,7 +58,8 @@ class ServiceBase:
       'routing_key': '',
       'gui_support': False,
       # Other details
-      'methods': []
+      'methods': [],
+      'methods_info': {}
    }
 
    _SERVICE_REQUEST_EXCHANGE = 'services_request'
@@ -67,7 +69,9 @@ class ServiceBase:
       self._kw_args = conn_params
       self.name = self._SERVICE_INFO['name']
       self._api_dict = self.get_svc_api_methods_dict()
+      self._api_info_dict = self.get_svc_api_methods_info_dict(self._api_dict)
       self._SERVICE_INFO['methods'] = list(self._api_dict.keys())
+      self._SERVICE_INFO['methods_info'] = self._api_info_dict
       self.connect_broker(**conn_params)
       self.register_service()
 
@@ -202,8 +206,79 @@ class ServiceBase:
       if not self._SERVICE_INFO['gui_support']:
          del methods['svc_api_get_gui_files']
       return methods
+   
+   def get_svc_api_methods_info_dict(self, methods_dict):
+      info_dict = {}
+      for method_name, method in methods_dict.items():
+         doc_string = method.__doc__
+         if doc_string is None:
+            print(f" [!] API '{method_name}' does not contain docstrings.")
+            continue
+         info_dict[method_name] = self.parse_docstring(method.__doc__)
+      return info_dict
+
+   def parse_docstring(self, docstring):
+      """
+Parse function's docstring to get arguments and return information.
+
+**Arguments:**
+
+* ``docstring``
+
+  / *Condition*: required / *Type*: str /
+
+  Function's docstring.
+
+**Returns:**
+
+  / *Type*: str /
+
+  Payloads of the waiting signal if received.
+      """
+
+      result = {}
+
+      arg_pattern = re.compile(r'\*\s+``([^`]*)``\s+/\s+\*Condition\*:(.*?)\s+/\s+\*Type\*:(.*?)\s+(?:/\s+\*Default\*:(.*?))?\s*(?:/\s*([^*]+?.*?))?\n', re.DOTALL)
+      return_pattern = re.compile(r'\*\*Returns:\*\*\s+/\s+\*Type\*:(.*?)(?=(?:/\s+\*\*\n|\Z))', re.DOTALL)
+
+      try:
+         # Find matches for arguments
+         arg_matches = arg_pattern.findall(docstring)
+         arguments = []
+
+         for match in arg_matches:
+            arg_name, condition, arg_type, default_value, description = map(str.strip, match)
+            # Fix the description to exclude the next argument's type information
+            description = re.sub(r'\n\s+\*\*.*', '', description)
+            arguments.append({
+               'name': arg_name,
+               'condition': condition.strip() if condition else None,
+               'type': arg_type.strip() if arg_type else None,
+               'default': default_value.strip() if default_value else None,
+               'description': description
+            })
+
+         result['arguments'] = arguments
+
+         # Find matches for return type
+         return_matches = return_pattern.findall(docstring)
+         if return_matches:
+            result['return_type'] = return_matches[0].strip()
+      except Exception as ex:
+         print(f" [!] Unable to analysis the docstring: '{docstring}'. Please check the docstring format.")
+
+      return result
 
    def svc_api_get_version(self):
+      """
+Get the service version.
+
+**Returns:**
+
+  / *Type*: str /
+
+  Version of the service.
+      """      
       return self._SERVICE_INFO['version']
 
    def svc_api_get_gui_files(self):
@@ -247,8 +322,6 @@ class ServiceBase:
 
          request_api = body['method']
          if body['method'] in self._api_dict:
-            print(" [x] Args:%s" % body['args'])
-            print(" [x] Args type: %s" % type(body['args']))
             if not body['args']:
                response = self._api_dict[body['method']]()
             elif isinstance(body['args'], str):

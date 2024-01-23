@@ -30,6 +30,8 @@ function populateTable(data) {
       const cell = row.insertCell();
       if (colIndex === 0) {
         const input = document.createElement('input');
+        input.classList.add("form-control");
+        input.style.width = "180px";
         input.type = 'text';
         input.value = key;
         input.dataset.type = 'name';
@@ -37,6 +39,8 @@ function populateTable(data) {
       } else if (colIndex === 3)
       {
         const input = document.createElement('input');
+        input.classList.add("form-control");
+        input.style.width = "180px";
         input.type = 'text';
         input.value = data[key][header];
         input.dataset.type = 'args';
@@ -44,9 +48,9 @@ function populateTable(data) {
       } else {
         const select = document.createElement('select');
         select.classList.add("form-control");
+        select.style.width = "180px";
         const option = document.createElement('option');
         option.value = data[key][header];
-        option.style.width = "100px";
         option.textContent = data[key][header];
         select.appendChild(option);
         cell.appendChild(select);
@@ -58,6 +62,7 @@ function populateTable(data) {
     const minusCell = row.insertCell();
     const minusButton = document.createElement('button');
     minusButton.textContent = '-';
+    minusButton.style.width = "38px";
     minusButton.onclick = function() {
       row.remove();
     };
@@ -68,6 +73,7 @@ function populateTable(data) {
       const plusCell = row.insertCell();
       const plusButton = document.createElement('button');
       plusButton.textContent = '+';
+      plusButton.style.width = "38px";
       plusButton.onclick = addRow;
       plusButton.classList.add('btn', 'btn-primary');
       plusCell.appendChild(plusButton);
@@ -157,15 +163,16 @@ function addRow() {
   const newRow = document.createElement('tr');
   
   newRow.innerHTML = `
-    <td class="col-3"><input type="text" class="textbox" data-type="name" placeholder="Declare alias name here..."/></td>
-    <td class="col-3" style="width:100px"><select class="form-control combobox1"></select></td>
-    <td class="col-3" style="width:100px"><select class="form-control combobox2"></select></td>
-    <td class="col-3"><input type="text" class="textbox" data-type="args" /></td>
+    <td class="col-3"><input type="text" class="form-control textbox" data-type="name" placeholder="Declare alias name here..."/></td>
+    <td class="col-3"><select class="form-control combobox combobox1" style="width: 180px;"></select></td>
+    <td class="col-3"><select class="form-control combobox combobox2" style="width: 180px;"></select></td>
+    <td class="col-3"><input type="text" class="form-control textbox" data-type="args" /></td>
   `;
   
   // Add a "-" button to remove the row
   const minusBtn = document.createElement('button');
   minusBtn.textContent = '-';
+  minusBtn.style.width = "38px";
   minusBtn.onclick = function () {
     removeRow(newRow);
   };
@@ -173,7 +180,7 @@ function addRow() {
 
   // Append the "-" button to the last cell
   const minusCell = document.createElement('td');
-  minusCell.appendChild(minusBtn);
+  minusCell.appendChild(minusBtn);  
   newRow.appendChild(minusCell);
 
   // Remove "+" button from the previous last row
@@ -188,6 +195,7 @@ function addRow() {
   // Add "+" button to the last row
   const plusBtn = document.createElement('button');
   plusBtn.textContent = '+';
+  plusBtn.style.width = "38px";
   plusBtn.onclick = addRow;
   plusBtn.classList.add('btn', 'btn-primary'); // Add Bootstrap classes or any desired classes
 
@@ -211,20 +219,82 @@ function addRow() {
 
   // Initially populate options for combobox2 in the new row based on the first option of combobox1
   populateMethodCombobox(serviceCombobox.value, methodCombobox);
+
+  // Event listener for methodCombobox change in the new row
+  methodCombobox.addEventListener('change', function () {
+    const selectedMethod = methodCombobox.value;
+    const selectedService = serviceCombobox.value;
+    addMethodArgumentRows(selectedService, selectedMethod, newRow);
+  });
 }
 
-function removeRow(row) {
+function addMethodArgumentRows(serviceName, methodName, row)
+{
+  const tableBody = document.querySelector('#data-table tbody');
+  const newRowsContainer = document.createElement('tbody');
+  const argumentsArray = global.servicesInfor[serviceName].methods_info[methodName].arguments;
+  cell = row.children[3].children[0];
+  cell.placeholder = argumentsArray[0].description;
+  const argumentsArrayExt = argumentsArray.slice(1);
+  var nextSib = row.nextSibling;
+  row.style.border = 'none';
+
+  argumentsArrayExt.forEach((placeholderObj, index, array) => {
+      const newRow = document.createElement('tr');
+      const isLast = index === array.length - 1;
+      newRow.innerHTML = `
+        <td colspan="3"></td>
+        <td style="width: 180px; border-top: none;">
+          <input class="form-control" type="text" data-type="args" style="width: 180px;" placeholder="${placeholderObj.description}">
+        </td>
+      `;
+      // newRowsContainer.appendChild(newRow);
+       // Attach an attribute to the row to track it as a dynamically added row
+      newRow.setAttribute('data-dynamic-row', 'true');
+      if (!isLast) {
+        newRow.style.border = 'none';
+      } else {
+        newRow.style.borderTop = 'none';
+      }
+       
+
+       // Insert the new row below the clicked row
+       tableBody.insertBefore(newRow, nextSib);
+       nextSib = newRow.nextSibling;
+  });
+
+  // Attach an attribute to the container to track it as a dynamically added row
+  newRowsContainer.setAttribute('data-dynamic-rows', 'true');
+
+  // Insert the new rows below the clicked row
+  // tableBody.insertBefore(newRowsContainer, row.nextSibling);
+}
+
+function removeRow(mainRow) {
   const table = document.getElementById('data-table');
   const tableBody = table.querySelector('tbody');
+    
+  // Find the next sibling of the main row
+  let nextSibling = mainRow.nextSibling;
 
-  const rows = tableBody.querySelectorAll('tr');
-  if (rows.length > 1) {
-    const lastRow = rows[rows.length - 1];
-    const prevLastRow = tableBody.querySelector('tr:nth-last-child(2)');
-
-    prevLastRow.querySelector('td:last-child').innerHTML = '<button class="btn btn-primary" onclick="addRow()">+</button>';
-    tableBody.removeChild(lastRow);
+  // Remove dynamically added rows below the main row
+  while (nextSibling && nextSibling.getAttribute('data-dynamic-row') === 'true') {
+    tableBody.removeChild(nextSibling);
+    nextSibling = mainRow.nextSibling;
   }
+
+  // Remove the main row
+  tableBody.removeChild(mainRow);
+  
+
+  // const rows = tableBody.querySelectorAll('tr');
+  // if (rows.length > 1) {
+  //   const lastRow = rows[rows.length - 1];
+  //   const prevLastRow = tableBody.querySelector('tr:nth-last-child(2)');
+
+  //   prevLastRow.querySelector('td:last-child').innerHTML = '<button class="btn btn-primary" style="width: 38px;" onclick="addRow()">+</button>';
+  //   tableBody.removeChild(lastRow);
+  // }
 }
 
 function getAliasConfiguration()
@@ -237,17 +307,30 @@ function getAliasConfiguration()
   const jsonData = {};
 
   rows.forEach((row) => {
-    const columns = row.querySelectorAll('td');
-    const firstColumnValue = columns[0].querySelector('input').value;
-    const rowData = {};
+    if (row.getAttribute('data-dynamic-row') !== 'true') {
+      const columns = row.querySelectorAll('td');
+      const firstColumnValue = columns[0].querySelector('input').value;
+      const rowData = {};
 
-    for (let i = 1; i < columns.length - 2; i++) {
-      const columnHeader = document.querySelector(`#data-table thead th:nth-child(${i + 1})`).innerText;
-      const cellValue = columns[i].querySelector('input, select').value;
-      rowData[columnHeader] = cellValue;
+      for (let i = 1; i < columns.length - 2; i++) {
+        const columnHeader = document.querySelector(`#data-table thead th:nth-child(${i + 1})`).innerText;
+        const cellValue = columns[i].querySelector('input, select').value;
+        rowData[columnHeader] = cellValue;
+      }
+
+      let nextSibling = row.nextSibling;
+
+      // Remove dynamically added rows below the main row
+      while (nextSibling && nextSibling.getAttribute('data-dynamic-row') === 'true') {
+        const siblingColumns = nextSibling.querySelectorAll('td');
+        const siblingColumnHeader = document.querySelector(`#data-table thead th:nth-child(${4})`).innerText;
+        const siblingCellValue = siblingColumns[1].querySelector('input, select').value;
+        rowData[siblingColumnHeader] += "," + siblingCellValue;
+        nextSibling = nextSibling.nextSibling;
+      }
+
+      jsonData[firstColumnValue] = rowData;
     }
-
-    jsonData[firstColumnValue] = rowData;
   });
 
   console.log(jsonData);  
@@ -291,5 +374,10 @@ function applyAliasConfig() {
     const jsonData = getAliasConfiguration();
     const jsonString = JSON.stringify(jsonData);
     requestUpdateAliasInfor(jsonString);
+    notifier.notify({
+      title: 'Alias Information',
+      message: 'Updated!',
+      appName: 'Microservice Manager',
+    });
   }
 }
