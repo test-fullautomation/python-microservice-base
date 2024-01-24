@@ -17,18 +17,22 @@
     }
     .container {
         display: flex;
+        padding-left: 0%;
         margin-top: 40px;
+        margin-left: 10pt;
+        margin-right: 10pt;
         /* Misc */
         border: 0px solid #cbd5e0;
-        height: 42rem;
+        height: 100%;
         width: 100%;
     }
     .container__left {
         /* Initially, the left takes 3/4 width */
-        width: 40%;
+        width: 60%;
     
         /* Misc */
         /* align-items: center; */
+
         display: flex;
         justify-content: center;
     }
@@ -60,6 +64,7 @@
     .accordion-button:focus {
         box-shadow: none;
     }
+
     .led-indicator {
       width: 40px;
       height: 20px;
@@ -191,6 +196,7 @@
     /* Style for table cells */
     #data-table td {
       border: none;
+      /* width: 500px; */
       padding: 8px;
     }
 
@@ -210,7 +216,7 @@
   </style>
   <title>Microservice Manager</title>
 </head>
-<body>
+<body style="height: 80vh;">
   <div class="toolbar">
     <!-- Example icon buttons -->
     <button id="btnConnect" title="Connect"><img src="Image/connected.png" alt="Icon 1"></button>
@@ -276,28 +282,6 @@
       });
     });
   </script>
-  <!-- <script>
-    $(document).ready(function () {
-      // Apply Select2 to the combobox elements
-      $('#deviceNumber, #deviceType').select2();
-    });
-  </script> -->
-  
-  <!-- <script>
-    // Function to load external content
-    async function loadExternalContent() {
-      try {
-        const response = await fetch('src/Multiplexer.html');
-        const htmlContent = await response.text();
-        document.getElementById('serviceContent').innerHTML = htmlContent;
-      } catch (error) {
-        console.error('Error loading external content:', error);
-      }
-    }
-
-    // Load external content when the page loads
-    window.onload = loadExternalContent;
-  </script> -->
   <script src="index.js"></script>
 </body>
 </html>

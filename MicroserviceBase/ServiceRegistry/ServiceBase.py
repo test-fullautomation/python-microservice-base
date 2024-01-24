@@ -5,6 +5,8 @@ import collections
 import zipfile
 import os
 import base64
+import uuid
+import re
 
 
 class ResultType:
@@ -56,15 +58,20 @@ class ServiceBase:
       'routing_key': '',
       'gui_support': False,
       # Other details
-      'methods': []
+      'methods': [],
+      'methods_info': {}
    }
+
+   _SERVICE_REQUEST_EXCHANGE = 'services_request'
 
    def __init__(self, **conn_params):
       self.connection = None
       self._kw_args = conn_params
       self.name = self._SERVICE_INFO['name']
       self._api_dict = self.get_svc_api_methods_dict()
+      self._api_info_dict = self.get_svc_api_methods_info_dict(self._api_dict)
       self._SERVICE_INFO['methods'] = list(self._api_dict.keys())
+      self._SERVICE_INFO['methods_info'] = self._api_info_dict
       self.connect_broker(**conn_params)
       self.register_service()
 
@@ -75,13 +82,21 @@ class ServiceBase:
       self.unregister_service()
       self.close()
 
+   @staticmethod
+   def create_request_data(method_name, args):
+      request_data = {
+            'method': request_api,
+            'args': args_list
+      }
+      return  request_data
+
    def connect_broker(self, **kwargs):
       self.connection = pika.BlockingConnection(pika.ConnectionParameters(**kwargs))
 
    def serve(self):
       channel = self.connection.channel()
 
-      channel.exchange_declare(exchange='services_request', exchange_type='direct')
+      channel.exchange_declare(exchange=ServiceBase._SERVICE_REQUEST_EXCHANGE, exchange_type='direct')
       channel.queue_declare(queue=self.name)
 
       # Purge the queue
@@ -89,7 +104,7 @@ class ServiceBase:
       print(f"Queue '{self.name}' purged")
 
       # Bind the queue to the exchange with a routing key
-      channel.queue_bind(exchange='services_request', queue=self.name, routing_key=self._SERVICE_INFO['routing_key'])
+      channel.queue_bind(exchange=ServiceBase._SERVICE_REQUEST_EXCHANGE, queue=self.name, routing_key=self._SERVICE_INFO['routing_key'])
 
       channel.basic_qos(prefetch_count=1)
       channel.basic_consume(queue=self.name, on_message_callback=self.on_request)
@@ -153,13 +168,117 @@ class ServiceBase:
 
       print(" [x] Unregistered service from Registry Service")
 
+   def request_service(self, request_data, exchange_name, routing_key):
+      connection = pika.BlockingConnection(pika.ConnectionParameters(**self._kw_args))
+      channel = connection.channel()
+      result = channel.queue_declare(queue='', exclusive=True)
+      callback_queue = result.method.queue
+      correlation_id = str(uuid.uuid4())
+      resp = None
+      def on_response(ch, method, properties, body):
+         if properties.correlation_id == correlation_id:
+            response = json.loads(body.decode())
+            print(f" [.] Got response: {response}")
+            nonlocal resp
+            resp = response
+            ch.stop_consuming()
+
+      channel.basic_consume(queue=callback_queue, on_message_callback=on_response, auto_ack=True)
+      print(f" [x] Requesting Service with data: {request_data}")
+      channel.basic_publish(
+         exchange=exchange_name,
+         routing_key=routing_key,
+         properties=pika.BasicProperties(
+            reply_to=callback_queue,
+            correlation_id=correlation_id,
+         ),
+         body=json.dumps(request_data),
+      )
+
+      channel.start_consuming()
+      # while resp is None:
+      #    connection.process_data_events()
+      connection.close()
+      return resp
+
    def get_svc_api_methods_dict(self):
       methods = {method: getattr(self, method) for method in dir(self) if method.startswith('svc_api') and callable(getattr(self, method))}
       if not self._SERVICE_INFO['gui_support']:
          del methods['svc_api_get_gui_files']
       return methods
+   
+   def get_svc_api_methods_info_dict(self, methods_dict):
+      info_dict = {}
+      for method_name, method in methods_dict.items():
+         doc_string = method.__doc__
+         if doc_string is None:
+            print(f" [!] API '{method_name}' does not contain docstrings.")
+            continue
+         info_dict[method_name] = self.parse_docstring(method.__doc__)
+      return info_dict
+
+   def parse_docstring(self, docstring):
+      """
+Parse function's docstring to get arguments and return information.
+
+**Arguments:**
+
+* ``docstring``
+
+  / *Condition*: required / *Type*: str /
+
+  Function's docstring.
+
+**Returns:**
+
+  / *Type*: str /
+
+  Payloads of the waiting signal if received.
+      """
+
+      result = {}
+
+      arg_pattern = re.compile(r'\*\s+``([^`]*)``\s+/\s+\*Condition\*:(.*?)\s+/\s+\*Type\*:(.*?)\s+(?:/\s+\*Default\*:(.*?))?\s*(?:/\s*([^*]+?.*?))?\n', re.DOTALL)
+      return_pattern = re.compile(r'\*\*Returns:\*\*\s+/\s+\*Type\*:(.*?)(?=(?:/\s+\*\*\n|\Z))', re.DOTALL)
+
+      try:
+         # Find matches for arguments
+         arg_matches = arg_pattern.findall(docstring)
+         arguments = []
+
+         for match in arg_matches:
+            arg_name, condition, arg_type, default_value, description = map(str.strip, match)
+            # Fix the description to exclude the next argument's type information
+            description = re.sub(r'\n\s+\*\*.*', '', description)
+            arguments.append({
+               'name': arg_name,
+               'condition': condition.strip() if condition else None,
+               'type': arg_type.strip() if arg_type else None,
+               'default': default_value.strip() if default_value else None,
+               'description': description
+            })
+
+         result['arguments'] = arguments
+
+         # Find matches for return type
+         return_matches = return_pattern.findall(docstring)
+         if return_matches:
+            result['return_type'] = return_matches[0].strip()
+      except Exception as ex:
+         print(f" [!] Unable to analysis the docstring: '{docstring}'. Please check the docstring format.")
+
+      return result
 
    def svc_api_get_version(self):
+      """
+Get the service version.
+
+**Returns:**
+
+  / *Type*: str /
+
+  Version of the service.
+      """      
       return self._SERVICE_INFO['version']
 
    def svc_api_get_gui_files(self):
@@ -179,7 +298,10 @@ class ServiceBase:
 
       return file_content
 
-   def on_specific_request(self, body):
+   def is_specific_request(self, request):
+      return False
+
+   def on_specific_request(self, ch, method, props, body):
       raise Exception("Not suppoted request")
 
    def on_request(self, ch, method, props, body):
@@ -200,32 +322,31 @@ class ServiceBase:
 
          request_api = body['method']
          if body['method'] in self._api_dict:
-            print(" [x] Args:%s" % body['args'])
-            print(" [x] Args type: %s" % type(body['args']))
-            if body['args'] is None:
+            if not body['args']:
                response = self._api_dict[body['method']]()
             elif isinstance(body['args'], str):
                response = self._api_dict[body['method']](body['args'])
             else:
                response = self._api_dict[body['method']](*body['args'])
             result_type = ResultType.PASS
-         else:
-            self.on_specific_request(body)
       except Exception as ex:
          result_type = ResultType.EXCEPT
          response = str(ex)
 
-      if isinstance(response, bytes):
-         # Convert bytes data to base64 encoded string
-         response = base64.b64encode(response).decode('utf-8')
+      if response == "Non-supported request" and self.is_specific_request(request_api):
+         self.on_specific_request(ch, method, props, body)
+      else:
+         if isinstance(response, bytes):
+            # Convert bytes data to base64 encoded string
+            response = base64.b64encode(response).decode('utf-8')
 
-      resp = ResponseMessage(request_api, result_type, response)
-      # print(props.reply_to)
-      ch.basic_publish(exchange='',
-                       routing_key=props.reply_to,
-                       properties=pika.BasicProperties(correlation_id=props.correlation_id),
-                       body=resp.get_json())
-      ch.basic_ack(delivery_tag=method.delivery_tag)
+         resp = ResponseMessage(request_api, result_type, response)
+         # print(props.reply_to)
+         ch.basic_publish(exchange='',
+                        routing_key=props.reply_to,
+                        properties=pika.BasicProperties(correlation_id=props.correlation_id),
+                        body=resp.get_json())
+         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 if __name__ == '__main__':
