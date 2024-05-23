@@ -1,0 +1,31 @@
+version: '3'
+
+services:
+  service-base:
+    container_name: service-base
+    build:
+      context: ./ServiceRegistry
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSSWORD: guest
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: dataqueue
+      RABBITMQ_ROUTING_KEY: dataqueue 
+      RABBITMQ_EXCHANGE: exchange_test
+    networks:
+      - switchnetwork
+
+  # gui-base:
+  #   container_name: gui-base
+  #   build:
+  #     context: ./MicroserviceManagerGUI
+  #     dockerfile: Dockerfile
+  #   restart: always
+  #   networks:
+  #     - switchnetwork
+
+networks:
+  switchnetwork:
+    driver: bridge
