@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    container_name: rabbitmq
+    image: "rabbitmq:3.13-management"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    expose:
+      - "5672"
+      - "15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: dataqueue
+      RABBITMQ_ROUTING_KEY: dataqueue 
+      RABBITMQ_EXCHANGE: exchange_test
+    networks:
+      - devatserv-network
+
+  cleware-service:
+    build:
+      context: ./repos/python-microservice-cleware-switch/MicroserviceClewareSwitch
+      dockerfile: Dockerfile
+    container_name: cleware-service
+    depends_on:
+      - rabbitmq
+    environment:
+      RABBITMQ_USERNAME: "guest"
+      RABBITMQ_PASSSWORD: "guest"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: dataqueue
+      RABBITMQ_ROUTING_KEY: dataqueue 
+      RABBITMQ_EXCHANGE: exchange_test
+    networks:
+      - devatserv-network
+    restart: always
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+
+  service-base:
+    container_name: base-service
+    build:
+      context: ./repos/python-microservice-base/MicroserviceBase/ServiceRegistry
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSSWORD: guest
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: dataqueue
+      RABBITMQ_ROUTING_KEY: dataqueue 
+      RABBITMQ_EXCHANGE: exchange_test
+    networks:
+      - devatserv-network
+
+networks:
+  devatserv-network:
+    driver: bridge

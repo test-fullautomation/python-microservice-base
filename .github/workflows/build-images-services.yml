@@ -1,0 +1,26 @@
+name: Device Automation Services
+
+on:
+  push:
+    branches:
+    - develop
+
+  pull_request:
+    branches:
+    - develop
+
+jobs:
+  docker:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Starting all services
+        run: ./install.sh
+  
+      - name: Stop containers
+        if: always()
+        run: docker-compose -f "docker-compose.yml" down
