@@ -1,0 +1,8 @@
+Package: DevAtServ
+Version: 0.1.0.0
+Section: base
+Priority: optional
+Architecture: amd64
+Depends: docker-ce, docker-compose
+Maintainer: Thomas Pollerspöck (Thomas.Pollerspoeck@de.bosch.com)
+Description: Device Automation Services

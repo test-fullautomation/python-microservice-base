@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=DevAtServ
+Exec=/opt/devatserv/bin/start-devatserv.sh
+Icon=/opt/devatserv/share/applications/devatserv.png
+Terminal=false
+Type=Application
+Categories=Utility;Application;
