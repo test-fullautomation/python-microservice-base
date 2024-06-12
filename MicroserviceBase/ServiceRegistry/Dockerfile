@@ -1,8 +1,5 @@
 # Set arguments
 ARG BASE_CONTAINER=python:3.9
-ARG HTTP_PROXY=http://rb-proxy-apac.bosch.com:8080
-ARG HTTPS_PROXY=http://rb-proxy-apac.bosch.com:8080
-ARG NO_PROXY=localhost, 127.0.0.*, 10.*, 192.168.*, *.bosch.com
 
 # Set the base image. 
 FROM --platform=linux/amd64 $BASE_CONTAINER
