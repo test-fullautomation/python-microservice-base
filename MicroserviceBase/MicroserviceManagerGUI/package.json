@@ -1,5 +1,5 @@
 {
-  "name": "electron",
+  "name": "dasgui",
   "version": "1.0.0",
   "description": "",
   "main": "main.js",
@@ -44,7 +44,8 @@
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "artifactName": "${productName}_1.0.0_${arch}.${ext}"
     }
   },
   "devDependencies": {
