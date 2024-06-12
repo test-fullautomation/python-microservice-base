@@ -33,7 +33,7 @@
   },
   "build": {
     "appId": "com.example.dasgui",
-    "productName": "DevAtServ's GUI",
+    "productName": "DevAtServGUI",
     "directories": {
       "output": "dist"
     },
