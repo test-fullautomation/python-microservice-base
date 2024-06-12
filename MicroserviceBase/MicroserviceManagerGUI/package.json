@@ -6,9 +6,16 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "dev": "electron . --devTools=true"
+    "dev": "electron . --devTools=true",
+    "dist": "electron-builder"
   },
-  "author": "",
+  "homepage": "https://github.com/test-fullautomation/python-microservice-base",
+  "author": {
+    "name": "Thomas",
+    "email": "Thomas.Pollerspoeck@de.bosch.com",
+    "url": "https://github.com/test-fullautomation"
+  },
+  "maintainer": "Thomas Pollerspöck",
   "license": "ISC",
   "dependencies": {
     "amqplib": "^0.10.3",
@@ -25,13 +32,19 @@
     "unzipper": "^0.10.14"
   },
   "build": {
-    "appId": "com.example.testapp",
-    "productName": "TestApp",
+    "appId": "com.example.dasgui",
+    "productName": "DevAtServ's GUI",
     "directories": {
       "output": "dist"
     },
     "win": {
       "target": "nsis"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     }
   },
   "devDependencies": {
