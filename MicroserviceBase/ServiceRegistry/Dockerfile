@@ -7,9 +7,9 @@ FROM --platform=linux/amd64 $BASE_CONTAINER
 # Adds metadata to image.
 LABEL maintainer="Thomas"
 
+# Set arguments for proxy
 ARG USE_PROXY
 ARG PROXY
-
 # USER root
 RUN apt-get update && apt-get install -y && apt-get clean
 
