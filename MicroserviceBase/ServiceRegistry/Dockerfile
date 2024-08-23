@@ -7,18 +7,23 @@ FROM --platform=linux/amd64 $BASE_CONTAINER
 # Adds metadata to image.
 LABEL maintainer="Thomas"
 
+ARG USE_PROXY
+ARG PROXY
+
 # USER root
 RUN apt-get update && apt-get install -y && apt-get clean
 
-
 # Make a directory for our app
-WORKDIR /MicroserviceClewareSwitch
+WORKDIR /MicroserviceBase
 
 # Install dependencies
 COPY requirements.txt .
 
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
+RUN if [ "$USE_PROXY" = "true" ]; then \
+        pip --proxy $PROXY install --upgrade pip && pip install --proxy $PROXY -r requirements.txt; \
+    else \
+        pip install --upgrade pip && pip install -r requirements.txt; \
+    fi
 
 # Copy source code
 COPY . .
