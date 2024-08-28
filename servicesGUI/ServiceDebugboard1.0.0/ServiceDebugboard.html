@@ -1,0 +1,18 @@
+<div class="card" style="height: 100%; width: 100%; top: 0;" ">
+    <div class="card-header">
+      <h5 class="card-title">Alias Configuration</h5>
+    </div>
+    <div class="card-body">
+      <div class="form-group position-relative">
+        <label for="commandInput">Command:</label>
+        <input type="text" class="form-control" id="commandInput" placeholder="Enter command" oninput="showSuggestions()">
+        <div id="suggestions" class="suggestions-list position-absolute w-100 bg-white border border-top-0" style="display: none; max-height: 200px; overflow-y: auto;"></div>
+      </div>
+      <button class="btn btn-primary" onclick="sendCommand()">Send</button>
+      <div class="form-group mt-3">
+        <label for="commandOutput">Output:</label>
+        <textarea class="form-control" id="commandOutput" rows="10" readonly></textarea>
+      </div>
+    </div>
+</div>
+<script src="ServiceAlias.js"></script>
