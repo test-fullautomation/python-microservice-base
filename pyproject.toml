@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools==79.0.1", "wheel", "colorama==0.4.6", "pypandoc_binary==1.15", "PythonExtensionsCollection"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "MicroserviceBase"
+version = "0.1.1"
+description = "Base framework for microservices"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+authors = [
+    {name = "Robert Bosch GmbH", email = "todo@bosch.com"}
+]
+keywords = ["Microservice", "Framework", "Base"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/test-fullautomation/python-microservice-base"
+Repository = "https://github.com/test-fullautomation/python-microservice-base"
+
+[tool.setuptools]
+packages = ["MicroserviceBase"]
+
+[tool.setuptools.package-data]
+MicroserviceBase = ["*.pdf"]
