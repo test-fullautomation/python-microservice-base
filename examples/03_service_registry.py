@@ -72,11 +72,6 @@ Run the Service Registry.
    # Create the ServiceRegistry with injected dependencies
    service_registry = ServiceRegistry(transport=transport, registry=registry)
 
-   info = service_registry.get_service_info()
-   print(f" [*] Service Registry: {info.name} v{info.version}")
-   print(f" [*] Routing key: {info.routing_key}")
-   print(f" [*] Update exchange: {registry.get_update_channel_name()}")
-
    try:
       # Start the discovery thread that listens for service events
       # This thread subscribes to the 'service_information' exchange
@@ -94,7 +89,6 @@ Run the Service Registry.
       service_registry.register_service()
 
       # Start serving RPC requests (blocks until interrupted)
-      print(f" [*] Registry is running. Press CTRL+C to stop.")
       service_registry.serve()
    except KeyboardInterrupt:
       print(f" [*] Interrupted by user.")

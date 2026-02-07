@@ -31,7 +31,10 @@
 import re
 import os
 import base64
+import hashlib
+import inspect
 import logging
+import tempfile
 import zipfile
 
 from .models import ServiceInfo
@@ -88,8 +91,14 @@ Initialize the domain ServiceBase.
       self.name = self._SERVICE_INFO['name']
       self._api_dict = self.get_svc_api_methods_dict()
       self._api_info_dict = self.get_svc_api_methods_info_dict(self._api_dict)
-      self._SERVICE_INFO['methods'] = list(self._api_dict.keys())
-      self._SERVICE_INFO['methods_info'] = self._api_info_dict
+      # Internal methods: dispatchable via RPC but not published to clients
+      _internal = {'svc_api_get_gui_files', 'svc_api_get_gui_checksum'}
+      self._SERVICE_INFO['methods'] = [
+         m for m in self._api_dict if m not in _internal
+      ]
+      self._SERVICE_INFO['methods_info'] = {
+         k: v for k, v in self._api_info_dict.items() if k not in _internal
+      }
       self._service_info = ServiceInfo.from_dict(self._SERVICE_INFO)
 
    def get_service_info(self):
@@ -110,6 +119,14 @@ Start serving requests via the transport port.
       """
       if self._transport is None:
          raise RuntimeError("No transport port configured. Cannot serve.")
+
+      info = self._SERVICE_INFO
+      print(f" [*] Service: {info['name']} v{info['version']}")
+      if info.get('routing_key'):
+         print(f" [*] Routing key: {info['routing_key']}")
+      print(f" [*] API methods: {info['methods']}")
+      print(f" [*] Starting service. Press CTRL+C to stop.")
+
       self._transport.consume(
          service_name=self.name,
          routing_key=self._SERVICE_INFO['routing_key'],
@@ -274,21 +291,69 @@ Compress and return GUI files as bytes.
       """
       file_content = None
       if self._SERVICE_INFO['gui_support']:
-         zip_file_path = 'files.zip'
-         with zipfile.ZipFile(zip_file_path, 'w') as zipf:
-            for root, dirs, files in os.walk('GUIs'):
-               for file in files:
-                  zipf.write(
-                     os.path.join(root, file),
-                     os.path.relpath(os.path.join(root, file), 'GUIs'),
-                  )
+         service_file = inspect.getfile(type(self))
+         service_dir = os.path.dirname(os.path.abspath(service_file))
+         guis_path = os.path.join(service_dir, 'GUIs')
 
-         with open(zip_file_path, 'rb') as file:
-            file_content = file.read()
+         if not os.path.isdir(guis_path):
+            logger.warning("GUIs directory not found at %s", guis_path)
+            return file_content
 
-         os.remove(zip_file_path)
+         zip_fd, zip_file_path = tempfile.mkstemp(suffix='.zip')
+         os.close(zip_fd)
+         try:
+            with zipfile.ZipFile(zip_file_path, 'w') as zipf:
+               for root, dirs, files in os.walk(guis_path):
+                  for file in files:
+                     full_path = os.path.join(root, file)
+                     arcname = os.path.relpath(full_path, guis_path)
+                     zipf.write(full_path, arcname)
+
+            with open(zip_file_path, 'rb') as file:
+               file_content = file.read()
+         finally:
+            if os.path.exists(zip_file_path):
+               os.remove(zip_file_path)
 
       return file_content
+
+   def svc_api_get_gui_checksum(self):
+      """
+Get an MD5 checksum of all GUI files.
+
+Returns None when gui_support is disabled or the GUIs directory is missing.
+
+**Returns:**
+
+  / *Type*: str /
+
+  MD5 hex-digest of the GUI files, or None.
+      """
+      if not self._SERVICE_INFO['gui_support']:
+         return None
+
+      service_file = inspect.getfile(type(self))
+      service_dir = os.path.dirname(os.path.abspath(service_file))
+      guis_path = os.path.join(service_dir, 'GUIs')
+
+      if not os.path.isdir(guis_path):
+         return None
+
+      hasher = hashlib.md5()
+      for root, dirs, files in os.walk(guis_path):
+         dirs.sort()
+         for file in sorted(files):
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, guis_path).replace('\\', '/')
+            hasher.update(rel_path.encode('utf-8'))
+            with open(full_path, 'rb') as f:
+               while True:
+                  chunk = f.read(8192)
+                  if not chunk:
+                     break
+                  hasher.update(chunk)
+
+      return hasher.hexdigest()
 
    def is_specific_request(self, request):
       """

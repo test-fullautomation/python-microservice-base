@@ -7,10 +7,11 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-let amqp, fs, path, unzipper;
+let amqp, fs, os, path, unzipper;
 try {
   amqp = require('amqplib/callback_api');
   fs = require('fs');
+  os = require('os');
   path = require('path');
   unzipper = require('unzipper');
   console.log('[preload] All Node.js modules loaded successfully');
@@ -19,9 +20,9 @@ try {
   console.error('[preload] Make sure you ran "npm install" in the electron/ directory');
 }
 
-// Store exchange message callbacks directly in preload scope
-// so we avoid the IPC roundtrip (preload → main → preload).
-const _exchangeCallbacks = [];
+// Store exchange message callbacks keyed by exchange name
+// so messages are only dispatched to the correct subscribers.
+const _exchangeCallbacks = {};  // { exchangeName: [callback, ...] }
 
 contextBridge.exposeInMainWorld('electronAPI', {
 
@@ -61,7 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           bytes[i] = decodedBytes.charCodeAt(i);
         }
 
-        const zipFilePath = path.join(fullPath, 'received_files.zip');
+        const zipFilePath = path.join(os.tmpdir(), 'mm_gui_' + Date.now() + '.zip');
 
         fs.writeFile(zipFilePath, Buffer.from(bytes), (writeErr) => {
           if (writeErr) {
@@ -81,6 +82,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
               resolve();
             })
             .on('error', (extractErr) => {
+              fs.unlink(zipFilePath, () => {});
               reject(extractErr);
             });
         });
@@ -237,9 +239,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
               console.log('[preload] Fanout message received, length:', raw.length);
               try {
                 const result = JSON.parse(raw);
-                _exchangeCallbacks.forEach((cb) => {
+                const cbs = _exchangeCallbacks[exchangeName] || [];
+                cbs.forEach((cb) => {
                   try { cb(result); } catch (e) {
-                    console.error('[preload] Exchange callback error:', e);
+                    console.error('[preload] Exchange callback error (' + exchangeName + '):', e);
                   }
                 });
               } catch (parseErr) {
@@ -255,12 +258,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
-   * Register a callback for exchange messages.
+   * Register a callback for a specific exchange's messages.
+   * @param {string} exchangeName - The exchange to listen to.
    * @param {Function} callback - Called with parsed message data.
    */
-  onExchangeMessage: (callback) => {
-    _exchangeCallbacks.push(callback);
-    console.log('[preload] Exchange callback registered, total:', _exchangeCallbacks.length);
+  onExchangeMessage: (exchangeName, callback) => {
+    if (!_exchangeCallbacks[exchangeName]) {
+      _exchangeCallbacks[exchangeName] = [];
+    }
+    _exchangeCallbacks[exchangeName].push(callback);
+    console.log('[preload] Exchange callback registered for', exchangeName,
+      ', total:', _exchangeCallbacks[exchangeName].length);
   }
 });
 

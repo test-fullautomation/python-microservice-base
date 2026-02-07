@@ -171,14 +171,8 @@ Run the Greeter service with EventBus transport.
 
    service = GreeterService(transport=transport, registry=registry)
 
-   info = service.get_service_info()
-   print(f" [*] Service: {info.name} v{info.version}")
-   print(f" [*] Transport: EventBus (JSONP config)")
-   print(f" [*] API methods: {info.methods}")
-
    try:
       service.register_service()
-      print(f" [*] Starting service. Press CTRL+C to stop.")
       service.serve()
    except KeyboardInterrupt:
       print(f" [*] Interrupted by user.")

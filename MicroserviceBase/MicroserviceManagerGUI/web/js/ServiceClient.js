@@ -178,7 +178,7 @@
     subscribeToExchange(exchangeName, callback) {
       if (this.mode === 'electron') {
         window.electronAPI.amqpSubscribe(exchangeName, this.brokerUrl);
-        window.electronAPI.onExchangeMessage(callback);
+        window.electronAPI.onExchangeMessage(exchangeName, callback);
         return;
       }
 
@@ -202,6 +202,7 @@
         args: requestData.args || null,
         exchange: exchangeName,
         routing_key: routingKey,
+        broker_url: this.brokerUrl,
       };
 
       return fetch(url, {

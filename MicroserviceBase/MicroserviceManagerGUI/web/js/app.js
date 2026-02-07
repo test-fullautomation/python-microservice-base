@@ -15,9 +15,16 @@
    *                    Global Variables                      *
    ************************************************************/
 
+  // Legacy globals — kept as dynamic aliases for backward compatibility.
+  // They reflect the *currently active* broker (set on service click).
   MM.brokerUrl = 'localhost:5672';
   MM.routingKey = '';
   MM.servicesInfor = null;
+
+  // Multi-broker data model
+  MM.connections = {};       // { 'host:port': { brokerUrl, routingKey, services: {}, realtimeSubscribed } }
+  MM.activeBrokerUrl = null; // set when user clicks a service item
+  var serviceToBroker = {};  // { serviceName: 'host:port' } — reverse lookup
 
   const SERVICES_EXCHANGE_NAME = 'services_request';
   const SERVICES_GUI_FOLDER = 'services';
@@ -45,6 +52,143 @@
   var connectedStatus = false;
   var unloadFunction = null;
   var loginModal = null;
+  var _servicePanels = {};     // { serviceName: HTMLElement }
+  var _activePanelName = null; // name of the currently visible cached panel
+
+  /**
+   * Hides the active cached service panel, calls unloadFunction,
+   * and removes any non-cached content (API explorer, placeholders).
+   */
+  function _deactivateCurrentPanel() {
+    var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
+    if (typeof unloadFunction === 'function') {
+      unloadFunction();
+      unloadFunction = null;
+    }
+    if (_activePanelName && _servicePanels[_activePanelName]) {
+      _servicePanels[_activePanelName].style.display = 'none';
+    }
+    _activePanelName = null;
+    // Remove non-cached children (API explorer, placeholders)
+    Array.from(contentDiv.children).forEach(function (child) {
+      if (!child.hasAttribute('data-cached-service')) {
+        contentDiv.removeChild(child);
+      }
+    });
+  }
+
+  /************************************************************
+   *               Multi-Broker Helper Functions               *
+   ************************************************************/
+
+  function addConnection(brokerUrl, routingKey) {
+    MM.connections[brokerUrl] = {
+      brokerUrl: brokerUrl,
+      routingKey: routingKey,
+      services: {},
+      realtimeSubscribed: false
+    };
+  }
+
+  function removeConnection(brokerUrl) {
+    delete MM.connections[brokerUrl];
+    rebuildMergedServicesInfor();
+  }
+
+  function rebuildMergedServicesInfor() {
+    var merged = {};
+    serviceToBroker = {};
+    Object.keys(MM.connections).forEach(function (key) {
+      var conn = MM.connections[key];
+      Object.keys(conn.services).forEach(function (svcName) {
+        merged[svcName] = conn.services[svcName];
+        serviceToBroker[svcName] = key;
+      });
+    });
+    // Preserve ServiceAlias (local-only, not from any broker)
+    if (MM.servicesInfor && MM.servicesInfor.ServiceAlias) {
+      merged.ServiceAlias = MM.servicesInfor.ServiceAlias;
+    }
+    MM.servicesInfor = merged;
+  }
+
+  function getConnectionCount() {
+    return Object.keys(MM.connections).length;
+  }
+
+  function sanitizeBrokerId(brokerUrl) {
+    return brokerUrl.replace(/[^a-zA-Z0-9]/g, '-');
+  }
+
+  /**
+   * Resolve the broker URL for a given routing key.
+   */
+  function resolveBrokerUrl(routingKey) {
+    // Check serviceToBroker for any service with matching routing_key
+    var keys = Object.keys(serviceToBroker);
+    for (var i = 0; i < keys.length; i++) {
+      var svcName = keys[i];
+      if (MM.servicesInfor[svcName] && MM.servicesInfor[svcName].routing_key === routingKey) {
+        var brokerKey = serviceToBroker[svcName];
+        if (MM.connections[brokerKey]) return brokerKey;
+      }
+    }
+    // Check connections for matching registry routingKey
+    var connKeys = Object.keys(MM.connections);
+    for (var j = 0; j < connKeys.length; j++) {
+      if (MM.connections[connKeys[j]].routingKey === routingKey) {
+        return connKeys[j];
+      }
+    }
+    // Fall back to active broker
+    if (MM.activeBrokerUrl && MM.connections[MM.activeBrokerUrl]) return MM.activeBrokerUrl;
+    // Fall back to first connection
+    if (connKeys.length > 0) return connKeys[0];
+    return null;
+  }
+
+  /**
+   * Resolve the broker URL for a given service name.
+   */
+  function resolveBrokerUrlForService(serviceName) {
+    if (serviceToBroker[serviceName] && MM.connections[serviceToBroker[serviceName]]) {
+      return serviceToBroker[serviceName];
+    }
+    if (MM.activeBrokerUrl && MM.connections[MM.activeBrokerUrl]) return MM.activeBrokerUrl;
+    var connKeys = Object.keys(MM.connections);
+    if (connKeys.length > 0) return connKeys[0];
+    return null;
+  }
+
+  /************************************************************
+   *               Session Persistence                         *
+   ************************************************************/
+
+  function persistConnections() {
+    try {
+      var data = Object.keys(MM.connections).map(function (key) {
+        var conn = MM.connections[key];
+        return { brokerUrl: conn.brokerUrl, routingKey: conn.routingKey };
+      });
+      sessionStorage.setItem('mm_connections', JSON.stringify(data));
+    } catch (e) { /* sessionStorage unavailable */ }
+  }
+
+  function loadPersistedConnections() {
+    try {
+      var raw = sessionStorage.getItem('mm_connections');
+      if (raw) {
+        return JSON.parse(raw);
+      }
+      // Legacy fallback
+      var savedBrokerUrl = sessionStorage.getItem('mm_brokerUrl');
+      var savedRoutingKey = sessionStorage.getItem('mm_routingKey');
+      if (savedBrokerUrl) {
+        return [{ brokerUrl: savedBrokerUrl, routingKey: savedRoutingKey || '' }];
+      }
+    } catch (e) { /* sessionStorage unavailable */ }
+    return [];
+  }
 
   /************************************************************
    *                    Toast Notifications                   *
@@ -124,32 +268,84 @@
     while (contentService.firstChild) {
       contentService.removeChild(contentService.firstChild);
     }
+    _servicePanels = {};
+    _activePanelName = null;
+  }
+
+  /**
+   * Update navbar connection badge based on connection count.
+   */
+  function updateConnectionBadge() {
+    var dot = document.getElementById('connectionDot');
+    var label = document.getElementById('connectionLabel');
+    var count = getConnectionCount();
+
+    if (count === 0) {
+      dot.classList.remove('connected');
+      label.textContent = 'Disconnected';
+      connectedStatus = false;
+    } else if (count === 1) {
+      dot.classList.add('connected');
+      label.textContent = 'Connected';
+      connectedStatus = true;
+    } else {
+      dot.classList.add('connected');
+      label.textContent = count + ' brokers';
+      connectedStatus = true;
+    }
+
+    renderBrokerChips();
+  }
+
+  /**
+   * Render broker chips in the navbar showing each connected broker.
+   */
+  function renderBrokerChips() {
+    var container = document.getElementById('connectedBrokers');
+    container.innerHTML = '';
+
+    Object.keys(MM.connections).forEach(function (brokerUrl) {
+      var chip = document.createElement('span');
+      chip.classList.add('broker-chip');
+
+      var chipLabel = document.createElement('span');
+      chipLabel.textContent = brokerUrl;
+
+      var closeBtn = document.createElement('button');
+      closeBtn.classList.add('broker-chip-close');
+      closeBtn.title = 'Disconnect ' + brokerUrl;
+      closeBtn.innerHTML = '<i class="bi bi-x"></i>';
+      closeBtn.onclick = function (e) {
+        e.stopPropagation();
+        confirmDisconnectBroker(brokerUrl);
+      };
+
+      chip.appendChild(chipLabel);
+      chip.appendChild(closeBtn);
+      container.appendChild(chip);
+    });
+  }
+
+  /**
+   * Show a confirm dialog before disconnecting a broker.
+   *
+   * @param {string} brokerUrl - The broker address to disconnect.
+   */
+  function confirmDisconnectBroker(brokerUrl) {
+    if (confirm('Disconnect from broker ' + brokerUrl + '?')) {
+      disconnectBroker(brokerUrl);
+    }
   }
 
   /**
    * Change the Connect button state when connection status changes.
+   * Kept for backward compatibility — wraps updateConnectionBadge().
    *
    * @param {string} status - The connection status.
    */
   function changeConnectButtonState(status) {
-    var btnConnect = document.getElementById('btnConnect');
-    var dot = document.getElementById('connectionDot');
-    var label = document.getElementById('connectionLabel');
-
-    if (status === CONNECTION_STATUS.CONNECTED) {
-      btnConnect.innerHTML = '<i class="bi bi-plug"></i> Disconnect';
-      btnConnect.title = 'Disconnect';
-      btnConnect.classList.add('disconnecting');
-      dot.classList.add('connected');
-      label.textContent = 'Connected';
-      connectedStatus = true;
-    } else if (status === CONNECTION_STATUS.DISCONNECTED) {
-      btnConnect.innerHTML = '<i class="bi bi-plug"></i> Connect';
-      btnConnect.title = 'Connect';
-      btnConnect.classList.remove('disconnecting');
-      dot.classList.remove('connected');
-      label.textContent = 'Disconnected';
-      connectedStatus = false;
+    if (status === CONNECTION_STATUS.CONNECTED || status === CONNECTION_STATUS.DISCONNECTED) {
+      updateConnectionBadge();
     }
   }
 
@@ -161,6 +357,15 @@
    */
   function activateItemAndLoadContent(element, serviceName) {
     activateItem(element);
+
+    // Set active broker context from clicked element
+    var brokerUrl = element.getAttribute('data-broker-url');
+    if (brokerUrl && MM.connections[brokerUrl]) {
+      MM.activeBrokerUrl = brokerUrl;
+      MM.brokerUrl = brokerUrl;
+      MM.routingKey = MM.connections[brokerUrl].routingKey;
+      MM.serviceClient.setBrokerUrl(brokerUrl);
+    }
 
     var serviceInfo = MM.servicesInfor[serviceName];
     if (serviceInfo.gui_support === true) {
@@ -182,9 +387,70 @@
    */
   function loadServiceContent(serviceName, dynamicContentName, callbackName) {
     callbackName = callbackName || '';
+    var contentDiv = document.getElementById(dynamicContentName);
+
+    // --- Cache hit: show existing panel without re-running loadFunction ---
+    if (_servicePanels[serviceName]) {
+      _deactivateCurrentPanel();
+      _servicePanels[serviceName].style.display = '';
+      _activePanelName = serviceName;
+      // Restore unloadFunction reference
+      var unloadName = 'unload' + serviceName;
+      unloadFunction = window[unloadName] || null;
+      if (callbackName !== '' && typeof window[callbackName] === 'function') {
+        window[callbackName]();
+      }
+      return;
+    }
+
+    // --- Cache miss: fetch HTML, create cached wrapper, load script ---
     var folderPath = SERVICES_GUI_FOLDER + '/' + serviceName + MM.servicesInfor[serviceName].version;
     var externalContentFile = folderPath + '/' + serviceName + '.html';
-    loadContent(externalContentFile, dynamicContentName, callbackName);
+
+    fetch(externalContentFile)
+      .then(function (response) { return response.text(); })
+      .then(function (htmlContent) {
+        _deactivateCurrentPanel();
+
+        // Create a wrapper div for the cached panel
+        var wrapper = document.createElement('div');
+        wrapper.setAttribute('data-cached-service', serviceName);
+        wrapper.innerHTML = htmlContent;
+        contentDiv.appendChild(wrapper);
+        _servicePanels[serviceName] = wrapper;
+        _activePanelName = serviceName;
+
+        var scriptSrc = externalContentFile.replace('.html', '.js');
+        if (!isScriptAlreadyAdded(scriptSrc)) {
+          var script = document.createElement('script');
+          script.src = scriptSrc;
+          script.type = 'text/javascript';
+          document.head.appendChild(script);
+
+          script.onload = function () {
+            if (callbackName !== '' && typeof window[callbackName] === 'function') {
+              window[callbackName]();
+            }
+            var unloadName = 'unload' + serviceName;
+            unloadFunction = window[unloadName] || null;
+          };
+        } else {
+          console.log('Script \'' + scriptSrc + '\' has already been loaded.');
+          var loadFunctionName = 'load' + serviceName;
+          var loadFunction = window[loadFunctionName];
+          if (typeof loadFunction === 'function') {
+            loadFunction();
+          }
+          if (callbackName !== '' && typeof window[callbackName] === 'function') {
+            window[callbackName]();
+          }
+          var unloadName = 'unload' + serviceName;
+          unloadFunction = window[unloadName] || null;
+        }
+      })
+      .catch(function (error) {
+        console.error('Error loading service content:', error);
+      });
   }
 
   function normalizePath(p) {
@@ -234,7 +500,7 @@
             document.head.appendChild(script);
 
             script.onload = function () {
-              if (callbackName !== '') {
+              if (callbackName !== '' && typeof window[callbackName] === 'function') {
                 window[callbackName]();
               }
               if (dynamicContentName === 'serviceContent') {
@@ -251,7 +517,7 @@
             if (typeof loadFunction === 'function') {
               loadFunction();
             }
-            if (callbackName !== '') {
+            if (callbackName !== '' && typeof window[callbackName] === 'function') {
               window[callbackName]();
             }
             if (dynamicContentName === 'serviceContent') {
@@ -266,16 +532,110 @@
     }
   }
 
+  /************************************************************
+   *              Broker Section DOM Management                *
+   ************************************************************/
+
+  /**
+   * Create or retrieve the broker section wrapper for a given broker URL.
+   *
+   * @param {string} brokerUrl - The broker address (host:port).
+   * @returns {HTMLElement} The broker section element.
+   */
+  function createBrokerSection(brokerUrl) {
+    var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    var brokerId = sanitizeBrokerId(brokerUrl);
+    var existing = servicesList.querySelector('.broker-section[data-broker-url="' + brokerUrl + '"]');
+    if (existing) return existing;
+
+    var section = document.createElement('div');
+    section.classList.add('broker-section');
+    section.setAttribute('data-broker-url', brokerUrl);
+
+    // Header (hidden in single-broker mode via CSS)
+    var header = document.createElement('div');
+    header.classList.add('broker-header');
+
+    var labelSpan = document.createElement('span');
+    labelSpan.classList.add('broker-label');
+    labelSpan.textContent = brokerUrl;
+
+    var badge = document.createElement('span');
+    badge.classList.add('broker-badge');
+    badge.textContent = '0';
+
+    var disconnectBtn = document.createElement('button');
+    disconnectBtn.classList.add('broker-disconnect-btn');
+    disconnectBtn.title = 'Disconnect this broker';
+    disconnectBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    disconnectBtn.onclick = function (e) {
+      e.stopPropagation();
+      confirmDisconnectBroker(brokerUrl);
+    };
+
+    header.appendChild(labelSpan);
+    header.appendChild(badge);
+    header.appendChild(disconnectBtn);
+
+    var accordion = document.createElement('div');
+    accordion.classList.add('broker-accordion');
+
+    section.appendChild(header);
+    section.appendChild(accordion);
+    servicesList.appendChild(section);
+
+    return section;
+  }
+
+  /**
+   * Update the service count badge on a broker header.
+   *
+   * @param {string} brokerUrl - The broker address.
+   */
+  function updateBrokerBadge(brokerUrl) {
+    var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    var section = servicesList.querySelector('.broker-section[data-broker-url="' + brokerUrl + '"]');
+    if (!section) return;
+    var items = section.querySelectorAll('.list-group-item[data-service-name]');
+    var badge = section.querySelector('.broker-badge');
+    if (badge) badge.textContent = items.length;
+  }
+
+  /**
+   * Toggle multi-broker class for progressive disclosure.
+   * When only one broker is connected, broker headers are hidden.
+   */
+  function updateBrokerHeaders() {
+    var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    if (getConnectionCount() > 1) {
+      servicesList.classList.add('multi-broker');
+    } else {
+      servicesList.classList.remove('multi-broker');
+    }
+  }
+
   /**
    * Dynamically generates accordion items for services in the sidebar.
-   * Replaces eval() with direct function binding.
+   * Supports multi-broker by appending to the correct broker section.
    *
    * @param {Array} data - Structured information for multiple services.
+   * @param {string} [brokerUrl] - The broker URL to scope items to.
    */
-  function createAccordionItems(data) {
-    var accordionElement = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+  function createAccordionItems(data, brokerUrl) {
+    var targetElement;
+
+    if (brokerUrl) {
+      var section = createBrokerSection(brokerUrl);
+      targetElement = section.querySelector('.broker-accordion');
+    } else {
+      targetElement = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    }
+
+    var prefix = brokerUrl ? sanitizeBrokerId(brokerUrl) + '_' : '';
 
     data.forEach(function (section) {
+      var contentId = prefix + section.contentId;
+
       var accordionItem = document.createElement('div');
       accordionItem.classList.add('accordion-item');
 
@@ -286,14 +646,14 @@
       accordionButton.classList.add('accordion-button');
       accordionButton.type = 'button';
       accordionButton.dataset.bsToggle = 'collapse';
-      accordionButton.dataset.bsTarget = '#' + section.contentId;
+      accordionButton.dataset.bsTarget = '#' + contentId;
       accordionButton.setAttribute('aria-expanded', 'true');
       accordionButton.textContent = section.title;
 
       accordionHeader.appendChild(accordionButton);
 
       var accordionCollapse = document.createElement('div');
-      accordionCollapse.id = section.contentId;
+      accordionCollapse.id = contentId;
       accordionCollapse.classList.add('accordion-collapse', 'collapse', 'show');
 
       var accordionBody = document.createElement('div');
@@ -308,6 +668,9 @@
         listItem.classList.add('list-group-item', 'list-group-item-action');
         listItem.setAttribute('aria-current', 'true');
         listItem.setAttribute('data-service-name', item.serviceName);
+        if (brokerUrl) {
+          listItem.setAttribute('data-broker-url', brokerUrl);
+        }
 
         // Direct function binding instead of eval()
         listItem.onclick = function () {
@@ -345,8 +708,12 @@
       accordionItem.appendChild(accordionHeader);
       accordionItem.appendChild(accordionCollapse);
 
-      accordionElement.appendChild(accordionItem);
+      targetElement.appendChild(accordionItem);
     });
+
+    if (brokerUrl) {
+      updateBrokerBadge(brokerUrl);
+    }
   }
 
   /************************************************************
@@ -362,10 +729,7 @@
     var serviceInfo = MM.servicesInfor[serviceName];
     var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
 
-    if (typeof unloadFunction === 'function') {
-      unloadFunction();
-      unloadFunction = null;
-    }
+    _deactivateCurrentPanel();
 
     var methods = serviceInfo.methods || [];
     var methodsInfo = serviceInfo.methods_info || {};
@@ -376,7 +740,8 @@
       methodOptions += '<option value="' + _escapeHtml(m) + '">' + _escapeHtml(m) + '</option>';
     });
 
-    contentDiv.innerHTML =
+    var wrapper = document.createElement('div');
+    wrapper.innerHTML =
       '<div class="card api-explorer-card">' +
         '<div class="card-header d-flex align-items-center justify-content-between">' +
           '<div>' +
@@ -419,6 +784,8 @@
 
         '</div>' +
       '</div>';
+
+    contentDiv.appendChild(wrapper);
 
     // Wire events
     var methodSelect = document.getElementById('apiMethodSelect');
@@ -764,11 +1131,12 @@
     var version = serviceInfo.version || '';
     var description = serviceInfo.description || serviceInfo.shortdesc || '';
 
-    // Parse host and port from the current broker URL
+    // Resolve broker host/port from the service's owning broker
+    var resolvedBroker = resolveBrokerUrlForService(serviceName) || MM.brokerUrl || 'localhost:5672';
     var brokerHost = 'localhost';
     var brokerPort = '5672';
-    if (MM.brokerUrl) {
-      var parts = MM.brokerUrl.split(':');
+    if (resolvedBroker) {
+      var parts = resolvedBroker.split(':');
       brokerHost = parts[0] || 'localhost';
       brokerPort = parts[1] || '5672';
     }
@@ -870,59 +1238,83 @@
   }
 
   document.getElementById('btnConnect').addEventListener('click', function () {
-    var btnConnect = document.getElementById('btnConnect');
-    if (btnConnect.title === 'Connect') {
-      connect();
-    } else {
-      disconnect();
-    }
+    connect();
   });
 
   document.getElementById('btnLoginSubmit').addEventListener('click', function () {
     onLoginSubmit();
   });
 
-  // Sidebar search filter
+  // Sidebar search filter — traverses 3-level hierarchy (broker > group > service)
   document.getElementById('searchText').addEventListener('input', function () {
     var query = this.value.toLowerCase().trim();
-    var accordionItems = document.querySelectorAll('#' + DIV_NAME.SERVICE_LIST_DIV + ' > .accordion-item');
+    var brokerSections = document.querySelectorAll('#' + DIV_NAME.SERVICE_LIST_DIV + ' > .broker-section');
 
-    accordionItems.forEach(function (section) {
-      var listItems = section.querySelectorAll('.list-group-item');
-      var visibleCount = 0;
+    // If no broker sections exist yet (legacy/empty state), fall back to old behavior
+    if (brokerSections.length === 0) {
+      var accordionItems = document.querySelectorAll('#' + DIV_NAME.SERVICE_LIST_DIV + ' > .accordion-item');
+      accordionItems.forEach(function (section) {
+        var listItems = section.querySelectorAll('.list-group-item');
+        var visibleCount = 0;
+        listItems.forEach(function (item) {
+          var serviceName = (item.getAttribute('data-service-name') || '').toLowerCase();
+          var label = (item.textContent || '').toLowerCase();
+          var match = query === '' || serviceName.indexOf(query) !== -1 || label.indexOf(query) !== -1;
+          item.style.display = match ? '' : 'none';
+          if (match) visibleCount++;
+        });
+        section.style.display = visibleCount > 0 ? '' : 'none';
+        if (query !== '' && visibleCount > 0) {
+          var collapse = section.querySelector('.accordion-collapse');
+          if (collapse && !collapse.classList.contains('show')) collapse.classList.add('show');
+        }
+      });
+      return;
+    }
 
-      listItems.forEach(function (item) {
-        var serviceName = (item.getAttribute('data-service-name') || '').toLowerCase();
-        var label = (item.textContent || '').toLowerCase();
-        var match = query === '' || serviceName.indexOf(query) !== -1 || label.indexOf(query) !== -1;
-        item.style.display = match ? '' : 'none';
-        if (match) visibleCount++;
+    brokerSections.forEach(function (brokerSection) {
+      var brokerVisibleCount = 0;
+      var groups = brokerSection.querySelectorAll('.accordion-item');
+
+      groups.forEach(function (group) {
+        var listItems = group.querySelectorAll('.list-group-item');
+        var groupVisibleCount = 0;
+
+        listItems.forEach(function (item) {
+          var serviceName = (item.getAttribute('data-service-name') || '').toLowerCase();
+          var label = (item.textContent || '').toLowerCase();
+          var match = query === '' || serviceName.indexOf(query) !== -1 || label.indexOf(query) !== -1;
+          item.style.display = match ? '' : 'none';
+          if (match) groupVisibleCount++;
+        });
+
+        group.style.display = groupVisibleCount > 0 ? '' : 'none';
+        brokerVisibleCount += groupVisibleCount;
+
+        // Auto-expand groups that have matches when searching
+        if (query !== '' && groupVisibleCount > 0) {
+          var collapse = group.querySelector('.accordion-collapse');
+          if (collapse && !collapse.classList.contains('show')) collapse.classList.add('show');
+        }
       });
 
-      // Hide entire accordion group if no items match
-      section.style.display = visibleCount > 0 ? '' : 'none';
-
-      // Auto-expand groups that have matches when searching
-      if (query !== '' && visibleCount > 0) {
-        var collapse = section.querySelector('.accordion-collapse');
-        if (collapse && !collapse.classList.contains('show')) {
-          collapse.classList.add('show');
-        }
-      }
+      // Hide entire broker section if no items match
+      brokerSection.style.display = brokerVisibleCount > 0 ? '' : 'none';
     });
   });
 
   // Auto-reconnect from sessionStorage on page refresh
   try {
-    var savedBrokerUrl = sessionStorage.getItem('mm_brokerUrl');
-    var savedRoutingKey = sessionStorage.getItem('mm_routingKey');
-    if (savedBrokerUrl && connectedStatus === false) {
-      console.log('[app] Auto-reconnecting from saved session...');
-      document.getElementById('brokerUrlInput').value = savedBrokerUrl;
-      document.getElementById('routingKeyInput').value = savedRoutingKey || '';
-      addAliasService();
-      setRegistryServiceInfo({ brokerUrl: savedBrokerUrl, routingKey: savedRoutingKey || '' });
-      requestServicesInfor();
+    var savedConnections = loadPersistedConnections();
+    if (savedConnections.length > 0) {
+      console.log('[app] Auto-reconnecting', savedConnections.length, 'broker(s) from saved session...');
+      savedConnections.forEach(function (saved) {
+        if (MM.connections[saved.brokerUrl]) return; // skip duplicates
+        addConnection(saved.brokerUrl, saved.routingKey);
+        addAliasServiceForBroker(saved.brokerUrl, saved.routingKey);
+        requestServicesInforForBroker(saved.brokerUrl);
+      });
+      updateBrokerHeaders();
     }
   } catch (e) { /* sessionStorage unavailable */ }
 
@@ -952,24 +1344,31 @@
       return;
     }
 
-    var formData = {
-      brokerUrl: brokerUrl,
-      routingKey: routingKey
-    };
-
     if (loginModal) {
       loginModal.hide();
     }
 
-    if (connectedStatus === false) {
-      showToast('Connecting', 'Connecting to broker at ' + brokerUrl + '...', 'info');
-      addAliasService();
-      setRegistryServiceInfo(formData);
-      requestServicesInfor();
+    // Duplicate-connection check
+    if (MM.connections[brokerUrl]) {
+      showToast('Already Connected', 'Already connected to ' + brokerUrl, 'warning');
+      return;
     }
+
+    showToast('Connecting', 'Connecting to broker at ' + brokerUrl + '...', 'info');
+    addConnection(brokerUrl, routingKey);
+    addAliasServiceForBroker(brokerUrl, routingKey);
+    requestServicesInforForBroker(brokerUrl);
+    persistConnections();
+    updateBrokerHeaders();
   }
 
-  function addAliasService() {
+  /**
+   * Add the Alias service GUI entry for a specific broker.
+   *
+   * @param {string} brokerUrl - The broker address.
+   * @param {string} routingKey - The registry routing key for this broker.
+   */
+  function addAliasServiceForBroker(brokerUrl, routingKey) {
     var aliasServiceData = [
       {
         title: 'Alias Manager',
@@ -984,7 +1383,7 @@
       }
     ];
 
-    createAccordionItems(aliasServiceData);
+    createAccordionItems(aliasServiceData, brokerUrl);
     if (!MM.servicesInfor) {
       MM.servicesInfor = {};
     }
@@ -1002,37 +1401,74 @@
     };
   }
 
+  // Backward-compat wrapper
+  function addAliasService() {
+    var firstBroker = Object.keys(MM.connections)[0] || MM.brokerUrl;
+    var routingKey = firstBroker && MM.connections[firstBroker] ? MM.connections[firstBroker].routingKey : MM.routingKey;
+    addAliasServiceForBroker(firstBroker, routingKey);
+  }
+
   /**
-   * Disconnect from Registry Service and clean services information.
+   * Disconnect a single broker and remove its sidebar section.
+   *
+   * @param {string} brokerUrl - The broker address to disconnect.
+   */
+  function disconnectBroker(brokerUrl) {
+    // Remove DOM section
+    var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    var section = servicesList.querySelector('.broker-section[data-broker-url="' + brokerUrl + '"]');
+    if (section) {
+      // If active service was on this broker, clear content panel
+      var activeItem = section.querySelector('.list-group-item.active');
+      if (activeItem) {
+        _deactivateCurrentPanel();
+        clearServiceContent();
+        MM.activeBrokerUrl = null;
+      }
+      section.remove();
+    }
+
+    removeConnection(brokerUrl);
+    updateConnectionBadge();
+    persistConnections();
+    updateBrokerHeaders();
+
+    // If no connections remain, reset legacy globals
+    if (getConnectionCount() === 0) {
+      MM.brokerUrl = null;
+      MM.routingKey = null;
+      MM.servicesInfor = null;
+      MM.serviceClient.disconnect();
+    }
+  }
+
+  /**
+   * Disconnect all brokers.
    */
   function disconnect() {
-    MM.brokerUrl = null;
-    MM.routingKey = null;
-    MM.servicesInfor = null;
+    var brokerUrls = Object.keys(MM.connections);
+    brokerUrls.forEach(function (url) {
+      disconnectBroker(url);
+    });
     unloadFunction = null;
     clearServiceList();
     clearServiceContent();
-    changeConnectButtonState(CONNECTION_STATUS.DISCONNECTED);
-    MM.serviceClient.disconnect();
     try {
+      sessionStorage.removeItem('mm_connections');
       sessionStorage.removeItem('mm_brokerUrl');
       sessionStorage.removeItem('mm_routingKey');
     } catch (e) { /* sessionStorage unavailable */ }
   }
 
   /**
-   * Set Registry Service connection info.
+   * Set Registry Service connection info (legacy, updates active broker alias).
    *
    * @param {object} registryData - The information of the Registry Service.
    */
   function setRegistryServiceInfo(registryData) {
     MM.brokerUrl = registryData.brokerUrl;
     MM.routingKey = registryData.routingKey;
-    // Persist for auto-reconnect on page refresh
-    try {
-      sessionStorage.setItem('mm_brokerUrl', registryData.brokerUrl);
-      sessionStorage.setItem('mm_routingKey', registryData.routingKey);
-    } catch (e) { /* sessionStorage unavailable */ }
+    MM.activeBrokerUrl = registryData.brokerUrl;
   }
 
   /**
@@ -1070,19 +1506,68 @@
   }
 
   /**
-   * Check if service GUI resources exist; download if needed.
+   * Check if service GUI resources exist and are up-to-date; download if needed.
+   * Uses a checksum from the service to detect file changes, with a fallback
+   * to simple folder-existence checks for services that lack checksum support.
    */
   function checkAndGetTheServiceGUIResources(serviceName, callbackFunc) {
     callbackFunc = callbackFunc || null;
-    var folderPath = SERVICES_GUI_FOLDER + '/' + serviceName + MM.servicesInfor[serviceName].version;
+    var serviceVersion = MM.servicesInfor[serviceName].version;
+    var folderPath = SERVICES_GUI_FOLDER + '/' + serviceName + serviceVersion;
+    var cachedChecksumKey = 'gui_checksum_' + serviceName;
+    var routingKey = MM.servicesInfor[serviceName].routing_key;
 
+    // Local-only services (no routing key) — skip checksum, just check folder
+    if (!routingKey) {
+      _checkGUIFolderExists(serviceName, folderPath, callbackFunc);
+      return;
+    }
+
+    // Request checksum from service to detect file changes
+    var checksumRequest = { method: 'svc_api_get_gui_checksum', args: null };
+    requestService(checksumRequest, SERVICES_EXCHANGE_NAME, routingKey)
+      .then(function (data) {
+        var remoteChecksum = data.result_data;
+        var cachedChecksum = sessionStorage.getItem(cachedChecksumKey);
+
+        var onDownloadSuccess = function () {
+          if (remoteChecksum) {
+            sessionStorage.setItem(cachedChecksumKey, remoteChecksum);
+          }
+          if (callbackFunc) callbackFunc();
+        };
+
+        // Checksum matches — files are up-to-date
+        if (cachedChecksum && cachedChecksum === remoteChecksum) {
+          console.log('GUI checksum matches for', serviceName, '- using cached files');
+          if (callbackFunc) callbackFunc();
+          return;
+        }
+
+        // Checksum differs or first download — download fresh
+        console.log('GUI checksum changed for', serviceName, '- downloading');
+        if (typeof window !== 'undefined' && window.electronAPI) {
+          requestServiceGUIResources(serviceName, folderPath, onDownloadSuccess);
+        } else {
+          requestServiceGUIResourcesBrowser(serviceName, folderPath, onDownloadSuccess);
+        }
+      })
+      .catch(function (error) {
+        // Checksum API not available — fall back to folder existence check
+        console.warn('GUI checksum not available for', serviceName, ', falling back to folder check');
+        _checkGUIFolderExists(serviceName, folderPath, callbackFunc);
+      });
+  }
+
+  /**
+   * Fallback: check folder existence only (for services without checksum support).
+   */
+  function _checkGUIFolderExists(serviceName, folderPath, callbackFunc) {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      // Electron mode: check filesystem
       window.electronAPI.folderExists(folderPath)
         .then(function (exists) {
           if (exists) {
             if (callbackFunc) callbackFunc();
-            console.log('Folder exists');
           } else {
             requestServiceGUIResources(serviceName, folderPath, callbackFunc);
           }
@@ -1091,8 +1576,6 @@
           requestServiceGUIResources(serviceName, folderPath, callbackFunc);
         });
     } else {
-      // Browser mode: try to fetch the HTML directly (served by FastAPI)
-      // If it fails, request via API to download
       var testUrl = folderPath + '/' + serviceName + '.html';
       fetch(testUrl, { method: 'HEAD' })
         .then(function (response) {
@@ -1135,20 +1618,27 @@
    ************************************************************/
 
   /**
-   * Subscribe to realtime service status updates.
-   * - Browser mode: connect WebSocket directly (bridge relays fanout updates).
-   * - Electron mode: RPC call to get exchange name, then subscribe via AMQP.
+   * Subscribe to realtime service status updates for a specific broker.
+   *
+   * @param {string} brokerUrl - The broker to subscribe to.
    */
-  function subscribeToRealtimeUpdates() {
+  function subscribeToRealtimeUpdatesForBroker(brokerUrl) {
+    var conn = MM.connections[brokerUrl];
+    if (!conn || conn.realtimeSubscribed) return;
+
     if (!window.electronAPI) {
-      // Browser mode: WebSocket to FastAPI bridge (bridge already listens on fanout)
-      console.log('[app] Browser mode: connecting WebSocket for realtime updates');
+      // Browser mode: WebSocket to FastAPI bridge (shared, broker-agnostic)
+      // Only connect once; messages are dispatched to all brokers
+      console.log('[app] Browser mode: connecting WebSocket for realtime updates (broker:', brokerUrl, ')');
       MM.serviceClient.onServicesUpdate(function (message) {
-        handleServicesUpdate(message);
+        handleServicesUpdateForBroker(message, brokerUrl);
       });
-      MM.serviceClient.connectUpdates().catch(function (err) {
-        console.error('[app] Failed to connect WebSocket updates:', err);
-      });
+      if (!MM.serviceClient._wsReady && !MM.serviceClient._ws) {
+        MM.serviceClient.connectUpdates().catch(function (err) {
+          console.error('[app] Failed to connect WebSocket updates:', err);
+        });
+      }
+      conn.realtimeSubscribed = true;
       return;
     }
 
@@ -1158,32 +1648,41 @@
       'args': null
     };
 
-    requestService(requestData, SERVICES_EXCHANGE_NAME, MM.routingKey)
+    MM.serviceClient.setBrokerUrl(brokerUrl);
+    requestService(requestData, SERVICES_EXCHANGE_NAME, conn.routingKey)
       .then(function (data) {
         var exchangeName = data.result_data;
         if (!exchangeName) {
-          console.warn('[app] No realtime update exchange name received');
+          console.warn('[app] No realtime update exchange name received from', brokerUrl);
           return;
         }
-        console.log('[app] Subscribing to realtime update exchange:', exchangeName);
+        console.log('[app] Subscribing to realtime update exchange:', exchangeName, 'on', brokerUrl);
+        MM.serviceClient.setBrokerUrl(brokerUrl);
         MM.serviceClient.subscribeToExchange(exchangeName, function (message) {
-          handleServicesUpdate(message);
+          handleServicesUpdateForBroker(message, brokerUrl);
         });
+        conn.realtimeSubscribed = true;
       })
       .catch(function (error) {
-        console.error('[app] Failed to get realtime update exchange:', error);
+        console.error('[app] Failed to get realtime update exchange from', brokerUrl, ':', error);
       });
   }
 
+  // Legacy wrapper
+  function subscribeToRealtimeUpdates() {
+    if (MM.activeBrokerUrl) {
+      subscribeToRealtimeUpdatesForBroker(MM.activeBrokerUrl);
+    }
+  }
+
   /**
-   * Handle a services update (from either polling or fanout exchange).
-   * The message is the full services_information dict (all currently online services).
-   * Compare with current sidebar to detect services going on/off.
+   * Handle a services update scoped to a specific broker.
    *
    * @param {object|string} message - The services information dict or JSON string.
+   * @param {string} brokerUrl - The broker this update belongs to.
    */
-  function handleServicesUpdate(message) {
-    console.log('[app] handleServicesUpdate called, services:', Object.keys(typeof message === 'object' ? message : {}));
+  function handleServicesUpdateForBroker(message, brokerUrl) {
+    console.log('[app] handleServicesUpdateForBroker called for', brokerUrl);
     var updatedServices;
     if (typeof message === 'string') {
       try {
@@ -1196,67 +1695,87 @@
       updatedServices = message;
     }
 
-    // Find all sidebar service items
-    var allItems = document.querySelectorAll('.list-group-item[data-service-name]');
+    // Scope queries to this broker's section
+    var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    var brokerSection = servicesList.querySelector('.broker-section[data-broker-url="' + brokerUrl + '"]');
+    if (!brokerSection) return;
+
+    var allItems = brokerSection.querySelectorAll('.list-group-item[data-service-name]');
 
     allItems.forEach(function (listItem) {
       var serviceName = listItem.getAttribute('data-service-name');
-      // Skip the Alias service - it's a local GUI feature, not a real service
       if (serviceName === 'ServiceAlias') return;
 
       var icon = listItem.querySelector('.icon');
       if (serviceName in updatedServices) {
-        // Service is online
         if (listItem.classList.contains('service-disabled')) {
           listItem.classList.remove('service-disabled');
           if (icon) icon.src = IMAGE_PATH.READY;
-          console.log('[app] Service came online:', serviceName);
+          console.log('[app] Service came online:', serviceName, 'on', brokerUrl);
           showToast('Service Online', serviceName + ' is now available.', 'success');
         }
-        // Update service info with latest data
-        MM.servicesInfor[serviceName] = updatedServices[serviceName];
       } else {
-        // Service went offline
         if (!listItem.classList.contains('service-disabled')) {
-          // If this service was currently active, clear the content panel
           if (listItem.classList.contains('active')) {
             listItem.classList.remove('active');
             var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
-            if (typeof unloadFunction === 'function') {
-              unloadFunction();
-              unloadFunction = null;
+            _deactivateCurrentPanel();
+            // Remove the disconnected service's cached panel
+            if (_servicePanels[serviceName]) {
+              if (_servicePanels[serviceName].parentNode) {
+                _servicePanels[serviceName].parentNode.removeChild(_servicePanels[serviceName]);
+              }
+              delete _servicePanels[serviceName];
             }
-            contentDiv.innerHTML =
-              '<div class="content-placeholder">' +
-                '<span><i class="bi bi-exclamation-triangle me-2"></i>' +
-                  serviceName + ' has disconnected</span>' +
-              '</div>';
+            // Append placeholder as non-cached child
+            var placeholder = document.createElement('div');
+            placeholder.className = 'content-placeholder';
+            placeholder.innerHTML =
+              '<span><i class="bi bi-exclamation-triangle me-2"></i>' +
+                serviceName + ' has disconnected</span>';
+            contentDiv.appendChild(placeholder);
           }
           listItem.classList.add('service-disabled');
           if (icon) icon.src = IMAGE_PATH.DISABLED;
-          console.log('[app] Service went offline:', serviceName);
+          console.log('[app] Service went offline:', serviceName, 'on', brokerUrl);
           showToast('Service Offline', serviceName + ' is no longer available.', 'warning');
         }
       }
     });
 
-    // Check if any new services appeared that aren't in the sidebar yet
+    // Check if any new services appeared on this broker
     Object.keys(updatedServices).forEach(function (serviceName) {
       var svcInfo = updatedServices[serviceName];
-      // Skip services without a group (e.g. ServiceRegistry) — they are not shown in the sidebar
       if (!svcInfo.group || svcInfo.group === '') return;
 
-      if (!document.querySelector('.list-group-item[data-service-name="' + serviceName + '"]')) {
-        // New service appeared - add to servicesInfor and rebuild its group
-        MM.servicesInfor[serviceName] = svcInfo;
+      if (!brokerSection.querySelector('.list-group-item[data-service-name="' + serviceName + '"]')) {
         var newServiceData = {};
         newServiceData[serviceName] = svcInfo;
         var newItems = extractServicesInformation(newServiceData);
-        createAccordionItems(newItems);
-        console.log('[app] New service appeared:', serviceName);
+        createAccordionItems(newItems, brokerUrl);
+        console.log('[app] New service appeared:', serviceName, 'on', brokerUrl);
         showToast('Service Online', serviceName + ' is now available.', 'success');
       }
     });
+
+    // Update per-broker service store and rebuild merged view
+    var conn = MM.connections[brokerUrl];
+    if (conn) {
+      conn.services = updatedServices;
+      rebuildMergedServicesInfor();
+    }
+    updateBrokerBadge(brokerUrl);
+  }
+
+  /**
+   * Legacy wrapper for backward compat.
+   */
+  function handleServicesUpdate(message) {
+    // Route to the active broker or first broker
+    var brokerUrl = MM.activeBrokerUrl || Object.keys(MM.connections)[0];
+    if (brokerUrl) {
+      handleServicesUpdateForBroker(message, brokerUrl);
+    }
   }
 
   /************************************************************
@@ -1264,32 +1783,50 @@
    ************************************************************/
 
   /**
-   * Get all services information from Registry Service.
+   * Get all services information from Registry Service for a specific broker.
+   *
+   * @param {string} brokerUrl - The broker to query.
    */
-  function requestServicesInfor() {
+  function requestServicesInforForBroker(brokerUrl) {
+    var conn = MM.connections[brokerUrl];
+    if (!conn) return;
+
     var requestData = {
       'method': 'svc_api_get_services_info',
       'args': null
     };
 
-    requestService(requestData, SERVICES_EXCHANGE_NAME, MM.routingKey)
-      .then(function (data) {
-        console.log('Received service infor: ', data);
-        var servicesInfor = JSON.parse(data.result_data);
-        MM.servicesInfor = Object.assign({}, MM.servicesInfor, servicesInfor);
-        var serviceItems = extractServicesInformation(servicesInfor);
-        createAccordionItems(serviceItems);
-        changeConnectButtonState(CONNECTION_STATUS.CONNECTED);
-        showToast('Connected', 'Successfully connected to broker.', 'success');
+    // Set active broker context for the request
+    setRegistryServiceInfo({ brokerUrl: brokerUrl, routingKey: conn.routingKey });
 
-        // Subscribe to realtime updates from Registry
-        subscribeToRealtimeUpdates();
+    requestService(requestData, SERVICES_EXCHANGE_NAME, conn.routingKey)
+      .then(function (data) {
+        console.log('Received service infor from', brokerUrl, ':', data);
+        var servicesInfor = JSON.parse(data.result_data);
+        conn.services = servicesInfor;
+        rebuildMergedServicesInfor();
+        var serviceItems = extractServicesInformation(servicesInfor);
+        createAccordionItems(serviceItems, brokerUrl);
+        updateConnectionBadge();
+        showToast('Connected', 'Successfully connected to ' + brokerUrl, 'success');
+
+        // Subscribe to realtime updates from this broker's Registry
+        subscribeToRealtimeUpdatesForBroker(brokerUrl);
       })
       .catch(function (error) {
-        console.error('Error loading data:', error);
-        changeConnectButtonState(CONNECTION_STATUS.DISCONNECTED);
-        showToast('Connection Failed', 'Could not connect: ' + (error.message || error), 'danger');
+        console.error('Error loading data from', brokerUrl, ':', error);
+        disconnectBroker(brokerUrl);
+        showToast('Connection Failed', 'Could not connect to ' + brokerUrl + ': ' + (error.message || error), 'danger');
       });
+  }
+
+  /**
+   * Legacy wrapper — get services info from the active broker.
+   */
+  function requestServicesInfor() {
+    if (MM.brokerUrl && MM.connections[MM.brokerUrl]) {
+      requestServicesInforForBroker(MM.brokerUrl);
+    }
   }
 
   /**
@@ -1335,7 +1872,8 @@
    * @returns {Promise} A Promise that resolves with the response.
    */
   function requestService(requestData, exchangeName, routingKey) {
-    MM.serviceClient.setBrokerUrl(MM.brokerUrl);
+    var broker = resolveBrokerUrl(routingKey) || MM.brokerUrl;
+    MM.serviceClient.setBrokerUrl(broker);
     return MM.serviceClient.requestService(requestData, exchangeName, routingKey);
   }
 
@@ -1355,7 +1893,8 @@
 
   MM.requestService = requestService;
   MM.requestServiceDirect = function (data, queue) {
-    MM.serviceClient.setBrokerUrl(MM.brokerUrl);
+    var broker = resolveBrokerUrlForService(queue) || MM.brokerUrl;
+    MM.serviceClient.setBrokerUrl(broker);
     return MM.serviceClient.requestServiceDirect(data, queue);
   };
   MM.loadContent = loadContent;

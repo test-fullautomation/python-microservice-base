@@ -168,18 +168,11 @@ Run the Calculator service.
    # Create the service with injected dependencies
    service = CalculatorService(transport=transport, registry=registry)
 
-   # Print discovered API info
-   info = service.get_service_info()
-   print(f" [*] Service: {info.name} v{info.version}")
-   print(f" [*] Routing key: {info.routing_key}")
-   print(f" [*] API methods: {info.methods}")
-
    try:
       # Register with the Service Registry
       service.register_service()
 
       # Start serving (blocks until interrupted)
-      print(f" [*] Starting service. Press CTRL+C to stop.")
       service.serve()
    except KeyboardInterrupt:
       print(f" [*] Interrupted by user.")

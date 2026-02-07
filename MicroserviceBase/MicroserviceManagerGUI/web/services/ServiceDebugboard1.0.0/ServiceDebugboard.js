@@ -5,7 +5,7 @@
  * @version 2.0.0
  */
 
-const MM = window.MicroserviceManager;
+var MM = window.MicroserviceManager;
 
 var ServiceDebugboard = {
   VERSION: "1.0.0",
