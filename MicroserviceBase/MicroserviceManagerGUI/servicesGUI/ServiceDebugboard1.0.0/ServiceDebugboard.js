@@ -10,51 +10,7 @@ var ServiceDebugboard = {
 
 
 function requestDebugboardService(jsonData) {
-  return new Promise((resolve, reject) => {
-    amqp.connect('amqp://localhost', function(error0, connection) {
-      if (error0) {
-        reject(error0);
-      }
-
-      connection.createChannel(function(error1, channel) {
-        if (error1) {
-          reject(error1);
-        }
-
-        channel.assertQueue('', {
-          exclusive: true
-        }, function(error2, q) {
-          if (error2) {
-            reject(error2);
-          }
-
-          var correlationId = generateUuid();
-
-          console.log(' [x] Requesting Debug board Service with data:', jsonData);
-
-          channel.consume(q.queue, function(msg) {
-            if (msg.properties.correlationId == correlationId) {
-              const result = JSON.parse(msg.content.toString());
-              console.log(' [.] Got response:', result);
-              resolve(result);
-              setTimeout(function() {
-                connection.close();
-                // process.exit(0);
-              }, 500);
-            }
-          }, {
-            noAck: true
-          });
-
-          channel.sendToQueue('ServiceDebugboard',
-            Buffer.from(JSON.stringify(jsonData)),{
-              correlationId: correlationId,
-              replyTo: q.queue
-            });
-        });
-      });
-    });
-  });
+  return global.serviceClient.requestServiceDirect(jsonData, 'ServiceDebugboard');
 }
 
 function updateDebugboardDeviceList()

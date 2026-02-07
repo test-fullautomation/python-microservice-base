@@ -1,0 +1,25 @@
+{
+  "name": "microservice-manager-gui",
+  "version": "2.0.0",
+  "description": "Electron wrapper for Microservice Manager GUI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --devTools=true"
+  },
+  "homepage": "https://github.com/test-fullautomation/python-microservice-base",
+  "author": {
+    "name": "Thomas",
+    "email": "Thomas.Pollerspoeck@de.bosch.com",
+    "url": "https://github.com/test-fullautomation"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "amqplib": "^0.10.3",
+    "unzipper": "^0.10.14"
+  },
+  "devDependencies": {
+    "electron": "^27.0.2",
+    "electron-builder": "^24.6.4"
+  }
+}

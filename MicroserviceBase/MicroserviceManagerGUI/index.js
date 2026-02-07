@@ -12,7 +12,6 @@
  ************************************************************/
 
 // Libraries and modules being imported
-var amqp = require('amqplib/callback_api');
 const fs = require('fs');
 const unzipper = require('unzipper');
 const { saveAs } = require('file-saver');
@@ -22,6 +21,7 @@ const { ipcRenderer } = require('electron');
 const { dialog } = require('electron');
 const { title } = require('process');
 const notifier = require('node-notifier');
+const { sharedClient } = require('./lib/ServiceClient');
 
 /************************************************************
  *                    Global Variables                      *
@@ -32,6 +32,7 @@ const notifier = require('node-notifier');
 global.brokerUrl = "localhost:5672";
 global.routingKey = "";
 global.servicesInfor = null;
+global.serviceClient = sharedClient;
 
 const SERVICES_EXCHANGE_NAME = "services_request";
 const SERVICES_GUI_FOLDER = "servicesGUI";
@@ -701,50 +702,8 @@ function requestServiceGUIResources(serviceName, folderPath, callbackFunc=null)
  * @returns {Promise} A Promise that resolves when the request is sent successfully, and rejects on failure.
  */
 function requestService(requestData, exchangeName, routingKey) {
-  return new Promise((resolve, reject) => {
-    amqp.connect(`amqp://${global.brokerUrl}`, function(error0, connection) {
-      if (error0) {
-        reject(error0);
-      }
-
-      connection.createChannel(function(error1, channel) {
-        if (error1) {
-          reject(error1);
-        }
-
-        channel.assertQueue('', {
-          exclusive: true
-        }, function(error2, q) {
-          if (error2) {
-            reject(error2);
-          }
-
-          var correlationId = generateUuid();
-
-          console.log(' [x] Requesting Service with data:', requestData);
-
-          channel.consume(q.queue, function(msg) {
-            if (msg.properties.correlationId == correlationId) {
-              const result = JSON.parse(msg.content.toString());
-              console.log(' [.] Got response:', result);
-              resolve(result);
-              setTimeout(function() {
-                connection.close();
-              }, 500);
-            }
-          }, {
-            noAck: true
-          });
-
-          // console.log(' [x] Requesting data in string:',JSON.stringify(requestData));
-          channel.publish(exchangeName, routingKey, Buffer.from(JSON.stringify(requestData)),{
-                correlationId: correlationId,
-                replyTo: q.queue
-          });
-        });
-      });
-    });
-  });
+  sharedClient.setBrokerUrl(global.brokerUrl);
+  return sharedClient.requestService(requestData, exchangeName, routingKey);
 }
 
 

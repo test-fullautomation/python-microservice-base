@@ -1,5 +1,6 @@
 __pycache__/
 build/
+node_modules/
 dist/
 *.egg-info
 MicroserviceBase/MicroserviceManagerGUI/node_modules

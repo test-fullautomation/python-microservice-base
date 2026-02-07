@@ -1,0 +1,183 @@
+@startuml architecture
+!theme plain
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+skinparam packageStyle rectangle
+
+title MicroserviceBase - Hexagonal Architecture
+
+' ============================================================================
+' Colors
+' ============================================================================
+skinparam component {
+    BackgroundColor<<domain>> #e8f5e9
+    BackgroundColor<<port>> #e3f2fd
+    BackgroundColor<<adapter>> #fff3e0
+    BackgroundColor<<factory>> #f3e5f5
+    BackgroundColor<<ui>> #fce4ec
+    BackgroundColor<<external>> #f5f5f5
+}
+
+' ============================================================================
+' External Actors
+' ============================================================================
+
+actor "Service Developer" as Developer
+actor "System Operator" as Operator
+actor "End User" as EndUser
+
+' ============================================================================
+' Domain Layer (Innermost Hexagon)
+' ============================================================================
+
+package "Domain Layer (Zero External Dependencies)" as DomainLayer #e8f5e9 {
+    component "ServiceBase" as SvcBase <<domain>> {
+        component "API Discovery\n(svc_api_* introspection)" as ApiDisc
+        component "Docstring Parsing\n(argument extraction)" as DocParse
+        component "Request Dispatch\n(method routing)" as ReqDisp
+    }
+
+    component "ServiceRegistry" as SvcReg <<domain>> {
+        component "Service Tracking\n(registration state)" as SvcTrack
+        component "Alias Routing\n(method mapping)" as AliasRoute
+    }
+
+    component "Models" as Models <<domain>> {
+        component "ServiceInfo" as SvcInfo
+        component "ServiceMethod" as SvcMethod
+        component "MethodArgument" as MethodArg
+    }
+
+    component "Messages" as Messages <<domain>> {
+        component "ServiceRequest" as SvcReq
+        component "ServiceResponse" as SvcResp
+        component "ServiceEvent" as SvcEvt
+    }
+
+    component "Exceptions" as Exceptions <<domain>> {
+        component "ServiceError\nTransportError\nNotFoundErrors" as Errors
+    }
+}
+
+' ============================================================================
+' Ports Layer (Abstract Contracts)
+' ============================================================================
+
+package "Ports Layer (ABC Interfaces)" as PortsLayer #e3f2fd {
+    component "TransportPort" as TransportPort <<port>> {
+        component "connect()\ndisconnect()\nconsume()\nrpc_call()\npublish()" as TransMethods
+    }
+
+    component "ServiceRegistryPort" as RegistryPort <<port>> {
+        component "register()\nunregister()\nsubscribe_to_events()\nnotify_update()" as RegMethods
+    }
+
+    component "UIBridgePort" as UIPort <<port>> {
+        component "start()\nstop()\nbroadcast_update()" as UIMethods
+    }
+}
+
+' ============================================================================
+' Adapters Layer (Concrete Implementations)
+' ============================================================================
+
+package "Adapters Layer (Infrastructure)" as AdaptersLayer #fff3e0 {
+
+    component "RabbitMQ Adapter" as RabbitAdapter <<adapter>> {
+        component "RabbitMQTransportAdapter\n(pika BlockingConnection)" as RabbitTransport
+        component "AMQPRegistryAdapter\n(topic + fanout exchanges)" as AMQPRegistry
+        component "RabbitMQConfig\n(CLI arg parsing)" as RabbitConfig
+    }
+
+    component "EventBus Adapter" as EventBusAdapter <<adapter>> {
+        component "EventBusTransportAdapter\n(EventBusClient async)" as EBTransport
+        component "EventBusRegistryAdapter\n(config-source overrides)" as EBRegistry
+        component "EventBusConfig\n(JSONP config file)" as EBConfig
+    }
+
+    component "FastAPI Bridge" as FastAPIAdapter <<adapter>> {
+        component "FastAPIBridge\n(REST + WebSocket)" as FastBridge
+    }
+}
+
+' ============================================================================
+' Factory (Composition Root)
+' ============================================================================
+
+package "Factory (Composition Root)" as FactoryLayer #f3e5f5 {
+    component "create_transport()" as CreateTransport <<factory>>
+    component "create_registry()" as CreateRegistry <<factory>>
+    component "create_ui_bridge()" as CreateUIBridge <<factory>>
+}
+
+' ============================================================================
+' External Systems
+' ============================================================================
+
+package "External Systems" as External #f5f5f5 {
+    component "RabbitMQ Server" as RabbitMQ <<external>>
+    component "Electron GUI" as ElectronGUI <<external>>
+    component "Browser" as BrowserUI <<external>>
+}
+
+' ============================================================================
+' Relationships - Domain depends on Ports (inward)
+' ============================================================================
+
+SvcBase --> TransportPort : uses
+SvcBase --> RegistryPort : uses
+SvcReg --|> SvcBase : extends
+
+' ============================================================================
+' Relationships - Adapters implement Ports
+' ============================================================================
+
+RabbitTransport ..|> TransportPort : implements
+EBTransport ..|> TransportPort : implements
+AMQPRegistry ..|> RegistryPort : implements
+EBRegistry ..|> RegistryPort : implements
+FastBridge ..|> UIPort : implements
+
+' ============================================================================
+' Relationships - Adapters to External
+' ============================================================================
+
+RabbitTransport --> RabbitMQ : AMQP
+EBTransport --> RabbitMQ : AMQP
+AMQPRegistry --> RabbitMQ : AMQP
+EBRegistry --> RabbitMQ : AMQP
+FastBridge --> BrowserUI : HTTP/WS
+
+' ============================================================================
+' Relationships - Factory wires Adapters
+' ============================================================================
+
+CreateTransport --> RabbitTransport : creates
+CreateTransport --> EBTransport : creates
+CreateRegistry --> AMQPRegistry : creates
+CreateRegistry --> EBRegistry : creates
+CreateUIBridge --> FastBridge : creates
+
+' ============================================================================
+' Relationships - Users
+' ============================================================================
+
+Developer --> SvcBase : extends
+Operator --> FastBridge : monitors
+EndUser --> ElectronGUI : interacts
+
+' ============================================================================
+' Legend
+' ============================================================================
+
+legend right
+    |= Color |= Layer |
+    | <#e8f5e9> | Domain (Pure Logic) |
+    | <#e3f2fd> | Ports (Interfaces) |
+    | <#fff3e0> | Adapters (Infrastructure) |
+    | <#f3e5f5> | Factory (Wiring) |
+    | <#fce4ec> | UI Components |
+    | <#f5f5f5> | External Systems |
+endlegend
+
+@enduml

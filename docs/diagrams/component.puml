@@ -1,0 +1,122 @@
+@startuml component
+!theme plain
+title MicroserviceBase - Component Diagram
+
+skinparam component {
+    BackgroundColor<<domain>> #e8f5e9
+    BackgroundColor<<port>> #e3f2fd
+    BackgroundColor<<adapter>> #fff3e0
+    BackgroundColor<<factory>> #f3e5f5
+    BackgroundColor<<gui>> #fce4ec
+}
+
+' ============================================================================
+' Domain Components
+' ============================================================================
+
+package "Domain" <<domain>> {
+    [ServiceBase] as SB <<domain>>
+    [ServiceRegistry] as SR <<domain>>
+    [Models\n(ServiceInfo, ServiceMethod,\nMethodArgument)] as Models <<domain>>
+    [Messages\n(ServiceRequest, ServiceResponse,\nServiceEvent, ResultType)] as Msgs <<domain>>
+    [Exceptions\n(ServiceError, TransportError,\nNotFoundErrors)] as Exc <<domain>>
+
+    SR --> SB : extends
+    SB --> Models : uses
+    SB --> Msgs : uses
+    SB --> Exc : raises
+}
+
+' ============================================================================
+' Port Interfaces
+' ============================================================================
+
+package "Ports" <<port>> {
+    interface "TransportPort" as TP <<port>>
+    interface "ServiceRegistryPort" as RP <<port>>
+    interface "UIBridgePort" as UP <<port>>
+}
+
+SB --> TP : depends on
+SB --> RP : depends on
+
+' ============================================================================
+' Adapter Components
+' ============================================================================
+
+package "Adapters" <<adapter>> {
+
+    package "RabbitMQ Stack" {
+        [RabbitMQConfig] as RMQCfg <<adapter>>
+        [RabbitMQTransportAdapter] as RMQT <<adapter>>
+        [AMQPRegistryAdapter] as AMQPR <<adapter>>
+    }
+
+    package "EventBus Stack" {
+        [EventBusConfig] as EBCfg <<adapter>>
+        [EventBusTransportAdapter] as EBT <<adapter>>
+        [EventBusRegistryAdapter] as EBR <<adapter>>
+    }
+
+    package "UI Stack" {
+        [FastAPIBridge] as FAB <<adapter>>
+    }
+}
+
+RMQT ..|> TP : implements
+EBT ..|> TP : implements
+AMQPR ..|> RP : implements
+EBR ..|> RP : implements
+FAB ..|> UP : implements
+
+RMQT --> RMQCfg : uses
+AMQPR --> RMQCfg : uses
+EBT --> EBCfg : uses
+EBR --> EBCfg : uses
+
+' ============================================================================
+' Factory
+' ============================================================================
+
+package "Factory" <<factory>> {
+    [create_transport()] as CT <<factory>>
+    [create_registry()] as CR <<factory>>
+    [create_ui_bridge()] as CU <<factory>>
+}
+
+CT --> RMQT : creates
+CT --> EBT : creates
+CR --> AMQPR : creates
+CR --> EBR : creates
+CU --> FAB : creates
+
+' ============================================================================
+' GUI
+' ============================================================================
+
+package "MicroserviceManagerGUI" <<gui>> {
+    [index.js\n(Main Window)] as GUI <<gui>>
+    [ServiceClient.js\n(Transport Layer)] as SC <<gui>>
+    [MessageProtocol.js\n(Message Types)] as MP <<gui>>
+
+    GUI --> SC : uses
+    GUI --> MP : uses
+}
+
+' ============================================================================
+' External Systems
+' ============================================================================
+
+cloud "RabbitMQ Server" as RMQ
+database "alias.json" as Alias
+actor "Browser" as Browser
+
+RMQT --> RMQ : AMQP
+EBT --> RMQ : AMQP
+AMQPR --> RMQ : AMQP
+EBR --> RMQ : AMQP
+SC --> RMQ : AMQP
+SR --> Alias : loads
+FAB --> Browser : HTTP/WS
+
+@enduml

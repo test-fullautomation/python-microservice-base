@@ -1,6 +1,6 @@
 # **************************************************************************************************************
 #
-#  Copyright 2020-2022 Robert Bosch GmbH
+#  Copyright 2020-2025 Robert Bosch GmbH
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -69,7 +69,13 @@ import setuptools
 from setuptools.command.install import install
 
 # prefer the repository local version of all additional libraries (instead of the installed version under site-packages)
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "./additions")))
+# When PEP 517 runs setup.py via exec(), __file__ is not available - fall back to CWD
+try:
+    _THIS_DIR = os.path.abspath(os.path.dirname(__file__))
+except NameError:
+    _THIS_DIR = os.path.abspath(os.getcwd())
+sys.path.insert(0, _THIS_DIR)
+sys.path.insert(0, os.path.join(_THIS_DIR, "additions"))
 
 from config.CRepositoryConfig import CRepositoryConfig # providing repository and environment specific information
 from additions.CExtendedSetup import CExtendedSetup # providing functions to support the extended setup process
@@ -115,7 +121,14 @@ class ExtendedInstallCommand(install):
 # -- setting up the repository configuration
 oRepositoryConfig = None
 try:
-    oRepositoryConfig = CRepositoryConfig(os.path.abspath(sys.argv[0]))
+    # When pip runs setup.py via PEP 517 build backend, sys.argv[0] points to
+    # pip's internal script, not setup.py. Use __file__ if available (direct execution),
+    # otherwise fall back to CWD which PEP 517 sets to the project root.
+    try:
+        _setup_path = os.path.abspath(__file__)
+    except NameError:
+        _setup_path = os.path.abspath(os.path.join(os.getcwd(), "setup.py"))
+    oRepositoryConfig = CRepositoryConfig(_setup_path)
 except Exception as ex:
     print()
     printexception(str(ex))
@@ -149,12 +162,11 @@ if ( ('install' in listCmdArgs) or ('build' in listCmdArgs) or ('sdist' in listC
     if nReturn != SUCCESS:
         sys.exit(nReturn)
 
-    print(COLBY + "Extended setup step 2/5: Converting the repository README")
+    # NOTE: Skipping convert_repo_readme() - the automatic conversion does not produce
+    # the expected view and takes too much time to debug. README.md and README.rst
+    # are maintained manually to ensure proper formatting.
+    print(COLBY + "Extended setup step 2/5: Skipping README conversion (maintained manually)")
     print()
-
-    nReturn = oExtendedSetup.convert_repo_readme()
-    if nReturn != SUCCESS:
-        sys.exit(nReturn)
 
     print(COLBY + "Extended setup step 3/5: Deleting previous setup outputs (build, dist, <package name>.egg-info within repository)")
     print()
@@ -175,9 +187,12 @@ if ( ('install' in listCmdArgs) or ('build' in listCmdArgs) or ('sdist' in listC
             sys.exit(nReturn)
 
     README_MD = str(oRepositoryConfig.Get('README_MD'))
-    with open(README_MD, "r", encoding="utf-8") as fh:
-        long_description = fh.read()
-    fh.close()
+    if os.path.isfile(README_MD):
+        with open(README_MD, "r", encoding="utf-8") as fh:
+            long_description = fh.read()
+        fh.close()
+    else:
+        long_description = str(oRepositoryConfig.Get('DESCRIPTION'))
 
 # --------------------------------------------------------------------------------------------------------------
 
@@ -195,7 +210,15 @@ setuptools.setup(
     long_description = long_description,
     long_description_content_type = str(oRepositoryConfig.Get('LONGDESCRIPTIONCONTENTTYPE')),
     url = str(oRepositoryConfig.Get('URL')),
-    packages = [str(oRepositoryConfig.Get('PACKAGENAME')),],
+    packages = [str(oRepositoryConfig.Get('PACKAGENAME')),
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".domain",
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".ports",
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters",
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.config",
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.transport",
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.registry",
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.ui_bridge"],
+    include_package_data=True,
     classifiers = [
         str(oRepositoryConfig.Get('PROGRAMMINGLANGUAGE')),
         str(oRepositoryConfig.Get('LICENCE')),
@@ -218,4 +241,3 @@ print(COLBG + "Extended installation done")
 print()
 
 # --------------------------------------------------------------------------------------------------------------
-

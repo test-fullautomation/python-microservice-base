@@ -1,0 +1,76 @@
+@startuml overview
+!theme plain
+title MicroserviceBase - System Overview
+
+skinparam rectangle {
+    BackgroundColor<<registry>> LightBlue
+    BackgroundColor<<service>> LightGreen
+    BackgroundColor<<broker>> LightYellow
+    BackgroundColor<<ui>> LightCoral
+}
+
+rectangle "Service Registry" <<registry>> {
+    rectangle "ServiceRegistry\n(Discovery Hub)" as registry_core
+    rectangle "Alias Routing\n(Method Mapping)" as alias
+    rectangle "Services Tracking\n(Live State)" as tracking
+}
+
+rectangle "Message Broker" <<broker>> {
+    rectangle "RabbitMQ\n(pika / aio_pika)" as rabbitmq
+    rectangle "service_information\n(Topic Exchange)" as info_exchange
+    rectangle "services_request\n(Topic Exchange)" as req_exchange
+    rectangle "Realtime Updates\n(Fanout Exchange)" as update_exchange
+}
+
+rectangle "Service A" <<service>> {
+    rectangle "ServiceBase\n(Domain Logic)" as svc_a
+    rectangle "svc_api_*\n(API Methods)" as api_a
+}
+
+rectangle "Service B" <<service>> {
+    rectangle "ServiceBase\n(Domain Logic)" as svc_b
+    rectangle "svc_api_*\n(API Methods)" as api_b
+}
+
+rectangle "MicroserviceManagerGUI" <<ui>> {
+    rectangle "Electron / Browser\n(Frontend)" as gui_frontend
+    rectangle "ServiceClient.js\n(Transport)" as gui_client
+}
+
+rectangle "FastAPI Bridge" <<ui>> {
+    rectangle "REST API\n(/api/request)" as rest_api
+    rectangle "WebSocket\n(/ws/updates)" as ws_api
+}
+
+' Service registration
+svc_a --> info_exchange : register
+svc_b --> info_exchange : register
+info_exchange --> registry_core : service events
+
+' Service consumption
+svc_a --> req_exchange : consume RPC
+svc_b --> req_exchange : consume RPC
+
+' Registry tracking
+registry_core --> tracking : store info
+registry_core --> alias : resolve aliases
+registry_core --> update_exchange : broadcast updates
+
+' GUI connections
+gui_client --> rabbitmq : AMQP
+gui_frontend --> gui_client : uses
+update_exchange --> gui_client : realtime updates
+
+' FastAPI bridge
+rest_api --> req_exchange : forward requests
+ws_api --> update_exchange : push updates
+
+note right of registry_core
+  **Key Capabilities:**
+  - Auto-discovery of services
+  - API metadata introspection
+  - Alias routing for user-friendly names
+  - Real-time update broadcasting
+end note
+
+@enduml

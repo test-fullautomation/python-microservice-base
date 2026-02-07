@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "colorama>=0.4.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "MicroserviceBase"
+version = "0.1.1"
+description = "Microservice base framework with pluggable transport and registry adapters"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    { name = "Nguyen Huynh Tri Cuong", email = "Cuong.NguyenHuynhTri@vn.bosch.com" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development",
+]
+keywords = ["microservice", "rabbitmq", "eventbus", "registry"]
+dependencies = []
+
+[project.optional-dependencies]
+rabbitmq = ["pika>=1.3.0"]
+eventbus = ["eventbusclient"]
+web = ["fastapi>=0.100.0", "uvicorn>=0.20.0"]
+dev = ["pytest>=7.0.0", "pytest-mock>=3.10.0", "colorama>=0.4.0"]
+all = ["MicroserviceBase[rabbitmq,eventbus,web,dev]"]
+
+[project.urls]
+Homepage = "https://github.com/test-fullautomation/python-microservice-base"
+Repository = "https://github.com/test-fullautomation/python-microservice-base.git"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["MicroserviceBase*"]
+
+[tool.pytest.ini_options]
+testpaths = ["pytest"]

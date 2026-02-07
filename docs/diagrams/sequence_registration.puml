@@ -1,0 +1,84 @@
+@startuml sequence_registration
+!theme plain
+title Service Registration Sequence
+
+participant "MyService\n(ServiceBase)" as service
+participant "TransportPort" as transport
+participant "ServiceRegistryPort" as registry_port
+participant "RabbitMQ\n(Broker)" as broker
+participant "ServiceRegistry\n(Discovery Hub)" as registry
+
+== Service Initialization ==
+
+service -> service : __init__(transport, registry)
+activate service
+
+service -> service : get_svc_api_methods_dict()
+note right of service
+  Discovers all methods
+  prefixed with svc_api_*
+end note
+
+service -> service : get_svc_api_methods_info_dict()
+note right of service
+  Parses docstrings to extract
+  argument types, conditions,
+  and descriptions
+end note
+
+service -> service : Build _SERVICE_INFO
+note right of service
+  Populates 'methods' and
+  'methods_info' fields
+end note
+
+== Service Registration ==
+
+service -> registry_port : register(service_info_dict)
+activate registry_port
+
+registry_port -> broker : publish(service_information,\nrouting_key=service.information,\nbody={info: ..., state: "on"})
+activate broker
+
+broker -> registry : deliver event
+activate registry
+
+registry -> registry : handle_update(service_information)
+note right of registry
+  Stores service info in
+  services_information dict
+  keyed by service name
+end note
+
+registry -> registry : notify_updates()
+registry -> registry_port : notify_update(services_info)
+registry_port -> broker : publish(fanout exchange,\nbody=all_services_info)
+broker -> broker : broadcast to all\nsubscribed UI clients
+
+deactivate registry
+deactivate broker
+deactivate registry_port
+
+== Service Consumption ==
+
+service -> transport : serve() -> consume(service_name,\nrouting_key, exchange, on_request)
+activate transport
+
+transport -> broker : declare exchange\nbind queue\nstart consuming
+note right of transport
+  Blocks the calling thread.
+  Incoming messages dispatched
+  to on_request callback.
+end note
+
+deactivate transport
+deactivate service
+
+note over service, registry
+  After registration, the service is:
+  1. Visible in the Registry's services_information dict
+  2. Discoverable by any UI client via realtime updates
+  3. Ready to handle RPC requests on its routing key
+end note
+
+@enduml

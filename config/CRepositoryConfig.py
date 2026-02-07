@@ -1,6 +1,6 @@
 # **************************************************************************************************************
 #
-#  Copyright 2020-2022 Robert Bosch GmbH
+#  Copyright 2020-2025 Robert Bosch GmbH
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -26,21 +26,25 @@
 #
 # - All paths to subfolder depends on the repository root path that has to be provided
 #   to constructor of CRepositoryConfig
-# 
+#
 # --------------------------------------------------------------------------------------------------------------
 #
 # 02.02.2023
 #
 # --------------------------------------------------------------------------------------------------------------
 
-import os, sys, platform, shlex, subprocess, json
+import os, sys, platform, json
+import importlib.util
 import colorama as col
-import pypandoc
 
-from PythonExtensionsCollection.String.CString import CString
-
-from MicroserviceBase.version import VERSION
-from MicroserviceBase.version import VERSION_DATE
+# Load version directly from file to avoid triggering MicroserviceBase/__init__.py
+# which imports runtime dependencies (pika, etc.) not available during build
+_version_path = os.path.join(os.path.dirname(__file__), "..", "MicroserviceBase", "version.py")
+_spec = importlib.util.spec_from_file_location("MicroserviceBase.version", _version_path)
+_version_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_version_mod)
+VERSION = _version_mod.VERSION
+VERSION_DATE = _version_mod.VERSION_DATE
 
 col.init(autoreset=True)
 COLBR = col.Style.BRIGHT + col.Fore.RED
@@ -54,20 +58,25 @@ def printerror(sMsg):
 def printexception(sMsg):
     sys.stderr.write(COLBR + f"Exception: {sMsg}!\n")
 
+def normalize_path(sPath):
+    """Normalize path separators to forward slashes."""
+    if sPath is None:
+        return None
+    return sPath.replace("\\", "/")
+
 # --------------------------------------------------------------------------------------------------------------
 
 class CRepositoryConfig():
 
     def __init__(self, sCalledBy=None):
 
-        # TODO: error handling sCalledBy=None
-        sCalledBy = CString.NormalizePath(sCalledBy)
+        sCalledBy = normalize_path(sCalledBy)
         self.__sReferencePath = os.path.dirname(sCalledBy)
 
         self.__dictRepositoryConfig = None # initialized below by json.load()
 
         # load static configuration values (name of json file is fix)
-        sRepositoryConfigurationFile = CString.NormalizePath(f"{self.__sReferencePath}/config/repository_config.json")
+        sRepositoryConfigurationFile = normalize_path(f"{self.__sReferencePath}/config/repository_config.json")
         hRepositoryConfigurationFile = open(sRepositoryConfigurationFile, encoding="utf-8")
         self.__dictRepositoryConfig = json.load(hRepositoryConfigurationFile)
         hRepositoryConfigurationFile.close()
@@ -84,7 +93,10 @@ class CRepositoryConfig():
         self.__dictRepositoryConfig['PACKAGEDATE']    = VERSION_DATE
 
         # make absolute path to package documentation
-        self.__dictRepositoryConfig['PACKAGEDOC'] = CString.NormalizePath(sPath=self.__dictRepositoryConfig['PACKAGEDOC'], sReferencePathAbs=self.__sReferencePath)
+        sPackageDoc = self.__dictRepositoryConfig.get('PACKAGEDOC', './packagedoc')
+        if sPackageDoc.startswith('./'):
+            sPackageDoc = normalize_path(os.path.join(self.__sReferencePath, sPackageDoc[2:]))
+        self.__dictRepositoryConfig['PACKAGEDOC'] = sPackageDoc
 
         # compute dynamic configuration values
         bSuccess, sResult = self.__InitConfig()
@@ -102,24 +114,16 @@ class CRepositoryConfig():
 
         sOSName         = os.name
         sPlatformSystem = platform.system()
-        sPythonPath     = CString.NormalizePath(os.path.dirname(sys.executable))
-        sPython         = CString.NormalizePath(sys.executable)
+        sPythonPath     = normalize_path(os.path.dirname(sys.executable))
+        sPython         = normalize_path(sys.executable)
         sPythonVersion  = sys.version
 
         sInstalledPackageFolder = None
 
-        try:
-            # try to access pandoc; if not installed we detect this already here as early as possible
-            pypandoc.get_pandoc_path()
-        except Exception as ex:
-            bSuccess = False
-            sResult  = str(ex)
-            return bSuccess, sResult
-
         if sPlatformSystem == "Windows":
             sInstalledPackageFolder = f"{sPythonPath}/Lib/site-packages/" + self.__dictRepositoryConfig['PACKAGENAME']
         elif sPlatformSystem == "Linux":
-            sInstalledPackageFolder = f"{sPythonPath}/../lib/python3.9/site-packages/" + self.__dictRepositoryConfig['PACKAGENAME']
+            sInstalledPackageFolder = f"{sPythonPath}/../lib/python3.10/site-packages/" + self.__dictRepositoryConfig['PACKAGENAME']
         else:
             bSuccess = False
             sResult  = f"Operating system {sPlatformSystem} ({sOSName}) not supported"
@@ -136,24 +140,24 @@ class CRepositoryConfig():
         # ====== 1. documentation
 
         # - README
-        self.__dictRepositoryConfig['README_RST'] = CString.NormalizePath(f"{self.__sReferencePath}/README.rst")
-        self.__dictRepositoryConfig['README_MD']  = CString.NormalizePath(f"{self.__sReferencePath}/README.md")
+        self.__dictRepositoryConfig['README_RST'] = normalize_path(f"{self.__sReferencePath}/README.rst")
+        self.__dictRepositoryConfig['README_MD']  = normalize_path(f"{self.__sReferencePath}/README.md")
 
         # The following key doesn't matter in case of the documentation builder itself is using this CRepositoryConfig.
         # But if the documentation builder is called by other apps like setup.py, they need to know where to find.
-        self.__dictRepositoryConfig['DOCUMENTATIONBUILDER'] = CString.NormalizePath(f"{self.__sReferencePath}/genpackagedoc.py")
+        self.__dictRepositoryConfig['DOCUMENTATIONBUILDER'] = normalize_path(f"{self.__sReferencePath}/genpackagedoc.py")
 
         # - folder containing the package source files (will also contain the PDF documentation)
-        self.__dictRepositoryConfig['PACKAGESOURCEFOLDER'] = CString.NormalizePath(f"{self.__sReferencePath}/{self.__dictRepositoryConfig['PACKAGENAME']}")
+        self.__dictRepositoryConfig['PACKAGESOURCEFOLDER'] = normalize_path(f"{self.__sReferencePath}/{self.__dictRepositoryConfig['PACKAGENAME']}")
 
         # ====== 2. setuptools
 
-        self.__dictRepositoryConfig['SETUPBUILDFOLDER']           = CString.NormalizePath(f"{self.__sReferencePath}/build")
-        self.__dictRepositoryConfig['SETUPBUILDLIBFOLDER']        = CString.NormalizePath(f"{self.__sReferencePath}/build/lib")
-        self.__dictRepositoryConfig['SETUPBUILDLIBPACKAGEFOLDER'] = CString.NormalizePath(f"{self.__sReferencePath}/build/lib/{self.__dictRepositoryConfig['PACKAGENAME']}")
-        self.__dictRepositoryConfig['SETUPDISTFOLDER']            = CString.NormalizePath(f"{self.__sReferencePath}/dist")
+        self.__dictRepositoryConfig['SETUPBUILDFOLDER']           = normalize_path(f"{self.__sReferencePath}/build")
+        self.__dictRepositoryConfig['SETUPBUILDLIBFOLDER']        = normalize_path(f"{self.__sReferencePath}/build/lib")
+        self.__dictRepositoryConfig['SETUPBUILDLIBPACKAGEFOLDER'] = normalize_path(f"{self.__sReferencePath}/build/lib/{self.__dictRepositoryConfig['PACKAGENAME']}")
+        self.__dictRepositoryConfig['SETUPDISTFOLDER']            = normalize_path(f"{self.__sReferencePath}/dist")
         EGGINFOFOLDER = self.__dictRepositoryConfig['PACKAGENAME'].replace('-', '_')
-        self.__dictRepositoryConfig['EGGINFOFOLDER']              = CString.NormalizePath(f"{self.__sReferencePath}/{EGGINFOFOLDER}.egg-info")
+        self.__dictRepositoryConfig['EGGINFOFOLDER']              = normalize_path(f"{self.__sReferencePath}/{EGGINFOFOLDER}.egg-info")
 
         print()
         print(f"Running under {sPlatformSystem} ({sOSName})")
