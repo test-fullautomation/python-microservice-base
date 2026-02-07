@@ -110,6 +110,51 @@ html, body {
   background-color: #c0392b;
 }
 
+/* ---------- Connected Broker Chips (navbar) ---------- */
+.connected-brokers {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.broker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+  white-space: nowrap;
+}
+
+.broker-chip-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  padding: 0;
+  margin-left: 0.1rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.broker-chip-close:hover {
+  color: #fff;
+  background-color: #e74c3c;
+}
+
 /* ---------- Layout ---------- */
 .app-layout {
   display: flex;
@@ -559,4 +604,72 @@ html, body {
   white-space: pre;
   word-break: break-word;
   margin: 0;
+}
+
+/* ---------- Broker Sections (multi-broker) ---------- */
+.broker-section {
+  /* No extra spacing in single-broker mode */
+}
+
+#servicesList.multi-broker .broker-section {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+#servicesList.multi-broker .broker-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.broker-header {
+  display: none;
+}
+
+#servicesList.multi-broker .broker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.45);
+  user-select: none;
+}
+
+.broker-header .broker-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.broker-header .broker-badge {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.broker-disconnect-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.75rem;
+  padding: 0 0.3rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.15s, background-color 0.15s;
+  flex-shrink: 0;
+}
+
+.broker-disconnect-btn:hover {
+  color: #e74c3c;
+  background-color: rgba(231, 76, 60, 0.15);
 }

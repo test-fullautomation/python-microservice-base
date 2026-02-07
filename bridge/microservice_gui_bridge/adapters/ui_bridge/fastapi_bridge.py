@@ -33,6 +33,7 @@ import base64
 import json
 import logging
 import os
+import tempfile
 import threading
 import zipfile
 
@@ -198,6 +199,8 @@ Download service GUI resources and extract them to the web/services/ directory.
             'MicroserviceManagerGUI', 'web', 'services'
          )
 
+         zip_fd, zip_path = tempfile.mkstemp(suffix='.zip')
+         os.close(zip_fd)
          try:
             services_info = bridge._services_info_provider() if bridge._services_info_provider else {}
             version = ""
@@ -208,19 +211,20 @@ Download service GUI resources and extract them to the web/services/ directory.
             os.makedirs(target_dir, exist_ok=True)
 
             zip_bytes = base64.b64decode(result["result_data"])
-            zip_path = os.path.join(target_dir, "received_files.zip")
             with open(zip_path, "wb") as f:
                f.write(zip_bytes)
 
             with zipfile.ZipFile(zip_path, "r") as zf:
                zf.extractall(target_dir)
 
-            os.remove(zip_path)
             logger.info("GUI resources extracted to %s", target_dir)
             return {"status": "ok", "path": target_dir}
          except Exception as exc:
             logger.error("Failed to extract GUI resources: %s", exc, exc_info=True)
             return {"error": str(exc)}
+         finally:
+            if os.path.exists(zip_path):
+               os.remove(zip_path)
 
       # Mount static files for the GUI web application
       gui_path = os.path.join(
