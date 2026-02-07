@@ -1,9 +1,12 @@
 {
-  "name": "dasgui",
-  "version": "1.0.0",
-  "description": "",
-  "main": "main.js",
+  "name": "microservice-manager-gui",
+  "version": "2.0.0",
+  "description": "Microservice Manager GUI - Dual hosting (Electron + Python Web)",
+  "main": "electron/main.js",
   "scripts": {
+    "start:electron": "cd electron && npm start",
+    "dev:electron": "cd electron && npm run dev",
+    "install:electron": "cd electron && npm install",
     "start": "electron .",
     "build": "electron-builder",
     "dev": "electron . --devTools=true",

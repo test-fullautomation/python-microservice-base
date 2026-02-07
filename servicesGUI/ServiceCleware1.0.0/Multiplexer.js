@@ -132,45 +132,12 @@ function handleMultiplexerContent() {
    outElement.classList.toggle('led-on', true);
 }
 
-var amqp = require('amqplib/callback_api');
-
-amqp.connect('amqp://localhost', function(error0, connection) {
-  if (error0) {
-    throw error0;
-  }
-  connection.createChannel(function(error1, channel) {
-    if (error1) {
-      throw error1;
-    }
-    var exchange = 'updates_sw_state';
-
-    channel.assertExchange(exchange, 'fanout', {
-      durable: false
-    });
-
-    channel.assertQueue('', {
-      exclusive: true
-    }, function(error2, q) {
-      if (error2) {
-        throw error2;
-      }
-      console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", q.queue);
-      channel.bindQueue(q.queue, exchange, '');
-
-      channel.consume(q.queue, function(msg) {
-        if(msg.content) {
-            console.log(" [x] %s", msg.content.toString());
-            const result = JSON.parse(msg.content.toString());
-            const deviceNumberSelect = document.getElementById('deviceNumber');
-            const selectedValue = deviceNumberSelect.value;
-            const valuesArray = Object.values(result[selectedValue]);
-            updateIndicators(valuesArray);
-          }
-      }, {
-        noAck: true
-      });
-    });
-  });
+// Subscribe to switch state updates via shared ServiceClient
+global.serviceClient.subscribeToExchange('updates_sw_state', function(result) {
+  const deviceNumberSelect = document.getElementById('deviceNumber');
+  const selectedValue = deviceNumberSelect.value;
+  const valuesArray = Object.values(result[selectedValue]);
+  updateIndicators(valuesArray);
 });
 
 // receiveUpdates().catch(console.error);

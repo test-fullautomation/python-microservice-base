@@ -231,9 +231,17 @@ function addRow() {
 function addMethodArgumentRows(serviceName, methodName, row)
 {
   const tableBody = document.querySelector('#data-table tbody');
-  const newRowsContainer = document.createElement('tbody');
+
+  // Remove any previously added dynamic hint rows for this row
+  var sib = row.nextSibling;
+  while (sib && sib.getAttribute('data-dynamic-row') === 'true') {
+    var toRemove = sib;
+    sib = sib.nextSibling;
+    tableBody.removeChild(toRemove);
+  }
+
   const argumentsArray = global.servicesInfor[serviceName].methods_info[methodName].arguments;
-  cell = row.children[3].children[0];
+  var cell = row.children[3].children[0];
   cell.placeholder = argumentsArray[0].description;
   const argumentsArrayExt = argumentsArray.slice(1);
   var nextSib = row.nextSibling;
@@ -263,11 +271,6 @@ function addMethodArgumentRows(serviceName, methodName, row)
        nextSib = newRow.nextSibling;
   });
 
-  // Attach an attribute to the container to track it as a dynamically added row
-  newRowsContainer.setAttribute('data-dynamic-rows', 'true');
-
-  // Insert the new rows below the clicked row
-  // tableBody.insertBefore(newRowsContainer, row.nextSibling);
 }
 
 function removeRow(mainRow) {
