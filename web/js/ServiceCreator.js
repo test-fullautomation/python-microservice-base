@@ -1125,8 +1125,10 @@
 
     var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
     if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
-      MM.showToast('Error', 'Save to Path requires the FastAPI bridge to be running.', 'warning');
-      return;
+      // Electron mode: derive bridge URL from settings
+      var settings = MM.getSettings ? MM.getSettings() : {};
+      var bridgePort = settings.bridgePort || 1112;
+      apiUrl = 'http://localhost:' + bridgePort;
     }
 
     fetch(apiUrl + '/api/scaffold/generate', {
