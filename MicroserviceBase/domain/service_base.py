@@ -92,7 +92,7 @@ Initialize the domain ServiceBase.
       self._api_dict = self.get_svc_api_methods_dict()
       self._api_info_dict = self.get_svc_api_methods_info_dict(self._api_dict)
       # Internal methods: dispatchable via RPC but not published to clients
-      _internal = {'svc_api_get_gui_files', 'svc_api_get_gui_checksum'}
+      _internal = {'svc_api_get_gui_files', 'svc_api_get_gui_checksum', 'svc_api_shutdown'}
       self._SERVICE_INFO['methods'] = [
          m for m in self._api_dict if m not in _internal
       ]
@@ -354,6 +354,19 @@ Returns None when gui_support is disabled or the GUIs directory is missing.
                   hasher.update(chunk)
 
       return hasher.hexdigest()
+
+   def svc_api_shutdown(self):
+      """
+Gracefully shut down this service.
+      """
+      logger.info("svc_api_shutdown called — unregistering and stopping")
+      try:
+         self.unregister_service()
+      except Exception as ex:
+         logger.warning("unregister_service() during shutdown: %s", ex)
+      if self._transport is not None:
+         self._transport.stop_consuming()
+      return {"status": "shutting_down"}
 
    def is_specific_request(self, request):
       """

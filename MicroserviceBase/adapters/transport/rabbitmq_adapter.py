@@ -106,6 +106,12 @@ Access the underlying pika connection (for backward compat).
       """
       return self._connection
 
+   def stop_consuming(self):
+      """
+Signal the consume loop to exit.
+      """
+      self._consuming = False
+
    def consume(self, service_name, routing_key, exchange, handler):
       """
 Start consuming RPC requests for a service.

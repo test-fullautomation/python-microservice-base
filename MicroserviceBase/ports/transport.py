@@ -54,6 +54,13 @@ Close connection to the message broker.
       ...
 
    @abstractmethod
+   def stop_consuming(self):
+      """
+Signal the consume loop to stop.
+      """
+      ...
+
+   @abstractmethod
    def consume(self, service_name, routing_key, exchange, handler):
       """
 Start consuming messages for a service.

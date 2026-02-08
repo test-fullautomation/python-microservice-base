@@ -73,7 +73,7 @@ class LocalHubManager:
                 # Lazy imports — ProcessHub is an optional dependency
                 from ProcessHub.runtime import ProcessHubServer
                 from ProcessHub.transport import ZmqTransport
-                from ProcessHub.process import SimpleExecutor
+                from .service_executor import ServiceExecutor
             except ImportError:
                 return {
                     "error": (
@@ -93,7 +93,12 @@ class LocalHubManager:
             self._hub_name = hub_name or "Local Hub"
 
             # Create components
-            self._executor = SimpleExecutor(stop_timeout=5.0)
+            broker_host, broker_port = self._get_broker_config()
+            self._executor = ServiceExecutor(
+                broker_host=broker_host,
+                broker_port=broker_port,
+                stop_timeout=5.0,
+            )
             self._transport = ZmqTransport(
                 start_broker=True,
                 xpub_port=xpub_port,
@@ -312,6 +317,19 @@ class LocalHubManager:
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _get_broker_config(self):
+        """Read broker settings from config.json next to the hub config file."""
+        if not self._config_path:
+            return 'localhost', 5672
+        config_dir = os.path.dirname(os.path.abspath(self._config_path))
+        config_json = os.path.join(config_dir, 'config.json')
+        try:
+            with open(config_json, 'r') as f:
+                cfg = json.load(f)
+            return cfg.get('broker_host', 'localhost'), int(cfg.get('broker_port', 5672))
+        except (FileNotFoundError, json.JSONDecodeError, ValueError):
+            return 'localhost', 5672
 
     def _resolve_placeholders(self, value, config_dir):
         """Replace ${python} and ${config_dir} placeholders in a string."""
