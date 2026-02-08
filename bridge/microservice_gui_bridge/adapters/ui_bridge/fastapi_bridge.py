@@ -401,6 +401,286 @@ Download service GUI resources and extract them to the web/services/ directory.
          mgr = _get_local_hub_manager()
          return mgr.reset()
 
+      # ---- Service Scaffolding endpoint ----
+
+      class ScaffoldMethodParam(BaseModel):
+         name: str = ""
+         type: str = "str"
+         required: bool = True
+
+      class ScaffoldMethod(BaseModel):
+         name: str = ""
+         params: List[ScaffoldMethodParam] = []
+         return_type: str = ""
+         description: str = ""
+
+      class ScaffoldRequest(BaseModel):
+         service_name: str
+         version: str = "1.0.0"
+         description: str = ""
+         short_description: str = ""
+         group: str = ""
+         tag: str = ""
+         routing_key: str = ""
+         transport: str = "rabbitmq"
+         gui_support: bool = False
+         methods: List[ScaffoldMethod] = []
+         output_path: str = ""
+
+      def _to_snake_case(name):
+         """Convert PascalCase to snake_case."""
+         import re
+         s1 = re.sub(r'([A-Z])', r'_\1', name)
+         return s1.lower().lstrip('_').replace('__', '_')
+
+      def _generate_service_class(body: ScaffoldRequest):
+         """Generate the service class source file content."""
+         snake_name = _to_snake_case(body.service_name)
+         routing_key = body.routing_key or ('service.' + snake_name)
+
+         lines = []
+         lines.append('import logging')
+         lines.append('import sys')
+         lines.append('')
+         lines.append('from MicroserviceBase.domain.service_base import ServiceBase')
+         lines.append('from MicroserviceBase.factory import create_transport, create_registry')
+         lines.append('')
+         lines.append('')
+         lines.append('logger = logging.getLogger("' + body.service_name + '")')
+         lines.append('')
+         lines.append('')
+         lines.append('class ' + body.service_name + 'Service(ServiceBase):')
+         lines.append('   """')
+         lines.append('   ' + (body.description or body.service_name + ' service.'))
+         lines.append('   """')
+         lines.append('')
+         lines.append('   _SERVICE_INFO = {')
+         lines.append("      'name': '" + body.service_name + "',")
+         lines.append("      'description': '" + body.description.replace("'", "\\'") + "',")
+         lines.append("      'shortdesc': '" + body.short_description.replace("'", "\\'") + "',")
+         lines.append("      'group': '" + body.group.replace("'", "\\'") + "',")
+         lines.append("      'tag': '" + body.tag.replace("'", "\\'") + "',")
+         lines.append("      'version': '" + body.version + "',")
+         lines.append("      'routing_key': '" + routing_key + "',")
+         lines.append("      'gui_support': " + str(body.gui_support) + ",")
+         lines.append("      'methods': [],")
+         lines.append("      'methods_info': {},")
+         lines.append('   }')
+
+         for method in body.methods:
+            method_name = method.name.strip()
+            if not method_name:
+               continue
+            # Build parameter list for the def line
+            param_names = ['self']
+            for p in method.params:
+               if p.name.strip():
+                  param_names.append(p.name.strip())
+
+            lines.append('')
+            lines.append('   def svc_api_' + method_name + '(' + ', '.join(param_names) + '):')
+
+            # Build docstring
+            lines.append('      """')
+            lines.append('      ' + (method.description or method_name.replace('_', ' ').capitalize() + '.'))
+            if method.params:
+               lines.append('')
+               lines.append('      **Arguments:**')
+               for p in method.params:
+                  if not p.name.strip():
+                     continue
+                  condition = 'required' if p.required else 'optional'
+                  lines.append('')
+                  lines.append('      * ``' + p.name.strip() + '``')
+                  lines.append('')
+                  lines.append('        / *Condition*: ' + condition + ' / *Type*: ' + (p.type or 'str') + ' /')
+                  lines.append('')
+                  lines.append('        ' + p.name.strip().replace('_', ' ').capitalize() + '.')
+            if method.return_type:
+               lines.append('')
+               lines.append('      **Returns:**')
+               lines.append('')
+               lines.append('        / *Type*: ' + method.return_type + ' /')
+               lines.append('')
+               lines.append('        Result.')
+            lines.append('      """')
+            lines.append('      # TODO: Implement ' + method_name)
+            lines.append('      pass')
+
+         return '\n'.join(lines) + '\n'
+
+      def _generate_main_py(body: ScaffoldRequest):
+         """Generate the main.py entry point."""
+         lines = []
+         lines.append('import logging')
+         lines.append('import os')
+         lines.append('import sys')
+         lines.append('')
+
+         snake_name = _to_snake_case(body.service_name)
+         lines.append('from ' + snake_name + ' import ' + body.service_name + 'Service')
+         lines.append('from MicroserviceBase.factory import create_transport, create_registry')
+         lines.append('')
+
+         lines.append('logging.basicConfig(')
+         lines.append("   format='%(asctime)s.%(msecs)03d %(levelname)s [%(name)s] %(message)s',")
+         lines.append("   datefmt='%H:%M:%S',")
+         lines.append('   level=logging.INFO,')
+         lines.append(')')
+         lines.append("logging.getLogger('pika').setLevel(logging.WARNING)")
+         lines.append('')
+         lines.append("logger = logging.getLogger('" + body.service_name + "')")
+         lines.append('')
+         lines.append('')
+         lines.append('def main():')
+         lines.append('   """')
+         lines.append('   Run the ' + body.service_name + ' service.')
+         lines.append('   """')
+
+         if body.transport == 'eventbus':
+            lines.append("   config_path = os.path.join(os.path.dirname(__file__), 'config.jsonp')")
+            lines.append("   transport = create_transport('eventbus', config_path=config_path,")
+            lines.append("                                service_name='" + body.service_name + "')")
+            lines.append("   registry = create_registry('eventbus', config_path=config_path,")
+            lines.append("                              service_name='" + body.service_name + "')")
+         else:
+            lines.append("   transport = create_transport('rabbitmq', cmd_args=sys.argv[1:],")
+            lines.append("                                service_name='" + body.service_name + "')")
+            lines.append("   registry = create_registry('rabbitmq', cmd_args=sys.argv[1:],")
+            lines.append("                              service_name='" + body.service_name + "')")
+
+         lines.append('')
+         lines.append('   service = ' + body.service_name + 'Service(transport=transport, registry=registry)')
+         lines.append('')
+         lines.append('   try:')
+         lines.append('      service.register_service()')
+         lines.append("      logger.info('Service registered, starting serve()...')")
+         lines.append('      service.serve()')
+         lines.append('   except KeyboardInterrupt:')
+         lines.append("      logger.info('KeyboardInterrupt caught')")
+         lines.append('   except Exception as ex:')
+         lines.append("      logger.error('Exception: %s: %s', type(ex).__name__, ex)")
+         lines.append('   finally:')
+         lines.append('      try:')
+         lines.append('         service.unregister_service()')
+         lines.append('      except Exception:')
+         lines.append('         pass')
+         lines.append('      try:')
+         lines.append('         service.close()')
+         lines.append('      except Exception:')
+         lines.append('         pass')
+         lines.append("      logger.info('Service stopped')")
+         lines.append('')
+         lines.append('')
+         lines.append("if __name__ == '__main__':")
+         lines.append('   main()')
+
+         return '\n'.join(lines) + '\n'
+
+      def _generate_config_jsonp(body: ScaffoldRequest):
+         """Generate config.jsonp for EventBus transport."""
+         routing_key = body.routing_key or ('service.' + _to_snake_case(body.service_name))
+         config = {
+            "transport": "eventbus",
+            "routing_key": routing_key,
+            "xpub_endpoint": "tcp://localhost:5555",
+            "xsub_endpoint": "tcp://localhost:5556"
+         }
+         return json.dumps(config, indent=2) + '\n'
+
+      def _generate_gui_html(body: ScaffoldRequest):
+         """Generate a basic GUI HTML template."""
+         return (
+            '<div class="card">\n'
+            '  <div class="card-header">\n'
+            '    <h5>' + body.service_name + '</h5>\n'
+            '    <small class="text-muted">'
+            + (body.short_description or body.description or '') +
+            '</small>\n'
+            '  </div>\n'
+            '  <div class="card-body">\n'
+            '    <p>Custom GUI for ' + body.service_name + '.</p>\n'
+            '    <!-- Add your service GUI here -->\n'
+            '  </div>\n'
+            '</div>\n'
+         )
+
+      def _generate_gui_js(body: ScaffoldRequest):
+         """Generate a basic GUI JS template."""
+         return (
+            "/**\n"
+            " * GUI for " + body.service_name + " service.\n"
+            " */\n"
+            "(function () {\n"
+            "  'use strict';\n"
+            "\n"
+            "  var MM = window.MicroserviceManager;\n"
+            "\n"
+            "  function load" + body.service_name + "() {\n"
+            "    console.log('" + body.service_name + " GUI loaded');\n"
+            "  }\n"
+            "\n"
+            "  function unload" + body.service_name + "() {\n"
+            "    console.log('" + body.service_name + " GUI unloaded');\n"
+            "  }\n"
+            "\n"
+            "  // Expose load/unload to global scope for the service loader\n"
+            "  window.load" + body.service_name + " = load" + body.service_name + ";\n"
+            "  window.unload" + body.service_name + " = unload" + body.service_name + ";\n"
+            "\n"
+            "  // Initial load\n"
+            "  load" + body.service_name + "();\n"
+            "})();\n"
+         )
+
+      @app.post("/api/scaffold/generate")
+      def scaffold_generate(body: ScaffoldRequest):
+         """
+Generate scaffolding for a new microservice project.
+         """
+         snake_name = _to_snake_case(body.service_name)
+         folder_name = body.service_name
+
+         # Collect files: (relative_path, content)
+         files = []
+         files.append((snake_name + '.py', _generate_service_class(body)))
+         files.append(('main.py', _generate_main_py(body)))
+
+         if body.transport == 'eventbus':
+            files.append(('config.jsonp', _generate_config_jsonp(body)))
+
+         if body.gui_support:
+            files.append(('GUIs/service.html', _generate_gui_html(body)))
+            files.append(('GUIs/service.js', _generate_gui_js(body)))
+
+         if body.output_path:
+            # Write to disk
+            target_dir = os.path.join(body.output_path, folder_name)
+            try:
+               for rel_path, content in files:
+                  full_path = os.path.join(target_dir, rel_path)
+                  os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                  with open(full_path, 'w', encoding='utf-8') as f:
+                     f.write(content)
+               logger.info("Scaffold files written to %s", target_dir)
+               return {"status": "ok", "path": target_dir}
+            except Exception as exc:
+               logger.error("Scaffold write error: %s", exc, exc_info=True)
+               return {"status": "error", "error": str(exc)}
+         else:
+            # Create in-memory ZIP
+            import io
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+               for rel_path, content in files:
+                  zf.writestr(folder_name + '/' + rel_path, content)
+            zip_data = base64.b64encode(buf.getvalue()).decode('ascii')
+            return {
+               "status": "ok",
+               "zip_data": zip_data,
+               "filename": folder_name + ".zip"
+            }
+
       # Mount static files for the GUI web application
       gui_path = os.path.join(
          os.path.dirname(__file__), '..', '..',

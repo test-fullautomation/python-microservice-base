@@ -1990,30 +1990,45 @@
 
   function switchMode(mode) {
     if (mode === _currentMode) return;
+
+    // Deactivate previous mode
+    if (_currentMode === 'fleet') {
+      deactivateFleetMode();
+    } else if (_currentMode === 'creator') {
+      deactivateCreatorMode();
+    }
+
     _currentMode = mode;
 
     // Toggle sidebar panels
     var sidebarServices = document.getElementById('sidebarServices');
     var sidebarFleet = document.getElementById('sidebarFleet');
+    var sidebarCreator = document.getElementById('sidebarCreator');
     if (sidebarServices) sidebarServices.classList.toggle('active', mode === 'services');
     if (sidebarFleet) sidebarFleet.classList.toggle('active', mode === 'fleet');
+    if (sidebarCreator) sidebarCreator.classList.toggle('active', mode === 'creator');
 
     // Toggle content panels
     var serviceContent = document.getElementById('serviceContent');
     var fleetContent = document.getElementById('fleetContent');
+    var creatorContent = document.getElementById('creatorContent');
     if (serviceContent) serviceContent.style.display = mode === 'services' ? '' : 'none';
     if (fleetContent) fleetContent.style.display = mode === 'fleet' ? '' : 'none';
+    if (creatorContent) creatorContent.style.display = mode === 'creator' ? '' : 'none';
 
     // Toggle nav buttons
     var btnServices = document.getElementById('btnModeServices');
     var btnFleet = document.getElementById('btnModeFleet');
+    var btnCreator = document.getElementById('btnModeCreator');
     if (btnServices) btnServices.classList.toggle('active', mode === 'services');
     if (btnFleet) btnFleet.classList.toggle('active', mode === 'fleet');
+    if (btnCreator) btnCreator.classList.toggle('active', mode === 'creator');
 
+    // Activate new mode
     if (mode === 'fleet') {
       activateFleetMode();
-    } else {
-      deactivateFleetMode();
+    } else if (mode === 'creator') {
+      activateCreatorMode();
     }
   }
 
@@ -2080,6 +2095,14 @@
     if (MM.localHubDashboard) MM.localHubDashboard.deactivate();
   }
 
+  function activateCreatorMode() {
+    if (MM.serviceCreator) MM.serviceCreator.activate();
+  }
+
+  function deactivateCreatorMode() {
+    if (MM.serviceCreator) MM.serviceCreator.deactivate();
+  }
+
   // Wire mode toggle buttons
   var btnModeServices = document.getElementById('btnModeServices');
   var btnModeFleet = document.getElementById('btnModeFleet');
@@ -2088,6 +2111,10 @@
   }
   if (btnModeFleet) {
     btnModeFleet.addEventListener('click', function () { switchMode('fleet'); });
+  }
+  var btnModeCreator = document.getElementById('btnModeCreator');
+  if (btnModeCreator) {
+    btnModeCreator.addEventListener('click', function () { switchMode('creator'); });
   }
 
   // Restore fleet URL from sessionStorage on page load
