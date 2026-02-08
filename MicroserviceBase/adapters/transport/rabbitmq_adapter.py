@@ -30,6 +30,9 @@
 
 import json
 import logging
+import os
+import signal
+import sys
 import time
 import uuid
 import pika
@@ -62,6 +65,7 @@ Initialize with a RabbitMQConfig.
       self._connection_params = config.to_connection_params()
       self._connection = None
       self._consume_channel = None
+      self._consuming = False
 
    def connect(self):
       """
@@ -78,6 +82,8 @@ Establish connection to RabbitMQ.
       """
 Close connection to RabbitMQ.
       """
+      logger.info("disconnect() called (PID=%d)", os.getpid())
+      self._consuming = False
       if self._consume_channel is not None:
          try:
             self._consume_channel.stop_consuming()
@@ -150,8 +156,25 @@ Sets up the exchange, queue, binding, and starts blocking consumption.
       self._consume_channel.basic_qos(prefetch_count=1)
       self._consume_channel.basic_consume(queue=service_name, on_message_callback=handler)
 
-      logger.info("Awaiting RPC requests")
-      self._consume_channel.start_consuming()
+      logger.info("Awaiting RPC requests (interruptible loop, PID=%d)", os.getpid())
+
+      # On Windows, CTRL_BREAK_EVENT raises SIGBREAK whose default handler
+      # calls ExitProcess — killing the process without running finally
+      # blocks or cleanup code.  Install a handler that raises
+      # KeyboardInterrupt instead, so services can unregister gracefully.
+      if sys.platform == "win32" and hasattr(signal, "SIGBREAK"):
+         try:
+            signal.signal(signal.SIGBREAK, signal.default_int_handler)
+         except (OSError, ValueError):
+            pass  # Not main thread, or signal not supported
+
+      # Use process_data_events with timeout instead of start_consuming()
+      # so that KeyboardInterrupt (from CTRL_BREAK_EVENT on Windows or
+      # SIGINT on Linux) can be delivered between iterations.
+      self._consuming = True
+      while self._consuming:
+         self._connection.process_data_events(time_limit=1)
+      logger.info("Consume loop exited (self._consuming set to False)")
 
    def rpc_call(self, request_data, exchange_name, routing_key, timeout=30):
       """

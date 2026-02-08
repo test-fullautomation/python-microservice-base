@@ -85,6 +85,20 @@ html, body {
   background-color: #2ecc71;
 }
 
+.btn-settings {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.btn-settings:hover {
+  color: #fff;
+}
+
 .btn-connect {
   background-color: var(--sidebar-active);
   color: #fff;
@@ -479,6 +493,16 @@ html, body {
 }
 
 #loginModal .modal-header .btn-close {
+  filter: invert(1);
+}
+
+/* ---------- Settings Modal ---------- */
+#settingsModal .modal-header {
+  background-color: var(--navbar-bg);
+  color: #fff;
+}
+
+#settingsModal .modal-header .btn-close {
   filter: invert(1);
 }
 

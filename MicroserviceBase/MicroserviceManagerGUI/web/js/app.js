@@ -1044,6 +1044,67 @@
   }
 
   /**
+   * Generate Robot Framework example code for a service using QConnectBase.
+   */
+  function _generateRobotCode(serviceName, serviceInfo, brokerHost, brokerPort) {
+    var methods = serviceInfo.methods || [];
+    var methodsInfo = serviceInfo.methods_info || {};
+    var routingKey = serviceInfo.routing_key || serviceName;
+
+    var code = '';
+    code += '*** Settings ***\n';
+    code += 'Library    QConnectBase.ConnectionManager\n';
+    code += 'Library    Collections\n';
+    code += '\n';
+    code += '*** Variables ***\n';
+    code += '${BROKER_HOST}        ' + brokerHost + '\n';
+    code += '${BROKER_PORT}        ' + brokerPort + '\n';
+    code += '${ROUTING_KEY}        ' + routingKey + '\n';
+    code += '${CONNECTION_NAME}    ' + serviceName + '_conn\n';
+    code += '\n';
+    code += '*** Test Cases ***\n';
+
+    if (methods.length > 0) {
+      methods.forEach(function (methodName) {
+        var methodDetail = methodsInfo[methodName];
+        var argsValue = 'null';
+
+        if (methodDetail && methodDetail.arguments && methodDetail.arguments.length > 0) {
+          var argPlaceholders = methodDetail.arguments.map(function (a) {
+            if (a.type === 'int' || a.type === 'number') return '0';
+            if (a.type === 'bool' || a.type === 'boolean') return 'true';
+            var desc = a.description || a.name || 'value';
+            return '"' + desc.replace(/"/g, '\\"') + '"';
+          });
+          argsValue = '[' + argPlaceholders.join(', ') + ']';
+        }
+
+        code += 'Test ' + methodName + '\n';
+        code += '    [Documentation]    Call ' + methodName;
+        if (methodDetail && methodDetail.description) {
+          code += ' - ' + methodDetail.description;
+        }
+        code += '\n';
+        code += '    ${config}=    Evaluate    json.loads(\'{"address":"${BROKER_HOST}","port":"${BROKER_PORT}","routing_key":"${ROUTING_KEY}"}\')    json\n';
+        code += '    Connect    conn_name=${CONNECTION_NAME}\n    ...        conn_type=RabbitmqClient\n    ...        conn_conf=${config}\n';
+        code += '    ${res}=    Verify    conn_name=${CONNECTION_NAME}\n';
+        code += '    ...    send_cmd={ "method": "' + methodName + '", "args": ' + argsValue + ' }\n';
+        code += '    ...    search_pattern=(.*)\n';
+        code += '    ...    timeout=30\n';
+        code += '    Log To Console    ${res}\n';
+        code += '    [Teardown]    Disconnect    ${CONNECTION_NAME}\n';
+        code += '\n';
+      });
+    } else {
+      code += 'Test No Methods\n';
+      code += '    [Documentation]    No methods available for this service.\n';
+      code += '    Log    No methods to call.\n';
+    }
+
+    return code;
+  }
+
+  /**
    * Generate JavaScript example code for a service using the ServiceClient / fetch API.
    */
   function _generateJavaScriptCode(serviceName, serviceInfo, brokerHost, brokerPort) {
@@ -1144,6 +1205,7 @@
     // Generate code for each language
     var pythonCode = _generatePythonCode(serviceName, serviceInfo, brokerHost, brokerPort);
     var jsCode = _generateJavaScriptCode(serviceName, serviceInfo, brokerHost, brokerPort);
+    var robotCode = _generateRobotCode(serviceName, serviceInfo, brokerHost, brokerPort);
 
     // Build modal body with header + language tabs
     var titleHtml = '<h5>' + _escapeHtml(serviceInfo.name || serviceName) + ' ' +
@@ -1164,6 +1226,11 @@
             'type="button" role="tab" aria-selected="false">' +
             '<i class="bi bi-filetype-js me-1"></i>JavaScript</button>' +
         '</li>' +
+        '<li class="nav-item" role="presentation">' +
+          '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabRobot" ' +
+            'type="button" role="tab" aria-selected="false">' +
+            '<i class="bi bi-robot me-1"></i>Robot</button>' +
+        '</li>' +
       '</ul>' +
       '<div class="tab-content">' +
         '<div class="tab-pane fade show active" id="helperTabPython" role="tabpanel">' +
@@ -1171,6 +1238,9 @@
         '</div>' +
         '<div class="tab-pane fade" id="helperTabJS" role="tabpanel">' +
           '<pre class="helper-code-pre" id="helperCodeJS">' + _escapeHtml(jsCode) + '</pre>' +
+        '</div>' +
+        '<div class="tab-pane fade" id="helperTabRobot" role="tabpanel">' +
+          '<pre class="helper-code-pre" id="helperCodeRobot">' + _escapeHtml(robotCode) + '</pre>' +
         '</div>' +
       '</div>';
 
@@ -1352,6 +1422,19 @@
     if (MM.connections[brokerUrl]) {
       showToast('Already Connected', 'Already connected to ' + brokerUrl, 'warning');
       return;
+    }
+
+    // Handle fleet API URL from advanced settings
+    var fleetApiUrlInput = document.getElementById('fleetApiUrlInput');
+    var fleetApiUrl = fleetApiUrlInput ? fleetApiUrlInput.value.trim() : '';
+    if (fleetApiUrl && MM.fleetClient) {
+      MM.fleetClient.configure(fleetApiUrl)
+        .then(function () {
+          try { sessionStorage.setItem('mm_fleet_api_url', fleetApiUrl); } catch (e) {}
+        })
+        .catch(function (err) {
+          console.warn('[app] Failed to configure fleet URL:', err);
+        });
     }
 
     showToast('Connecting', 'Connecting to broker at ' + brokerUrl + '...', 'info');
@@ -1888,6 +1971,122 @@
   }
 
   /************************************************************
+   *               Mode Switching (Services / Fleet)          *
+   ************************************************************/
+
+  var _currentMode = 'services';
+
+  function switchMode(mode) {
+    if (mode === _currentMode) return;
+    _currentMode = mode;
+
+    // Toggle sidebar panels
+    var sidebarServices = document.getElementById('sidebarServices');
+    var sidebarFleet = document.getElementById('sidebarFleet');
+    if (sidebarServices) sidebarServices.classList.toggle('active', mode === 'services');
+    if (sidebarFleet) sidebarFleet.classList.toggle('active', mode === 'fleet');
+
+    // Toggle content panels
+    var serviceContent = document.getElementById('serviceContent');
+    var fleetContent = document.getElementById('fleetContent');
+    if (serviceContent) serviceContent.style.display = mode === 'services' ? '' : 'none';
+    if (fleetContent) fleetContent.style.display = mode === 'fleet' ? '' : 'none';
+
+    // Toggle nav buttons
+    var btnServices = document.getElementById('btnModeServices');
+    var btnFleet = document.getElementById('btnModeFleet');
+    if (btnServices) btnServices.classList.toggle('active', mode === 'services');
+    if (btnFleet) btnFleet.classList.toggle('active', mode === 'fleet');
+
+    if (mode === 'fleet') {
+      activateFleetMode();
+    } else {
+      deactivateFleetMode();
+    }
+  }
+
+  function activateFleetMode() {
+    if (!MM.fleetDashboard || !MM.fleetClient) return;
+
+    // Activate the currently visible sub-tab
+    var localTab = document.getElementById('tabLocalHub');
+    var isLocalActive = localTab && localTab.classList.contains('active');
+
+    if (isLocalActive) {
+      _activateLocalHubSubTab();
+    } else {
+      _activateFleetRemoteSubTab();
+    }
+
+    // Wire sub-tab switch events
+    var tabLocalHub = document.getElementById('tabLocalHub');
+    var tabFleetRemote = document.getElementById('tabFleetRemote');
+
+    if (tabLocalHub) {
+      tabLocalHub._mmHandler = tabLocalHub._mmHandler || function () {
+        _deactivateFleetRemoteSubTab();
+        _activateLocalHubSubTab();
+      };
+      tabLocalHub.removeEventListener('shown.bs.tab', tabLocalHub._mmHandler);
+      tabLocalHub.addEventListener('shown.bs.tab', tabLocalHub._mmHandler);
+    }
+    if (tabFleetRemote) {
+      tabFleetRemote._mmHandler = tabFleetRemote._mmHandler || function () {
+        _deactivateLocalHubSubTab();
+        _activateFleetRemoteSubTab();
+      };
+      tabFleetRemote.removeEventListener('shown.bs.tab', tabFleetRemote._mmHandler);
+      tabFleetRemote.addEventListener('shown.bs.tab', tabFleetRemote._mmHandler);
+    }
+  }
+
+  function _activateFleetRemoteSubTab() {
+    MM.fleetDashboard.activate();
+    if (MM.fleetClient.isConfigured()) {
+      MM.fleetClient.startPolling();
+    } else {
+      MM.fleetDashboard.renderConfigurePrompt();
+    }
+  }
+
+  function _deactivateFleetRemoteSubTab() {
+    if (MM.fleetClient) MM.fleetClient.stopPolling();
+    if (MM.fleetDashboard) MM.fleetDashboard.deactivate();
+  }
+
+  function _activateLocalHubSubTab() {
+    if (MM.localHubDashboard) MM.localHubDashboard.activate();
+  }
+
+  function _deactivateLocalHubSubTab() {
+    if (MM.localHubDashboard) MM.localHubDashboard.deactivate();
+  }
+
+  function deactivateFleetMode() {
+    if (MM.fleetClient) MM.fleetClient.stopPolling();
+    if (MM.fleetDashboard) MM.fleetDashboard.deactivate();
+    if (MM.localHubDashboard) MM.localHubDashboard.deactivate();
+  }
+
+  // Wire mode toggle buttons
+  var btnModeServices = document.getElementById('btnModeServices');
+  var btnModeFleet = document.getElementById('btnModeFleet');
+  if (btnModeServices) {
+    btnModeServices.addEventListener('click', function () { switchMode('services'); });
+  }
+  if (btnModeFleet) {
+    btnModeFleet.addEventListener('click', function () { switchMode('fleet'); });
+  }
+
+  // Restore fleet URL from sessionStorage on page load
+  try {
+    var savedFleetUrl = sessionStorage.getItem('mm_fleet_api_url');
+    if (savedFleetUrl && MM.fleetClient) {
+      MM.fleetClient.configure(savedFleetUrl);
+    }
+  } catch (e) { /* sessionStorage unavailable */ }
+
+  /************************************************************
    *               Expose functions for plugins               *
    ************************************************************/
 
@@ -1907,5 +2106,134 @@
   MM.SERVICES_GUI_FOLDER = SERVICES_GUI_FOLDER;
   MM.showServiceAPIExplorer = showServiceAPIExplorer;
   MM.showServiceHelper = showServiceHelper;
+  MM.switchMode = switchMode;
+
+  /************************************************************
+   *               Settings Management                         *
+   ************************************************************/
+
+  var _settings = {};
+  var settingsModal = null;
+
+  function renderSettingsForm() {
+    var body = document.getElementById('settingsModalBody');
+    if (!body) return;
+
+    body.innerHTML =
+      '<form id="settingsForm">' +
+        '<div class="mb-3">' +
+          '<label for="settingPythonPath" class="form-label fw-semibold">Python Path</label>' +
+          '<input type="text" class="form-control" id="settingPythonPath" ' +
+            'placeholder="python" value="' + _escapeHtml(_settings.pythonPath || '') + '">' +
+          '<div class="form-text">Path to Python interpreter (used by Electron to spawn the bridge)</div>' +
+        '</div>' +
+        '<hr>' +
+        '<h6 class="fw-semibold mb-3">Infrastructure</h6>' +
+        '<div class="row mb-3">' +
+          '<div class="col">' +
+            '<label for="settingBrokerHost" class="form-label fw-semibold">Broker Host</label>' +
+            '<input type="text" class="form-control" id="settingBrokerHost" ' +
+              'placeholder="localhost" value="' + _escapeHtml(_settings.brokerHost || '') + '">' +
+          '</div>' +
+          '<div class="col">' +
+            '<label for="settingBrokerPort" class="form-label fw-semibold">Broker Port</label>' +
+            '<input type="text" class="form-control" id="settingBrokerPort" ' +
+              'placeholder="5672" value="' + _escapeHtml(_settings.brokerPort || '') + '">' +
+          '</div>' +
+        '</div>' +
+        '<div class="mb-3">' +
+          '<label for="settingBridgePort" class="form-label fw-semibold">Bridge Port</label>' +
+          '<input type="number" class="form-control" id="settingBridgePort" ' +
+            'placeholder="1112" value="' + _escapeHtml(_settings.bridgePort || '') + '">' +
+          '<div class="form-text">Port for the FastAPI bridge (REST API &amp; WebSocket)</div>' +
+        '</div>' +
+      '</form>';
+  }
+
+  function openSettings() {
+    renderSettingsForm();
+    if (!settingsModal) {
+      settingsModal = new bootstrap.Modal(document.getElementById('settingsModal'));
+    }
+    settingsModal.show();
+  }
+
+  function saveSettings() {
+    var pythonPathInput = document.getElementById('settingPythonPath');
+    var brokerHostInput = document.getElementById('settingBrokerHost');
+    var brokerPortInput = document.getElementById('settingBrokerPort');
+    var bridgePortInput = document.getElementById('settingBridgePort');
+    var newSettings = {
+      pythonPath: pythonPathInput ? pythonPathInput.value.trim() : '',
+      brokerHost: brokerHostInput ? brokerHostInput.value.trim() : '',
+      brokerPort: brokerPortInput ? brokerPortInput.value.trim() : '',
+      bridgePort: bridgePortInput ? bridgePortInput.value.trim() : ''
+    };
+
+    _settings = Object.assign(_settings, newSettings);
+
+    if (window.electronAPI && window.electronAPI.saveSettings) {
+      window.electronAPI.saveSettings(_settings)
+        .then(function () {
+          showToast('Settings', 'Settings saved.', 'success');
+        })
+        .catch(function (err) {
+          showToast('Error', 'Failed to save settings: ' + err.message, 'danger');
+        });
+    } else {
+      try {
+        sessionStorage.setItem('mm_settings', JSON.stringify(_settings));
+        showToast('Settings', 'Settings saved.', 'success');
+      } catch (e) {
+        showToast('Error', 'Failed to save settings.', 'danger');
+      }
+    }
+
+    if (settingsModal) settingsModal.hide();
+  }
+
+  function loadSettings() {
+    if (window.electronAPI && window.electronAPI.loadSettings) {
+      window.electronAPI.loadSettings()
+        .then(function (settings) {
+          _settings = settings || {};
+          console.log('[app] Settings loaded from file:', Object.keys(_settings));
+        })
+        .catch(function () {
+          _settings = {};
+        });
+    } else {
+      try {
+        var raw = sessionStorage.getItem('mm_settings');
+        if (raw) {
+          _settings = JSON.parse(raw);
+          console.log('[app] Settings loaded from sessionStorage:', Object.keys(_settings));
+        }
+      } catch (e) {
+        _settings = {};
+      }
+    }
+  }
+
+  // Wire settings button and save button
+  var btnSettings = document.getElementById('btnSettings');
+  if (btnSettings) {
+    btnSettings.addEventListener('click', function () {
+      openSettings();
+    });
+  }
+
+  var btnSettingsSave = document.getElementById('btnSettingsSave');
+  if (btnSettingsSave) {
+    btnSettingsSave.addEventListener('click', function () {
+      saveSettings();
+    });
+  }
+
+  // Load settings on startup
+  loadSettings();
+
+  // Expose getSettings for other modules (e.g., LocalHubDashboard)
+  MM.getSettings = function () { return _settings; };
 
 })();

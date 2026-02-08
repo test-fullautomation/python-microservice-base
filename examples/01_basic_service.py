@@ -46,6 +46,8 @@ The service will:
 - Respond to method calls with structured ServiceResponse messages
 """
 
+import logging
+import os
 import sys
 from pathlib import Path
 
@@ -54,6 +56,27 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from MicroserviceBase.domain.service_base import ServiceBase
 from MicroserviceBase.factory import create_transport, create_registry
+
+_log_file = Path(__file__).parent / "calculator_debug.log"
+_fmt = logging.Formatter(
+   "%(asctime)s.%(msecs)03d %(levelname)s [%(name)s] %(message)s",
+   datefmt="%H:%M:%S",
+)
+_fh = logging.FileHandler(str(_log_file), mode='w')
+_fh.setFormatter(_fmt)
+# Root logger at INFO — suppresses pika DEBUG spam
+logging.root.addHandler(_fh)
+# Only add StreamHandler when running interactively (not piped by ProcessHub)
+if sys.stderr.isatty():
+   _sh = logging.StreamHandler()
+   _sh.setFormatter(_fmt)
+   logging.root.addHandler(_sh)
+logging.root.setLevel(logging.INFO)
+# Silence pika debug entirely
+logging.getLogger("pika").setLevel(logging.WARNING)
+
+logger = logging.getLogger("Calculator")
+logger.info("=== Calculator process started, PID=%d, log=%s ===", os.getpid(), _log_file)
 
 
 class CalculatorService(ServiceBase):
@@ -170,16 +193,35 @@ Run the Calculator service.
 
    try:
       # Register with the Service Registry
+      logger.info("=== Registering service ===")
       service.register_service()
+      logger.info("=== Service registered, starting serve() ===")
 
       # Start serving (blocks until interrupted)
       service.serve()
+      logger.info("=== serve() returned normally ===")
    except KeyboardInterrupt:
-      print(f" [*] Interrupted by user.")
+      logger.info("=== KeyboardInterrupt caught! ===")
+   except Exception as ex:
+      logger.info("=== Exception caught: %s: %s ===", type(ex).__name__, ex)
    finally:
-      service.unregister_service()
-      service.close()
-      print(f" [*] Service stopped.")
+      logger.info("=== Finally block: calling unregister_service() ===")
+      try:
+         service.unregister_service()
+         logger.info("=== unregister_service() completed OK ===")
+      except Exception as ex:
+         logger.error("=== unregister_service() FAILED: %s: %s ===",
+                      type(ex).__name__, ex)
+      logger.info("=== Finally block: calling close() ===")
+      try:
+         service.close()
+         logger.info("=== close() completed OK ===")
+      except Exception as ex:
+         logger.error("=== close() FAILED: %s: %s ===",
+                      type(ex).__name__, ex)
+      logger.info("=== Service stopped ===")
+      sys.stdout.flush()
+      sys.stderr.flush()
 
 
 if __name__ == '__main__':

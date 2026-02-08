@@ -85,6 +85,7 @@ Initialize the FastAPI bridge.
       self._ws_clients = set()
       self._ws_clients_lock = threading.Lock()
       self._server_loop = None
+      self._fleet_api_url = None
 
    def _build_app(self):
       """
@@ -106,6 +107,9 @@ Build the FastAPI application with all routes.
       )
 
       bridge = self
+
+      # ---- Local Hub Manager (lazy init) ----
+      self._local_hub_manager = None
 
       class ServiceRequestBody(BaseModel):
          method: str
@@ -225,6 +229,177 @@ Download service GUI resources and extract them to the web/services/ directory.
          finally:
             if os.path.exists(zip_path):
                os.remove(zip_path)
+
+      # ---- Fleet proxy endpoints ----
+
+      class FleetConfigBody(BaseModel):
+         fleet_api_url: str
+
+      class ProcessActionBody(BaseModel):
+         process_list: List[str]
+         panel_id: str = "fleet"
+         force: bool = False
+
+      class FleetCommandBody(BaseModel):
+         hub_id: str
+         action: str
+         params: Optional[dict] = {}
+
+      def _fleet_proxy(method, path, json_body=None):
+         """Forward a request to the FleetWebAPI."""
+         import httpx
+
+         if not bridge._fleet_api_url:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+               status_code=503,
+               content={"error": "Fleet API URL not configured"},
+            )
+         url = bridge._fleet_api_url.rstrip("/") + path
+         try:
+            with httpx.Client(timeout=10.0) as client:
+               if method == "GET":
+                  resp = client.get(url)
+               else:
+                  resp = client.post(url, json=json_body)
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+         except Exception as exc:
+            logger.error("Fleet proxy error (%s %s): %s", method, path, exc)
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+               status_code=502,
+               content={"error": "Fleet API unreachable: " + str(exc)},
+            )
+
+      @app.get("/api/fleet/config")
+      def get_fleet_config():
+         return {"fleet_api_url": bridge._fleet_api_url}
+
+      @app.post("/api/fleet/config")
+      def set_fleet_config(body: FleetConfigBody):
+         bridge._fleet_api_url = body.fleet_api_url
+         logger.info("Fleet API URL set to %s", bridge._fleet_api_url)
+         return {"fleet_api_url": bridge._fleet_api_url}
+
+      @app.get("/api/fleet/status")
+      def fleet_status():
+         return _fleet_proxy("GET", "/api/fleet/status")
+
+      @app.get("/api/fleet/hubs")
+      def fleet_hubs():
+         return _fleet_proxy("GET", "/api/fleet/hubs")
+
+      @app.get("/api/fleet/hubs/{hub_id}")
+      def fleet_hub_detail(hub_id: str):
+         return _fleet_proxy("GET", "/api/fleet/hubs/" + hub_id)
+
+      @app.post("/api/fleet/hubs/{hub_id}/start")
+      def fleet_hub_start(hub_id: str, body: ProcessActionBody):
+         return _fleet_proxy("POST", "/api/fleet/hubs/" + hub_id + "/start",
+                             body.model_dump())
+
+      @app.post("/api/fleet/hubs/{hub_id}/stop")
+      def fleet_hub_stop(hub_id: str, body: ProcessActionBody):
+         return _fleet_proxy("POST", "/api/fleet/hubs/" + hub_id + "/stop",
+                             body.model_dump())
+
+      @app.post("/api/fleet/hubs/{hub_id}/reset")
+      def fleet_hub_reset(hub_id: str):
+         return _fleet_proxy("POST", "/api/fleet/hubs/" + hub_id + "/reset")
+
+      @app.post("/api/fleet/command")
+      def fleet_command(body: FleetCommandBody):
+         return _fleet_proxy("POST", "/api/fleet/command", body.model_dump())
+
+      # ---- Local Hub endpoints ----
+
+      class LocalHubStartBody(BaseModel):
+         mode: str = "standalone"
+         xpub_port: int = 5555
+         xsub_port: int = 5556
+         orchestrator_url: str = ""
+         hub_id: str = ""
+         hub_name: str = ""
+         process_config: Optional[dict] = None
+
+      class LocalHubProcessActionBody(BaseModel):
+         names: List[str]
+         force: bool = False
+
+      class LocalHubConfigBody(BaseModel):
+         name: str = ""
+         config: dict = {}
+
+      def _get_local_hub_manager():
+         if bridge._local_hub_manager is None:
+            from ..local_hub.local_hub_manager import LocalHubManager
+            hub_config_path = os.path.join(
+               os.path.dirname(__file__), '..', '..',
+               'MicroserviceManagerGUI', 'python', 'hub_processes.json'
+            )
+            bridge._local_hub_manager = LocalHubManager(
+               config_path=hub_config_path
+            )
+         return bridge._local_hub_manager
+
+      @app.post("/api/local-hub/start")
+      def local_hub_start(body: LocalHubStartBody):
+         mgr = _get_local_hub_manager()
+         return mgr.start_hub(
+            mode=body.mode,
+            xpub_port=body.xpub_port,
+            xsub_port=body.xsub_port,
+            orchestrator_url=body.orchestrator_url,
+            hub_id=body.hub_id,
+            hub_name=body.hub_name,
+            process_config=body.process_config,
+         )
+
+      @app.post("/api/local-hub/stop")
+      def local_hub_stop():
+         mgr = _get_local_hub_manager()
+         return mgr.stop_hub()
+
+      @app.get("/api/local-hub/status")
+      def local_hub_status():
+         mgr = _get_local_hub_manager()
+         return mgr.get_status()
+
+      @app.post("/api/local-hub/processes/start")
+      def local_hub_processes_start(body: LocalHubProcessActionBody):
+         mgr = _get_local_hub_manager()
+         return mgr.start_processes(body.names)
+
+      @app.post("/api/local-hub/processes/stop")
+      def local_hub_processes_stop(body: LocalHubProcessActionBody):
+         mgr = _get_local_hub_manager()
+         return mgr.stop_processes(body.names, force=body.force)
+
+      @app.get("/api/local-hub/config")
+      def local_hub_config_get():
+         mgr = _get_local_hub_manager()
+         return mgr.get_config()
+
+      @app.post("/api/local-hub/config")
+      def local_hub_config_add(body: LocalHubConfigBody):
+         mgr = _get_local_hub_manager()
+         return mgr.add_config(body.name, body.config)
+
+      @app.put("/api/local-hub/config/{name}")
+      def local_hub_config_update(name: str, body: LocalHubConfigBody):
+         mgr = _get_local_hub_manager()
+         return mgr.update_config(name, body.config)
+
+      @app.delete("/api/local-hub/config/{name}")
+      def local_hub_config_delete(name: str):
+         mgr = _get_local_hub_manager()
+         return mgr.remove_config(name)
+
+      @app.post("/api/local-hub/reset")
+      def local_hub_reset():
+         mgr = _get_local_hub_manager()
+         return mgr.reset()
 
       # Mount static files for the GUI web application
       gui_path = os.path.join(

@@ -1,0 +1,546 @@
+/* ==========================================================================
+   Service Network (Fleet) Styles
+   ========================================================================== */
+
+/* ---------- Fleet Summary Bar ---------- */
+.fleet-summary {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.fleet-stat-card {
+  flex: 1;
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.25rem;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.fleet-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2c3e50;
+  line-height: 1.2;
+}
+
+.fleet-stat-label {
+  font-size: 0.8rem;
+  color: #95a5a6;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.25rem;
+}
+
+/* ---------- Hub Grid ---------- */
+.fleet-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+/* ---------- Hub Card ---------- */
+.fleet-hub-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+  cursor: default;
+}
+
+.fleet-hub-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.fleet-hub-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.fleet-hub-card-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #2c3e50;
+}
+
+.fleet-hub-card-body {
+  padding: 0.75rem 1rem;
+}
+
+.fleet-hub-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  color: #7f8c8d;
+}
+
+.fleet-hub-processes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.fleet-process-tag {
+  display: inline-block;
+  background: #ecf0f1;
+  color: #2c3e50;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.fleet-process-tag.running {
+  background: rgba(46, 204, 113, 0.15);
+  color: #27ae60;
+}
+
+.fleet-process-tag.stopped {
+  background: #ecf0f1;
+  color: #95a5a6;
+}
+
+.fleet-process-tag.more {
+  background: rgba(52, 152, 219, 0.1);
+  color: #3498db;
+}
+
+.fleet-hub-card-actions {
+  padding: 0.5rem 1rem 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ---------- Status Badge ---------- */
+.fleet-status-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  line-height: 1;
+}
+
+.fleet-status-badge.online {
+  background-color: rgba(46, 204, 113, 0.15);
+  color: #27ae60;
+}
+
+.fleet-status-badge.degraded {
+  background-color: rgba(241, 196, 15, 0.15);
+  color: #f39c12;
+}
+
+.fleet-status-badge.offline {
+  background-color: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+}
+
+/* ---------- Sidebar Hub List ---------- */
+.fleet-sidebar-header {
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.fleet-sidebar-header .badge {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.7rem;
+}
+
+.fleet-hub-list {
+  padding: 0.5rem;
+}
+
+.fleet-hub-list .hub-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--sidebar-text, #ecf0f1);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  text-align: left;
+}
+
+.fleet-hub-list .hub-item:hover {
+  background-color: var(--sidebar-hover, #34495e);
+}
+
+.fleet-hub-list .hub-item.active {
+  background-color: var(--sidebar-active, #3498db);
+  color: #fff;
+}
+
+.hub-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hub-status-dot.online {
+  background-color: #2ecc71;
+}
+
+.hub-status-dot.degraded {
+  background-color: #f1c40f;
+}
+
+.hub-status-dot.offline {
+  background-color: #e74c3c;
+}
+
+.hub-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-item-count {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.fleet-empty-msg {
+  padding: 1.5rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.85rem;
+}
+
+/* ---------- Hub Detail Panel ---------- */
+.fleet-detail-panel {
+  max-width: 1000px;
+}
+
+.fleet-detail-breadcrumb {
+  margin-bottom: 1rem;
+}
+
+.fleet-back-link {
+  color: #3498db;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.fleet-back-link:hover {
+  text-decoration: underline;
+}
+
+.fleet-detail-header {
+  margin-bottom: 1rem;
+}
+
+.fleet-detail-header h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.fleet-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  font-size: 0.85rem;
+  color: #7f8c8d;
+}
+
+.fleet-detail-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.fleet-process-list {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.fleet-process-item {
+  padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.fleet-process-item:last-child {
+  border-bottom: none;
+}
+
+.fleet-process-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fleet-process-state {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+.fleet-process-item.running .fleet-process-state {
+  color: #27ae60;
+}
+
+.fleet-process-item.stopped .fleet-process-state {
+  color: #bdc3c7;
+}
+
+.fleet-process-name {
+  flex: 1;
+  font-size: 0.85rem;
+  color: #2c3e50;
+}
+
+.fleet-process-item.stopped .fleet-process-name {
+  color: #95a5a6;
+}
+
+.fleet-process-state-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.fleet-process-state-label.running {
+  background: rgba(46, 204, 113, 0.12);
+  color: #27ae60;
+}
+
+.fleet-process-state-label.stopped {
+  background: rgba(0, 0, 0, 0.05);
+  color: #95a5a6;
+}
+
+.fleet-connection-item {
+  font-size: 0.85rem;
+  color: #2c3e50;
+  padding: 0.25rem 0;
+}
+
+/* ---------- Configure / Error Prompt ---------- */
+.fleet-configure-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+  color: #7f8c8d;
+}
+
+.fleet-configure-icon {
+  font-size: 3rem;
+  color: #bdc3c7;
+  margin-bottom: 1rem;
+}
+
+.fleet-configure-icon.text-danger {
+  color: #e74c3c;
+}
+
+.fleet-configure-form {
+  margin-top: 1rem;
+  width: 100%;
+  max-width: 450px;
+}
+
+/* ---------- Nav Mode Toggle ---------- */
+.nav-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+  margin-left: 1.5rem;
+}
+
+.nav-mode-toggle .mode-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+  white-space: nowrap;
+}
+
+.nav-mode-toggle .mode-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.nav-mode-toggle .mode-btn.active {
+  background-color: var(--sidebar-active, #3498db);
+  color: #fff;
+}
+
+/* ---------- Sidebar mode containers ---------- */
+.sidebar-mode {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sidebar-mode.active {
+  display: flex;
+}
+
+/* ---------- Process Config Detail (collapsible) ---------- */
+.fleet-cfg-toggle-btn {
+  padding: 0.15rem 0.35rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.fleet-cfg-detail {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+}
+
+.fleet-cfg-table {
+  width: 100%;
+  font-size: 0.8rem;
+  border-collapse: collapse;
+}
+
+.fleet-cfg-table td {
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+  color: #2c3e50;
+}
+
+.fleet-cfg-table tr:not(:last-child) td {
+  border-bottom: 1px solid #e9ecef;
+}
+
+.fleet-cfg-label {
+  font-weight: 600;
+  white-space: nowrap;
+  color: #7f8c8d;
+  width: 100px;
+}
+
+.fleet-cfg-table code {
+  font-size: 0.78rem;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  word-break: break-all;
+}
+
+/* ==========================================================================
+   Fleet Sub-Tabs (Fleet / Local Hub)
+   ========================================================================== */
+
+.fleet-sub-tabs {
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 1rem;
+}
+
+.fleet-sub-tabs .nav-link {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #7f8c8d;
+  padding: 0.5rem 1rem;
+}
+
+.fleet-sub-tabs .nav-link.active {
+  color: #2c3e50;
+  border-color: #dee2e6 #dee2e6 #fff;
+}
+
+.fleet-tab-content {
+  min-height: 200px;
+}
+
+/* ---------- Local Hub Setup ---------- */
+.local-hub-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  text-align: center;
+  color: #7f8c8d;
+}
+
+.local-hub-setup-icon {
+  font-size: 3rem;
+  color: #3498db;
+  margin-bottom: 1rem;
+}
+
+.local-hub-setup-form {
+  margin-top: 1rem;
+  width: 100%;
+  max-width: 450px;
+  text-align: left;
+}
+
+/* ---------- Local Hub Dashboard ---------- */
+.local-hub-dashboard {
+  max-width: 1000px;
+}
+
+.local-hub-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.local-hub-header h5 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.local-hub-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* ---------- Local Hub Config Form ---------- */
+.local-hub-config-form .card-body {
+  padding: 0.75rem 1rem;
+}
+
+.local-hub-config-form .form-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+}

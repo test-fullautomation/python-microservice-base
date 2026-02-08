@@ -1,0 +1,8 @@
+{
+  "broker_host": "localhost",
+  "broker_port": "5672",
+  "bridge_host": "localhost",
+  "bridge_port": 1112,
+  "registry_routing_key": "ServiceRegistry",
+  "update_exchange_name": "services_update"
+}

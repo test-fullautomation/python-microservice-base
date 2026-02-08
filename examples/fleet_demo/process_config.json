@@ -1,0 +1,18 @@
+{
+    "Calculator": {
+        "process_name": "Calculator",
+        "script": "${MICROSERVICE_BASE}/examples/01_basic_service.py",
+        "args": ["--host", "${RABBITMQ_HOST:localhost}", "--port", "${RABBITMQ_PORT:5672}"],
+        "wait_time": 0.2,
+        "description": "Basic arithmetic calculator microservice",
+        "dependencies": []
+    },
+    "ServiceCleware": {
+        "process_name": "ServiceCleware",
+        "script": "-m",
+        "args": ["MicroserviceClewareSwitch", "--host", "${RABBITMQ_HOST:localhost}", "--port", "${RABBITMQ_PORT:5672}"],
+        "wait_time": 0.2,
+        "description": "Cleware USB switch microservice",
+        "dependencies": []
+    }
+}
