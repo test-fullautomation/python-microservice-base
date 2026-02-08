@@ -120,6 +120,20 @@ Notify connected clients about service updates via the registry port.
       if self._registry is not None:
          self._registry.notify_update(self.services_information)
 
+   def _broadcast_shutdown_sentinel(self):
+      """Publish a sentinel to notify subscribers the registry is shutting down."""
+      if self._registry is not None:
+         self._registry.notify_update({"__registry_shutdown__": True})
+
+   def svc_api_shutdown(self):
+      """Gracefully shut down the Service Registry."""
+      logger.info("ServiceRegistry shutting down — broadcasting shutdown sentinel")
+      try:
+         self._broadcast_shutdown_sentinel()
+      except Exception as ex:
+         logger.warning("Failed to broadcast shutdown sentinel: %s", ex)
+      return super().svc_api_shutdown()
+
    def svc_api_get_services_info(self):
       """
 Retrieve information of all services connected to the broker.

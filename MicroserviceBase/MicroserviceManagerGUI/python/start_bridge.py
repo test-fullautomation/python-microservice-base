@@ -138,6 +138,10 @@ def main():
 
 
 def _on_update(bridge, services_info, data):
+    if isinstance(data, dict) and data.get("__registry_shutdown__"):
+        bridge.broadcast_update(data)
+        print(" [>] Registry shutdown sentinel received")
+        return
     services_info.clear()
     services_info.update(data)
     bridge.broadcast_update(services_info)

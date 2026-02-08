@@ -137,6 +137,10 @@ def main():
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")
     finally:
+        try:
+            service_registry._broadcast_shutdown_sentinel()
+        except Exception:
+            logger.debug("Failed to broadcast shutdown sentinel", exc_info=True)
         service_registry.unregister_service()
         service_registry.close()
         registry.cleanup()
