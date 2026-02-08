@@ -80,6 +80,15 @@ function _removePidFile() {
 contextBridge.exposeInMainWorld('electronAPI', {
 
   /**
+   * Show a native open dialog (folder or file picker).
+   * @param {object} options - Electron dialog.showOpenDialog options.
+   * @returns {Promise<{filePaths: string[]}>}
+   */
+  showOpenDialog: (options) => {
+    return ipcRenderer.invoke('show-open-dialog', options || {});
+  },
+
+  /**
    * Check if a folder exists.
    * @param {string} folderPath - Path to check (relative to web/).
    * @returns {Promise<boolean>}

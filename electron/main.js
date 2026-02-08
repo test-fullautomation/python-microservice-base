@@ -5,7 +5,7 @@
  * @version 2.0.0
  */
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 
 // Function to parse command line arguments
@@ -56,6 +56,13 @@ app.on('before-quit', () => {
 // IPC handler for bridge cleanup (registered for completeness)
 ipcMain.handle('kill-bridge', async () => {
   return { ok: true };
+});
+
+// IPC handler for native file/folder open dialog
+ipcMain.handle('show-open-dialog', async (_event, options) => {
+  const win = BrowserWindow.getAllWindows()[0] || null;
+  const result = await dialog.showOpenDialog(win, options || {});
+  return { filePaths: result.filePaths || [] };
 });
 
 app.on('window-all-closed', () => {

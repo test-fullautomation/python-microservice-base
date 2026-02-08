@@ -401,6 +401,32 @@ Download service GUI resources and extract them to the web/services/ directory.
          mgr = _get_local_hub_manager()
          return mgr.reset()
 
+      class ImportServiceBody(BaseModel):
+         name: str
+         source_path: str = ""
+         zip_data: str = ""
+         wait_time: float = 1.0
+
+      @app.delete("/api/local-hub/service/{name}")
+      def local_hub_remove_service(name: str):
+         mgr = _get_local_hub_manager()
+         return mgr.remove_service(name)
+
+      @app.get("/api/local-hub/service/{name}/log")
+      def local_hub_service_log(name: str, tail: int = 100):
+         mgr = _get_local_hub_manager()
+         return mgr.get_service_log(name, tail=tail)
+
+      @app.post("/api/local-hub/import-service")
+      def local_hub_import_service(body: ImportServiceBody):
+         mgr = _get_local_hub_manager()
+         return mgr.import_service(
+            name=body.name,
+            source_path=body.source_path,
+            zip_data=body.zip_data,
+            wait_time=body.wait_time,
+         )
+
       # ---- Service Scaffolding endpoint ----
 
       class ScaffoldMethodParam(BaseModel):
@@ -579,6 +605,24 @@ Download service GUI resources and extract them to the web/services/ directory.
 
          return '\n'.join(lines) + '\n'
 
+      def _generate_dunder_main_py(body: ScaffoldRequest):
+         """Generate __main__.py entry point for ``python -m`` execution."""
+         lines = []
+         lines.append('"""Entry point for running ' + body.service_name + ' as a package.')
+         lines.append('')
+         lines.append('Usage: python -m ' + body.service_name + ' [args]')
+         lines.append('"""')
+         lines.append('import os')
+         lines.append('import sys')
+         lines.append('')
+         lines.append('# Ensure the service directory is on sys.path for local imports')
+         lines.append('sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))')
+         lines.append('')
+         lines.append('from main import main')
+         lines.append('')
+         lines.append('main()')
+         return '\n'.join(lines) + '\n'
+
       def _generate_config_jsonp(body: ScaffoldRequest):
          """Generate config.jsonp for EventBus transport."""
          routing_key = body.routing_key or ('service.' + _to_snake_case(body.service_name))
@@ -647,6 +691,7 @@ Generate scaffolding for a new microservice project.
          files = []
          files.append((snake_name + '.py', _generate_service_class(body)))
          files.append(('main.py', _generate_main_py(body)))
+         files.append(('__main__.py', _generate_dunder_main_py(body)))
 
          if body.transport == 'eventbus':
             files.append(('config.jsonp', _generate_config_jsonp(body)))

@@ -341,6 +341,11 @@
             '<i class="bi bi-pencil"></i>' +
           '</button>';
 
+        var logBtn =
+          '<button class="btn btn-sm btn-outline-warning lh-log-btn" data-process="' + _esc(proc.name) + '" title="View log">' +
+            '<i class="bi bi-journal-text"></i>' +
+          '</button>';
+
         var removeBtn =
           '<button class="btn btn-sm btn-outline-secondary lh-remove-btn" data-process="' + _esc(proc.name) + '" title="Remove config">' +
             '<i class="bi bi-trash"></i>' +
@@ -354,6 +359,7 @@
               (proc.pid ? '<span class="badge bg-light text-dark me-1">PID ' + proc.pid + '</span>' : '') +
               '<span class="fleet-process-state-label badge ' + stateClass + '">' + stateLabel + '</span>' +
               actionBtn +
+              logBtn +
               editBtn +
               removeBtn +
             '</div>' +
@@ -410,9 +416,14 @@
             '<div class="card">' +
               '<div class="card-header d-flex justify-content-between align-items-center">' +
                 '<span><i class="bi bi-terminal me-2"></i>Processes (' + processLabel + ')</span>' +
-                '<button class="btn btn-sm btn-outline-primary" id="lhBtnAddProcess">' +
-                  '<i class="bi bi-plus me-1"></i>Add Process' +
-                '</button>' +
+                '<div class="d-flex gap-2">' +
+                  '<button class="btn btn-sm btn-outline-success" id="lhBtnImportService">' +
+                    '<i class="bi bi-box-arrow-in-down me-1"></i>Import Service' +
+                  '</button>' +
+                  '<button class="btn btn-sm btn-outline-primary" id="lhBtnAddProcess">' +
+                    '<i class="bi bi-plus me-1"></i>Add Process' +
+                  '</button>' +
+                '</div>' +
               '</div>' +
               '<div class="card-body fleet-process-list">' + processRows + '</div>' +
             '</div>' +
@@ -450,6 +461,94 @@
                   '</button>' +
                   '<button class="btn btn-sm btn-secondary" id="lhBtnCancelConfig">Cancel</button>' +
                 '</div>' +
+              '</div>' +
+            '</div>' +
+            // Inline import service form (hidden by default)
+            '<div class="card mt-2 local-hub-import-form" id="lhImportForm" style="display:none;">' +
+              '<div class="card-header"><i class="bi bi-box-arrow-in-down me-2"></i>Import Service</div>' +
+              '<div class="card-body">' +
+                // Mode toggle
+                '<div class="mb-2">' +
+                  '<div class="form-check form-check-inline">' +
+                    '<input class="form-check-input" type="radio" name="lhImportMode" id="lhImportModeFolder" value="folder" checked>' +
+                    '<label class="form-check-label" for="lhImportModeFolder">Folder Path</label>' +
+                  '</div>' +
+                  '<div class="form-check form-check-inline">' +
+                    '<input class="form-check-input" type="radio" name="lhImportMode" id="lhImportModeZip" value="zip">' +
+                    '<label class="form-check-label" for="lhImportModeZip">ZIP File</label>' +
+                  '</div>' +
+                '</div>' +
+                // Folder path panel
+                '<div id="lhImportPathPanel">' +
+                  '<div class="row mb-2">' +
+                    '<div class="col-md-5">' +
+                      '<label class="form-label">Service Name</label>' +
+                      '<input type="text" class="form-control form-control-sm" id="lhImportName" placeholder="MyService">' +
+                    '</div>' +
+                    '<div class="col-md-5">' +
+                      '<label class="form-label">Folder Path</label>' +
+                      '<input type="text" class="form-control form-control-sm" id="lhImportPath" placeholder="C:\\path\\to\\service">' +
+                    '</div>' +
+                    '<div class="col-md-2 d-flex align-items-end">' +
+                      (_isElectron()
+                        ? '<button class="btn btn-sm btn-outline-secondary w-100" id="lhBtnBrowseFolder">' +
+                            '<i class="bi bi-folder2-open"></i>' +
+                          '</button>'
+                        : '') +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="row mb-2">' +
+                    '<div class="col-md-4">' +
+                      '<label class="form-label">Wait Time (s)</label>' +
+                      '<input type="number" class="form-control form-control-sm" id="lhImportWait" value="1.0" step="0.5">' +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+                // ZIP upload panel (hidden by default)
+                '<div id="lhImportZipPanel" style="display:none;">' +
+                  '<div class="row mb-2">' +
+                    '<div class="col-md-5">' +
+                      '<label class="form-label">Service Name</label>' +
+                      '<input type="text" class="form-control form-control-sm" id="lhImportZipName" placeholder="MyService">' +
+                    '</div>' +
+                    '<div class="col-md-4">' +
+                      '<label class="form-label">Wait Time (s)</label>' +
+                      '<input type="number" class="form-control form-control-sm" id="lhImportZipWait" value="1.0" step="0.5">' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="lh-import-dropzone" id="lhImportDropzone">' +
+                    '<i class="bi bi-cloud-arrow-up" style="font-size:1.5rem;"></i>' +
+                    '<div>Drag &amp; drop a .zip file here, or click to browse</div>' +
+                    '<input type="file" accept=".zip" id="lhImportFileInput" style="display:none;">' +
+                  '</div>' +
+                  '<div class="form-text mt-1" id="lhImportFileLabel"></div>' +
+                '</div>' +
+                // Validation result area
+                '<div id="lhImportResult" class="mt-2"></div>' +
+                // Buttons
+                '<div class="d-flex gap-2 mt-2">' +
+                  '<button class="btn btn-sm btn-success" id="lhBtnDoImport">' +
+                    '<i class="bi bi-box-arrow-in-down me-1"></i>Import' +
+                  '</button>' +
+                  '<button class="btn btn-sm btn-secondary" id="lhBtnCancelImport">Cancel</button>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+            // Log viewer panel (hidden by default)
+            '<div class="card mt-2 local-hub-log-panel" id="lhLogPanel" style="display:none;">' +
+              '<div class="card-header d-flex justify-content-between align-items-center">' +
+                '<span><i class="bi bi-journal-text me-2"></i>Log: <span id="lhLogName"></span></span>' +
+                '<div class="d-flex gap-2">' +
+                  '<button class="btn btn-sm btn-outline-secondary" id="lhBtnRefreshLog" title="Refresh">' +
+                    '<i class="bi bi-arrow-clockwise"></i>' +
+                  '</button>' +
+                  '<button class="btn btn-sm btn-outline-secondary" id="lhBtnCloseLog" title="Close">' +
+                    '<i class="bi bi-x-lg"></i>' +
+                  '</button>' +
+                '</div>' +
+              '</div>' +
+              '<div class="card-body p-0">' +
+                '<pre class="lh-log-content" id="lhLogContent">No log data.</pre>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -545,11 +644,11 @@
     removeBtns.forEach(function (btn) {
       btn.onclick = function () {
         var procName = btn.getAttribute('data-process');
-        if (!confirm('Remove configuration for "' + procName + '"?')) return;
-        MM.localHubClient.removeConfig(procName)
+        if (!confirm('Remove "' + procName + '"? This will delete the config and any managed service files.')) return;
+        MM.localHubClient.removeService(procName)
           .then(function (data) {
             if (data.success) {
-              MM.showToast('Removed', procName + ' config removed.', 'success');
+              MM.showToast('Removed', data.message, 'success');
               _refreshAfterAction();
             } else {
               MM.showToast('Error', data.message, 'danger');
@@ -558,6 +657,62 @@
           .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
       };
     });
+
+    // Log buttons
+    var logPanel = document.getElementById('lhLogPanel');
+    var logNameEl = document.getElementById('lhLogName');
+    var logContentEl = document.getElementById('lhLogContent');
+    var _currentLogProcess = null;
+
+    function _loadLog(procName) {
+      _currentLogProcess = procName;
+      if (logNameEl) logNameEl.textContent = procName;
+      if (logContentEl) logContentEl.textContent = 'Loading...';
+      if (logPanel) logPanel.style.display = '';
+
+      MM.localHubClient.getServiceLog(procName, 200)
+        .then(function (data) {
+          if (logContentEl) {
+            logContentEl.textContent = data.log || '(empty log)';
+            // Auto-scroll to bottom
+            logContentEl.scrollTop = logContentEl.scrollHeight;
+          }
+        })
+        .catch(function (err) {
+          if (logContentEl) logContentEl.textContent = 'Error loading log: ' + err.message;
+        });
+    }
+
+    var logBtns = container.querySelectorAll('.lh-log-btn');
+    logBtns.forEach(function (btn) {
+      btn.onclick = function () {
+        var procName = btn.getAttribute('data-process');
+        if (logPanel && logPanel.style.display !== 'none' && _currentLogProcess === procName) {
+          // Toggle off if clicking the same process
+          logPanel.style.display = 'none';
+          _currentLogProcess = null;
+        } else {
+          _loadLog(procName);
+        }
+      };
+    });
+
+    // Refresh log
+    var refreshLogBtn = document.getElementById('lhBtnRefreshLog');
+    if (refreshLogBtn) {
+      refreshLogBtn.onclick = function () {
+        if (_currentLogProcess) _loadLog(_currentLogProcess);
+      };
+    }
+
+    // Close log panel
+    var closeLogBtn = document.getElementById('lhBtnCloseLog');
+    if (closeLogBtn) {
+      closeLogBtn.onclick = function () {
+        if (logPanel) logPanel.style.display = 'none';
+        _currentLogProcess = null;
+      };
+    }
 
     // ---- Config form helpers ----
 
@@ -669,6 +824,205 @@
             }
           })
           .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+      };
+    }
+
+    // ---- Import Service form wiring ----
+
+    var importForm = document.getElementById('lhImportForm');
+    var importBtn = document.getElementById('lhBtnImportService');
+    var cancelImportBtn = document.getElementById('lhBtnCancelImport');
+    var doImportBtn = document.getElementById('lhBtnDoImport');
+    var importModeRadios = container.querySelectorAll('input[name="lhImportMode"]');
+    var importPathPanel = document.getElementById('lhImportPathPanel');
+    var importZipPanel = document.getElementById('lhImportZipPanel');
+    var importResultArea = document.getElementById('lhImportResult');
+    var _importZipBase64 = null;
+
+    // Toggle import form visibility
+    if (importBtn && importForm) {
+      importBtn.onclick = function () {
+        if (importForm.style.display === 'none') {
+          importForm.style.display = '';
+          if (configForm) configForm.style.display = 'none';
+        } else {
+          importForm.style.display = 'none';
+        }
+      };
+    }
+
+    // Cancel import
+    if (cancelImportBtn && importForm) {
+      cancelImportBtn.onclick = function () {
+        importForm.style.display = 'none';
+        _importZipBase64 = null;
+        if (importResultArea) importResultArea.innerHTML = '';
+        var fileLabel = document.getElementById('lhImportFileLabel');
+        if (fileLabel) fileLabel.textContent = '';
+      };
+    }
+
+    // Mode toggle: folder vs ZIP
+    importModeRadios.forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        var mode = container.querySelector('input[name="lhImportMode"]:checked').value;
+        if (importPathPanel) importPathPanel.style.display = mode === 'folder' ? '' : 'none';
+        if (importZipPanel) importZipPanel.style.display = mode === 'zip' ? '' : 'none';
+        if (importResultArea) importResultArea.innerHTML = '';
+      });
+    });
+
+    // Browse button (Electron)
+    var browseBtn = document.getElementById('lhBtnBrowseFolder');
+    if (browseBtn && _isElectron() && window.electronAPI.showOpenDialog) {
+      browseBtn.onclick = function () {
+        window.electronAPI.showOpenDialog({ properties: ['openDirectory'] }).then(function (result) {
+          if (result && result.filePaths && result.filePaths.length > 0) {
+            var pathInput = document.getElementById('lhImportPath');
+            if (pathInput) pathInput.value = result.filePaths[0];
+            // Auto-fill name from folder
+            var nameInput = document.getElementById('lhImportName');
+            if (nameInput && !nameInput.value.trim()) {
+              var parts = result.filePaths[0].replace(/\\/g, '/').split('/');
+              nameInput.value = parts[parts.length - 1] || '';
+            }
+          }
+        });
+      };
+    }
+
+    // Auto-detect name from folder path on blur
+    var importPathInput = document.getElementById('lhImportPath');
+    var importNameInput = document.getElementById('lhImportName');
+    if (importPathInput && importNameInput) {
+      importPathInput.addEventListener('blur', function () {
+        if (importNameInput.value.trim()) return;
+        var pathVal = importPathInput.value.trim();
+        if (pathVal) {
+          var parts = pathVal.replace(/\\/g, '/').split('/');
+          var last = parts[parts.length - 1] || parts[parts.length - 2] || '';
+          if (last) importNameInput.value = last;
+        }
+      });
+    }
+
+    // ZIP dropzone
+    var dropzone = document.getElementById('lhImportDropzone');
+    var fileInput = document.getElementById('lhImportFileInput');
+    var fileLabel = document.getElementById('lhImportFileLabel');
+
+    function _handleZipFile(file) {
+      if (!file || !file.name.toLowerCase().endsWith('.zip')) {
+        MM.showToast('Validation', 'Please select a .zip file.', 'warning');
+        return;
+      }
+      if (fileLabel) fileLabel.textContent = 'Selected: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+      // Auto-fill name from filename
+      var zipNameInput = document.getElementById('lhImportZipName');
+      if (zipNameInput && !zipNameInput.value.trim()) {
+        zipNameInput.value = file.name.replace(/\.zip$/i, '');
+      }
+      // Read as base64
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var arrayBuffer = e.target.result;
+        var bytes = new Uint8Array(arrayBuffer);
+        var binary = '';
+        for (var i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        _importZipBase64 = btoa(binary);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    if (dropzone) {
+      dropzone.addEventListener('click', function () {
+        if (fileInput) fileInput.click();
+      });
+      dropzone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      });
+      dropzone.addEventListener('dragleave', function () {
+        dropzone.classList.remove('dragover');
+      });
+      dropzone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          _handleZipFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+    if (fileInput) {
+      fileInput.addEventListener('change', function () {
+        if (fileInput.files && fileInput.files.length > 0) {
+          _handleZipFile(fileInput.files[0]);
+        }
+      });
+    }
+
+    // Do Import button
+    if (doImportBtn) {
+      doImportBtn.onclick = function () {
+        var mode = container.querySelector('input[name="lhImportMode"]:checked').value;
+        var name, options;
+
+        if (mode === 'folder') {
+          name = (document.getElementById('lhImportName') || {}).value || '';
+          name = name.trim();
+          var folderPath = (document.getElementById('lhImportPath') || {}).value || '';
+          folderPath = folderPath.trim();
+          var waitTime = parseFloat((document.getElementById('lhImportWait') || {}).value) || 1.0;
+
+          if (!name) { MM.showToast('Validation', 'Service name is required.', 'warning'); return; }
+          if (!folderPath) { MM.showToast('Validation', 'Folder path is required.', 'warning'); return; }
+
+          options = { source_path: folderPath, wait_time: waitTime };
+        } else {
+          name = (document.getElementById('lhImportZipName') || {}).value || '';
+          name = name.trim();
+          var zipWait = parseFloat((document.getElementById('lhImportZipWait') || {}).value) || 1.0;
+
+          if (!name) { MM.showToast('Validation', 'Service name is required.', 'warning'); return; }
+          if (!_importZipBase64) { MM.showToast('Validation', 'Please select a ZIP file.', 'warning'); return; }
+
+          options = { zip_data: _importZipBase64, wait_time: zipWait };
+        }
+
+        doImportBtn.disabled = true;
+        doImportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Importing...';
+
+        MM.localHubClient.importService(name, options)
+          .then(function (data) {
+            doImportBtn.disabled = false;
+            doImportBtn.innerHTML = '<i class="bi bi-box-arrow-in-down me-1"></i>Import';
+            if (data.success) {
+              MM.showToast('Imported', data.message, 'success');
+              // Show warnings if any
+              if (data.warnings && data.warnings.length > 0 && importResultArea) {
+                importResultArea.innerHTML = '<div class="alert alert-warning py-1 px-2 mb-0" style="font-size:0.82rem;">' +
+                  '<strong>Warnings:</strong><ul class="mb-0 ps-3">' +
+                  data.warnings.map(function (w) { return '<li>' + _esc(w) + '</li>'; }).join('') +
+                  '</ul></div>';
+              }
+              importForm.style.display = 'none';
+              _importZipBase64 = null;
+              _refreshAfterAction();
+            } else {
+              MM.showToast('Import Failed', data.message, 'danger');
+              if (importResultArea) {
+                importResultArea.innerHTML = '<div class="alert alert-danger py-1 px-2 mb-0" style="font-size:0.82rem;">' +
+                  _esc(data.message) + '</div>';
+              }
+            }
+          })
+          .catch(function (err) {
+            doImportBtn.disabled = false;
+            doImportBtn.innerHTML = '<i class="bi bi-box-arrow-in-down me-1"></i>Import';
+            MM.showToast('Error', err.message, 'danger');
+          });
       };
     }
   }

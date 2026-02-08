@@ -544,3 +544,62 @@
   font-weight: 500;
   margin-bottom: 0.2rem;
 }
+
+/* ---------- Local Hub Import Form ---------- */
+.local-hub-import-form .card-body {
+  padding: 0.75rem 1rem;
+}
+
+.local-hub-import-form .form-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+}
+
+.lh-import-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  border: 2px dashed #bdc3c7;
+  border-radius: 8px;
+  color: #7f8c8d;
+  font-size: 0.85rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.lh-import-dropzone:hover {
+  border-color: #27ae60;
+  background-color: rgba(46, 204, 113, 0.04);
+}
+
+.lh-import-dropzone.dragover {
+  border-color: #27ae60;
+  background-color: rgba(46, 204, 113, 0.08);
+  color: #27ae60;
+}
+
+/* ---------- Local Hub Log Panel ---------- */
+.local-hub-log-panel .card-header {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.lh-log-content {
+  margin: 0;
+  padding: 0.75rem;
+  max-height: 350px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 0 0 6px 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
