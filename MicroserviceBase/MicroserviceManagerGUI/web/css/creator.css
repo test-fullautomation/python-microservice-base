@@ -1,0 +1,269 @@
+/* ==========================================================================
+   Service Creator Wizard Styles
+   ========================================================================== */
+
+/* ---------- Creator Sidebar (step list) ---------- */
+.creator-sidebar {
+  padding: 1rem 0.75rem;
+}
+
+.creator-sidebar-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 0 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 0.75rem;
+}
+
+.creator-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  margin-bottom: 0.25rem;
+  user-select: none;
+}
+
+.creator-step:hover {
+  background-color: var(--sidebar-hover, #34495e);
+}
+
+.creator-step.active {
+  background-color: var(--sidebar-active, #3498db);
+}
+
+.creator-step.completed {
+  opacity: 0.85;
+}
+
+.creator-step-number {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.creator-step.active .creator-step-number {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.creator-step.completed .creator-step-number {
+  background: rgba(46, 204, 113, 0.25);
+  color: #2ecc71;
+}
+
+.creator-step-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.creator-step.active .creator-step-label {
+  color: #fff;
+}
+
+.creator-step.completed .creator-step-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ---------- Creator Content Area ---------- */
+.creator-content {
+  max-width: 800px;
+}
+
+.creator-header {
+  margin-bottom: 1.5rem;
+}
+
+.creator-header h4 {
+  margin-bottom: 0.25rem;
+  color: #2c3e50;
+}
+
+.creator-header p {
+  color: #7f8c8d;
+  margin-bottom: 0;
+  font-size: 0.9rem;
+}
+
+/* ---------- Step Navigation Buttons ---------- */
+.creator-nav-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dee2e6;
+}
+
+/* ---------- API Method Cards ---------- */
+.creator-method-card {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  position: relative;
+}
+
+.creator-method-card .method-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.creator-method-card .method-header h6 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #2c3e50;
+}
+
+.creator-method-card .btn-remove-method {
+  background: none;
+  border: none;
+  color: #e74c3c;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.creator-method-card .btn-remove-method:hover {
+  opacity: 1;
+}
+
+/* ---------- Parameter Row ---------- */
+.creator-param-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.creator-param-row .form-control,
+.creator-param-row .form-select {
+  font-size: 0.85rem;
+}
+
+.creator-param-row .btn-remove-param {
+  background: none;
+  border: none;
+  color: #95a5a6;
+  cursor: pointer;
+  padding: 0.3rem;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.creator-param-row .btn-remove-param:hover {
+  color: #e74c3c;
+}
+
+/* ---------- File Tree Preview ---------- */
+.creator-preview {
+  background: #1a252f;
+  color: #ecf0f1;
+  padding: 1rem;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  white-space: pre;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+/* ---------- Summary Card ---------- */
+.creator-summary {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.creator-summary-header {
+  background: var(--navbar-bg, #1a252f);
+  color: #fff;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.creator-summary-body {
+  padding: 1rem;
+}
+
+.creator-summary-row {
+  display: flex;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.85rem;
+}
+
+.creator-summary-row:last-child {
+  border-bottom: none;
+}
+
+.creator-summary-label {
+  font-weight: 600;
+  color: #7f8c8d;
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.creator-summary-value {
+  color: #2c3e50;
+  flex: 1;
+}
+
+.creator-summary-methods {
+  margin-top: 0.75rem;
+}
+
+.creator-summary-method {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.creator-summary-method code {
+  font-size: 0.85em;
+  color: #2c3e50;
+}
+
+.creator-summary-method .text-muted {
+  font-size: 0.8em;
+}
+
+/* ---------- Output Actions ---------- */
+.creator-output-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.creator-output-actions .output-path-group {
+  flex: 1;
+  min-width: 200px;
+}
