@@ -426,6 +426,8 @@ Download service GUI resources and extract them to the web/services/ directory.
          gui_support: bool = False
          methods: List[ScaffoldMethod] = []
          output_path: str = ""
+         custom_gui_html: str = ""
+         custom_gui_js: str = ""
 
       def _to_snake_case(name):
          """Convert PascalCase to snake_case."""
@@ -650,8 +652,8 @@ Generate scaffolding for a new microservice project.
             files.append(('config.jsonp', _generate_config_jsonp(body)))
 
          if body.gui_support:
-            files.append(('GUIs/service.html', _generate_gui_html(body)))
-            files.append(('GUIs/service.js', _generate_gui_js(body)))
+            files.append(('GUIs/service.html', body.custom_gui_html or _generate_gui_html(body)))
+            files.append(('GUIs/service.js', body.custom_gui_js or _generate_gui_js(body)))
 
          if body.output_path:
             # Write to disk
