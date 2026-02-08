@@ -21,6 +21,7 @@
   var _currentStep = 0;
   var _formData = _defaultFormData();
   var _methodIdCounter = 0;
+  var _uploadedJsFileName = '';
 
   function _defaultFormData() {
     return {
@@ -34,7 +35,9 @@
       transport: 'rabbitmq',
       guiSupport: false,
       methods: [],
-      outputPath: ''
+      outputPath: '',
+      customGuiHtml: null,
+      customGuiJs: null
     };
   }
 
@@ -321,8 +324,11 @@
 
   // Step 3: GUI Support
   function _renderStep3(container) {
+    var hasGui = _formData.guiSupport;
+    var htmlContent = _formData.customGuiHtml || _generateGuiHtml(_formData);
+
     container.innerHTML =
-      '<div class="creator-content">' +
+      '<div class="creator-content' + (hasGui ? ' has-gui-preview' : '') + '">' +
         '<div class="creator-header">' +
           '<h4><i class="bi bi-3-circle me-2"></i>GUI Support</h4>' +
           '<p>Choose whether to include a GUI template for your service.</p>' +
@@ -331,34 +337,174 @@
           '<div class="card-body">' +
             '<div class="form-check form-switch mb-3">' +
               '<input class="form-check-input" type="checkbox" id="cfGuiSupport"' +
-                (_formData.guiSupport ? ' checked' : '') + '>' +
+                (hasGui ? ' checked' : '') + '>' +
               '<label class="form-check-label fw-semibold" for="cfGuiSupport">' +
                 'Generate GUI template' +
               '</label>' +
             '</div>' +
-            '<div id="guiSupportInfo" style="display:' + (_formData.guiSupport ? '' : 'none') + '">' +
-              '<div class="alert alert-info mb-0">' +
-                '<i class="bi bi-info-circle me-2"></i>' +
-                'A <code>GUIs/</code> folder will be generated with:' +
-                '<ul class="mb-0 mt-2">' +
-                  '<li><code>service.html</code> &mdash; Basic HTML layout with Bootstrap classes</li>' +
-                  '<li><code>service.js</code> &mdash; JS skeleton using the <code>MM</code> namespace</li>' +
-                '</ul>' +
+            '<div id="guiPreviewArea" style="display:' + (hasGui ? '' : 'none') + '">' +
+
+              // Toolbar
+              '<div class="gui-preview-toolbar">' +
+                '<button class="btn btn-outline-secondary btn-sm" id="btnResetGuiTemplate">' +
+                  '<i class="bi bi-arrow-counterclockwise me-1"></i>Reset to Template' +
+                '</button>' +
+                '<label class="btn btn-outline-primary btn-sm mb-0" id="lblUploadHtml">' +
+                  '<i class="bi bi-upload me-1"></i>Upload HTML' +
+                  '<input type="file" accept=".html,.htm" id="cfUploadHtml" class="d-none">' +
+                '</label>' +
               '</div>' +
+
+              // Side-by-side editor + preview
+              '<div class="gui-preview-layout">' +
+                '<div>' +
+                  '<label class="form-label fw-semibold form-label-sm">HTML Editor</label>' +
+                  '<textarea class="gui-html-editor" id="cfGuiHtmlEditor" spellcheck="false">' +
+                    _escapeHtml(htmlContent) +
+                  '</textarea>' +
+                '</div>' +
+                '<div>' +
+                  '<label class="form-label fw-semibold form-label-sm">Live Preview</label>' +
+                  '<div class="gui-preview-render" id="guiPreviewRender">' +
+                    htmlContent +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+
+              // JS upload dropzone
+              '<div class="mt-3">' +
+                '<label class="form-label fw-semibold form-label-sm">JavaScript File (optional)</label>' +
+                '<div class="gui-js-dropzone" id="guiJsDropzone">' +
+                  '<i class="bi bi-filetype-js me-2"></i>' +
+                  '<span id="guiJsDropzoneLabel">' +
+                    (_uploadedJsFileName
+                      ? '<span class="badge bg-info me-1">' + _escapeHtml(_uploadedJsFileName) + '</span> Drop or click to replace'
+                      : 'Drag &amp; drop a .js file here, or click to browse') +
+                  '</span>' +
+                  '<input type="file" accept=".js" id="cfUploadJs" class="d-none">' +
+                '</div>' +
+              '</div>' +
+
             '</div>' +
           '</div>' +
         '</div>' +
         _navButtons(2) +
       '</div>';
 
+    // ---- Wire events ----
     var checkbox = document.getElementById('cfGuiSupport');
-    var info = document.getElementById('guiSupportInfo');
+    var previewArea = document.getElementById('guiPreviewArea');
+    var creatorContent = container.querySelector('.creator-content');
+    var editor = document.getElementById('cfGuiHtmlEditor');
+    var preview = document.getElementById('guiPreviewRender');
+
+    // Toggle GUI support
     checkbox.addEventListener('change', function () {
       _formData.guiSupport = checkbox.checked;
-      info.style.display = checkbox.checked ? '' : 'none';
+      previewArea.style.display = checkbox.checked ? '' : 'none';
+      if (checkbox.checked) {
+        creatorContent.classList.add('has-gui-preview');
+        if (!editor.value.trim()) {
+          var tpl = _generateGuiHtml(_formData);
+          editor.value = tpl;
+          preview.innerHTML = tpl;
+        }
+      } else {
+        creatorContent.classList.remove('has-gui-preview');
+      }
+    });
+
+    // Debounced live preview
+    var _debounceTimer = null;
+    editor.addEventListener('input', function () {
+      clearTimeout(_debounceTimer);
+      _debounceTimer = setTimeout(function () {
+        preview.innerHTML = editor.value;
+      }, 200);
+    });
+
+    // HTML file upload
+    var htmlFileInput = document.getElementById('cfUploadHtml');
+    htmlFileInput.addEventListener('change', function () {
+      if (htmlFileInput.files && htmlFileInput.files[0]) {
+        _readFileAsText(htmlFileInput.files[0], function (text) {
+          editor.value = text;
+          preview.innerHTML = text;
+          _formData.customGuiHtml = text;
+        });
+      }
+    });
+
+    // HTML drag-and-drop on editor
+    editor.addEventListener('dragover', function (e) { e.preventDefault(); });
+    editor.addEventListener('drop', function (e) {
+      e.preventDefault();
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file && /\.(html?|htm)$/i.test(file.name)) {
+        _readFileAsText(file, function (text) {
+          editor.value = text;
+          preview.innerHTML = text;
+          _formData.customGuiHtml = text;
+        });
+      }
+    });
+
+    // JS file upload
+    var jsFileInput = document.getElementById('cfUploadJs');
+    var jsDropzone = document.getElementById('guiJsDropzone');
+    var jsLabel = document.getElementById('guiJsDropzoneLabel');
+
+    jsDropzone.addEventListener('click', function () { jsFileInput.click(); });
+    jsFileInput.addEventListener('change', function () {
+      if (jsFileInput.files && jsFileInput.files[0]) {
+        _handleJsUpload(jsFileInput.files[0], jsLabel);
+      }
+    });
+
+    // JS drag-and-drop
+    jsDropzone.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      jsDropzone.classList.add('dragover');
+    });
+    jsDropzone.addEventListener('dragleave', function () {
+      jsDropzone.classList.remove('dragover');
+    });
+    jsDropzone.addEventListener('drop', function (e) {
+      e.preventDefault();
+      jsDropzone.classList.remove('dragover');
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file && /\.js$/i.test(file.name)) {
+        _handleJsUpload(file, jsLabel);
+      }
+    });
+
+    // Reset to Template
+    document.getElementById('btnResetGuiTemplate').addEventListener('click', function () {
+      var tpl = _generateGuiHtml(_formData);
+      editor.value = tpl;
+      preview.innerHTML = tpl;
+      _formData.customGuiHtml = null;
+      _formData.customGuiJs = null;
+      _uploadedJsFileName = '';
+      jsLabel.innerHTML = 'Drag &amp; drop a .js file here, or click to browse';
     });
 
     _wireNavButtons();
+  }
+
+  function _readFileAsText(file, callback) {
+    var reader = new FileReader();
+    reader.onload = function (e) { callback(e.target.result); };
+    reader.readAsText(file);
+  }
+
+  function _handleJsUpload(file, labelEl) {
+    _readFileAsText(file, function (text) {
+      _formData.customGuiJs = text;
+      _uploadedJsFileName = file.name;
+      labelEl.innerHTML =
+        '<span class="badge bg-info me-1">' + _escapeHtml(file.name) + '</span> Drop or click to replace';
+    });
   }
 
   // Step 4: Review & Generate
@@ -376,8 +522,8 @@
     }
     if (d.guiSupport) {
       tree += '\u2514\u2500\u2500 GUIs/\n';
-      tree += '    \u251c\u2500\u2500 service.html\n';
-      tree += '    \u2514\u2500\u2500 service.js\n';
+      tree += '    \u251c\u2500\u2500 service.html' + (d.customGuiHtml ? ' (custom)' : '') + '\n';
+      tree += '    \u2514\u2500\u2500 service.js' + (d.customGuiJs ? ' (custom)' : '') + '\n';
     }
 
     // Build methods summary
@@ -415,7 +561,11 @@
             _summaryRow('Tag', d.tag || '<em class="text-muted">none</em>') +
             _summaryRow('Routing Key', '<code>' + _escapeHtml(d.routingKey) + '</code>') +
             _summaryRow('Transport', d.transport) +
-            _summaryRow('GUI Support', d.guiSupport ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-secondary">No</span>') +
+            _summaryRow('GUI Support', d.guiSupport
+              ? '<span class="badge bg-success">Yes</span>' +
+                (d.customGuiHtml ? ' <span class="badge bg-info">custom HTML</span>' : '') +
+                (d.customGuiJs ? ' <span class="badge bg-info">custom JS</span>' : '')
+              : '<span class="badge bg-secondary">No</span>') +
             '<div class="creator-summary-methods">' +
               '<div class="fw-semibold mb-2" style="font-size:0.85rem">API Methods (' + d.methods.length + ')</div>' +
               methodsHtml +
@@ -568,6 +718,8 @@
     // Step 3
     el = document.getElementById('cfGuiSupport');
     if (el) _formData.guiSupport = el.checked;
+    el = document.getElementById('cfGuiHtmlEditor');
+    if (el) _formData.customGuiHtml = el.value || null;
 
     // Step 4
     el = document.getElementById('cfOutputPath');
@@ -814,8 +966,8 @@
       files.push({ path: 'config.jsonp', content: _generateConfigJsonp(d) });
     }
     if (d.guiSupport) {
-      files.push({ path: 'GUIs/service.html', content: _generateGuiHtml(d) });
-      files.push({ path: 'GUIs/service.js', content: _generateGuiJs(d) });
+      files.push({ path: 'GUIs/service.html', content: d.customGuiHtml || _generateGuiHtml(d) });
+      files.push({ path: 'GUIs/service.js', content: d.customGuiJs || _generateGuiJs(d) });
     }
     return files;
   }
@@ -966,7 +1118,9 @@
           description: m.description
         };
       }),
-      output_path: d.outputPath
+      output_path: d.outputPath,
+      custom_gui_html: d.customGuiHtml || '',
+      custom_gui_js: d.customGuiJs || ''
     };
 
     var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
