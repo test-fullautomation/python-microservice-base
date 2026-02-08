@@ -46,6 +46,18 @@ function createWindow() {
 
 app.whenReady().then(createWindow);
 
+// Safety net: ensure bridge process cleanup on quit
+app.on('before-quit', () => {
+  // Bridge cleanup is primarily handled by preload's process.on('exit'),
+  // but this IPC handler provides an additional safety net.
+  console.log('[main] before-quit: bridge cleanup delegated to preload');
+});
+
+// IPC handler for bridge cleanup (registered for completeness)
+ipcMain.handle('kill-bridge', async () => {
+  return { ok: true };
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

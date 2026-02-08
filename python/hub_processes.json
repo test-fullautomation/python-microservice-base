@@ -1,0 +1,11 @@
+{
+  "ServiceRegistry": {
+    "script": "${config_dir}/start_registry.py",
+    "args": [
+      "--config",
+      "${config_dir}/config.json"
+    ],
+    "process_name": "ServiceRegistry",
+    "wait_time": 2.0
+  }
+}

@@ -205,12 +205,17 @@
         broker_url: this.brokerUrl,
       };
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       return fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       })
         .then(response => {
+          clearTimeout(timeoutId);
           if (!response.ok) {
             throw new Error('FastAPI bridge returned ' + response.status);
           }
@@ -219,6 +224,13 @@
         .then(data => {
           console.log(' [.] Got response:', data);
           return data;
+        })
+        .catch(err => {
+          clearTimeout(timeoutId);
+          if (err.name === 'AbortError') {
+            throw new Error('Request timeout: no response after 15s (is the target service running?)');
+          }
+          throw err;
         });
     }
   }
