@@ -6,13 +6,18 @@ start/stop a ProcessHub on the local machine, manage processes, and
 optionally join a fleet as an agent.
 """
 
+import ast
+import base64
 import copy
 import json
 import logging
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import time
+import zipfile
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -94,10 +99,13 @@ class LocalHubManager:
 
             # Create components
             broker_host, broker_port = self._get_broker_config()
+            config_dir = os.path.dirname(os.path.abspath(self._config_path)) if self._config_path else os.path.abspath('.')
+            log_dir = os.path.join(config_dir, 'logs')
             self._executor = ServiceExecutor(
                 broker_host=broker_host,
                 broker_port=broker_port,
                 stop_timeout=5.0,
+                log_dir=log_dir,
             )
             self._transport = ZmqTransport(
                 start_broker=True,
@@ -301,6 +309,367 @@ class LocalHubManager:
         self._raw_config.pop(name, None)
         self._save_config_file()
         return {"success": True, "message": f"Config '{name}' removed"}
+
+    def remove_service(self, name: str) -> dict:
+        """Remove a service — delete config and managed service folder.
+
+        Only deletes the folder if it lives inside the managed
+        ``<config_dir>/services/`` directory (never touches external paths).
+        Stops the process first if it is still running.
+        """
+        if name not in self._process_config:
+            return {"success": False, "message": f"'{name}' not found"}
+
+        # Stop if still running
+        if self._executor and self._executor.is_running(name):
+            self._executor.stop(name, force=True)
+
+        # Remove from ProcessHub server's internal registry so it no
+        # longer appears in get_state_snapshot().processes
+        if self._server is not None:
+            try:
+                self._server.unregister_admin_process(name)
+            except Exception:
+                pass
+            try:
+                self._server.core._registry.remove(name)
+            except Exception:
+                pass
+
+        # Remove config entry
+        del self._process_config[name]
+        self._raw_config.pop(name, None)
+        self._save_config_file()
+
+        # Delete service folder if inside managed services directory
+        services_dir = self.get_services_dir()
+        service_dir = os.path.join(services_dir, name)
+        folder_deleted = False
+        if os.path.isdir(service_dir):
+            try:
+                shutil.rmtree(service_dir)
+                folder_deleted = True
+                logger.info("Deleted service folder: %s", service_dir)
+            except Exception as exc:
+                logger.error("Failed to delete %s: %s", service_dir, exc)
+                return {
+                    "success": True,
+                    "message": (
+                        f"Config '{name}' removed, but failed to delete "
+                        f"service folder: {exc}"
+                    ),
+                }
+
+        msg = f"Service '{name}' removed"
+        if folder_deleted:
+            msg += " (config + files)"
+        return {"success": True, "message": msg}
+
+    def get_service_log(self, name: str, tail: int = 100) -> dict:
+        """Read the last *tail* lines of a process log file."""
+        if not self._executor:
+            return {"name": name, "log": "", "log_file": ""}
+        log_path = self._executor.get_log_path(name) or ""
+        log_text = self._executor.read_log(name, tail=tail)
+        return {"name": name, "log": log_text, "log_file": log_path}
+
+    # ------------------------------------------------------------------
+    # Service import
+    # ------------------------------------------------------------------
+
+    def get_services_dir(self) -> str:
+        """Return absolute path to ``<config_dir>/services/``, creating it if needed."""
+        if not self._config_path:
+            base = os.path.abspath('.')
+        else:
+            base = os.path.dirname(os.path.abspath(self._config_path))
+        services_dir = os.path.join(base, 'services')
+        os.makedirs(services_dir, exist_ok=True)
+        return services_dir
+
+    def _validate_service_structure(self, service_dir: str) -> dict:
+        """Validate that *service_dir* contains a valid microservice.
+
+        Hard checks (fail on error):
+        - ``__main__.py`` or ``main.py`` must exist.
+        - The entry-point file must parse without syntax errors.
+
+        Soft checks (warn only):
+        - At least one ``.py`` file should import ``ServiceBase``.
+        - At least one ``.py`` file should define ``_SERVICE_INFO``.
+
+        Returns ``{"valid": True, "warnings": [...], "needs_dunder_main": bool}``
+        or raises ``ValueError``.
+        """
+        has_dunder_main = os.path.isfile(os.path.join(service_dir, '__main__.py'))
+        has_main = os.path.isfile(os.path.join(service_dir, 'main.py'))
+
+        if not has_dunder_main and not has_main:
+            raise ValueError(
+                "Neither __main__.py nor main.py found in service folder"
+            )
+
+        # Syntax-check the entry point(s)
+        for fname in ('__main__.py', 'main.py'):
+            fpath = os.path.join(service_dir, fname)
+            if not os.path.isfile(fpath):
+                continue
+            with open(fpath, 'r', encoding='utf-8') as f:
+                source = f.read()
+            try:
+                ast.parse(source, filename=fname)
+            except SyntaxError as exc:
+                raise ValueError(f"{fname} has syntax errors: {exc}")
+
+        # Soft checks — scan all .py files
+        warnings = []
+        has_service_base = False
+        has_service_info = False
+        for fname in os.listdir(service_dir):
+            if not fname.endswith('.py'):
+                continue
+            fpath = os.path.join(service_dir, fname)
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except Exception:
+                continue
+            if 'ServiceBase' in content:
+                has_service_base = True
+            if '_SERVICE_INFO' in content:
+                has_service_info = True
+
+        if not has_service_base:
+            warnings.append("No .py file imports ServiceBase — this may not be a standard microservice")
+        if not has_service_info:
+            warnings.append("No .py file defines _SERVICE_INFO")
+
+        # Detect _SERVICE_INFO['name'] via AST so we know the service's
+        # actual RabbitMQ queue name (which may differ from the folder name).
+        detected_service_name = None
+        for fname in os.listdir(service_dir):
+            if not fname.endswith('.py') or detected_service_name:
+                continue
+            fpath = os.path.join(service_dir, fname)
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    source = f.read()
+                if '_SERVICE_INFO' not in source:
+                    continue
+                tree = ast.parse(source)
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Assign):
+                        continue
+                    for target in node.targets:
+                        tname = getattr(target, 'id', None) or getattr(target, 'attr', None)
+                        if tname != '_SERVICE_INFO':
+                            continue
+                        # _SERVICE_INFO = { 'name': '...', ... }
+                        if isinstance(node.value, ast.Dict):
+                            for key, val in zip(node.value.keys, node.value.values):
+                                if (isinstance(key, (ast.Constant, ast.Str)) and
+                                        (getattr(key, 'value', None) or getattr(key, 's', None)) == 'name' and
+                                        isinstance(val, (ast.Constant, ast.Str))):
+                                    detected_service_name = getattr(val, 'value', None) or getattr(val, 's', None)
+                                    break
+                        if detected_service_name:
+                            break
+                    if detected_service_name:
+                        break
+            except Exception:
+                continue
+
+        # Flag whether we need to auto-generate __main__.py
+        needs_dunder_main = not has_dunder_main and has_main
+
+        # Detect the original package name used in __main__.py imports
+        # (e.g. "from MicroserviceClewareSwitch.X import Y")
+        original_package = None
+        if has_dunder_main:
+            dunder_path = os.path.join(service_dir, '__main__.py')
+            try:
+                with open(dunder_path, 'r', encoding='utf-8') as f:
+                    source = f.read()
+                tree = ast.parse(source)
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.Import, ast.ImportFrom)):
+                        mod = getattr(node, 'module', None) or ''
+                        if mod and '.' in mod:
+                            original_package = mod.split('.')[0]
+                            break
+            except Exception:
+                pass
+
+        return {
+            "valid": True,
+            "warnings": warnings,
+            "needs_dunder_main": needs_dunder_main,
+            "original_package": original_package,
+            "service_name": detected_service_name,
+        }
+
+    def import_service(
+        self,
+        name: str,
+        source_path: str = "",
+        zip_data: str = "",
+        wait_time: float = 1.0,
+    ) -> dict:
+        """Import a microservice from a folder or base64-encoded ZIP.
+
+        Validates structure, copies files into ``<config_dir>/services/{name}/``,
+        and creates a hub config entry using the ``${python}`` placeholder.
+
+        Returns ``{"success": bool, "message": str, "warnings": [...]}``.
+        """
+        if not name:
+            return {"success": False, "message": "Service name is required.", "warnings": []}
+        if name in self._process_config:
+            return {"success": False, "message": f"'{name}' already exists in hub config", "warnings": []}
+
+        target_dir = os.path.join(self.get_services_dir(), name)
+        if os.path.exists(target_dir):
+            return {
+                "success": False,
+                "message": f"Service directory already exists: {target_dir} (use a different name)",
+                "warnings": [],
+            }
+
+        temp_dir = None
+        source_dir = None
+
+        try:
+            if zip_data:
+                # Decode and extract ZIP
+                temp_dir = tempfile.mkdtemp(prefix='ms_import_')
+                try:
+                    raw = base64.b64decode(zip_data)
+                except Exception as exc:
+                    return {"success": False, "message": f"Failed to decode ZIP data: {exc}", "warnings": []}
+                zip_path = os.path.join(temp_dir, 'upload.zip')
+                with open(zip_path, 'wb') as f:
+                    f.write(raw)
+                try:
+                    extract_dir = os.path.join(temp_dir, 'extract')
+                    with zipfile.ZipFile(zip_path, 'r') as zf:
+                        zf.extractall(extract_dir)
+                except Exception as exc:
+                    return {"success": False, "message": f"Failed to extract ZIP data: {exc}", "warnings": []}
+
+                # Detect nested root folder
+                entries = os.listdir(extract_dir)
+                if len(entries) == 1 and os.path.isdir(os.path.join(extract_dir, entries[0])):
+                    source_dir = os.path.join(extract_dir, entries[0])
+                else:
+                    source_dir = extract_dir
+
+            elif source_path:
+                if not os.path.isdir(source_path):
+                    return {"success": False, "message": f"Source path does not exist: {source_path}", "warnings": []}
+                source_dir = source_path
+
+            else:
+                return {"success": False, "message": "No source provided (folder path or ZIP).", "warnings": []}
+
+            # Validate
+            validation = self._validate_service_structure(source_dir)
+
+            # Copy to target
+            try:
+                shutil.copytree(source_dir, target_dir)
+            except Exception as exc:
+                return {"success": False, "message": f"Failed to copy service files: {exc}", "warnings": []}
+
+            # Determine if __main__.py needs to be (re-)generated:
+            # 1. No __main__.py exists (only main.py)
+            # 2. Existing __main__.py has hardcoded imports for a different
+            #    package name (e.g. "from MicroserviceClewareSwitch.X ...")
+            #    that won't work when the folder is renamed
+            orig_pkg = validation.get("original_package")
+            needs_regen = validation.get("needs_dunder_main") or (
+                orig_pkg and orig_pkg != name
+            )
+
+            if needs_regen:
+                dunder_path = os.path.join(target_dir, '__main__.py')
+                with open(dunder_path, 'w', encoding='utf-8') as f:
+                    f.write(
+                        '"""Auto-generated entry point for python -m execution."""\n'
+                        'import os\n'
+                        'import sys\n'
+                        '\n'
+                        '# Ensure the service directory is on sys.path for local imports\n'
+                        'sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))\n'
+                        '\n'
+                        'from main import main\n'
+                        '\n'
+                        'main()\n'
+                    )
+                if orig_pkg and orig_pkg != name:
+                    validation["warnings"].append(
+                        f"__main__.py was regenerated — original had imports "
+                        f"for '{orig_pkg}' which differs from '{name}'"
+                    )
+                else:
+                    validation["warnings"].append(
+                        "__main__.py was auto-generated (wraps main.main())"
+                    )
+                logger.info("Generated __main__.py for service '%s'", name)
+
+            # Build config entry — run as: python -m <name> (from services dir)
+            services_dir = self.get_services_dir()
+            detected_svc_name = validation.get("service_name")
+            resolved_config = {
+                "script": sys.executable,
+                "args": ["-m", name],
+                "cwd": services_dir,
+                "process_name": name,
+                "wait_time": wait_time,
+            }
+            raw_config = {
+                "script": "${python}",
+                "args": ["-m", name],
+                "cwd": "${config_dir}/services",
+                "process_name": name,
+                "wait_time": wait_time,
+            }
+            # Store the service's actual RabbitMQ queue name if it differs
+            # from the hub process name (used by ServiceExecutor for RPC shutdown)
+            if detected_svc_name and detected_svc_name != name:
+                resolved_config["service_name"] = detected_svc_name
+                raw_config["service_name"] = detected_svc_name
+                logger.info(
+                    "Service '%s' has internal name '%s' — stored as service_name",
+                    name, detected_svc_name,
+                )
+
+            self._process_config[name] = resolved_config
+            self._raw_config[name] = raw_config
+            self._save_config_file()
+
+            # Update the running server's config if hub is active
+            if self._server is not None:
+                try:
+                    self._server.core.update_process_config(name, resolved_config)
+                except Exception:
+                    pass  # non-critical
+
+            logger.info("Service '%s' imported from %s", name, source_dir)
+            return {
+                "success": True,
+                "message": f"Service '{name}' imported successfully.",
+                "warnings": validation.get("warnings", []),
+                "config": raw_config,
+            }
+
+        except ValueError as exc:
+            return {"success": False, "message": str(exc), "warnings": []}
+        except Exception as exc:
+            logger.exception("Unexpected error importing service '%s'", name)
+            return {"success": False, "message": f"Import failed: {exc}", "warnings": []}
+        finally:
+            if temp_dir and os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Reset

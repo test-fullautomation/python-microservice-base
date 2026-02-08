@@ -144,6 +144,38 @@
     },
 
     /**
+     * Remove a service (config + managed service folder).
+     * @param {string} name
+     */
+    removeService: function (name) {
+      return _fetchJson('DELETE', '/api/local-hub/service/' + encodeURIComponent(name));
+    },
+
+    /**
+     * Get process log (last N lines).
+     * @param {string} name
+     * @param {number} [tail=100]
+     */
+    getServiceLog: function (name, tail) {
+      var q = tail ? '?tail=' + tail : '';
+      return _fetchJson('GET', '/api/local-hub/service/' + encodeURIComponent(name) + '/log' + q);
+    },
+
+    /**
+     * Import a microservice from a folder path or base64-encoded ZIP.
+     * @param {string} name - Service name.
+     * @param {object} options - { source_path, zip_data, wait_time }
+     */
+    importService: function (name, options) {
+      return _fetchJson('POST', '/api/local-hub/import-service', {
+        name: name,
+        source_path: (options && options.source_path) || '',
+        zip_data: (options && options.zip_data) || '',
+        wait_time: (options && options.wait_time) || 1.0
+      });
+    },
+
+    /**
      * Register an update callback.
      * @param {Function} cb - Receives (status, err).
      */
