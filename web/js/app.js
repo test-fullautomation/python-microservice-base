@@ -1778,6 +1778,18 @@
       updatedServices = message;
     }
 
+    // Detect registry shutdown sentinel
+    if (updatedServices && updatedServices.__registry_shutdown__) {
+      console.warn('[app] Registry shutdown detected for broker:', brokerUrl);
+      showToast(
+        'Registry Disconnected',
+        'The Service Registry on ' + brokerUrl + ' has shut down.',
+        'warning'
+      );
+      disconnectBroker(brokerUrl);
+      return;
+    }
+
     // Scope queries to this broker's section
     var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
     var brokerSection = servicesList.querySelector('.broker-section[data-broker-url="' + brokerUrl + '"]');
