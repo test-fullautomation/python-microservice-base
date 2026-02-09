@@ -2,7 +2,7 @@
  * @fileoverview Electron preload script.
  * Exposes a safe bridge API via contextBridge for AMQP and filesystem operations.
  *
- * @version 2.0.0
+ * @version 2.1.0
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
@@ -18,21 +18,134 @@ try {
   console.log('[preload] All Node.js modules loaded successfully');
 } catch (err) {
   console.error('[preload] Failed to load Node.js modules:', err.message);
-  console.error('[preload] Make sure you ran "npm install" in the electron/ directory');
+  console.error('[preload] Make sure you ran "npm install" in the project directory');
 }
+
+// ---- Packaging-aware path constants ----
+const _isPackaged = process.env.DASGUI_IS_PACKAGED === '1';
+const _userDataPath = process.env.DASGUI_USER_DATA || path.join(__dirname, '..');
+const _resourcesPath = _isPackaged
+  ? (process.env.DASGUI_RESOURCES_PATH || process.resourcesPath)
+  : path.join(__dirname, '..');
+
+// Read-only Python source files (scripts bundled in extraResources)
+const _pythonSrcPath = path.join(_resourcesPath, 'python');
+
+// Writable Python data directory (PID, logs, config, user services)
+const _pythonDataPath = _isPackaged
+  ? path.join(_userDataPath, 'python')
+  : path.join(__dirname, '..', 'python');
+
+// Writable web services directory (GUI plugin extraction target)
+const _webServicesPath = _isPackaged
+  ? path.join(_userDataPath, 'web-services')
+  : path.join(__dirname, '..', 'web', 'services');
 
 // Store exchange message callbacks keyed by exchange name
 // so messages are only dispatched to the correct subscribers.
 const _exchangeCallbacks = {};  // { exchangeName: [callback, ...] }
 
-// Settings file path (persisted alongside electron/)
-const _settingsPath = path.join(__dirname, 'settings.json');
+// Settings file path
+const _settingsPath = _isPackaged
+  ? path.join(_userDataPath, 'settings.json')
+  : path.join(__dirname, 'settings.json');
 
 // Bridge process management
 let _bridgeProcess = null;
 
 // PID file — persists the bridge PID so we can reconnect across GUI sessions
-const _pidFilePath = path.join(__dirname, '..', 'python', 'bridge.pid');
+const _pidFilePath = path.join(_pythonDataPath, 'bridge.pid');
+
+// ---- First-run initialization (packaged mode only) ----
+
+function _copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  var entries = fs.readdirSync(src, { withFileTypes: true });
+  for (var i = 0; i < entries.length; i++) {
+    var entry = entries[i];
+    var srcPath = path.join(src, entry.name);
+    var destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      _copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+function _ensureWritableData() {
+  if (!_isPackaged) return;
+
+  // Create writable directory structure
+  fs.mkdirSync(_pythonDataPath, { recursive: true });
+  fs.mkdirSync(path.join(_pythonDataPath, 'services'), { recursive: true });
+  fs.mkdirSync(path.join(_pythonDataPath, 'logs'), { recursive: true });
+  fs.mkdirSync(_webServicesPath, { recursive: true });
+
+  // Copy entire python resources tree to writable data dir.
+  // .py files and subdirs (e.g. services/) are always overwritten (code, not user data).
+  // Config files (config.json, hub_processes.json) are only copied if not present (user may customize).
+  var userConfigFiles = { 'config.json': true, 'hub_processes.json': true };
+  function _syncPythonDir(srcDir, destDir) {
+    fs.mkdirSync(destDir, { recursive: true });
+    var entries = fs.readdirSync(srcDir, { withFileTypes: true });
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var srcPath = path.join(srcDir, entry.name);
+      var destPath = path.join(destDir, entry.name);
+      if (entry.isDirectory()) {
+        _syncPythonDir(srcPath, destPath);
+      } else if (userConfigFiles[entry.name] && srcDir === _pythonSrcPath) {
+        // User config: copy only if not present
+        if (!fs.existsSync(destPath)) {
+          fs.copyFileSync(srcPath, destPath);
+          console.log('[preload] Copied template:', entry.name);
+        }
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+  _syncPythonDir(_pythonSrcPath, _pythonDataPath);
+
+  // Copy default settings if not present
+  if (!fs.existsSync(_settingsPath)) {
+    var defaultSettings = path.join(_resourcesPath, 'settings.json');
+    if (fs.existsSync(defaultSettings)) {
+      fs.copyFileSync(defaultSettings, _settingsPath);
+      console.log('[preload] Copied default settings.json');
+    } else {
+      fs.writeFileSync(_settingsPath, '{}', 'utf8');
+    }
+  }
+
+  // Copy bundled web service plugins if writable dir is empty
+  var bundledPlugins = path.join(_resourcesPath, 'web-services');
+  if (fs.existsSync(bundledPlugins)) {
+    var items = fs.readdirSync(bundledPlugins);
+    for (var j = 0; j < items.length; j++) {
+      var destItem = path.join(_webServicesPath, items[j]);
+      if (!fs.existsSync(destItem)) {
+        _copyDirSync(path.join(bundledPlugins, items[j]), destItem);
+        console.log('[preload] Copied bundled plugin:', items[j]);
+      }
+    }
+  }
+}
+
+try {
+  _ensureWritableData();
+} catch (e) {
+  console.error('[preload] First-run init error:', e.message);
+}
+
+console.log('[preload] Packaging mode:', _isPackaged ? 'PACKAGED' : 'DEV');
+console.log('[preload] Python src:', _pythonSrcPath);
+console.log('[preload] Python data:', _pythonDataPath);
+console.log('[preload] Web services:', _webServicesPath);
+console.log('[preload] Settings:', _settingsPath);
+
+// ---- Helper functions ----
 
 /**
  * Check whether a process with the given PID is still alive.
@@ -73,6 +186,21 @@ function _removePidFile() {
   try { fs.unlinkSync(_pidFilePath); } catch (e) {}
 }
 
+/**
+ * Resolve a web/services relative path to the writable services directory.
+ * In dev mode, resolves relative to web/. In packaged mode, resolves to _webServicesPath.
+ * @param {string} folderPath - Path like "services/ServiceFoo1.0.0"
+ * @returns {string} Absolute path
+ */
+function _resolveServicesPath(folderPath) {
+  if (_isPackaged) {
+    // Strip "services/" prefix since _webServicesPath already points to the services root
+    var subPath = folderPath.replace(/^services\/?/, '');
+    return path.join(_webServicesPath, subPath);
+  }
+  return path.join(__dirname, '..', 'web', folderPath);
+}
+
 // Do NOT auto-kill the bridge on Electron exit — let the backend
 // (registry + bridge) keep running independently so services stay
 // discoverable even after the GUI is closed.
@@ -95,7 +223,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   folderExists: (folderPath) => {
     return new Promise((resolve) => {
-      const fullPath = path.join(__dirname, '..', 'web', folderPath);
+      const fullPath = _resolveServicesPath(folderPath);
       fs.access(fullPath, fs.constants.F_OK, (err) => {
         resolve(!err);
       });
@@ -110,7 +238,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   extractGUIZip: (folderPath, base64Data) => {
     return new Promise((resolve, reject) => {
-      const fullPath = path.join(__dirname, '..', 'web', folderPath);
+      const fullPath = _resolveServicesPath(folderPath);
 
       fs.mkdir(fullPath, { recursive: true }, (mkdirErr) => {
         if (mkdirErr) {
@@ -454,8 +582,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
 
     const pythonPath = (options && options.pythonPath) || 'python';
-    const launcherPath = path.join(__dirname, '..', 'python', 'launcher.py');
-    const configPath = path.join(__dirname, '..', 'python', 'config.json');
+    // launcher.py is a read-only script (from resources in packaged mode)
+    const launcherPath = path.join(_pythonSrcPath, 'launcher.py');
+    // config.json is writable user data
+    const configPath = path.join(_pythonDataPath, 'config.json');
     const args = [launcherPath, '--config', configPath];
 
     if (options && options.brokerHost) {
@@ -471,8 +601,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       args.push('--bridge-port', String(options.bridgePort));
     }
 
-    // Log file for diagnosing spawn failures
-    const logPath = path.join(__dirname, '..', 'python', 'launcher.log');
+    // Log file for diagnosing spawn failures (writable data dir)
+    const logPath = path.join(_pythonDataPath, 'launcher.log');
     const logStream = fs.createWriteStream(logPath, { flags: 'a' });
     const timestamp = new Date().toISOString();
     logStream.write('\n--- Spawn at ' + timestamp + ' ---\n');

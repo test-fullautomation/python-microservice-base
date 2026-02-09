@@ -334,10 +334,14 @@ Download service GUI resources and extract them to the web/services/ directory.
       def _get_local_hub_manager():
          if bridge._local_hub_manager is None:
             from ..local_hub.local_hub_manager import LocalHubManager
-            hub_config_path = os.path.join(
-               os.path.dirname(__file__), '..', '..',
-               'MicroserviceManagerGUI', 'python', 'hub_processes.json'
-            )
+            # Prefer env var (set by launcher.py for packaged apps),
+            # fall back to relative path for development mode.
+            hub_config_path = os.environ.get('DASGUI_HUB_CONFIG')
+            if not hub_config_path:
+               hub_config_path = os.path.join(
+                  os.path.dirname(__file__), '..', '..',
+                  'MicroserviceManagerGUI', 'python', 'hub_processes.json'
+               )
             bridge._local_hub_manager = LocalHubManager(
                config_path=hub_config_path
             )
