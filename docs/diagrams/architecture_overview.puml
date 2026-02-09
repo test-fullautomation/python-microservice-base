@@ -1,0 +1,143 @@
+@startuml architecture_overview
+!theme plain
+skinparam defaultTextAlignment center
+skinparam packageStyle rectangle
+skinparam componentStyle rectangle
+skinparam wrapWidth 200
+
+title MicroserviceBase - Hexagonal Architecture (Overview)
+
+' ============================================================================
+' Colors
+' ============================================================================
+skinparam component {
+    BackgroundColor<<domain>> #e8f5e9
+    BackgroundColor<<port>> #e3f2fd
+    BackgroundColor<<adapter>> #fff3e0
+    BackgroundColor<<factory>> #f3e5f5
+    BackgroundColor<<hub>> #e0f7fa
+    BackgroundColor<<external>> #f5f5f5
+}
+
+' ============================================================================
+' Layer 1 - Factory (Composition Root) - top
+' ============================================================================
+
+package "Factory (Composition Root)" as FactoryLayer #f3e5f5 {
+    component "create_transport()" as CreateTransport <<factory>>
+    component "create_registry()" as CreateRegistry <<factory>>
+    component "create_ui_bridge()" as CreateUIBridge <<factory>>
+}
+
+' ============================================================================
+' Layer 2 - Adapters (Infrastructure)
+' ============================================================================
+
+package "Adapters Layer" as AdaptersLayer #fff3e0 {
+    component "RabbitMQTransport\n(pika)" as RabbitTransport <<adapter>>
+    component "AMQPRegistry\n(topic+fanout)" as AMQPRegistry <<adapter>>
+    component "EventBusTransport" as EBTransport <<adapter>>
+    component "EventBusRegistry" as EBRegistry <<adapter>>
+    component "FastAPIBridge\n(REST+WS)" as FastBridge <<adapter>>
+}
+
+package "Local Hub" as LocalHubPkg #e0f7fa {
+    component "LocalHubManager" as HubManager <<hub>>
+    component "ServiceExecutor\n(RPC+SIGBREAK)" as SvcExecutor <<hub>>
+    component "ServiceImporter\n(ZIP/folder+AST)" as SvcImporter <<hub>>
+}
+
+' ============================================================================
+' Layer 3 - Ports (Interfaces)
+' ============================================================================
+
+package "Ports Layer (ABC Interfaces)" as PortsLayer #e3f2fd {
+    component "TransportPort\nconnect | consume | rpc_call" as TransportPort <<port>>
+    component "ServiceRegistryPort\nregister | unregister | subscribe" as RegistryPort <<port>>
+    component "UIBridgePort\nstart | stop | broadcast" as UIPort <<port>>
+}
+
+' ============================================================================
+' Layer 4 - Domain (Pure Logic) - bottom
+' ============================================================================
+
+package "Domain Layer (Zero External Dependencies)" as DomainLayer #e8f5e9 {
+    component "ServiceBase\n(svc_api_* discovery, dispatch)" as SvcBase <<domain>>
+    component "ServiceRegistry\n(tracking, alias, shutdown)" as SvcReg <<domain>>
+    component "Models & Messages\n(ServiceInfo, Request, Response)" as Models <<domain>>
+}
+
+' ============================================================================
+' External Systems (side)
+' ============================================================================
+
+component "RabbitMQ Broker(s)" as RabbitMQ <<external>>
+component "Electron / Browser" as GUI <<external>>
+
+' ============================================================================
+' Vertical layout hints
+' ============================================================================
+
+FactoryLayer -[hidden]down- AdaptersLayer
+AdaptersLayer -[hidden]down- PortsLayer
+PortsLayer -[hidden]down- DomainLayer
+AdaptersLayer -[hidden]down- LocalHubPkg
+
+' ============================================================================
+' Factory --> Adapters (creates)
+' ============================================================================
+
+CreateTransport ..> RabbitTransport : creates
+CreateTransport ..> EBTransport : creates
+CreateRegistry ..> AMQPRegistry : creates
+CreateRegistry ..> EBRegistry : creates
+CreateUIBridge ..> FastBridge : creates
+
+' ============================================================================
+' Adapters --|> Ports (implements)
+' ============================================================================
+
+RabbitTransport ..|> TransportPort : implements
+EBTransport ..|> TransportPort : implements
+AMQPRegistry ..|> RegistryPort : implements
+EBRegistry ..|> RegistryPort : implements
+FastBridge ..|> UIPort : implements
+
+' ============================================================================
+' Domain --> Ports (uses)
+' ============================================================================
+
+SvcBase --> TransportPort : uses
+SvcBase --> RegistryPort : uses
+SvcReg --|> SvcBase : extends
+
+' ============================================================================
+' Adapters --> External
+' ============================================================================
+
+RabbitTransport --> RabbitMQ : AMQP
+AMQPRegistry --> RabbitMQ : AMQP
+FastBridge --> GUI : HTTP/WS
+
+' ============================================================================
+' Local Hub internal
+' ============================================================================
+
+FastBridge --> HubManager : /api/local-hub
+HubManager --> SvcExecutor : start/stop
+HubManager --> SvcImporter : import
+
+' ============================================================================
+' Legend
+' ============================================================================
+
+legend right
+    |= Color |= Layer |
+    | <#e8f5e9> | Domain (Pure Logic) |
+    | <#e3f2fd> | Ports (Interfaces) |
+    | <#fff3e0> | Adapters (Infrastructure) |
+    | <#e0f7fa> | Local Hub (Process Mgmt) |
+    | <#f3e5f5> | Factory (Wiring) |
+endlegend
+
+@enduml
