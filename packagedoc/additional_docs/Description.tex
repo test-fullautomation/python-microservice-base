@@ -1,29 +1,397 @@
-% --------------------------------------------------------------------------------------------------------------
+% **************************************************************************************************************
 %
-% Copyright 2020-2022 Robert Bosch GmbH
-
-% Licensed under the Apache License, Version 2.0 (the "License");
-% you may not use this file except in compliance with the License.
-% You may obtain a copy of the License at
-
-% http://www.apache.org/licenses/LICENSE-2.0
-
-% Unless required by applicable law or agreed to in writing, software
-% distributed under the License is distributed on an "AS IS" BASIS,
-% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-% See the License for the specific language governing permissions and
-% limitations under the License.
+%  Copyright 2020-2026 Robert Bosch GmbH
 %
-% --------------------------------------------------------------------------------------------------------------
+%  Licensed under the Apache License, Version 2.0 (the "License");
+%  you may not use this file except in compliance with the License.
+%  You may obtain a copy of the License at
+%
+%      http://www.apache.org/licenses/LICENSE-2.0
+%
+%  Unless required by applicable law or agreed to in writing, software
+%  distributed under the License is distributed on an "AS IS" BASIS,
+%  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%  See the License for the specific language governing permissions and
+%  limitations under the License.
+%
+% **************************************************************************************************************
 
-\section{ToDo}
+\section{Description}
 
-Description
+\subsection{Overview}
 
-\subsection{ToDo ToDo}
+MicroserviceBase is a Python framework for building microservices that communicate through RabbitMQ,
+with a built-in GUI for monitoring, a local process hub for lifecycle management, and a service
+registry for dynamic discovery. The system follows hexagonal architecture principles,
+ensuring testability, maintainability, and extensibility.
 
-Description
+\subsubsection{Key Features}
 
-\subsubsection{ToDo ToDo ToDo}
+\begin{itemize}
+   \item \textbf{Microservice Framework}: Base classes for creating services with RPC and pub/sub patterns
+   \item \textbf{Service Registry}: Dynamic service registration and discovery via RabbitMQ exchange
+   \item \textbf{FastAPI Bridge}: REST API and WebSocket gateway connecting GUI to microservices
+   \item \textbf{Manager GUI}: Electron + browser-based dashboard for monitoring and controlling services
+   \item \textbf{Local Process Hub}: Start, stop, and manage service processes with graceful shutdown
+   \item \textbf{Multi-Broker Support}: Connect to multiple RabbitMQ brokers simultaneously
+   \item \textbf{Service Import}: Import microservice packages (folder or zip) into the local hub
+   \item \textbf{Service Creator}: Interactive wizard for scaffolding new microservices
+   \item \textbf{Standalone Installer}: Package as Windows desktop application (DevAtServGUI)
+\end{itemize}
 
-Description
+\subsubsection{Design Philosophy}
+
+MicroserviceBase follows several key design principles:
+
+\begin{enumerate}
+   \item \textbf{Hexagonal Architecture}: Domain logic is isolated from external concerns via ports and adapters
+   \item \textbf{Factory Pattern}: All components are created through factories, enabling easy swapping
+   \item \textbf{Dual Hosting}: GUI works in both Electron (desktop) and browser modes
+   \item \textbf{Graceful Shutdown}: Proper process cleanup on Windows using CTRL\_BREAK\_EVENT signals
+   \item \textbf{Config Persistence}: Placeholder-based configuration that works across environments
+\end{enumerate}
+
+% ============================================================================
+\subsection{Architecture}
+% ============================================================================
+
+MicroserviceBase is organized into distinct layers following hexagonal architecture:
+
+\subsubsection{Layer Responsibilities}
+
+\begin{description}
+   \item[Domain Layer] Core business logic: \texttt{ServiceBase} (base class for microservices),
+        \texttt{ServiceRegistry} (service registration and discovery), and \texttt{Factory}
+        (component creation).
+
+   \item[Ports Layer] Abstract interfaces defining contracts: \texttt{TransportPort} (message passing),
+        \texttt{RegistryPort} (service registration), \texttt{UIBridgePort} (GUI communication).
+
+   \item[Adapters Layer] Concrete implementations:
+        \begin{itemize}
+           \item \texttt{RabbitMQ Transport} -- RPC calls and message consumption via pika
+           \item \texttt{RabbitMQ Registry} -- Service registration via exchange broadcasting
+           \item \texttt{FastAPI Bridge} -- REST API, WebSocket, and Local Hub endpoints
+           \item \texttt{Local Hub Manager} -- Process lifecycle management
+           \item \texttt{Service Executor} -- Process execution with platform-specific shutdown
+        \end{itemize}
+
+   \item[GUI Layer] MicroserviceManagerGUI with dual hosting:
+        \begin{itemize}
+           \item \texttt{Electron} -- Desktop wrapper with contextBridge preload
+           \item \texttt{Web} -- Pure browser-compatible HTML/CSS/JS
+           \item \texttt{Service Plugins} -- Dynamically loaded per-service UI components
+        \end{itemize}
+\end{description}
+
+% ============================================================================
+\subsection{Components}
+% ============================================================================
+
+\subsubsection{ServiceBase}
+
+The base class for all microservices provides:
+
+\begin{itemize}
+   \item API method discovery via \texttt{svc\_api\_} prefix convention
+   \item Automatic service registration with the registry
+   \item Graceful shutdown with \texttt{unregister\_service()} on exit
+   \item Service info exposure for discovery via \texttt{\_SERVICE\_INFO} dict
+   \item Docstring-based API documentation generation
+\end{itemize}
+
+\begin{verbatim}
+from MicroserviceBase.domain.service_base import ServiceBase
+from MicroserviceBase.factory import create_transport, create_registry
+
+class MyService(ServiceBase):
+    _SERVICE_INFO = {
+        'name': 'MyService',
+        'routing_key': 'service.myservice',
+        'version': '1.0.0',
+        'gui_support': False,
+        'methods': [], 'methods_info': {},
+    }
+
+    def svc_api_my_method(self, arg1, arg2):
+        """My API method."""
+        return some_result
+
+transport = create_transport('rabbitmq',
+    cmd_args=['--host', 'localhost', '--port', '5672'],
+    service_name='MyService')
+registry = create_registry('rabbitmq',
+    cmd_args=['--host', 'localhost', '--port', '5672'],
+    service_name='MyService')
+
+service = MyService(transport=transport, registry=registry)
+service.register_service()
+service.serve()
+\end{verbatim}
+
+\subsubsection{Service Registry}
+
+The registry manages dynamic service discovery:
+
+\begin{itemize}
+   \item Services register on startup with their method list and metadata
+   \item Registry broadcasts updates to all subscribers via RabbitMQ exchange
+   \item Shutdown notification via \texttt{\_\_registry\_shutdown\_\_} sentinel
+   \item GUI receives real-time updates via WebSocket
+\end{itemize}
+
+\subsubsection{FastAPI Bridge}
+
+The bridge connects the GUI to microservices:
+
+\begin{description}
+   \item[POST /api/request] RPC call forwarding to services
+   \item[GET /api/services] Registered service list
+   \item[WS /ws/updates] Real-time service update stream
+   \item[/api/local-hub/*] Local process hub management endpoints
+   \item[GET /docs] Auto-generated Swagger API documentation
+\end{description}
+
+\subsubsection{Local Hub Manager}
+
+The Local Hub provides process lifecycle management:
+
+\begin{itemize}
+   \item Start, stop, and monitor local service processes
+   \item Process configuration via \texttt{hub\_processes.json} with placeholder support
+   \item Service import from folders or zip archives
+   \item Service executor with graceful shutdown using \texttt{CTRL\_BREAK\_EVENT} on Windows
+   \item Log file management per process
+\end{itemize}
+
+% ============================================================================
+\subsection{Communication Patterns}
+% ============================================================================
+
+\subsubsection{RPC via RabbitMQ}
+
+Services communicate using RPC (Remote Procedure Call) pattern through RabbitMQ:
+
+\begin{verbatim}
+from MicroserviceBase.domain.service_base import ServiceBase
+
+# Client sends request
+request_data = ServiceBase.create_request_data('svc_api_add', [1, 2])
+response = transport.rpc_call(
+    request_data,
+    exchange_name='services_request',
+    routing_key='service.calculator'
+)
+# response = {"request": "svc_api_add", "result": "pass",
+#              "result_data": 3}
+\end{verbatim}
+
+\subsubsection{Service Registration}
+
+Services register themselves via the registry exchange. The \texttt{ServiceBase}
+class handles this automatically using the \texttt{\_SERVICE\_INFO} dict:
+
+\begin{verbatim}
+# ServiceBase auto-discovers svc_api_* methods and builds
+# the service info dict, then publishes it:
+service.register_service()
+
+# On shutdown, unregister to notify the registry:
+service.unregister_service()
+\end{verbatim}
+
+\subsubsection{Multi-Broker Architecture}
+
+The GUI supports connecting to multiple RabbitMQ brokers simultaneously:
+
+\begin{itemize}
+   \item \texttt{MM.connections} map tracks per-broker state
+   \item \texttt{serviceToBroker} reverse lookup for request routing
+   \item Session persistence via \texttt{sessionStorage}
+   \item Progressive disclosure: broker sections shown only when multiple brokers connected
+\end{itemize}
+
+% ============================================================================
+\subsection{GUI Architecture}
+% ============================================================================
+
+\subsubsection{Dual Hosting}
+
+The MicroserviceManagerGUI runs in two modes:
+
+\begin{description}
+   \item[Electron Mode] Desktop application with native process management.
+        Uses \texttt{contextBridge} preload for secure Node.js access.
+        Can spawn and manage the FastAPI bridge process directly.
+
+   \item[Browser Mode] Access via \texttt{http://localhost:1112} when the bridge is running.
+        Pure HTML/CSS/JS with no Node.js dependencies.
+        Uses the same \texttt{window.MicroserviceManager} namespace.
+\end{description}
+
+\subsubsection{Service Plugins}
+
+Each microservice can provide a custom GUI plugin:
+
+\begin{itemize}
+   \item HTML file for UI layout
+   \item JS file for logic (uses \texttt{const MM = window.MicroserviceManager;})
+   \item Plugins loaded dynamically into \texttt{web/services/}
+   \item In packaged mode, plugins extracted to writable \texttt{\%APPDATA\%} directory
+\end{itemize}
+
+\subsubsection{Standalone Installer}
+
+The GUI can be packaged as a standalone Windows application using Electron Builder:
+
+\begin{itemize}
+   \item NSIS installer for Windows (\texttt{build.bat}), Linux packages (\texttt{build.sh})
+   \item Read-only scripts in \texttt{resources/python/}
+   \item Writable user data in \texttt{\%APPDATA\%/devatservgui/}
+   \item First-run initialization copies templates and scripts
+   \item Bridge process managed via PID file with detached mode
+\end{itemize}
+
+% ============================================================================
+\subsection{Process Configuration}
+% ============================================================================
+
+Processes are configured via \texttt{hub\_processes.json}:
+
+\begin{verbatim}
+{
+    "ServiceRegistry": {
+        "script": "${config_dir}/start_registry.py",
+        "args": ["--config", "${config_dir}/config.json"],
+        "process_name": "ServiceRegistry",
+        "wait_time": 2.0
+    },
+    "MyService": {
+        "script": "${python}",
+        "args": ["-m", "MyService"],
+        "cwd": "${config_dir}/services",
+        "process_name": "MyService",
+        "wait_time": 1.0
+    }
+}
+\end{verbatim}
+
+\subsubsection{Placeholders}
+
+\begin{description}
+   \item[\$\{python\}] Resolves to \texttt{sys.executable} at runtime
+   \item[\$\{config\_dir\}] Resolves to the directory containing \texttt{hub\_processes.json}
+\end{description}
+
+Placeholders are preserved in \texttt{\_raw\_config} during save operations,
+allowing the same configuration file to work across different environments.
+
+% ============================================================================
+\subsection{Windows Process Lifecycle}
+% ============================================================================
+
+On Windows, process shutdown requires special handling:
+
+\begin{itemize}
+   \item \texttt{proc.terminate()} calls \texttt{TerminateProcess} which allows no cleanup
+   \item Service Executor uses \texttt{CTRL\_BREAK\_EVENT} for graceful shutdown
+   \item \texttt{signal.SIGBREAK} handler converts to \texttt{KeyboardInterrupt} for Python cleanup
+   \item Pika's \texttt{start\_consuming()} replaced with \texttt{process\_data\_events(time\_limit=1)}
+         loop for interruptible consumption
+   \item \texttt{subprocess.PIPE} blocking prevented by using \texttt{FileHandler} instead of
+         \texttt{StreamHandler} for logging in subprocess mode
+\end{itemize}
+
+% ============================================================================
+\subsection{Installation}
+% ============================================================================
+
+\subsubsection{From Source}
+
+\begin{verbatim}
+git clone https://github.com/test-fullautomation/python-microservice-base.git
+cd python-microservice-base
+pip install .
+
+# Development mode
+pip install -e .
+\end{verbatim}
+
+\subsubsection{GUI Setup}
+
+\begin{verbatim}
+cd MicroserviceBase/MicroserviceManagerGUI
+npm install
+npm start
+\end{verbatim}
+
+% ============================================================================
+\subsection{Quick Start}
+% ============================================================================
+
+\subsubsection{Start Service Registry}
+
+\begin{verbatim}
+python MicroserviceBase/MicroserviceManagerGUI/python/start_registry.py \
+    --host localhost --port 5672
+\end{verbatim}
+
+\subsubsection{Start FastAPI Bridge}
+
+\begin{verbatim}
+python MicroserviceBase/MicroserviceManagerGUI/python/start_bridge.py \
+    --host localhost --port 5672 --bridge-port 1112
+\end{verbatim}
+
+\subsubsection{Create a Service}
+
+\begin{verbatim}
+import sys
+from MicroserviceBase.domain.service_base import ServiceBase
+from MicroserviceBase.factory import create_transport, create_registry
+
+class CalculatorService(ServiceBase):
+    _SERVICE_INFO = {
+        'name': 'Calculator',
+        'description': 'A simple calculator service.',
+        'version': '1.0.0',
+        'routing_key': 'service.calculator',
+        'gui_support': False,
+        'methods': [], 'methods_info': {},
+    }
+
+    def svc_api_add(self, a, b):
+        """Add two numbers."""
+        return int(a) + int(b)
+
+transport = create_transport('rabbitmq',
+    cmd_args=sys.argv[1:], service_name='Calculator')
+registry = create_registry('rabbitmq',
+    cmd_args=sys.argv[1:], service_name='Calculator')
+
+service = CalculatorService(transport=transport, registry=registry)
+service.register_service()
+service.serve()
+\end{verbatim}
+
+% ============================================================================
+\subsection{Diagrams Reference}
+% ============================================================================
+
+The following PlantUML diagrams are available in the \texttt{docs/diagrams/} folder:
+
+\begin{description}
+   \item[overview.puml] System overview showing services, broker, registry, bridge, and GUI
+   \item[architecture.puml] Hexagonal architecture with domain, ports, and adapters
+   \item[component.puml] Component diagram with package dependencies
+   \item[class\_domain.puml] Class diagram for domain layer
+   \item[class\_ports.puml] Class diagram for port interfaces
+   \item[class\_adapters.puml] Class diagram for adapter implementations
+   \item[gui\_architecture.puml] GUI dual-host architecture (Electron + browser)
+   \item[sequence\_rpc.puml] RPC call sequence from GUI to service
+   \item[sequence\_registration.puml] Service registration flow
+   \item[sequence\_alias.puml] Service alias resolution sequence
+   \item[sequence\_shutdown.puml] Two-phase graceful shutdown sequence
+   \item[sequence\_service\_import.puml] Service import flow (GUI to hub)
+   \item[state\_process\_lifecycle.puml] Process state machine
+\end{description}

@@ -1,6 +1,6 @@
 # **************************************************************************************************************
 #
-#  Copyright 2020-2022 Robert Bosch GmbH
+#  Copyright 2020-2026 Robert Bosch GmbH
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -18,5 +18,5 @@
 #
 # Version and date of MicroserviceBase
 #
-VERSION      = "0.1.1"
-VERSION_DATE = "02.02.2023"
+VERSION      = "2.0.0"
+VERSION_DATE = "09.02.2026"

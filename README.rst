@@ -1,4 +1,4 @@
-.. Copyright 2020-2022 Robert Bosch GmbH
+.. Copyright 2020-2026 Robert Bosch GmbH
 
 .. Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -15,67 +15,91 @@
 Package Description
 ===================
 
-Short description of **MicroserviceClewareSwitch**.
+**MicroserviceBase** is a Python framework for building, managing, and orchestrating
+microservices with RabbitMQ-based communication.
+
+It provides the foundation for creating microservices that communicate through RabbitMQ,
+with a built-in GUI for monitoring, a local process hub for lifecycle management,
+and a service registry for dynamic discovery.
+
+Key Features
+------------
+
+* **Microservice Framework** -- Base classes for creating services with RPC and pub/sub patterns
+* **Service Registry** -- Dynamic service registration and discovery via RabbitMQ exchange
+* **FastAPI Bridge** -- REST API and WebSocket gateway connecting GUI to microservices
+* **Manager GUI** -- Electron + browser-based dashboard for monitoring and controlling services
+* **Local Process Hub** -- Start, stop, and manage service processes with graceful shutdown
+* **Multi-Broker Support** -- Connect to multiple RabbitMQ brokers simultaneously
+* **Service Import** -- Import microservice packages (folder or zip) into the local hub
+* **Service Creator** -- Interactive wizard for scaffolding new microservices
+* **Hexagonal Architecture** -- Clean separation via ports and adapters pattern
+* **Standalone Installer** -- Package as Windows desktop application (DevAtServGUI)
 
 How to install
 --------------
 
-.. The **MicroserviceClewareSwitch** can be installed in two different ways.
-
-.. 1. Installation via PyPi (recommended for users)
-
-..    .. code::
-
-..       pip install MicroserviceClewareSwitch
-
-..    `MicroserviceClewareSwitch in PyPi <https://pypi.org/project/MicroserviceClewareSwitch/>`_
-
-.. 2. Installation via GitHub (recommended for developers)
-
 Installation via GitHub (recommended for developers)
 
-   Clone the **python-microservice-cleware-switch** repository to your machine.
+   Clone the **python-microservice-base** repository to your machine.
 
    .. code::
 
-      git clone https://github.com/test-fullautomation/python-microservice-cleware-switch.git
+      git clone https://github.com/test-fullautomation/python-microservice-base.git
 
-   `MicroserviceClewareSwitch in GitHub <https://github.com/test-fullautomation/python-microservice-cleware-switch>`_
+   `MicroserviceBase in GitHub <https://github.com/test-fullautomation/python-microservice-base>`_
 
-   Use the following command to install the **MicroserviceClewareSwitch**:
+   Use the following command to install **MicroserviceBase**:
 
    .. code::
 
-      setup.py install
+      pip install .
+
+   For development mode:
+
+   .. code::
+
+      pip install -e .
+
+Prerequisites
+-------------
+
+* Python 3.10 or higher
+* RabbitMQ server (message broker)
+* pika package (RabbitMQ client for Python)
+* FastAPI and uvicorn (for the bridge)
+* Node.js and npm (for GUI development)
 
 Package Documentation
 ---------------------
 
-A detailed documentation of the **MicroserviceClewareSwitch** can be found here:
-`MicroserviceClewareSwitch.pdf <https://github.com/test-fullautomation/python-microservice-cleware-switch/blob/develop/MicroserviceClewareSwitch/MicroserviceClewareSwitch.pdf>`_
-
+A detailed documentation of **MicroserviceBase** can be found here:
+`MicroserviceBase.pdf <https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceBase.pdf>`_
 
 Feedback
 --------
 
-To give us a feedback, you can send an email to `Thomas Pollerspöck <mailto:Thomas.Pollerspoeck@de.bosch.com>`_ 
+To give us a feedback, you can send an email to `Nguyen Huynh Tri Cuong <mailto:Cuong.NguyenHuynhTri@vn.bosch.com>`_
+or `Thomas Pollerspoeck <mailto:Thomas.Pollerspoeck@de.bosch.com>`_
 
 In case you want to report a bug or request any interesting feature, please don't hesitate to raise a ticket.
 
 Maintainers
 -----------
 
-`Thomas Pollerspöck <mailto:Thomas.Pollerspoeck@de.bosch.com>`_
+`Nguyen Huynh Tri Cuong <mailto:Cuong.NguyenHuynhTri@vn.bosch.com>`_
 
 Contributors
 ------------
 
-`Thomas Pollerspöck <mailto:Thomas.Pollerspoeck@de.bosch.com>`_
+`Nguyen Huynh Tri Cuong <mailto:Cuong.NguyenHuynhTri@vn.bosch.com>`_
+
+`Thomas Pollerspoeck <mailto:Thomas.Pollerspoeck@de.bosch.com>`_
 
 License
 -------
 
-Copyright 2020-2022 Robert Bosch GmbH
+Copyright 2020-2026 Robert Bosch GmbH
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
