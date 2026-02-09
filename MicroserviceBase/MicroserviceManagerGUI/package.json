@@ -1,16 +1,13 @@
 {
-  "name": "microservice-manager-gui",
+  "name": "devatservgui",
   "version": "2.0.0",
   "description": "Microservice Manager GUI - Dual hosting (Electron + Python Web)",
   "main": "electron/main.js",
   "scripts": {
-    "start:electron": "cd electron && npm start",
-    "dev:electron": "cd electron && npm run dev",
-    "install:electron": "cd electron && npm install",
     "start": "electron .",
-    "build": "electron-builder",
     "dev": "electron . --devTools=true",
-    "dist": "electron-builder"
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win --x64"
   },
   "homepage": "https://github.com/test-fullautomation/python-microservice-base",
   "author": {
@@ -22,33 +19,68 @@
   "license": "ISC",
   "dependencies": {
     "amqplib": "^0.10.3",
-    "bootstrap": "^5.3.2",
-    "electron-toaster": "^2.0.4",
-    "file-saver": "^2.0.5",
-    "fs": "^0.0.1-security",
-    "jquery": "^3.7.1",
-    "node-notifier": "^10.0.1",
-    "path": "^0.12.7",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "split.js": "^1.6.5",
     "unzipper": "^0.10.14"
   },
   "build": {
-    "appId": "com.example.dasgui",
+    "appId": "com.bosch.devatservgui",
     "productName": "DevAtServGUI",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
+    "files": [
+      "electron/**/*",
+      "web/**/*",
+      "!web/services/**",
+      "!electron/settings.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "python",
+        "to": "python",
+        "filter": [
+          "**/*.py",
+          "config.json",
+          "hub_processes.json",
+          "services/**",
+          "!**/*.log",
+          "!**/*.pid",
+          "!**/__pycache__/**",
+          "!logs/**"
+        ]
+      },
+      {
+        "from": "electron/settings.json",
+        "to": "settings.json"
+      },
+      {
+        "from": "web/services",
+        "to": "web-services",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true,
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DevAtServGUI"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "artifactName": "${productName}_1.0.0_${arch}.${ext}"
+      "icon": "build/icon.png"
     }
   },
   "devDependencies": {

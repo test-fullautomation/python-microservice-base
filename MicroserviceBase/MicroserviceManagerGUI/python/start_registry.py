@@ -39,12 +39,14 @@ import sys
 import threading
 from pathlib import Path
 
-# Add the repository root to sys.path so MicroserviceBase can be imported.
-# Path: python/ -> MicroserviceManagerGUI/ -> MicroserviceBase/ -> repo root
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
-
-from MicroserviceBase.domain.service_registry import ServiceRegistry
-from MicroserviceBase.factory import create_transport, create_registry
+# Try pip-installed package first; fall back to repo-relative path for development.
+try:
+    from MicroserviceBase.domain.service_registry import ServiceRegistry
+    from MicroserviceBase.factory import create_transport, create_registry
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+    from MicroserviceBase.domain.service_registry import ServiceRegistry
+    from MicroserviceBase.factory import create_transport, create_registry
 
 
 def _setup_logging():

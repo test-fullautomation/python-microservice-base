@@ -394,6 +394,7 @@
             '<div class="fleet-detail-meta">' +
               '<span><strong>Hub ID:</strong> ' + _esc(status.hub_id) + '</span>' +
               '<span><strong>Mode:</strong> ' + _esc(status.mode) + '</span>' +
+              (status.config_path ? '<span><strong>Config:</strong> ' + _esc(status.config_path) + '</span>' : '') +
             '</div>' +
           '</div>' +
           '<div class="local-hub-toolbar">' +

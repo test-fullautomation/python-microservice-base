@@ -8,6 +8,7 @@ skinparam component {
     BackgroundColor<<adapter>> #fff3e0
     BackgroundColor<<factory>> #f3e5f5
     BackgroundColor<<gui>> #fce4ec
+    BackgroundColor<<hub>> #e0f7fa
 }
 
 ' ============================================================================
@@ -59,7 +60,13 @@ package "Adapters" <<adapter>> {
     }
 
     package "UI Stack" {
-        [FastAPIBridge] as FAB <<adapter>>
+        [FastAPIBridge\n(REST + WebSocket)] as FAB <<adapter>>
+    }
+
+    package "Local Hub Stack" <<hub>> {
+        [LocalHubManager\n(ProcessHub Integration)] as LHM <<hub>>
+        [ServiceExecutor\n(RPC + Signal Shutdown)] as SE <<hub>>
+        [ServiceImporter\n(ZIP/Folder + AST Validation)] as SI <<hub>>
     }
 }
 
@@ -73,6 +80,9 @@ RMQT --> RMQCfg : uses
 AMQPR --> RMQCfg : uses
 EBT --> EBCfg : uses
 EBR --> EBCfg : uses
+
+LHM --> SE : manages
+LHM --> SI : imports via
 
 ' ============================================================================
 ' Factory
@@ -91,32 +101,51 @@ CR --> EBR : creates
 CU --> FAB : creates
 
 ' ============================================================================
-' GUI
+' GUI (Dual-Host Architecture)
 ' ============================================================================
 
 package "MicroserviceManagerGUI" <<gui>> {
-    [index.js\n(Main Window)] as GUI <<gui>>
-    [ServiceClient.js\n(Transport Layer)] as SC <<gui>>
-    [MessageProtocol.js\n(Message Types)] as MP <<gui>>
 
-    GUI --> SC : uses
-    GUI --> MP : uses
+    package "web/ (Pure Browser)" <<gui>> {
+        [app.js\n(Main App)] as AppJS <<gui>>
+        [ServiceClient.js\n(RPC Client)] as SC <<gui>>
+        [LocalHubClient.js\n(Hub REST Client)] as LHC <<gui>>
+        [LocalHubDashboard.js\n(Process Manager UI)] as LHD <<gui>>
+
+        AppJS --> SC : uses
+        AppJS --> LHC : uses
+        LHD --> LHC : uses
+    }
+
+    package "electron/ (Desktop Wrapper)" <<gui>> {
+        [main.js\n(BrowserWindow)] as MainJS <<gui>>
+        [preload.js\n(contextBridge\n+ Bridge Lifecycle)] as Preload <<gui>>
+    }
 }
 
 ' ============================================================================
 ' External Systems
 ' ============================================================================
 
-cloud "RabbitMQ Server" as RMQ
+cloud "RabbitMQ Broker(s)" as RMQ
 database "alias.json" as Alias
+database "hub_processes.json\n(${python} placeholders)" as HubCfg
 actor "Browser" as Browser
+actor "Electron" as Electron
 
 RMQT --> RMQ : AMQP
 EBT --> RMQ : AMQP
 AMQPR --> RMQ : AMQP
 EBR --> RMQ : AMQP
-SC --> RMQ : AMQP
+SC --> FAB : HTTP/WS
+LHC --> FAB : REST
 SR --> Alias : loads
+LHM --> HubCfg : reads/writes
 FAB --> Browser : HTTP/WS
+Preload --> FAB : spawns/reconnects
+MainJS --> Electron : renders
+
+' Multi-broker: GUI connects to multiple brokers
+FAB --> RMQ : AMQP\n(multi-broker)
 
 @enduml

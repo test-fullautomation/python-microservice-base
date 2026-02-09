@@ -7,15 +7,18 @@ skinparam rectangle {
     BackgroundColor<<service>> LightGreen
     BackgroundColor<<broker>> LightYellow
     BackgroundColor<<ui>> LightCoral
+    BackgroundColor<<hub>> #e0f7fa
+    BackgroundColor<<bridge>> #fff3e0
 }
 
 rectangle "Service Registry" <<registry>> {
     rectangle "ServiceRegistry\n(Discovery Hub)" as registry_core
     rectangle "Alias Routing\n(Method Mapping)" as alias
     rectangle "Services Tracking\n(Live State)" as tracking
+    rectangle "Shutdown Sentinel\n(GUI Notification)" as sentinel
 }
 
-rectangle "Message Broker" <<broker>> {
+rectangle "Message Broker(s)" <<broker>> {
     rectangle "RabbitMQ\n(pika / aio_pika)" as rabbitmq
     rectangle "service_information\n(Topic Exchange)" as info_exchange
     rectangle "services_request\n(Topic Exchange)" as req_exchange
@@ -32,14 +35,23 @@ rectangle "Service B" <<service>> {
     rectangle "svc_api_*\n(API Methods)" as api_b
 }
 
-rectangle "MicroserviceManagerGUI" <<ui>> {
-    rectangle "Electron / Browser\n(Frontend)" as gui_frontend
-    rectangle "ServiceClient.js\n(Transport)" as gui_client
-}
-
-rectangle "FastAPI Bridge" <<ui>> {
+rectangle "FastAPI Bridge" <<bridge>> {
     rectangle "REST API\n(/api/request)" as rest_api
     rectangle "WebSocket\n(/ws/updates)" as ws_api
+    rectangle "Local Hub API\n(/api/local-hub/*)" as hub_api
+}
+
+rectangle "Local Hub" <<hub>> {
+    rectangle "LocalHubManager\n(ProcessHub Integration)" as hub_mgr
+    rectangle "ServiceExecutor\n(RPC + Signal Shutdown)" as executor
+    rectangle "Service Import\n(ZIP/Folder + AST)" as importer
+    rectangle "hub_processes.json\n(${python} placeholders)" as hub_config
+}
+
+rectangle "MicroserviceManagerGUI" <<ui>> {
+    rectangle "Dual-Host Frontend\n(Electron + Browser)" as gui_frontend
+    rectangle "ServiceClient.js\n(RPC Transport)" as gui_client
+    rectangle "LocalHubDashboard.js\n(Process Management)" as gui_hub
 }
 
 ' Service registration
@@ -55,15 +67,25 @@ svc_b --> req_exchange : consume RPC
 registry_core --> tracking : store info
 registry_core --> alias : resolve aliases
 registry_core --> update_exchange : broadcast updates
+registry_core --> sentinel : shutdown notification
 
-' GUI connections
-gui_client --> rabbitmq : AMQP
+' GUI connections (via FastAPI Bridge)
+gui_client --> rest_api : HTTP POST
+gui_hub --> hub_api : REST
 gui_frontend --> gui_client : uses
-update_exchange --> gui_client : realtime updates
+gui_frontend --> gui_hub : uses
+ws_api --> gui_frontend : push updates
 
-' FastAPI bridge
+' FastAPI bridge to broker
 rest_api --> req_exchange : forward requests
-ws_api --> update_exchange : push updates
+ws_api --> update_exchange : subscribe updates
+
+' Local Hub
+hub_api --> hub_mgr : delegates
+hub_mgr --> executor : start/stop
+hub_mgr --> importer : import service
+hub_mgr --> hub_config : read/write
+executor --> svc_a : manages process
 
 note right of registry_core
   **Key Capabilities:**
@@ -71,6 +93,25 @@ note right of registry_core
   - API metadata introspection
   - Alias routing for user-friendly names
   - Real-time update broadcasting
+  - Shutdown sentinel notification
+end note
+
+note right of hub_mgr
+  **Local Hub Capabilities:**
+  - Start/stop processes with config
+  - RPC graceful shutdown (then signal fallback)
+  - Service import from folder or ZIP
+  - AST validation of main.py
+  - Portable config with ${python} placeholder
+end note
+
+note bottom of gui_frontend
+  **Dual-Host:**
+  Electron (desktop) and
+  plain browser share the
+  same web/ codebase.
+  Multi-broker connections
+  via MM.connections map.
 end note
 
 @enduml

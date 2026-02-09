@@ -36,15 +36,17 @@ Can be spawned by the Electron GUI or run directly from the command line.
 
 import argparse
 import json
+import os
 import sys
 import threading
 from pathlib import Path
 
-# Add the repository root to sys.path so MicroserviceBase can be imported.
-# Path: python/ -> MicroserviceManagerGUI/ -> MicroserviceBase/ -> repo root
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
-
-from MicroserviceBase.factory import create_transport, create_registry, create_ui_bridge
+# Try pip-installed package first; fall back to repo-relative path for development.
+try:
+    from MicroserviceBase.factory import create_transport, create_registry, create_ui_bridge
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+    from MicroserviceBase.factory import create_transport, create_registry, create_ui_bridge
 
 
 def _load_config(config_path):
@@ -78,6 +80,12 @@ def main():
     # Resolve config path
     config_path = args.config or str(Path(__file__).resolve().parent / 'config.json')
     config = _load_config(config_path)
+
+    # Expose hub_processes.json path to FastAPIBridge's LocalHubManager.
+    config_dir = str(Path(config_path).resolve().parent)
+    os.environ['DASGUI_HUB_CONFIG'] = str(
+        Path(config_dir) / 'hub_processes.json'
+    )
 
     # Merge: CLI args > config.json > built-in defaults
     broker_host = args.host or config.get('broker_host', 'localhost')

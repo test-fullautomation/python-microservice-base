@@ -1,0 +1,162 @@
+@startuml gui_architecture
+!theme plain
+title MicroserviceManagerGUI - Dual-Host Architecture
+
+skinparam rectangle {
+    BackgroundColor<<electron>> #E1BEE7
+    BackgroundColor<<web>> #BBDEFB
+    BackgroundColor<<bridge>> #FFE0B2
+    BackgroundColor<<broker>> LightYellow
+    BackgroundColor<<shared>> #C8E6C9
+}
+
+' ============================================================================
+' Electron Host (Desktop)
+' ============================================================================
+
+rectangle "Electron Host" <<electron>> {
+    rectangle "main.js" as MainJS {
+        rectangle "BrowserWindow\n(loads web/index.html)" as BW
+        rectangle "IPC Handlers\n(show-open-dialog)" as IPC
+    }
+    rectangle "preload.js" as Preload {
+        rectangle "contextBridge\n(window.electronAPI)" as CTX
+        rectangle "Bridge Lifecycle\n(spawn / reconnect)" as BridgeLC
+        rectangle "PID Persistence\n(bridge.pid)" as PID
+    }
+}
+
+' ============================================================================
+' Shared Web Layer (Browser-Compatible)
+' ============================================================================
+
+rectangle "web/ (Shared Codebase)" <<web>> {
+    rectangle "index.html\n(Bootstrap 5 CDN)" as Index
+    rectangle "app.js\n(Main Application)" as AppJS
+    rectangle "window.MicroserviceManager\n(MM namespace)" as NS
+
+    rectangle "Core JS Modules" <<shared>> {
+        rectangle "ServiceClient.js\n(RPC via FastAPI)" as SC
+        rectangle "MessageProtocol.js\n(Request/Response)" as MP
+        rectangle "LocalHubClient.js\n(Hub REST Client)" as LHC
+        rectangle "LocalHubDashboard.js\n(Process Manager)" as LHD
+    }
+
+    rectangle "Multi-Broker State" <<shared>> {
+        rectangle "MM.connections\n{ host:port → { brokerUrl,\nroutingKey, services } }" as Conn
+        rectangle "MM.serviceToBroker\n{ serviceName → host:port }" as STB
+        rectangle "sessionStorage\n(mm_connections)" as Session
+    }
+
+    rectangle "Service Plugins" <<shared>> {
+        rectangle "services/{Name}/\n(dynamically loaded)" as Plugins
+    }
+
+    rectangle "UI Components" <<shared>> {
+        rectangle "Sidebar\n(.broker-section\n.broker-accordion)" as Sidebar
+        rectangle "Login Modal\n(Bootstrap modal)" as Login
+        rectangle "Toast Notifications\n(MM.showToast)" as Toast
+    }
+}
+
+' ============================================================================
+' Browser Host (Standalone)
+' ============================================================================
+
+rectangle "Browser Host" <<web>> {
+    rectangle "Any Browser\n(Chrome, Firefox, Edge)" as Browser
+}
+
+' ============================================================================
+' FastAPI Bridge (Backend)
+' ============================================================================
+
+rectangle "FastAPI Bridge" <<bridge>> {
+    rectangle "REST Endpoints" as REST {
+        rectangle "POST /api/request\n(Service RPC)" as ReqAPI
+        rectangle "POST /api/connect\n(Broker Connection)" as ConnAPI
+        rectangle "POST /api/local-hub/*\n(Hub Management)" as HubAPI
+        rectangle "POST /api/local-hub/import-service\n(Service Import)" as ImportAPI
+    }
+    rectangle "WebSocket" as WS {
+        rectangle "WS /ws/updates\n(Realtime Push)" as WSAPI
+    }
+    rectangle "Static Files" as Static {
+        rectangle "/gui/* → web/\n(Serves HTML/JS/CSS)" as StaticFiles
+    }
+}
+
+' ============================================================================
+' RabbitMQ Broker(s)
+' ============================================================================
+
+rectangle "RabbitMQ Broker(s)" <<broker>> {
+    rectangle "Broker A\n(host_a:5672)" as BrokerA
+    rectangle "Broker B\n(host_b:5672)" as BrokerB
+}
+
+' ============================================================================
+' Relationships
+' ============================================================================
+
+' Electron flow
+BW --> Index : loads
+CTX --> NS : exposes electronAPI
+BridgeLC --> REST : spawns/reconnects
+PID --> BridgeLC : read/write
+
+' Browser flow
+Browser --> StaticFiles : HTTP GET /gui/
+Browser --> REST : HTTP POST
+Browser --> WSAPI : WebSocket
+
+' App internal
+AppJS --> SC : RPC calls
+AppJS --> LHC : Hub management
+LHD --> LHC : uses
+SC --> ReqAPI : POST /api/request\n(includes broker_url)
+LHC --> HubAPI : POST /api/local-hub/*
+
+' Multi-broker
+Conn --> STB : reverse lookup
+Conn --> Session : persist/restore
+ConnAPI --> BrokerA : AMQP connect
+ConnAPI --> BrokerB : AMQP connect
+
+' WebSocket
+WSAPI --> AppJS : push service updates
+
+' Service plugins
+Plugins --> NS : register via namespace
+
+' ============================================================================
+' Notes
+' ============================================================================
+
+note right of NS
+  **Namespace Pattern:**
+  All modules access shared state
+  via window.MicroserviceManager (MM).
+  No require(), no module.exports.
+  Works in both Electron and browser.
+end note
+
+note bottom of BridgeLC
+  **Bridge Lifecycle (ADR-012):**
+  1. First launch → spawn bridge (detached)
+  2. Save PID to bridge.pid
+  3. GUI close → bridge keeps running
+  4. GUI reopen → check PID, reconnect
+  5. PID dead → spawn new bridge
+end note
+
+note bottom of Conn
+  **Multi-Broker (ADR-005):**
+  Each broker connection tracked
+  independently. ServiceClient
+  includes broker_url in POST body.
+  Progressive disclosure: broker
+  headers shown when >1 connection.
+end note
+
+@enduml

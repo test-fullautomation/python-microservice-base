@@ -190,6 +190,7 @@ class LocalHubManager:
                 "connections": [],
                 "configured_processes": [],
                 "process_configs": {},
+                "config_path": self._config_path or "",
             }
 
         snapshot = self._server.core.get_state_snapshot()
@@ -223,6 +224,7 @@ class LocalHubManager:
             "process_configs": {
                 k: _sanitize_config(v) for k, v in self._process_config.items()
             },
+            "config_path": self._config_path or "",
         }
 
     # ------------------------------------------------------------------

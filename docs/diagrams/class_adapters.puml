@@ -7,6 +7,7 @@ skinparam class {
     BackgroundColor<<adapter>> #FFE0B2
     BackgroundColor<<config>> #CCFFCC
     BackgroundColor<<proxy>> #E0E0E0
+    BackgroundColor<<hub>> #B2EBF2
 }
 
 ' ============================================================================
@@ -69,12 +70,14 @@ package "adapters.transport" {
         -_config: RabbitMQConfig
         -_connection: BlockingConnection
         -_channel: BlockingChannel
+        -_consuming: bool
         --
         +connect()
         +disconnect()
         +consume(service_name, routing_key, exchange, handler)
         +rpc_call(request_data, exchange_name, routing_key): dict
         +publish(exchange, routing_key, body, properties)
+        +stop_consuming()
     }
 
     class EventBusTransportAdapter <<adapter>> {
@@ -153,6 +156,65 @@ package "adapters.ui_bridge" {
 }
 
 ' ============================================================================
+' Local Hub Adapter Classes
+' ============================================================================
+
+package "adapters.local_hub" {
+    class LocalHubManager <<hub>> {
+        -_server: ProcessHubServer
+        -_executor: ServiceExecutor
+        -_running: bool
+        -_mode: str
+        -_process_config: dict
+        -_raw_config: dict
+        -_config_path: str
+        -_lock: threading.Lock
+        --
+        +start_hub(mode, xpub_port, xsub_port, ...): dict
+        +stop_hub(): dict
+        +get_status(): dict
+        +start_processes(names): dict
+        +stop_processes(names, force): dict
+        +get_config(): dict
+        +add_config(name, config): dict
+        +update_config(name, config): dict
+        +remove_config(name): dict
+        +remove_service(name): dict
+        +import_service(name, source_path, zip_data, wait_time): dict
+        +get_service_log(name, tail): dict
+        +get_services_dir(): str
+        +reset(): dict
+        -_validate_service_structure(service_dir): dict
+        -_resolve_placeholders(value, config_dir)
+        -_load_config_file()
+        -_save_config_file()
+        -_tick_loop()
+    }
+
+    class ServiceExecutor <<hub>> {
+        -_broker_host: str
+        -_broker_port: int
+        -_shutdown_timeout: float
+        -_log_dir: str
+        -_log_handles: dict
+        -_configs: dict
+        -_delegate: SimpleExecutor
+        --
+        +start(name, config)
+        +stop(name, force): bool
+        +is_running(name): bool
+        +get_pid(name): int
+        +get_log_path(name): str
+        +read_log(name, tail): str
+        -_start_logged(name, config)
+        -_start_with_cwd(name, config, cwd)
+        -_try_rpc_shutdown(process_name): bool
+        -_close_log(name)
+        -_read_log_tail(name, max_lines): str
+    }
+}
+
+' ============================================================================
 ' Inheritance (implements port)
 ' ============================================================================
 
@@ -173,6 +235,7 @@ EventBusTransportAdapter --> _MethodProxy : creates
 EventBusTransportAdapter --> _PropertiesProxy : creates
 AMQPRegistryAdapter --> RabbitMQConfig : uses
 EventBusRegistryAdapter --> EventBusConfig : uses
+LocalHubManager --> ServiceExecutor : _executor
 
 note bottom of _ChannelProxy
   Proxy objects adapt EventBusClient
@@ -187,6 +250,24 @@ note right of EventBusRegistryAdapter
   - Update client (FanoutExchangeHandler)
   Both share the same base JSONP config
   with exchange overrides via to_config_source().
+end note
+
+note right of LocalHubManager
+  **Config Persistence:**
+  _raw_config preserves ${python}
+  and ${config_dir} placeholders.
+  _process_config has resolved paths.
+  Only _raw_config is saved to disk.
+end note
+
+note bottom of ServiceExecutor
+  **Two-Phase Shutdown:**
+  1. RPC: publish svc_api_shutdown
+     to service's queue name
+  2. Fallback: CTRL_BREAK_EVENT (Win)
+     or SIGTERM (Linux)
+  **service_name** field in config
+  resolves queue name mismatch.
 end note
 
 @enduml

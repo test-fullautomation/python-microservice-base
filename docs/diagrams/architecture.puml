@@ -15,6 +15,7 @@ skinparam component {
     BackgroundColor<<adapter>> #fff3e0
     BackgroundColor<<factory>> #f3e5f5
     BackgroundColor<<ui>> #fce4ec
+    BackgroundColor<<hub>> #e0f7fa
     BackgroundColor<<external>> #f5f5f5
 }
 
@@ -40,6 +41,7 @@ package "Domain Layer (Zero External Dependencies)" as DomainLayer #e8f5e9 {
     component "ServiceRegistry" as SvcReg <<domain>> {
         component "Service Tracking\n(registration state)" as SvcTrack
         component "Alias Routing\n(method mapping)" as AliasRoute
+        component "Shutdown Sentinel\n(GUI notification)" as Sentinel
     }
 
     component "Models" as Models <<domain>> {
@@ -97,6 +99,13 @@ package "Adapters Layer (Infrastructure)" as AdaptersLayer #fff3e0 {
 
     component "FastAPI Bridge" as FastAPIAdapter <<adapter>> {
         component "FastAPIBridge\n(REST + WebSocket)" as FastBridge
+        component "Local Hub REST API\n(/api/local-hub/*)" as HubAPI
+    }
+
+    component "Local Hub Adapter" as LocalHubAdapter <<hub>> {
+        component "LocalHubManager\n(ProcessHub lifecycle\n+ config persistence)" as HubManager
+        component "ServiceExecutor\n(RPC shutdown + SIGBREAK\n+ log redirection)" as SvcExecutor
+        component "Service Importer\n(ZIP/folder + AST\nvalidation)" as SvcImporter
     }
 }
 
@@ -115,9 +124,10 @@ package "Factory (Composition Root)" as FactoryLayer #f3e5f5 {
 ' ============================================================================
 
 package "External Systems" as External #f5f5f5 {
-    component "RabbitMQ Server" as RabbitMQ <<external>>
-    component "Electron GUI" as ElectronGUI <<external>>
+    component "RabbitMQ Broker(s)" as RabbitMQ <<external>>
+    component "Electron Desktop" as ElectronGUI <<external>>
     component "Browser" as BrowserUI <<external>>
+    component "ProcessHub" as ProcessHub <<external>>
 }
 
 ' ============================================================================
@@ -147,6 +157,16 @@ EBTransport --> RabbitMQ : AMQP
 AMQPRegistry --> RabbitMQ : AMQP
 EBRegistry --> RabbitMQ : AMQP
 FastBridge --> BrowserUI : HTTP/WS
+FastBridge --> ElectronGUI : HTTP/WS
+HubManager --> ProcessHub : wraps
+
+' ============================================================================
+' Relationships - Local Hub internal
+' ============================================================================
+
+HubAPI --> HubManager : delegates
+HubManager --> SvcExecutor : start/stop
+HubManager --> SvcImporter : import
 
 ' ============================================================================
 ' Relationships - Factory wires Adapters
@@ -165,6 +185,7 @@ CreateUIBridge --> FastBridge : creates
 Developer --> SvcBase : extends
 Operator --> FastBridge : monitors
 EndUser --> ElectronGUI : interacts
+EndUser --> BrowserUI : interacts
 
 ' ============================================================================
 ' Legend
@@ -175,6 +196,7 @@ legend right
     | <#e8f5e9> | Domain (Pure Logic) |
     | <#e3f2fd> | Ports (Interfaces) |
     | <#fff3e0> | Adapters (Infrastructure) |
+    | <#e0f7fa> | Local Hub (Process Mgmt) |
     | <#f3e5f5> | Factory (Wiring) |
     | <#fce4ec> | UI Components |
     | <#f5f5f5> | External Systems |

@@ -5,5 +5,7 @@ dist/
 *.egg-info
 *.log
 MicroserviceBase/MicroserviceManagerGUI/python/bridge.pid
+MicroserviceBase/MicroserviceManagerGUI/python/hub_processes.json
+MicroserviceBase/MicroserviceManagerGUI/python/services/
 nul
 MicroserviceBase/MicroserviceManagerGUI/node_modules
