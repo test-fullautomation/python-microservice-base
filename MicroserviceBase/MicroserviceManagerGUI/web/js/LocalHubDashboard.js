@@ -125,8 +125,8 @@
     container.innerHTML =
       '<div class="local-hub-setup">' +
         '<div class="local-hub-setup-icon"><i class="bi bi-pc-display"></i></div>' +
-        '<h5>Local Process Hub</h5>' +
-        '<p class="text-muted">Start a ProcessHub on this machine to manage local processes.</p>' +
+        '<h5>Local Service Hub</h5>' +
+        '<p class="text-muted">Start a ProcessHub on this machine to manage local services.</p>' +
         '<div class="local-hub-setup-form">' +
           // Mode
           '<div class="mb-3">' +
@@ -320,7 +320,7 @@
     // Process table rows
     var processRows = '';
     if (processes.length === 0) {
-      processRows = '<div class="text-muted p-3">No processes configured. Use "Add Process" to add one.</div>';
+      processRows = '<div class="text-muted p-3">No services configured. Use "Add Service" to add one.</div>';
     } else {
       processes.forEach(function (proc) {
         var isRunning = proc.state === 'running';
@@ -416,13 +416,13 @@
           '<div class="col-md-8">' +
             '<div class="card">' +
               '<div class="card-header d-flex justify-content-between align-items-center">' +
-                '<span><i class="bi bi-terminal me-2"></i>Processes (' + processLabel + ')</span>' +
+                '<span><i class="bi bi-terminal me-2"></i>Services (' + processLabel + ')</span>' +
                 '<div class="d-flex gap-2">' +
                   '<button class="btn btn-sm btn-outline-success" id="lhBtnImportService">' +
                     '<i class="bi bi-box-arrow-in-down me-1"></i>Import Service' +
                   '</button>' +
                   '<button class="btn btn-sm btn-outline-primary" id="lhBtnAddProcess">' +
-                    '<i class="bi bi-plus me-1"></i>Add Process' +
+                    '<i class="bi bi-plus me-1"></i>Add Service' +
                   '</button>' +
                 '</div>' +
               '</div>' +
@@ -430,7 +430,7 @@
             '</div>' +
             // Inline add config form (hidden by default)
             '<div class="card mt-2 local-hub-config-form" id="lhConfigForm" style="display:none;" data-edit-mode="" data-edit-name="">' +
-              '<div class="card-header" id="lhConfigFormHeader"><i class="bi bi-plus-circle me-2"></i>Add Process Configuration</div>' +
+              '<div class="card-header" id="lhConfigFormHeader"><i class="bi bi-plus-circle me-2"></i>Add Service Configuration</div>' +
               '<div class="card-body">' +
                 '<div class="row mb-2">' +
                   '<div class="col-md-4">' +
@@ -732,7 +732,7 @@
       if (cfgWaitInput) cfgWaitInput.value = '1.0';
       if (cfgEnvInput) cfgEnvInput.value = '';
       if (configForm) { configForm.setAttribute('data-edit-mode', ''); configForm.setAttribute('data-edit-name', ''); }
-      if (configFormHeader) configFormHeader.innerHTML = '<i class="bi bi-plus-circle me-2"></i>Add Process Configuration';
+      if (configFormHeader) configFormHeader.innerHTML = '<i class="bi bi-plus-circle me-2"></i>Add Service Configuration';
     }
 
     function _fillConfigForm(procName, cfg) {
@@ -756,7 +756,7 @@
       };
     });
 
-    // Add Process button
+    // Add Service button
     var addBtn = document.getElementById('lhBtnAddProcess');
     if (addBtn && configForm) {
       addBtn.onclick = function () {

@@ -76,6 +76,12 @@ package "Domain Layer (Zero External Dependencies)" as DomainLayer #e8f5e9 {
     component "Models\nServiceInfo (name, routing_key, version, gui_support)\nServiceMethod (name, arguments, return_type)\nMethodArgument (name, condition, type, default)" as Models <<domain>>
     component "Messages\nServiceRequest (method, args)\nServiceResponse (request, result, result_data)\nServiceEvent (service_name, state, info)\nResultType (pass | fail | exception)" as Messages <<domain>>
     component "Exceptions\nServiceError | TransportError\nMethodNotFoundError | ServiceNotFoundError" as Exceptions <<domain>>
+
+    ' Internal layout: ServiceBase above ServiceRegistry on left, Models/Messages/Exceptions on right
+    SvcBase -[hidden]down- SvcReg
+    SvcBase -[hidden]right- Models
+    Models -[hidden]right- Messages
+    Messages -[hidden]right- Exceptions
 }
 
 ' ============================================================================
@@ -88,11 +94,12 @@ component "Browser" as BrowserUI <<external>>
 
 ' ============================================================================
 ' Layout hints - force strict vertical stacking
+' Ports on left, Local Hub on right, Domain at bottom
 ' ============================================================================
 
 FactoryLayer -[hidden]down- AdaptersLayer
-AdaptersLayer -[hidden]down- LocalHubPkg
-LocalHubPkg -[hidden]down- PortsLayer
+AdaptersLayer -[hidden]down- PortsLayer
+PortsLayer -[hidden]right- LocalHubPkg
 PortsLayer -[hidden]down- DomainLayer
 TransportPort -[hidden]down- SvcBase
 RegistryPort -[hidden]down- SvcReg

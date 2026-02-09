@@ -25,6 +25,13 @@ with a built-in GUI for monitoring, a local process hub for lifecycle management
 registry for dynamic discovery. The system follows hexagonal architecture principles,
 ensuring testability, maintainability, and extensibility.
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/overview.png}
+\caption{MicroserviceBase System Overview}
+\label{fig:overview}
+\end{figure}
+
 \subsubsection{Key Features}
 
 \begin{itemize}
@@ -56,6 +63,22 @@ MicroserviceBase follows several key design principles:
 % ============================================================================
 
 MicroserviceBase is organized into distinct layers following hexagonal architecture:
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/architecture_overview.png}
+\caption{Hexagonal Architecture Overview}
+\label{fig:architecture_overview}
+\end{figure}
+
+The detailed architecture with method signatures and implementation specifics:
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/architecture_detail.png}
+\caption{Hexagonal Architecture Detail}
+\label{fig:architecture_detail}
+\end{figure}
 
 \subsubsection{Layer Responsibilities}
 
@@ -170,7 +193,16 @@ The Local Hub provides process lifecycle management:
 
 \subsubsection{RPC via RabbitMQ}
 
-Services communicate using RPC (Remote Procedure Call) pattern through RabbitMQ:
+Services communicate using RPC (Remote Procedure Call) pattern through RabbitMQ.
+The following diagram shows the complete communication flow between a service,
+the Service Registry, and a client, including all exchanges and routing keys used:
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{../additional_docs/pictures/sequence_communication.png}
+\caption{Service Communication Flow (Exchanges, Queues, and Routing Keys)}
+\label{fig:sequence_communication}
+\end{figure}
 
 \begin{verbatim}
 from MicroserviceBase.domain.service_base import ServiceBase
@@ -218,6 +250,13 @@ The GUI supports connecting to multiple RabbitMQ brokers simultaneously:
 \subsubsection{Dual Hosting}
 
 The MicroserviceManagerGUI runs in two modes:
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/gui_architecture.png}
+\caption{GUI Dual-Host Architecture (Electron + Browser)}
+\label{fig:gui_architecture}
+\end{figure}
 
 \begin{description}
    \item[Electron Mode] Desktop application with native process management.
@@ -291,6 +330,13 @@ allowing the same configuration file to work across different environments.
 % ============================================================================
 
 On Windows, process shutdown requires special handling:
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.7\textwidth]{../additional_docs/pictures/state_process_lifecycle.png}
+\caption{Local Hub Process Lifecycle States}
+\label{fig:state_process_lifecycle}
+\end{figure}
 
 \begin{itemize}
    \item \texttt{proc.terminate()} calls \texttt{TerminateProcess} which allows no cleanup
