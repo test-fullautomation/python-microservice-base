@@ -25,9 +25,9 @@ with a built-in GUI for monitoring, a local process hub for lifecycle management
 registry for dynamic discovery. The system follows hexagonal architecture principles,
 ensuring testability, maintainability, and extensibility.
 
-\begin{figure}[h]
+\begin{figure}[!htb]
 \centering
-\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/overview.png}
+\includegraphics[width=0.95\textwidth]{pictures/overview.png}
 \caption{MicroserviceBase System Overview}
 \label{fig:overview}
 \end{figure}
@@ -64,18 +64,18 @@ MicroserviceBase follows several key design principles:
 
 MicroserviceBase is organized into distinct layers following hexagonal architecture:
 
-\begin{figure}[h]
+\begin{figure}[!htb]
 \centering
-\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/architecture_overview.png}
+\includegraphics[width=0.95\textwidth]{pictures/architecture_overview.png}
 \caption{Hexagonal Architecture Overview}
 \label{fig:architecture_overview}
 \end{figure}
 
 The detailed architecture with method signatures and implementation specifics:
 
-\begin{figure}[h]
+\begin{figure}[!htb]
 \centering
-\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/architecture_detail.png}
+\includegraphics[width=0.95\textwidth]{pictures/architecture_detail.png}
 \caption{Hexagonal Architecture Detail}
 \label{fig:architecture_detail}
 \end{figure}
@@ -197,9 +197,9 @@ Services communicate using RPC (Remote Procedure Call) pattern through RabbitMQ.
 The following diagram shows the complete communication flow between a service,
 the Service Registry, and a client, including all exchanges and routing keys used:
 
-\begin{figure}[h]
+\begin{figure}[!htb]
 \centering
-\includegraphics[width=0.85\textwidth]{../additional_docs/pictures/sequence_communication.png}
+\includegraphics[width=0.85\textwidth]{pictures/sequence_communication.png}
 \caption{Service Communication Flow (Exchanges, Queues, and Routing Keys)}
 \label{fig:sequence_communication}
 \end{figure}
@@ -251,9 +251,9 @@ The GUI supports connecting to multiple RabbitMQ brokers simultaneously:
 
 The MicroserviceManagerGUI runs in two modes:
 
-\begin{figure}[h]
+\begin{figure}[!htb]
 \centering
-\includegraphics[width=0.95\textwidth]{../additional_docs/pictures/gui_architecture.png}
+\includegraphics[width=0.95\textwidth]{pictures/gui_architecture.png}
 \caption{GUI Dual-Host Architecture (Electron + Browser)}
 \label{fig:gui_architecture}
 \end{figure}
@@ -290,6 +290,285 @@ The GUI can be packaged as a standalone Windows application using Electron Build
    \item First-run initialization copies templates and scripts
    \item Bridge process managed via PID file with detached mode
 \end{itemize}
+
+% ============================================================================
+\subsection{GUI User Guide}
+% ============================================================================
+
+The Microservice Manager GUI provides three main tabs: \textbf{Services} for connecting
+to brokers and interacting with microservices, \textbf{Service Network} for managing
+the local process hub, and \textbf{Service Creator} for scaffolding new microservices.
+
+% ----------------------------------------------------------------------------
+\subsubsection{Connecting to a Broker}
+% ----------------------------------------------------------------------------
+
+To start using the GUI, click the \textbf{Connect} button in the top-right corner.
+The connection dialog requires two fields:
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/Services/01_Connect_Broker.png}\\[0.3em]
+{\small\textit{Connect to Broker Dialog}}
+\end{center}
+\vspace{0.5em}
+
+\begin{description}
+   \item[Broker URL] The RabbitMQ broker address in \texttt{host:port} format
+        (e.g., \texttt{localhost:5672}). The FastAPI bridge will connect to this
+        broker to discover and communicate with services.
+   \item[Routing Key] The routing key of the Service Registry
+        (default: \texttt{ServiceRegistry}). This tells the bridge where to find
+        the registry service that tracks all registered microservices.
+\end{description}
+
+After connecting, the GUI subscribes to real-time service updates via WebSocket.
+Multiple brokers can be connected simultaneously---each broker appears as a
+separate section in the sidebar when more than one is active.
+
+% ----------------------------------------------------------------------------
+\subsubsection{Service Dashboard}
+% ----------------------------------------------------------------------------
+
+Once connected, the \textbf{Services} tab displays all registered microservices
+in the left sidebar, grouped by their service group. Clicking a service loads
+its details and custom GUI plugin (if available) in the main content area.
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.95\textwidth]{pictures/Services/02_Service_Dashboard.png}\\[0.3em]
+{\small\textit{Service Dashboard with Sidebar and Service Plugin}}
+\end{center}
+\vspace{0.5em}
+
+The sidebar shows each service as an accordion item with the service name,
+version, and an expand arrow. Expanding a service item reveals its API methods
+as clickable list items. Services that provide a custom GUI plugin (indicated
+by \texttt{gui\_support: True} in their \texttt{\_SERVICE\_INFO}) display their
+plugin interface in the main panel when selected.
+
+% ----------------------------------------------------------------------------
+\subsubsection{Code Helper}
+% ----------------------------------------------------------------------------
+
+For each service, the GUI provides auto-generated Python code examples that
+demonstrate how to call the service's API methods via RPC. Click the
+\textbf{Helper} button (code icon) on any service to open the code example modal.
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/Services/03_Code_Example.png}\\[0.3em]
+{\small\textit{Auto-Generated Python Code Example for RPC Calls}}
+\end{center}
+\vspace{0.5em}
+
+The generated code includes the complete boilerplate for creating a transport
+connection, building a request with \texttt{ServiceBase.create\_request\_data()},
+and calling the service via \texttt{rpc\_call()} with the correct exchange name
+and routing key. This code can be copied directly into a Python script to
+interact with the service programmatically.
+
+% ----------------------------------------------------------------------------
+\subsubsection{Settings}
+% ----------------------------------------------------------------------------
+
+Click the gear icon in the top-right corner to open the \textbf{Settings} dialog.
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/Services/04_Settings.png}\\[0.3em]
+{\small\textit{Application Settings}}
+\end{center}
+\vspace{0.5em}
+
+\begin{description}
+   \item[Python Path] The Python executable used by the Local Hub to spawn
+        service processes. Defaults to the system Python.
+   \item[Broker Host / Port] Default RabbitMQ broker connection parameters,
+        pre-filled in the Connect dialog.
+   \item[Bridge Port] The port on which the FastAPI bridge listens
+        (default: \texttt{1112}). In browser mode, access the GUI at
+        \texttt{http://localhost:<bridge-port>}.
+\end{description}
+
+Settings are persisted to \texttt{settings.json} and loaded on startup.
+In Electron mode, the file is stored alongside the application; in packaged
+mode, it is stored in \texttt{\%APPDATA\%/DevAtServGUI/}.
+
+% ----------------------------------------------------------------------------
+\subsubsection{Local Service Hub}
+% ----------------------------------------------------------------------------
+
+The \textbf{Service Network} tab provides access to the Local Hub, which manages
+service processes on the local machine. Switch to the \textbf{Local Hub} sub-tab
+to configure and start the hub.
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/ServiceNetwork/LocalHub/01_Start_Hub.png}\\[0.3em]
+{\small\textit{Local Hub Configuration and Bridge Status}}
+\end{center}
+\vspace{0.5em}
+
+The Local Hub configuration page provides:
+
+\begin{description}
+   \item[Mode] \textbf{Standalone} runs an independent hub on this machine.
+        \textbf{Agent (join fleet)} connects to a fleet manager for
+        centralized orchestration.
+   \item[Bridge URL] The address of the FastAPI bridge
+        (e.g., \texttt{http://localhost:1112}).
+        In Electron mode, the bridge can be started directly from this page
+        using the \textbf{Start Bridge} / \textbf{Stop Bridge} buttons.
+        The bridge status and PID are displayed when running.
+   \item[Start Hub] Click to start the Local Hub. The hub reads
+        \texttt{hub\_processes.json} and makes all configured services
+        available for management.
+\end{description}
+
+% ----------------------------------------------------------------------------
+\subsubsection{Local Hub Dashboard}
+% ----------------------------------------------------------------------------
+
+After starting the hub, the dashboard displays all configured services with
+their current status and control buttons.
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/LocalHub/02_LocalHub_Dashboard.png}\\[0.3em]
+{\small\textit{Local Hub Dashboard with Service Process Management}}
+\end{center}
+\vspace{0.5em}
+
+The dashboard provides:
+
+\begin{description}
+   \item[Hub Controls] \textbf{Start All} and \textbf{Stop All} buttons to
+        batch-control all services. \textbf{Reset} reloads the configuration.
+        \textbf{Stop Hub} shuts down the hub and all running processes.
+   \item[Service List] Each configured service shows its name, status
+        (\textit{Stopped} / \textit{Running}), and action buttons:
+        start (\,\raisebox{-0.1em}{\small$\blacktriangleright$}\,),
+        save config, edit configuration, and delete.
+   \item[Import Service] Click to import a microservice package from a folder
+        or ZIP archive. The importer validates the package structure (checks
+        for \texttt{main.py} with a \texttt{ServiceBase} subclass) and adds
+        it to the hub configuration.
+   \item[Add Service] Manually add a new service entry to the hub configuration
+        by specifying the script path, arguments, and process name.
+   \item[Connections] Shows active broker connections with connection count.
+\end{description}
+
+Services are started as subprocess with log file redirection. The hub uses
+a two-phase graceful shutdown: first an RPC \texttt{svc\_api\_shutdown} call,
+then \texttt{CTRL\_BREAK\_EVENT} (Windows) or \texttt{SIGTERM} (Linux),
+and finally a force terminate if needed.
+
+% ----------------------------------------------------------------------------
+\subsubsection{Service Creator Wizard}
+% ----------------------------------------------------------------------------
+
+The \textbf{Service Creator} tab provides a step-by-step wizard for scaffolding
+new microservice projects. The wizard generates a complete, ready-to-run
+service package with all required files.
+
+\paragraph{Step 1: Basic Information}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/ServiceCreator/01_Basic_Info.png}\\[0.3em]
+{\small\textit{Service Creator -- Step 1: Basic Information}}
+\end{center}
+\vspace{0.5em}
+
+Define the core metadata for the new microservice:
+
+\begin{description}
+   \item[Service Name] PascalCase name for the service class (e.g., \texttt{Test}).
+   \item[Version] Semantic version string (default: \texttt{1.0.0}).
+   \item[Description / Short Description] Documentation strings included in
+        the generated \texttt{\_SERVICE\_INFO} dict.
+   \item[Group] Service group for sidebar organization in the GUI
+        (e.g., \texttt{examples}).
+   \item[Tag] Optional version tag for the service.
+   \item[Routing Key] Auto-generated from the service name in \texttt{service.<name>}
+        format. Can be customized.
+   \item[Transport Type] Choose between \texttt{RabbitMQ} or \texttt{EventBus}
+        transport adapter.
+\end{description}
+
+\paragraph{Step 2: API Methods}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/ServiceCreator/02_API_Methods.png}\\[0.3em]
+{\small\textit{Service Creator -- Step 2: API Methods}}
+\end{center}
+\vspace{0.5em}
+
+Define the methods your service will expose. Each method name is automatically
+prefixed with \texttt{svc\_api\_} following the framework convention. For each method:
+
+\begin{itemize}
+   \item \textbf{Return Type}: The expected return type (e.g., \texttt{int}, \texttt{str}, \texttt{dict}).
+   \item \textbf{Description}: Docstring for the method, used in API documentation generation.
+   \item \textbf{Parameters}: Add parameters with name, type, and condition
+         (\texttt{required} or \texttt{optional}). Click \textbf{+ Add Parameter}
+         to add more. Click \textbf{+ Add Method} to define additional API methods.
+\end{itemize}
+
+\paragraph{Step 3: GUI Support}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/ServiceCreator/03_GUI_support.png}\\[0.3em]
+{\small\textit{Service Creator -- Step 3: GUI Support}}
+\end{center}
+\vspace{0.5em}
+
+Choose whether to include a custom GUI plugin for the service. When the
+\textbf{Generate GUI template} toggle is enabled:
+
+\begin{itemize}
+   \item An \textbf{HTML Editor} provides a Bootstrap card template with the service
+         name and description. Edit the HTML directly or click \textbf{Upload HTML}
+         to use a custom file.
+   \item A \textbf{Live Preview} panel shows the rendered HTML in real-time.
+   \item An optional \textbf{JavaScript File} can be uploaded via drag-and-drop for
+         service-specific logic (using the \texttt{window.MicroserviceManager} namespace).
+   \item Click \textbf{Reset to Template} to restore the default HTML template.
+\end{itemize}
+
+The generated GUI plugin will be placed in a \texttt{GUIs/} folder inside
+the service package and loaded automatically when the service is selected
+in the Manager GUI.
+
+\paragraph{Step 4: Review and Generate}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/ServiceCreator/04_Review_Gen.png}\\[0.3em]
+{\small\textit{Service Creator -- Step 4: Review and Generate}}
+\end{center}
+\vspace{0.5em}
+
+Review the complete service configuration before generating:
+
+\begin{itemize}
+   \item A summary card displays all metadata, routing key, transport type,
+         GUI support status, and API method signatures with parameter types.
+   \item The \textbf{Generated File Structure} preview shows the directory layout
+         that will be created (e.g., \texttt{Test/test.py}, \texttt{Test/main.py},
+         \texttt{Test/GUIs/service.html}).
+   \item Specify an \textbf{Output Path} to save directly to disk, or leave empty
+         to download as a ZIP file.
+   \item Click \textbf{Download ZIP} to get the package as a zip archive, or
+         \textbf{Save to Path} to write files to the specified directory.
+\end{itemize}
+
+The generated service package is ready to run. It can be imported into the
+Local Hub using the \textbf{Import Service} feature, or started manually
+via \texttt{python -m <ServiceName>} from the package directory.
 
 % ============================================================================
 \subsection{Process Configuration}
@@ -331,9 +610,9 @@ allowing the same configuration file to work across different environments.
 
 On Windows, process shutdown requires special handling:
 
-\begin{figure}[h]
+\begin{figure}[!htb]
 \centering
-\includegraphics[width=0.7\textwidth]{../additional_docs/pictures/state_process_lifecycle.png}
+\includegraphics[width=0.7\textwidth]{pictures/state_process_lifecycle.png}
 \caption{Local Hub Process Lifecycle States}
 \label{fig:state_process_lifecycle}
 \end{figure}
