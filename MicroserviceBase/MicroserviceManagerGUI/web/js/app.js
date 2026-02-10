@@ -2069,7 +2069,27 @@
 
   function _activateFleetRemoteSubTab() {
     MM.fleetDashboard.activate();
-    if (MM.fleetClient.isConfigured()) {
+
+    // Bridge URL is available in both browser mode (same origin) and
+    // Electron mode (configured via settings / sessionStorage).
+    var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    var hasBridge = bridgeOrigin && bridgeOrigin.indexOf('http') === 0;
+
+    if (hasBridge) {
+      // Check if bridge has a fleet URL configured before polling.
+      fetch(bridgeOrigin + '/api/fleet/config')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data && data.fleet_api_url) {
+            MM.fleetClient.startPolling();
+          } else {
+            MM.fleetDashboard.renderConfigurePrompt();
+          }
+        })
+        .catch(function () {
+          MM.fleetDashboard.renderConfigurePrompt();
+        });
+    } else if (MM.fleetClient.isConfigured()) {
       MM.fleetClient.startPolling();
     } else {
       MM.fleetDashboard.renderConfigurePrompt();

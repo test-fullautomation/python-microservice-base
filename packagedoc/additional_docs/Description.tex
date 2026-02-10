@@ -414,8 +414,10 @@ The Local Hub configuration page provides:
 
 \begin{description}
    \item[Mode] \textbf{Standalone} runs an independent hub on this machine.
-        \textbf{Agent (join fleet)} connects to a fleet manager for
-        centralized orchestration.
+        \textbf{Fleet Orchestrator} starts this hub as a fleet manager that
+        other hubs can join for centralized orchestration.
+        \textbf{Agent (join fleet)} connects to an existing fleet orchestrator
+        as a managed node.
    \item[Bridge URL] The address of the FastAPI bridge
         (e.g., \texttt{http://localhost:1112}).
         In Electron mode, the bridge can be started directly from this page

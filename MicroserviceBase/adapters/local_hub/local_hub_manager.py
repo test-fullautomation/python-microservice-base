@@ -32,8 +32,12 @@ class LocalHubManager:
         self._transport = None
         self._agent = None
         self._fleet_transport = None
+        self._fleet_orchestrator = None
+        self._fleet_web_api = None
+        self._fleet_api_port = None
+        self._agent_transport = None   # separate transport for self-agent
         self._running = False
-        self._mode = None          # "standalone" or "agent"
+        self._mode = None          # "standalone", "agent", or "orchestrator"
         self._hub_id = None
         self._hub_name = None
         self._process_config = {}
@@ -55,17 +59,21 @@ class LocalHubManager:
         hub_id: str = "",
         hub_name: str = "",
         process_config: Optional[dict] = None,
+        fleet_api_port: int = 2510,
+        health_timeout: float = 30.0,
     ) -> dict:
         """Start a local ProcessHub server.
 
         Args:
-            mode: "standalone" or "agent" (join fleet).
+            mode: "standalone", "agent" (join fleet), or "orchestrator".
             xpub_port: ZMQ XPUB port for the broker.
             xsub_port: ZMQ XSUB port for the broker.
             orchestrator_url: Fleet orchestrator ZMQ address (agent mode).
-            hub_id: Hub identifier (agent mode).
-            hub_name: Human-readable hub name (agent mode).
+            hub_id: Hub identifier (agent/orchestrator mode).
+            hub_name: Human-readable hub name (agent/orchestrator mode).
             process_config: Dict of {name: config} for processes.
+            fleet_api_port: FleetWebAPI port (orchestrator mode).
+            health_timeout: Health check timeout in seconds (orchestrator mode).
 
         Returns:
             Status dict.
@@ -120,6 +128,15 @@ class LocalHubManager:
                 refresh_interval=0.5,
             )
 
+            # Fix: ServiceExecutor.stop() returns (bool, str) but core
+            # expects bool.  Without this patch (False, "error") is truthy
+            # and the core would treat a failed stop as success.
+            _orig_stopper = self._server._core._process_stopper
+            def _bool_stopper(name, force=False):
+                result = _orig_stopper(name, force)
+                return result[0] if isinstance(result, tuple) else result
+            self._server._core._process_stopper = _bool_stopper
+
             self._server.start()
             self._running = True
 
@@ -132,6 +149,19 @@ class LocalHubManager:
             # Agent mode: join a fleet orchestrator
             if mode == "agent" and orchestrator_url:
                 self._start_agent(orchestrator_url, xpub_port, xsub_port)
+
+            # Orchestrator mode: start FleetOrchestrator + FleetWebAPI
+            elif mode == "orchestrator":
+                orch_err = self._start_orchestrator(fleet_api_port, health_timeout)
+                if orch_err:
+                    # Hub is running (standalone) but orchestrator failed
+                    self._mode = "standalone"
+                    return {
+                        **self.get_status(),
+                        "warning": f"Hub started as standalone — orchestrator failed: {orch_err}",
+                    }
+                self._fleet_api_port = fleet_api_port
+                self._start_self_agent()
 
             logger.info(
                 "Local hub started (mode=%s, hub_id=%s)", mode, self._hub_id
@@ -146,12 +176,33 @@ class LocalHubManager:
 
             self._running = False
 
+            if self._fleet_web_api is not None:
+                try:
+                    self._fleet_web_api.stop()
+                except Exception:
+                    logger.debug("Error stopping fleet web API", exc_info=True)
+                self._fleet_web_api = None
+
+            if self._fleet_orchestrator is not None:
+                try:
+                    self._fleet_orchestrator.stop()
+                except Exception:
+                    logger.debug("Error stopping fleet orchestrator", exc_info=True)
+                self._fleet_orchestrator = None
+
             if self._agent is not None:
                 try:
                     self._agent.stop()
                 except Exception:
                     logger.debug("Error stopping agent", exc_info=True)
                 self._agent = None
+
+            if self._agent_transport is not None:
+                try:
+                    self._agent_transport.stop()
+                except Exception:
+                    logger.debug("Error stopping agent transport", exc_info=True)
+                self._agent_transport = None
 
             if self._fleet_transport is not None:
                 try:
@@ -170,6 +221,7 @@ class LocalHubManager:
             self._executor = None
             self._transport = None
             self._mode = None
+            self._fleet_api_port = None
 
             logger.info("Local hub stopped")
             return {"status": "stopped"}
@@ -213,7 +265,7 @@ class LocalHubManager:
         # snapshot.connections is a tuple of ConnectionSnapshot (panel_id, ...)
         connections = [conn.panel_id for conn in snapshot.connections]
 
-        return {
+        status = {
             "running": True,
             "mode": self._mode,
             "hub_id": self._hub_id,
@@ -226,6 +278,12 @@ class LocalHubManager:
             },
             "config_path": self._config_path or "",
         }
+
+        if self._fleet_api_port is not None:
+            status["fleet_api_port"] = self._fleet_api_port
+            status["fleet_api_url"] = f"http://0.0.0.0:{self._fleet_api_port}"
+
+        return status
 
     # ------------------------------------------------------------------
     # Process management
@@ -263,6 +321,13 @@ class LocalHubManager:
 
             if success:
                 self._server.unregister_admin_process(name)
+                # Also remove from the core registry so
+                # get_state_snapshot() no longer reports it as running
+                # (important for fleet heartbeat sync).
+                try:
+                    self._server.core._registry.remove(name)
+                except Exception:
+                    pass
 
         return results
 
@@ -774,7 +839,120 @@ class LocalHubManager:
                 self._server._view.render(snapshot)
             except Exception:
                 logger.debug("Tick loop error", exc_info=True)
+
+            # Fleet orchestrator health-check tick
+            if self._fleet_orchestrator is not None:
+                try:
+                    self._fleet_orchestrator.tick()
+                except Exception:
+                    logger.debug("Fleet orchestrator tick error", exc_info=True)
+
             time.sleep(self._server._refresh_interval)
+
+    def _start_orchestrator(self, fleet_api_port, health_timeout):
+        """Start a FleetOrchestrator + FleetWebAPI alongside the local hub.
+
+        Returns:
+            None on success, or an error message string on failure.
+        """
+        try:
+            from ProcessHub.transport import EventBusTransport, EventBusConfig
+            from ProcessHub.fleet import FleetOrchestrator
+            from ProcessHub.fleet.web_api import FleetWebAPI
+        except ImportError as exc:
+            msg = f"ProcessHub fleet package not available: {exc}"
+            logger.warning(msg)
+            return msg
+
+        try:
+            broker_host, broker_port = self._get_broker_config()
+            logger.info(
+                "Starting fleet orchestrator (broker=%s:%d, api_port=%d, "
+                "health_timeout=%.1fs)",
+                broker_host, broker_port, fleet_api_port, health_timeout,
+            )
+
+            config = EventBusConfig(
+                host=broker_host,
+                port=broker_port,
+                exchange_name="process_hub_fleet",
+                routing_key_prefix="fleet",
+                serializer="PickleSerializer",
+                auto_reconnect=True,
+            )
+            self._fleet_transport = EventBusTransport(config=config)
+            self._fleet_transport.start()
+            logger.info("Fleet EventBusTransport started")
+
+            self._fleet_orchestrator = FleetOrchestrator(
+                transport=self._fleet_transport,
+                health_timeout=health_timeout,
+                tick_interval=5.0,
+            )
+            self._fleet_orchestrator.start()
+            logger.info("FleetOrchestrator started")
+
+            self._fleet_web_api = FleetWebAPI(
+                orchestrator=self._fleet_orchestrator,
+                host="0.0.0.0",
+                port=fleet_api_port,
+            )
+            self._fleet_web_api.start()
+
+            logger.info(
+                "FleetWebAPI started on 0.0.0.0:%d", fleet_api_port,
+            )
+            return None  # success
+        except Exception as exc:
+            logger.exception("Failed to start fleet orchestrator")
+            # Clean up partial state
+            for attr in ('_fleet_web_api', '_fleet_orchestrator', '_fleet_transport'):
+                obj = getattr(self, attr, None)
+                if obj is not None:
+                    try:
+                        obj.stop()
+                    except Exception:
+                        pass
+                    setattr(self, attr, None)
+            return str(exc)
+
+    def _start_self_agent(self):
+        """Register the local hub as an agent in its own fleet.
+
+        Creates a **separate** fleet transport for the agent so it does not
+        share the orchestrator's connection (they would conflict on message
+        routing if they shared a single transport).
+        """
+        try:
+            from ProcessHub.transport import EventBusTransport, EventBusConfig
+            from ProcessHub.fleet import HubAgent
+        except ImportError:
+            logger.warning("ProcessHub fleet package not available — cannot register self-agent")
+            return
+
+        try:
+            broker_host, broker_port = self._get_broker_config()
+            agent_config = EventBusConfig(
+                host=broker_host,
+                port=broker_port,
+                exchange_name="process_hub_fleet",
+                routing_key_prefix="fleet",
+                serializer="PickleSerializer",
+                auto_reconnect=True,
+            )
+            self._agent_transport = EventBusTransport(config=agent_config)
+            self._agent_transport.start()
+
+            self._agent = HubAgent(
+                transport=self._agent_transport,
+                server=self._server,
+                hub_id=self._hub_id,
+                hub_name=self._hub_name,
+            )
+            self._agent.start()
+            logger.info("Self-agent registered in fleet (hub_id=%s)", self._hub_id)
+        except Exception:
+            logger.exception("Failed to start self-agent")
 
     def _start_agent(self, orchestrator_url, xpub_port, xsub_port):
         """Start a HubAgent to join a fleet orchestrator."""

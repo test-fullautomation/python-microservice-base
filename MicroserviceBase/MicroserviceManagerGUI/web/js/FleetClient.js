@@ -25,12 +25,17 @@
 
   /**
    * Determine whether to use the FastAPI bridge proxy.
-   * Only when: (a) no fleet URL configured, AND (b) origin is HTTP.
+   * Always proxy when a bridge URL is available — avoids CORS issues and
+   * ensures the fleet URL only needs to be configured on the bridge side.
+   * Falls back to direct mode only in Electron when no bridge is available.
    */
   function _useProxy() {
-    if (_fleetApiUrl) return false;
     var origin = window.location.origin || '';
-    return origin.indexOf('http') === 0;
+    if (origin.indexOf('http') === 0) return true;   // browser: always proxy
+    // Electron: proxy through bridge if bridge URL is available
+    var bridgeUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    if (bridgeUrl && bridgeUrl.indexOf('http') === 0) return true;
+    return false;
   }
 
   /**
@@ -81,14 +86,18 @@
     configure: function (fleetApiUrl) {
       _fleetApiUrl = fleetApiUrl ? fleetApiUrl.replace(/\/+$/, '') : null;
 
-      // Also inform the bridge (best-effort, don't block on failure)
+      // Inform the bridge so proxy mode works.
+      // In browser mode this is the primary config path; in Electron it's
+      // best-effort (bridge may not be running).
       var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
       if (bridgeOrigin && bridgeOrigin.indexOf('http') === 0) {
-        fetch(bridgeOrigin + '/api/fleet/config', {
+        return fetch(bridgeOrigin + '/api/fleet/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fleet_api_url: fleetApiUrl })
-        }).catch(function () { /* bridge unavailable — fine */ });
+          body: JSON.stringify({ fleet_api_url: fleetApiUrl || '' })
+        })
+          .then(function (res) { return res.json(); })
+          .catch(function () { return { fleet_api_url: _fleetApiUrl }; });
       }
 
       return Promise.resolve({ fleet_api_url: _fleetApiUrl });
@@ -217,6 +226,29 @@
         clearInterval(_pollTimer);
         _pollTimer = null;
       }
+    },
+
+    /**
+     * Disconnect from the fleet — stop polling, clear URL, clear session.
+     * Returns a Promise (for chaining).
+     */
+    disconnect: function () {
+      this.stopPolling();
+      _fleetApiUrl = null;
+      _updateCallbacks = [];
+      try { sessionStorage.removeItem('mm_fleet_api_url'); } catch (e) {}
+
+      // Best-effort: clear the bridge-side URL too
+      var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+      if (bridgeOrigin && bridgeOrigin.indexOf('http') === 0) {
+        fetch(bridgeOrigin + '/api/fleet/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fleet_api_url: '' })
+        }).catch(function () {});
+      }
+
+      return Promise.resolve();
     }
   };
 
