@@ -278,7 +278,7 @@ Download service GUI resources and extract them to the web/services/ directory.
 
       @app.post("/api/fleet/config")
       def set_fleet_config(body: FleetConfigBody):
-         bridge._fleet_api_url = body.fleet_api_url
+         bridge._fleet_api_url = body.fleet_api_url or None
          logger.info("Fleet API URL set to %s", bridge._fleet_api_url)
          return {"fleet_api_url": bridge._fleet_api_url}
 
@@ -322,6 +322,8 @@ Download service GUI resources and extract them to the web/services/ directory.
          hub_id: str = ""
          hub_name: str = ""
          process_config: Optional[dict] = None
+         fleet_api_port: int = 2510
+         health_timeout: float = 30.0
 
       class LocalHubProcessActionBody(BaseModel):
          names: List[str]
@@ -350,7 +352,7 @@ Download service GUI resources and extract them to the web/services/ directory.
       @app.post("/api/local-hub/start")
       def local_hub_start(body: LocalHubStartBody):
          mgr = _get_local_hub_manager()
-         return mgr.start_hub(
+         result = mgr.start_hub(
             mode=body.mode,
             xpub_port=body.xpub_port,
             xsub_port=body.xsub_port,
@@ -358,7 +360,14 @@ Download service GUI resources and extract them to the web/services/ directory.
             hub_id=body.hub_id,
             hub_name=body.hub_name,
             process_config=body.process_config,
+            fleet_api_port=body.fleet_api_port,
+            health_timeout=body.health_timeout,
          )
+         # Auto-configure fleet API URL when orchestrator actually started
+         if result.get("fleet_api_port"):
+            bridge._fleet_api_url = f"http://localhost:{result['fleet_api_port']}"
+            logger.info("Fleet API URL auto-set to %s", bridge._fleet_api_url)
+         return result
 
       @app.post("/api/local-hub/stop")
       def local_hub_stop():

@@ -135,7 +135,17 @@
 
     var hubs = data.hubs || [];
 
+    var fleetUrl = MM.fleetClient.getFleetUrl ? MM.fleetClient.getFleetUrl() : '';
+
     var html =
+      '<div class="d-flex justify-content-between align-items-center mb-2">' +
+        '<small class="text-muted">' +
+          (fleetUrl ? '<i class="bi bi-plug-fill me-1 text-success"></i>' + _escapeHtml(fleetUrl) : '') +
+        '</small>' +
+        '<button class="btn btn-sm btn-outline-danger" id="fleetDashDisconnectBtn">' +
+          '<i class="bi bi-x-circle me-1"></i>Disconnect' +
+        '</button>' +
+      '</div>' +
       '<div class="fleet-summary">' +
         '<div class="fleet-stat-card">' +
           '<div class="fleet-stat-value">' + data.total_hubs + '</div>' +
@@ -200,6 +210,21 @@
     }
 
     content.innerHTML = html;
+
+    // Wire disconnect button
+    var dashDisconnectBtn = document.getElementById('fleetDashDisconnectBtn');
+    if (dashDisconnectBtn) {
+      dashDisconnectBtn.onclick = function () {
+        MM.fleetClient.disconnect().then(function () {
+          _lastFleetData = null;
+          _lastFleetJson = '';
+          _activeHubId = null;
+          MM.fleetClient.onUpdate(onFleetUpdate);
+          renderSidebar(null);
+          renderConfigurePrompt();
+        });
+      };
+    }
 
     // Wire card click handlers
     var cards = content.querySelectorAll('.fleet-hub-card');
@@ -433,7 +458,7 @@
           MM.showToast('Info', 'No processes running.', 'info');
           return;
         }
-        MM.fleetClient.stopProcesses(hub.hub_id, running)
+        MM.fleetClient.stopProcesses(hub.hub_id, running, true)
           .then(function () { MM.showToast('Command Sent', 'Stop command sent to ' + (hub.hub_name || hub.hub_id), 'success'); _refreshAfterAction(); })
           .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
       };
@@ -460,7 +485,7 @@
             .then(function () { MM.showToast('Command Sent', 'Start ' + procName + ' sent.', 'success'); _refreshAfterAction(); })
             .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
         } else {
-          MM.fleetClient.stopProcesses(hub.hub_id, [procName])
+          MM.fleetClient.stopProcesses(hub.hub_id, [procName], true)
             .then(function () { MM.showToast('Command Sent', 'Stop ' + procName + ' sent.', 'success'); _refreshAfterAction(); })
             .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
         }
@@ -523,15 +548,32 @@
         '<div class="fleet-configure-icon text-danger"><i class="bi bi-exclamation-triangle"></i></div>' +
         '<h5>Fleet Unreachable</h5>' +
         '<p class="text-muted">' + _escapeHtml(err.message || String(err)) + '</p>' +
-        '<button class="btn btn-outline-primary" id="fleetRetryBtn">' +
-          '<i class="bi bi-arrow-clockwise me-1"></i>Retry' +
-        '</button>' +
+        '<div class="d-flex gap-2 justify-content-center">' +
+          '<button class="btn btn-outline-primary" id="fleetRetryBtn">' +
+            '<i class="bi bi-arrow-clockwise me-1"></i>Retry' +
+          '</button>' +
+          '<button class="btn btn-outline-danger" id="fleetDisconnectBtn">' +
+            '<i class="bi bi-x-circle me-1"></i>Disconnect' +
+          '</button>' +
+        '</div>' +
       '</div>';
 
     var retryBtn = document.getElementById('fleetRetryBtn');
     if (retryBtn) {
       retryBtn.onclick = function () {
         MM.fleetClient.startPolling();
+      };
+    }
+
+    var disconnectBtn = document.getElementById('fleetDisconnectBtn');
+    if (disconnectBtn) {
+      disconnectBtn.onclick = function () {
+        MM.fleetClient.disconnect().then(function () {
+          _lastFleetData = null;
+          _lastFleetJson = '';
+          MM.fleetClient.onUpdate(onFleetUpdate);
+          renderConfigurePrompt();
+        });
       };
     }
   }

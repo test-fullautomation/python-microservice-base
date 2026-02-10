@@ -39,6 +39,7 @@
       }),
       cp: status.configured_processes,
       cn: status.connections,
+      fap: status.fleet_api_port,
     });
   }
 
@@ -139,6 +140,10 @@
               '<input class="form-check-input" type="radio" name="lhMode" id="lhModeAgent" value="agent">' +
               '<label class="form-check-label" for="lhModeAgent">Agent (join fleet)</label>' +
             '</div>' +
+            '<div class="form-check">' +
+              '<input class="form-check-input" type="radio" name="lhMode" id="lhModeOrchestrator" value="orchestrator">' +
+              '<label class="form-check-label" for="lhModeOrchestrator">Fleet Orchestrator</label>' +
+            '</div>' +
           '</div>' +
           // Agent fields (hidden by default)
           '<div id="lhAgentFields" style="display:none;">' +
@@ -154,6 +159,29 @@
               '<div class="col">' +
                 '<label for="lhHubName" class="form-label">Hub Name</label>' +
                 '<input type="text" class="form-control" id="lhHubName" placeholder="My Local Hub">' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          // Orchestrator fields (hidden by default)
+          '<div id="lhOrchestratorFields" style="display:none;">' +
+            '<div class="row mb-3">' +
+              '<div class="col">' +
+                '<label for="lhFleetApiPort" class="form-label">Fleet API Port</label>' +
+                '<input type="number" class="form-control" id="lhFleetApiPort" value="2510">' +
+              '</div>' +
+              '<div class="col">' +
+                '<label for="lhHealthTimeout" class="form-label">Health Timeout (s)</label>' +
+                '<input type="number" class="form-control" id="lhHealthTimeout" value="30" step="1">' +
+              '</div>' +
+            '</div>' +
+            '<div class="row mb-3">' +
+              '<div class="col">' +
+                '<label for="lhOrchHubId" class="form-label">Hub ID</label>' +
+                '<input type="text" class="form-control" id="lhOrchHubId" placeholder="local-hub-1">' +
+              '</div>' +
+              '<div class="col">' +
+                '<label for="lhOrchHubName" class="form-label">Hub Name</label>' +
+                '<input type="text" class="form-control" id="lhOrchHubName" placeholder="My Local Hub">' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -215,9 +243,12 @@
     // Wire mode radio toggle
     var radios = container.querySelectorAll('input[name="lhMode"]');
     var agentFields = document.getElementById('lhAgentFields');
+    var orchestratorFields = document.getElementById('lhOrchestratorFields');
     radios.forEach(function (radio) {
       radio.addEventListener('change', function () {
-        agentFields.style.display = radio.value === 'agent' && radio.checked ? '' : 'none';
+        var selected = container.querySelector('input[name="lhMode"]:checked').value;
+        agentFields.style.display = selected === 'agent' ? '' : 'none';
+        orchestratorFields.style.display = selected === 'orchestrator' ? '' : 'none';
       });
     });
 
@@ -278,6 +309,12 @@
           options.hub_id = document.getElementById('lhHubId').value.trim();
           options.hub_name = document.getElementById('lhHubName').value.trim();
         }
+        if (mode === 'orchestrator') {
+          options.fleet_api_port = parseInt(document.getElementById('lhFleetApiPort').value) || 2510;
+          options.health_timeout = parseFloat(document.getElementById('lhHealthTimeout').value) || 30.0;
+          options.hub_id = document.getElementById('lhOrchHubId').value.trim();
+          options.hub_name = document.getElementById('lhOrchHubName').value.trim();
+        }
 
         _ensureBridgeUrl();
 
@@ -291,7 +328,11 @@
               startBtn.disabled = false;
               startBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Start Hub';
             } else {
-              MM.showToast('Hub Started', 'Local ProcessHub is running.', 'success');
+              if (data.warning) {
+                MM.showToast('Warning', data.warning, 'warning');
+              } else {
+                MM.showToast('Hub Started', 'Local ProcessHub is running.', 'success');
+              }
               MM.localHubClient.startPolling();
             }
           })
@@ -377,9 +418,14 @@
       });
     }
 
-    var modeBadge = status.mode === 'agent'
-      ? '<span class="fleet-status-badge degraded">Agent</span>'
-      : '<span class="fleet-status-badge online">Standalone</span>';
+    var modeBadge;
+    if (status.mode === 'orchestrator') {
+      modeBadge = '<span class="fleet-status-badge online">Orchestrator</span>';
+    } else if (status.mode === 'agent') {
+      modeBadge = '<span class="fleet-status-badge degraded">Agent</span>';
+    } else {
+      modeBadge = '<span class="fleet-status-badge online">Standalone</span>';
+    }
 
     var processLabel = runningProcesses.length + '/' + processes.length + ' running';
 
@@ -394,6 +440,7 @@
             '<div class="fleet-detail-meta">' +
               '<span><strong>Hub ID:</strong> ' + _esc(status.hub_id) + '</span>' +
               '<span><strong>Mode:</strong> ' + _esc(status.mode) + '</span>' +
+              (status.fleet_api_url ? '<span><strong>Fleet API:</strong> ' + _esc(status.fleet_api_url) + '</span>' : '') +
               (status.config_path ? '<span><strong>Config:</strong> ' + _esc(status.config_path) + '</span>' : '') +
             '</div>' +
           '</div>' +
