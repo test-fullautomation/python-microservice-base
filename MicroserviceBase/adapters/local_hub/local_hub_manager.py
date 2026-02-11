@@ -1053,10 +1053,13 @@ original file, while new/updated entries are saved as-is.
         """
 Non-blocking tick loop running in a daemon thread.
         """
+        from ProcessHub.core.models import ProcessState
+
         while self._running and self._server is not None:
             try:
                 messages = self._server._core.tick()
                 self._server._send_messages(messages)
+                self._cleanup_dead_admin_processes(ProcessState)
                 snapshot = self._server._core.get_state_snapshot()
                 self._server._view.render(snapshot)
             except Exception:
@@ -1070,6 +1073,51 @@ Non-blocking tick loop running in a daemon thread.
                     logger.debug("Fleet orchestrator tick error", exc_info=True)
 
             time.sleep(self._server._refresh_interval)
+
+    def _cleanup_dead_admin_processes(self, ProcessState):
+        """
+Clean up externally killed admin processes.
+
+When a process is killed outside the hub (e.g. Task Manager), ProcessHub's
+tick() marks it DEAD and starts the restart FSM targeting panel "__admin__".
+Since "__admin__" is not a real panel, the FSM stays stuck for 300s, blocking
+all subsequent health checks.
+
+This method detects dead admin processes and cleans them up so they
+transition to "stopped" (configurable, re-startable) in the GUI.
+        """
+        snapshot = self._server._core.get_state_snapshot()
+        dead_admin = [
+            proc for proc in snapshot.processes
+            if proc.state == ProcessState.DEAD
+            and '__admin__' in proc.requesters
+        ]
+
+        if not dead_admin:
+            return
+
+        for proc in dead_admin:
+            logger.info(
+                "Cleaning up dead admin process: %s (pid=%s)",
+                proc.name, proc.pid,
+            )
+
+            # Remove from ProcessHub core registry
+            self._server.unregister_admin_process(proc.name)
+            try:
+                self._server.core._registry.remove(proc.name)
+            except Exception:
+                pass
+
+            # Close log handle and remove stale executor entries
+            if self._executor is not None:
+                self._executor._close_log(proc.name)
+                self._executor._delegate._processes.pop(proc.name, None)
+                self._executor._delegate._pids.pop(proc.name, None)
+
+        # Reset the restart FSM — "__admin__" never responds, so the FSM
+        # would stay stuck in AWAITING_ACK for 300s blocking health checks.
+        self._server._core._restart_fsm.reset_to_idle()
 
     def _start_orchestrator(self, fleet_api_port, health_timeout):
         """

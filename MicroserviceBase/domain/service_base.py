@@ -537,13 +537,21 @@ to send the response back.
 
       if response is None:
          # Specific request -- delegate to subclass handler
-         self.on_specific_request(body['method'], body)
-         return
+         response = self.on_specific_request(body['method'], body)
+         if response is None:
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
+      # Serialize: ServiceResponse has get_json(), plain dicts are JSON-dumped
+      if hasattr(response, 'get_json'):
+         body_out = response.get_json()
+      else:
+         body_out = json.dumps(response)
 
       ch.basic_publish(
          exchange='',
          routing_key=props.reply_to,
          properties=type(props)(correlation_id=props.correlation_id),
-         body=response.get_json(),
+         body=body_out,
       )
       ch.basic_ack(delivery_tag=method.delivery_tag)

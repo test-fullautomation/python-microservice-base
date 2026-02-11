@@ -202,6 +202,12 @@ Check if the request is an alias-routed request.
       """
       return request in self._alias_dict
 
+   def on_specific_request(self, request, body):
+      """
+Handle an alias-routed request by forwarding to the target service.
+      """
+      return self.handle_alias_request(body)
+
    def handle_alias_request(self, body):
       """
 Handle an alias request by routing to the actual service.

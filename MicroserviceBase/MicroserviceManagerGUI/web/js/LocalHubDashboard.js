@@ -365,9 +365,10 @@
     } else {
       processes.forEach(function (proc) {
         var isRunning = proc.state === 'running';
-        var stateClass = isRunning ? 'running' : 'stopped';
-        var stateIcon = isRunning ? 'bi-check-circle-fill' : 'bi-dash-circle';
-        var stateLabel = isRunning ? 'Running' : 'Stopped';
+        var isDead = proc.state === 'dead';
+        var stateClass = isRunning ? 'running' : (isDead ? 'dead' : 'stopped');
+        var stateIcon = isRunning ? 'bi-check-circle-fill' : (isDead ? 'bi-x-circle-fill' : 'bi-dash-circle');
+        var stateLabel = isRunning ? 'Running' : (isDead ? 'Dead' : 'Stopped');
 
         var actionBtn = isRunning
           ? '<button class="btn btn-sm btn-outline-danger lh-action-btn" data-process="' + _esc(proc.name) + '" data-action="stop" title="Stop">' +
