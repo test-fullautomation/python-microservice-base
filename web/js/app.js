@@ -699,6 +699,19 @@
         listItem.appendChild(icon);
         listItem.appendChild(label);
         listItem.appendChild(helperBtn);
+
+        if (item.downloadable) {
+          var downloadBtn = document.createElement('span');
+          downloadBtn.classList.add('helper-btn', 'download-btn');
+          downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+          downloadBtn.title = 'Download Service';
+          downloadBtn.onclick = function (e) {
+            e.stopPropagation();
+            downloadServiceFiles(item.serviceName);
+          };
+          listItem.appendChild(downloadBtn);
+        }
+
         listGroup.appendChild(listItem);
       });
 
@@ -1566,7 +1579,8 @@
       var newItem = {
         label: service.name,
         iconSrc: IMAGE_PATH.READY,
-        serviceName: service.name
+        serviceName: service.name,
+        downloadable: !!service.downloadable
       };
 
       if (!existingItem) {
@@ -1955,6 +1969,54 @@
       .catch(function (error) {
         console.error('Error loading GUI data:', error);
         changeConnectButtonState(CONNECTION_STATUS.DISCONNECTED);
+      });
+  }
+
+  /**
+   * Downloads the full service source directory as a ZIP file.
+   *
+   * @param {string} serviceName - The name of the service to download.
+   */
+  function downloadServiceFiles(serviceName) {
+    var serviceInfo = MM.servicesInfor[serviceName];
+    if (!serviceInfo) {
+      MM.showToast('Error', 'Service info not found for ' + serviceName, 'warning');
+      return;
+    }
+
+    var requestData = { method: 'svc_api_get_service_files', args: null };
+    var requestPromise;
+    if (serviceInfo.routing_key) {
+      requestPromise = requestService(requestData, SERVICES_EXCHANGE_NAME, serviceInfo.routing_key);
+    } else {
+      requestPromise = MM.requestServiceDirect(requestData, serviceName);
+    }
+
+    requestPromise
+      .then(function (data) {
+        if (!data.result_data) {
+          MM.showToast('Error', 'No file data received from ' + serviceName, 'warning');
+          return;
+        }
+        var byteChars = atob(data.result_data);
+        var byteNumbers = new Array(byteChars.length);
+        for (var i = 0; i < byteChars.length; i++) {
+          byteNumbers[i] = byteChars.charCodeAt(i);
+        }
+        var byteArray = new Uint8Array(byteNumbers);
+        var blob = new Blob([byteArray], { type: 'application/zip' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = serviceName + '.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      })
+      .catch(function (error) {
+        console.error('Error downloading service files:', error);
+        MM.showToast('Error', 'Failed to download service files: ' + error.message, 'warning');
       });
   }
 

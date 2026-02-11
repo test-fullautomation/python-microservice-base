@@ -581,6 +581,10 @@ html, body {
   background-color: rgba(255, 255, 255, 0.15);
 }
 
+.helper-btn.download-btn {
+  margin-left: 0;
+}
+
 /* ---------- Helper Modal ---------- */
 #helperModal .modal-header {
   background-color: var(--navbar-bg);
