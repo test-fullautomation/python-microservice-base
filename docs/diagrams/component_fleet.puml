@@ -1,0 +1,188 @@
+@startuml component_fleet
+!theme plain
+title Fleet Orchestrator - Multi-Hub Architecture
+
+skinparam component {
+    BackgroundColor<<gui>> #fce4ec
+    BackgroundColor<<bridge>> #fff3e0
+    BackgroundColor<<orchestrator>> #e8f5e9
+    BackgroundColor<<agent>> #e3f2fd
+    BackgroundColor<<hub>> #e0f7fa
+    BackgroundColor<<guard>> #ffebee
+}
+
+skinparam node {
+    BackgroundColor #fafafa
+}
+
+skinparam note {
+    BackgroundColor #ffffee
+}
+
+' ============================================================================
+' GUI Client
+' ============================================================================
+
+actor "GUI\n(Browser / Electron)" as GUI
+
+' ============================================================================
+' FastAPI Bridge - Fleet Proxy
+' ============================================================================
+
+package "FastAPI Bridge" <<bridge>> {
+    [Fleet Proxy\n/api/fleet/*] as FleetProxy <<bridge>>
+    [Local Hub Endpoints\n/api/local-hub/*] as LocalAPI <<bridge>>
+
+    note bottom of FleetProxy
+      GET  /api/fleet/status
+      GET  /api/fleet/hubs
+      GET  /api/fleet/hubs/{id}
+      POST /api/fleet/hubs/{id}/start
+      POST /api/fleet/hubs/{id}/stop
+      POST /api/fleet/hubs/{id}/reset
+    end note
+}
+
+GUI --> FleetProxy : HTTP
+GUI --> LocalAPI : HTTP
+
+' ============================================================================
+' Orchestrator Hub (Machine A)
+' ============================================================================
+
+node "Orchestrator Hub  (Machine A)" as OrcNode {
+
+    package "LocalHubManager\n(mode = orchestrator)" <<hub>> {
+        [Hub Lifecycle] as OrcLC <<hub>>
+        [Process Control] as OrcPC <<hub>>
+    }
+
+    package "Fleet Components" <<orchestrator>> {
+        [FleetOrchestrator\n(health check tick loop\nevery 5s)] as Orch <<orchestrator>>
+        [FleetWebAPI\n(REST on port 2510)] as WebAPI <<orchestrator>>
+        [EventBusTransport\n(exchange: process_hub_fleet)] as OrcEB <<orchestrator>>
+
+        WebAPI --> Orch : query\nstatus & hubs
+    }
+
+    package "Self-Agent" <<agent>> {
+        [HubAgent\n(self)] as SelfAgent <<agent>>
+        [Fleet Guard\n(fleet_enabled\ncheck)] as SelfGuard <<guard>>
+
+        SelfAgent --> SelfGuard : wrapped
+    }
+
+    [ProcessHubServer\n+ ServiceExecutor] as OrcPHS <<hub>>
+
+    OrcLC --> Orch : _start_orchestrator()
+    OrcLC --> SelfAgent : _start_self_agent()
+    OrcLC --> OrcPHS : start()
+    SelfAgent --> OrcPHS : controls\nlocal processes
+    Orch --> OrcEB : fleet\nmessaging
+    SelfAgent --> OrcEB : heartbeat\n+ commands
+    OrcPC --> OrcPHS : start/stop
+}
+
+FleetProxy --> WebAPI : httpx proxy\n(http://localhost:2510)
+LocalAPI --> OrcLC
+
+' ============================================================================
+' Agent Hub (Machine B)
+' ============================================================================
+
+node "Agent Hub  (Machine B)" as AgentNode {
+
+    package "LocalHubManager\n(mode = agent)" <<hub>> {
+        [Hub Lifecycle\n(agent)] as AgLC <<hub>>
+    }
+
+    package "Agent Components" <<agent>> {
+        [HubAgent\n(remote)] as RemoteAgent <<agent>>
+        [Fleet Guard\n(fleet_enabled\ncheck)] as RemoteGuard <<guard>>
+        [EventBusTransport] as AgEB <<agent>>
+
+        RemoteAgent --> RemoteGuard : wrapped
+    }
+
+    [ProcessHubServer\n+ ServiceExecutor] as AgPHS <<hub>>
+
+    AgLC --> RemoteAgent : _start_agent()
+    AgLC --> AgPHS : start()
+    RemoteAgent --> AgPHS : controls\nlocal processes
+    RemoteAgent --> AgEB : heartbeat\n+ commands
+}
+
+' ============================================================================
+' Agent Hub (Machine C)
+' ============================================================================
+
+node "Agent Hub  (Machine C)" as AgentNode2 {
+
+    package "LocalHubManager\n(mode = agent) " <<hub>> {
+        [Hub Lifecycle\n(agent) ] as AgLC2 <<hub>>
+    }
+
+    package "Agent Components " <<agent>> {
+        [HubAgent\n(remote) ] as RemoteAgent2 <<agent>>
+        [Fleet Guard ] as RemoteGuard2 <<guard>>
+        [EventBusTransport ] as AgEB2 <<agent>>
+
+        RemoteAgent2 --> RemoteGuard2 : wrapped
+    }
+
+    [ProcessHubServer\n+ ServiceExecutor ] as AgPHS2 <<hub>>
+
+    AgLC2 --> RemoteAgent2 : _start_agent()
+    AgLC2 --> AgPHS2 : start()
+    RemoteAgent2 --> AgPHS2 : controls\nlocal processes
+    RemoteAgent2 --> AgEB2 : heartbeat\n+ commands
+}
+
+' ============================================================================
+' RabbitMQ Broker (shared)
+' ============================================================================
+
+cloud "RabbitMQ Broker\n(exchange: process_hub_fleet)" as RMQ
+
+OrcEB <--> RMQ : AMQP\n(PUB/SUB)
+AgEB <--> RMQ : AMQP
+AgEB2 <--> RMQ : AMQP
+
+' ============================================================================
+' Fleet Communication Flow Notes
+' ============================================================================
+
+note right of Orch
+  **Health Check Loop (every 5s):**
+  1. Receive heartbeats from agents
+  2. Mark agents with no heartbeat
+     for > 30s as OFFLINE
+  3. Aggregate process counts
+end note
+
+note bottom of RemoteGuard
+  **fleet_enabled Guard:**
+  Before executing start/stop
+  commands from the orchestrator,
+  the guard checks each process:
+    config.get("fleet_enabled", False)
+  Blocked processes are rejected
+  with a list of denied names.
+  (Shown as lock icon in GUI)
+end note
+
+' ============================================================================
+' Legend
+' ============================================================================
+
+legend right
+  |= Color |= Component |
+  |<#e8f5e9> | Fleet Orchestrator |
+  |<#e3f2fd> | Hub Agent |
+  |<#e0f7fa> | Local Hub / ProcessHub |
+  |<#fff3e0> | FastAPI Bridge |
+  |<#ffebee> | Fleet Permission Guard |
+  |<#fce4ec> | GUI |
+endlegend
+
+@enduml

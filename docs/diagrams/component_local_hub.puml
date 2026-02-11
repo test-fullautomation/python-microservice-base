@@ -1,0 +1,140 @@
+@startuml component_local_hub
+!theme plain
+title Local Hub - Internal Architecture
+
+skinparam component {
+    BackgroundColor<<bridge>> #fff3e0
+    BackgroundColor<<hub>> #e0f7fa
+    BackgroundColor<<executor>> #e8f5e9
+    BackgroundColor<<processhub>> #e3f2fd
+    BackgroundColor<<config>> #f3e5f5
+}
+
+skinparam note {
+    BackgroundColor #ffffee
+}
+
+' ============================================================================
+' GUI Client
+' ============================================================================
+
+actor "GUI\n(Browser / Electron)" as GUI
+
+' ============================================================================
+' FastAPI Bridge Layer
+' ============================================================================
+
+package "FastAPI Bridge" <<bridge>> {
+    [REST Endpoints\n/api/local-hub/*] as REST <<bridge>>
+    [WebSocket\n/ws/updates] as WS <<bridge>>
+
+    note bottom of REST
+      POST /start, /stop
+      POST /processes/start
+      POST /processes/stop
+      POST /import-service
+      GET  /status, /config
+      GET  /service/{name}/log
+    end note
+}
+
+GUI --> REST : HTTP
+GUI <-- WS : real-time\nupdates
+
+' ============================================================================
+' Local Hub Manager (Orchestration Layer)
+' ============================================================================
+
+package "LocalHubManager" <<hub>> {
+    [Hub Lifecycle\nstart_hub() / stop_hub()] as HubLC <<hub>>
+    [Process Control\nstart_processes()\nstop_processes()] as ProcCtrl <<hub>>
+    [Config Management\nadd / update / remove\nimport_service()] as CfgMgmt <<hub>>
+    [Status Aggregation\nget_status()] as Status <<hub>>
+
+    HubLC -[hidden]right-> ProcCtrl
+    ProcCtrl -[hidden]right-> CfgMgmt
+}
+
+REST --> HubLC
+REST --> ProcCtrl
+REST --> CfgMgmt
+REST --> Status
+
+' ============================================================================
+' Service Executor (RPC-Aware Process Control)
+' ============================================================================
+
+package "ServiceExecutor" <<executor>> {
+    [Process Spawner\nsubprocess.Popen\n(CREATE_NEW_PROCESS_GROUP)] as Spawner <<executor>>
+    [RPC Shutdown\nsvc_api_shutdown\nvia pika] as RPCShut <<executor>>
+    [Signal Fallback\nCTRL_BREAK_EVENT (Win)\nSIGTERM (Linux)] as SigFall <<executor>>
+    [Log Manager\nstdout/stderr -> file\n{name}.log] as LogMgr <<executor>>
+
+    RPCShut -down-> SigFall : on timeout\n(5s)
+}
+
+ProcCtrl --> Spawner : start(name, config)
+ProcCtrl --> RPCShut : stop(name)
+Spawner --> LogMgr : redirect\noutput
+
+' ============================================================================
+' ProcessHub Library (External)
+' ============================================================================
+
+package "ProcessHub Library" <<processhub>> {
+    [ProcessHubServer] as PHS <<processhub>>
+    [ProcessHubCore\n(Process Registry)] as PHC <<processhub>>
+    [ZmqTransport\n(XPUB / XSUB)] as ZMQ <<processhub>>
+    [SimpleExecutor\n(Base Lifecycle)] as SimpleExec <<processhub>>
+
+    PHS --> PHC : manages
+    PHS --> ZMQ : broadcasts\nstate
+    PHC --> SimpleExec : delegates
+}
+
+HubLC --> PHS : create &\nstart
+Spawner --> SimpleExec : wraps\n(delegation)
+Status --> PHC : snapshot()
+
+' ============================================================================
+' External Systems
+' ============================================================================
+
+cloud "RabbitMQ\nBroker" as RMQ
+database "hub_processes.json\n(\u0024{python}, \u0024{config_dir})" as HubCfg
+folder "logs/" as Logs
+folder "services/\n(imported packages)" as SvcDir
+
+RPCShut --> RMQ : AMQP\nsvc_api_shutdown
+CfgMgmt --> HubCfg : read / write\n(preserve placeholders)
+CfgMgmt --> SvcDir : import service\n(copy + validate)
+LogMgr --> Logs : write per-process\nlog files
+
+' ============================================================================
+' Target Service Process
+' ============================================================================
+
+rectangle "Service Process\n(ServiceBase)" as SvcProc {
+    [consume loop\nprocess_data_events(1s)] as Consume
+    [svc_api_shutdown()\nunregister + stop] as Shutdown
+}
+
+RMQ --> Consume : deliver\nmessage
+Consume --> Shutdown : dispatch
+Spawner ..> SvcProc : subprocess\n.Popen()
+SigFall ..> SvcProc : signal
+
+' ============================================================================
+' Data Flow Legend
+' ============================================================================
+
+legend right
+  |= Color |= Layer |
+  |<#fff3e0> | FastAPI Bridge (REST/WS gateway) |
+  |<#e0f7fa> | LocalHubManager (orchestration) |
+  |<#e8f5e9> | ServiceExecutor (RPC + signal) |
+  |<#e3f2fd> | ProcessHub Library (external) |
+  |<#f3e5f5> | Configuration / persistence |
+endlegend
+
+@enduml
