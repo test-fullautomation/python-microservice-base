@@ -5,9 +5,13 @@
  * @version 2.1.0
  */
 
-const { app, BrowserWindow, dialog, ipcMain, protocol } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, protocol, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+let mainWindow = null;
+let tray = null;
+let isQuitting = false;
 
 // Function to parse command line arguments
 function parseArgs(argName, defaultValue) {
@@ -26,10 +30,11 @@ process.env.DASGUI_USER_DATA = app.getPath('userData');
 process.env.DASGUI_RESOURCES_PATH = process.resourcesPath || '';
 
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     autoHideMenuBar: true,
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -44,9 +49,43 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '..', 'web', 'index.html'));
 
+  // Minimize to tray instead of closing
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   // Relay AMQP exchange messages from preload back to renderer
   ipcMain.on('amqp-exchange-message', (_event, data) => {
     mainWindow.webContents.send('amqp-exchange-message-relay', data);
+  });
+}
+
+function createTray() {
+  const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
+  tray.setToolTip('Microservice Manager GUI');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Window',
+      click: () => { mainWindow.show(); mainWindow.focus(); }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => { isQuitting = true; app.quit(); }
+    }
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  tray.on('double-click', () => {
+    mainWindow.show();
+    mainWindow.focus();
   });
 }
 
@@ -88,12 +127,16 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+  createTray();
 });
 
 // Safety net: ensure bridge process cleanup on quit
 app.on('before-quit', () => {
-  // Bridge cleanup is primarily handled by preload's process.on('exit'),
-  // but this IPC handler provides an additional safety net.
+  isQuitting = true;
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
   console.log('[main] before-quit: bridge cleanup delegated to preload');
 });
 
