@@ -1430,7 +1430,7 @@
     if (fleetApiUrl && MM.fleetClient) {
       MM.fleetClient.configure(fleetApiUrl)
         .then(function () {
-          try { sessionStorage.setItem('mm_fleet_api_url', fleetApiUrl); } catch (e) {}
+          try { localStorage.setItem('mm_fleet_api_url', fleetApiUrl); } catch (e) {}
         })
         .catch(function (err) {
           console.warn('[app] Failed to configure fleet URL:', err);
@@ -2071,7 +2071,7 @@
     MM.fleetDashboard.activate();
 
     // Bridge URL is available in both browser mode (same origin) and
-    // Electron mode (configured via settings / sessionStorage).
+    // Electron mode (configured via settings / localStorage).
     var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
     var hasBridge = bridgeOrigin && bridgeOrigin.indexOf('http') === 0;
 
@@ -2083,7 +2083,16 @@
           if (data && data.fleet_api_url) {
             MM.fleetClient.startPolling();
           } else {
-            MM.fleetDashboard.renderConfigurePrompt();
+            // Bridge lost the URL (e.g. restart) — restore from localStorage
+            var saved = null;
+            try { saved = localStorage.getItem('mm_fleet_api_url'); } catch (e) {}
+            if (saved) {
+              MM.fleetClient.configure(saved).then(function () {
+                MM.fleetClient.startPolling();
+              });
+            } else {
+              MM.fleetDashboard.renderConfigurePrompt();
+            }
           }
         })
         .catch(function () {
@@ -2137,13 +2146,13 @@
     btnModeCreator.addEventListener('click', function () { switchMode('creator'); });
   }
 
-  // Restore fleet URL from sessionStorage on page load
+  // Restore fleet URL from localStorage on page load
   try {
-    var savedFleetUrl = sessionStorage.getItem('mm_fleet_api_url');
+    var savedFleetUrl = localStorage.getItem('mm_fleet_api_url');
     if (savedFleetUrl && MM.fleetClient) {
       MM.fleetClient.configure(savedFleetUrl);
     }
-  } catch (e) { /* sessionStorage unavailable */ }
+  } catch (e) { /* localStorage unavailable */ }
 
   /************************************************************
    *               Expose functions for plugins               *

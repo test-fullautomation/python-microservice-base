@@ -236,7 +236,7 @@
       this.stopPolling();
       _fleetApiUrl = null;
       _updateCallbacks = [];
-      try { sessionStorage.removeItem('mm_fleet_api_url'); } catch (e) {}
+      try { localStorage.removeItem('mm_fleet_api_url'); } catch (e) {}
 
       // Best-effort: clear the bridge-side URL too
       var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';

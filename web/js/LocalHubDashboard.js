@@ -503,6 +503,11 @@
                   '<label class="form-label">Environment (JSON)</label>' +
                   '<input type="text" class="form-control form-control-sm" id="lhCfgEnv" placeholder=\'{"KEY": "value"}\'>' +
                 '</div>' +
+                '<div class="mb-2 form-check">' +
+                  '<input type="checkbox" class="form-check-input" id="lhCfgFleetEnabled">' +
+                  '<label class="form-check-label" for="lhCfgFleetEnabled">Allow Fleet Control</label>' +
+                  '<div class="form-text">When enabled, this process can be started/stopped from the Fleet dashboard.</div>' +
+                '</div>' +
                 '<div class="d-flex gap-2">' +
                   '<button class="btn btn-sm btn-primary" id="lhBtnSaveConfig">' +
                     '<i class="bi bi-check me-1"></i>Save' +
@@ -771,6 +776,7 @@
     var cfgArgsInput = document.getElementById('lhCfgArgs');
     var cfgWaitInput = document.getElementById('lhCfgWait');
     var cfgEnvInput = document.getElementById('lhCfgEnv');
+    var cfgFleetEnabledInput = document.getElementById('lhCfgFleetEnabled');
 
     function _resetConfigForm() {
       if (cfgNameInput) { cfgNameInput.value = ''; cfgNameInput.readOnly = false; }
@@ -778,6 +784,7 @@
       if (cfgArgsInput) cfgArgsInput.value = '';
       if (cfgWaitInput) cfgWaitInput.value = '1.0';
       if (cfgEnvInput) cfgEnvInput.value = '';
+      if (cfgFleetEnabledInput) cfgFleetEnabledInput.checked = false;
       if (configForm) { configForm.setAttribute('data-edit-mode', ''); configForm.setAttribute('data-edit-name', ''); }
       if (configFormHeader) configFormHeader.innerHTML = '<i class="bi bi-plus-circle me-2"></i>Add Service Configuration';
     }
@@ -788,6 +795,7 @@
       if (cfgArgsInput) cfgArgsInput.value = (cfg.args || []).join(' ');
       if (cfgWaitInput) cfgWaitInput.value = cfg.wait_time || '1.0';
       if (cfgEnvInput) cfgEnvInput.value = cfg.env ? JSON.stringify(cfg.env) : '';
+      if (cfgFleetEnabledInput) cfgFleetEnabledInput.checked = !!cfg.fleet_enabled;
       if (configForm) { configForm.setAttribute('data-edit-mode', 'true'); configForm.setAttribute('data-edit-name', procName); }
       if (configFormHeader) configFormHeader.innerHTML = '<i class="bi bi-pencil me-2"></i>Edit: ' + _esc(procName);
     }
@@ -848,11 +856,14 @@
           }
         }
 
+        var fleetEnabled = cfgFleetEnabledInput ? cfgFleetEnabledInput.checked : false;
+
         var config = {
           script: script,
           args: args,
           wait_time: waitTime,
           process_name: name,
+          fleet_enabled: fleetEnabled,
         };
         if (Object.keys(env).length > 0) config.env = env;
 

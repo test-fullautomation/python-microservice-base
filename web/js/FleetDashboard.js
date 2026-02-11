@@ -316,12 +316,17 @@
         var stateClass = isRunning ? 'running' : 'stopped';
         var stateLabel = isRunning ? 'Running' : 'Stopped';
         var stateIcon = isRunning ? 'bi-check-circle-fill' : 'bi-dash-circle';
+        var fleetEnabled = configs[proc] && configs[proc].fleet_enabled === true;
+
+        var lockBadge = !fleetEnabled
+          ? '<span class="badge bg-secondary me-1" title="Fleet control disabled"><i class="bi bi-lock-fill"></i></span>'
+          : '';
 
         var actionBtn = isRunning
-          ? '<button class="btn btn-sm btn-outline-danger fleet-action-process-btn" data-process="' + _escapeHtml(proc) + '" data-action="stop" title="Stop">' +
+          ? '<button class="btn btn-sm btn-outline-danger fleet-action-process-btn" data-process="' + _escapeHtml(proc) + '" data-action="stop" title="Stop"' + (!fleetEnabled ? ' disabled' : '') + '>' +
               '<i class="bi bi-stop-fill"></i>' +
             '</button>'
-          : '<button class="btn btn-sm btn-outline-success fleet-action-process-btn" data-process="' + _escapeHtml(proc) + '" data-action="start" title="Start">' +
+          : '<button class="btn btn-sm btn-outline-success fleet-action-process-btn" data-process="' + _escapeHtml(proc) + '" data-action="start" title="Start"' + (!fleetEnabled ? ' disabled' : '') + '>' +
               '<i class="bi bi-play-fill"></i>' +
             '</button>';
 
@@ -341,6 +346,7 @@
             '<div class="fleet-process-row">' +
               '<span class="fleet-process-state"><i class="bi ' + stateIcon + '"></i></span>' +
               '<span class="fleet-process-name">' + _escapeHtml(proc) + '</span>' +
+              lockBadge +
               '<span class="fleet-process-state-label badge ' + stateClass + '">' + stateLabel + '</span>' +
               expandBtn +
               actionBtn +
@@ -436,29 +442,36 @@
       };
     }
 
-    // Start All — starts all configured processes
+    // Start All — starts all fleet-enabled configured processes
+    var fleetEnabledProcesses = allProcesses.filter(function (p) {
+      return configs[p] && configs[p].fleet_enabled === true;
+    });
+    var fleetEnabledRunning = running.filter(function (p) {
+      return configs[p] && configs[p].fleet_enabled === true;
+    });
+
     var startAllBtn = document.getElementById('fleetBtnStartAll');
     if (startAllBtn) {
       startAllBtn.onclick = function () {
-        if (allProcesses.length === 0) {
-          MM.showToast('Info', 'No processes configured.', 'info');
+        if (fleetEnabledProcesses.length === 0) {
+          MM.showToast('Info', 'No fleet-enabled processes configured.', 'info');
           return;
         }
-        MM.fleetClient.startProcesses(hub.hub_id, allProcesses)
+        MM.fleetClient.startProcesses(hub.hub_id, fleetEnabledProcesses)
           .then(function () { MM.showToast('Command Sent', 'Start command sent to ' + (hub.hub_name || hub.hub_id), 'success'); _refreshAfterAction(); })
           .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
       };
     }
 
-    // Stop All — stops all running processes
+    // Stop All — stops all fleet-enabled running processes
     var stopAllBtn = document.getElementById('fleetBtnStopAll');
     if (stopAllBtn) {
       stopAllBtn.onclick = function () {
-        if (running.length === 0) {
-          MM.showToast('Info', 'No processes running.', 'info');
+        if (fleetEnabledRunning.length === 0) {
+          MM.showToast('Info', 'No fleet-enabled processes running.', 'info');
           return;
         }
-        MM.fleetClient.stopProcesses(hub.hub_id, running, true)
+        MM.fleetClient.stopProcesses(hub.hub_id, fleetEnabledRunning, true)
           .then(function () { MM.showToast('Command Sent', 'Stop command sent to ' + (hub.hub_name || hub.hub_id), 'success'); _refreshAfterAction(); })
           .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
       };
@@ -523,7 +536,7 @@
         if (!url) return;
         MM.fleetClient.configure(url)
           .then(function () {
-            try { sessionStorage.setItem('mm_fleet_api_url', url); } catch (e) {}
+            try { localStorage.setItem('mm_fleet_api_url', url); } catch (e) {}
             MM.showToast('Fleet Connected', 'Fleet API URL set to ' + url, 'success');
             MM.fleetClient.startPolling();
           })
