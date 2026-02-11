@@ -163,6 +163,7 @@ Describes a service and its metadata.
    version: str = "1.0.0"
    routing_key: str = ""
    gui_support: bool = False
+   downloadable: bool = False
    methods: List[str] = field(default_factory=list)
    methods_info: dict = field(default_factory=dict)
 
@@ -191,6 +192,7 @@ Converts this ``ServiceInfo`` instance to a dictionary.
          'version': self.version,
          'routing_key': self.routing_key,
          'gui_support': self.gui_support,
+         'downloadable': self.downloadable,
          'methods': list(self.methods),
          'methods_info': methods_info_dict,
       }
@@ -223,6 +225,7 @@ Creates a ``ServiceInfo`` instance from a dictionary.
          version=data.get('version', '1.0.0'),
          routing_key=data.get('routing_key', ''),
          gui_support=data.get('gui_support', False),
+         downloadable=data.get('downloadable', False),
          methods=data.get('methods', []),
          methods_info=data.get('methods_info', {}),
       )

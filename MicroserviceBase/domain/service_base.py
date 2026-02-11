@@ -62,6 +62,7 @@ Transport and registry interactions are delegated to injected ports.
       'version': '1.0.0',
       'routing_key': '',
       'gui_support': False,
+      'downloadable': False,
       'methods': [],
       'methods_info': {},
    }
@@ -92,7 +93,8 @@ Initialize the domain ServiceBase.
       self._api_dict = self.get_svc_api_methods_dict()
       self._api_info_dict = self.get_svc_api_methods_info_dict(self._api_dict)
       # Internal methods: dispatchable via RPC but not published to clients
-      _internal = {'svc_api_get_gui_files', 'svc_api_get_gui_checksum', 'svc_api_shutdown'}
+      _internal = {'svc_api_get_gui_files', 'svc_api_get_gui_checksum',
+                   'svc_api_shutdown', 'svc_api_get_service_files'}
       self._SERVICE_INFO['methods'] = [
          m for m in self._api_dict if m not in _internal
       ]
@@ -217,6 +219,8 @@ Retrieve all service API methods (methods starting with 'svc_api_').
       }
       if not self._SERVICE_INFO['gui_support']:
          methods.pop('svc_api_get_gui_files', None)
+      if not self._SERVICE_INFO.get('downloadable', False):
+         methods.pop('svc_api_get_service_files', None)
       return methods
 
    def get_svc_api_methods_info_dict(self, methods_dict):
@@ -314,6 +318,44 @@ Compress and return GUI files as bytes.
          finally:
             if os.path.exists(zip_file_path):
                os.remove(zip_file_path)
+
+      return file_content
+
+   def svc_api_get_service_files(self):
+      """
+Compress and return the entire service directory as bytes.
+
+**Returns:**
+
+  / *Type*: bytes /
+
+  ZIP archive of the service directory, or None if not downloadable.
+      """
+      if not self._SERVICE_INFO.get('downloadable', False):
+         return None
+
+      service_file = inspect.getfile(type(self))
+      service_dir = os.path.dirname(os.path.abspath(service_file))
+      service_folder_name = os.path.basename(service_dir)
+
+      zip_fd, zip_file_path = tempfile.mkstemp(suffix='.zip')
+      os.close(zip_fd)
+      try:
+         with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(service_dir):
+               for file in files:
+                  full_path = os.path.join(root, file)
+                  arcname = os.path.join(
+                     service_folder_name,
+                     os.path.relpath(full_path, service_dir)
+                  )
+                  zipf.write(full_path, arcname)
+
+         with open(zip_file_path, 'rb') as f:
+            file_content = f.read()
+      finally:
+         if os.path.exists(zip_file_path):
+            os.remove(zip_file_path)
 
       return file_content
 

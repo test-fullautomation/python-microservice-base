@@ -95,6 +95,7 @@ Demonstrates the svc_api_ convention and docstring-based API discovery.
       'version': '1.0.0',
       'routing_key': 'service.calculator',
       'gui_support': False,
+      'downloadable': True,
       'methods': [],
       'methods_info': {},
    }
