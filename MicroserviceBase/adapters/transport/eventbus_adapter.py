@@ -126,7 +126,7 @@ Initialize the method proxy.
 
 * ``delivery_tag``
 
-  / *Condition*: optional / *Type*: int /
+  / *Condition*: optional / *Type*: int / *Default*: 0 /
 
   The delivery tag (unused with EventBusClient).
       """

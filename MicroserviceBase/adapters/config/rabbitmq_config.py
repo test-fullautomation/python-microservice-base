@@ -75,7 +75,7 @@ Parse RabbitMQ config from command-line arguments and environment variables.
 
 * ``service_name``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'Service' /
 
   Name of the service (used in help text).
 

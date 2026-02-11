@@ -45,7 +45,7 @@ Create a TransportPort implementation.
 
 * ``transport_type``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'rabbitmq' /
 
   Transport backend identifier. Supports 'rabbitmq' and 'eventbus'.
 
@@ -57,7 +57,7 @@ Create a TransportPort implementation.
 
 * ``service_name``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'Service' /
 
   Service name for help text (used by 'rabbitmq').
 
@@ -96,7 +96,7 @@ Create a ServiceRegistryPort implementation.
 
 * ``transport_type``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'rabbitmq' /
 
   Transport backend identifier. Supports 'rabbitmq' and 'eventbus'.
 
@@ -108,7 +108,7 @@ Create a ServiceRegistryPort implementation.
 
 * ``service_name``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'Service' /
 
   Service name for help text (used by 'rabbitmq').
 
@@ -148,19 +148,19 @@ Create a UIBridgePort implementation.
 
 * ``bridge_type``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'fastapi' /
 
   Bridge backend identifier. Currently supports 'fastapi'.
 
 * ``host``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'localhost' /
 
   Host to bind to.
 
 * ``port``
 
-  / *Condition*: optional / *Type*: int /
+  / *Condition*: optional / *Type*: int / *Default*: 8000 /
 
   Port to bind to.
 

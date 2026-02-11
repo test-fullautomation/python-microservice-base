@@ -152,6 +152,97 @@ service.register_service()
 service.serve()
 \end{verbatim}
 
+\subsubsection{Service Properties (\_SERVICE\_INFO)}
+
+Every microservice must define a \texttt{\_SERVICE\_INFO} class-level dictionary that describes
+the service to the framework. The registry, the GUI, and the service creator all rely on
+these properties. The following table lists every recognized key:
+
+\vspace{0.5em}
+\begin{center}
+\small
+\begin{tabular}{|l|l|c|l|p{5.5cm}|}
+\hline
+\textbf{Property} & \textbf{Type} & \textbf{Required} & \textbf{Default} & \textbf{Description} \\
+\hline
+\texttt{name}        & str  & yes & ---       & Unique service name (PascalCase recommended) \\
+\texttt{description} & str  & no  & \texttt{''} & Full description, displayed in the Code Helper modal \\
+\texttt{shortdesc}   & str  & no  & \texttt{''} & Short description shown in the GUI sidebar \\
+\texttt{group}       & str  & no  & \texttt{''} & Category group for sidebar organization (e.g.\ \texttt{examples}) \\
+\texttt{tag}         & str  & no  & \texttt{''} & Optional version tag \\
+\texttt{version}     & str  & no  & \texttt{'1.0.0'} & Semantic version string \\
+\texttt{routing\_key} & str & no  & \texttt{''} & RabbitMQ routing key for RPC requests \\
+\texttt{gui\_support} & bool & no & \texttt{False} & Whether the service ships a GUI plugin
+                                                        (\texttt{GUIs/} folder) \\
+\texttt{downloadable} & bool & no & \texttt{False} & Whether the service exposes
+                                                        \texttt{svc\_api\_get\_service\_files}
+                                                        for remote download \\
+\texttt{methods}      & list & auto & \texttt{[]} & \textit{Auto-populated} by \texttt{ServiceBase.\_\_init\_\_}
+                                                       from \texttt{svc\_api\_*} methods \\
+\texttt{methods\_info} & dict & auto & \texttt{\{\}} & \textit{Auto-populated} from method docstrings \\
+\hline
+\end{tabular}
+\end{center}
+\vspace{0.5em}
+
+\noindent
+Custom properties (e.g.\ \texttt{sample\_path}) may be added freely---the framework ignores
+unknown keys but they are broadcast with the service info, so the GUI or other clients
+can read them.
+
+\paragraph{Example}
+
+\begin{verbatim}
+_SERVICE_INFO = {
+    'name': 'ServiceCleware',
+    'description': 'Service to control Cleware switch box devices.',
+    'shortdesc': 'Cleware Controllers',
+    'group': 'Switch Boxes',
+    'tag': '',
+    'version': '1.0.0',
+    'routing_key': 'ServiceClewareKey',
+    'gui_support': True,
+    'downloadable': False,
+    'methods': [],       # auto-populated at __init__
+    'methods_info': {},  # auto-populated from docstrings
+}
+\end{verbatim}
+
+\subsubsection{Generated Service Template}
+
+The \textbf{Service Creator} wizard (or the \texttt{POST /api/scaffold/generate} REST endpoint)
+produces a ready-to-run service package with the following file structure:
+
+\begin{verbatim}
+<ServiceName>/
+|-- <service_name>.py     # Service class with _SERVICE_INFO and svc_api_* methods
+|-- main.py               # Entry point: creates transport, registry, registers, serves
+|-- __main__.py           # Enables: python -m <ServiceName>
+|-- config.jsonp          # (EventBus only) transport configuration
+|-- GUIs/                 # (if gui_support is enabled)
+|   |-- service.html      # Bootstrap card template (or custom HTML)
+|   |-- service.js        # IIFE with load/unload functions
+\end{verbatim}
+
+\paragraph{Service class (\texttt{<service\_name>.py})} contains the \texttt{\_SERVICE\_INFO}
+dict with all metadata, and one \texttt{svc\_api\_*} method stub per API method defined in the
+wizard. Each method stub includes a full docstring with \texttt{**Arguments:**} and
+\texttt{**Returns:**} sections following the project convention.
+
+\paragraph{Entry point (\texttt{main.py})} configures logging, creates the transport and
+registry via the factory, instantiates the service, calls \texttt{register\_service()}, and
+enters \texttt{serve()}. Graceful shutdown is handled in a \texttt{try/except/finally} block
+that calls \texttt{unregister\_service()} and \texttt{close()}.
+
+\paragraph{Package entry point (\texttt{\_\_main\_\_.py})} allows the service to be started
+with \texttt{python -m <ServiceName>} from its parent directory, which is how the Local Hub
+launches imported services.
+
+\paragraph{GUI plugin (\texttt{GUIs/})} is only generated when the \textbf{Generate GUI template}
+toggle is enabled in step~3 of the wizard. The HTML file provides a Bootstrap card layout
+and the JS file exposes \texttt{load<ServiceName>()} / \texttt{unload<ServiceName>()} functions
+using the \texttt{window.MicroserviceManager} namespace.
+
 \subsubsection{Service Registry}
 
 The registry manages dynamic service discovery:
@@ -320,11 +411,15 @@ The connection dialog requires two fields:
    \item[Routing Key] The routing key of the Service Registry
         (default: \texttt{ServiceRegistry}). This tells the bridge where to find
         the registry service that tracks all registered microservices.
+   \item[Advanced Settings] Click the \textbf{Advanced Settings} link to reveal
+        additional connection options such as exchange names and other
+        broker-specific parameters.
 \end{description}
 
 After connecting, the GUI subscribes to real-time service updates via WebSocket.
-Multiple brokers can be connected simultaneously---each broker appears as a
-separate section in the sidebar when more than one is active.
+The connected broker address appears as a badge in the top-right corner (e.g.\
+\texttt{localhost:5672~x}). Multiple brokers can be connected simultaneously---each
+broker appears as a separate section in the sidebar when more than one is active.
 
 % ----------------------------------------------------------------------------
 \subsubsection{Service Dashboard}
@@ -351,22 +446,34 @@ plugin interface in the main panel when selected.
 \subsubsection{Code Helper}
 % ----------------------------------------------------------------------------
 
-For each service, the GUI provides auto-generated Python code examples that
-demonstrate how to call the service's API methods via RPC. Click the
-\textbf{Helper} button (code icon) on any service to open the code example modal.
+For each service, the GUI provides auto-generated code examples that demonstrate
+how to call the service's API methods via RPC. Click the \textbf{Helper} button
+(code icon) on any service to open the code example modal.
 
 \vspace{0.5em}
 \begin{center}
 \includegraphics[width=0.85\textwidth]{pictures/Services/03_Code_Example.png}\\[0.3em]
-{\small\textit{Auto-Generated Python Code Example for RPC Calls}}
+{\small\textit{Code Helper Modal with Python, JavaScript, and Robot Tabs}}
 \end{center}
 \vspace{0.5em}
 
-The generated code includes the complete boilerplate for creating a transport
-connection, building a request with \texttt{ServiceBase.create\_request\_data()},
-and calling the service via \texttt{rpc\_call()} with the correct exchange name
-and routing key. This code can be copied directly into a Python script to
-interact with the service programmatically.
+The modal header shows the service name, version badge, and description. Three
+language tabs are available:
+
+\begin{description}
+   \item[Python] Complete boilerplate for creating a transport connection,
+        building a request with \texttt{ServiceBase.create\_request\_data()},
+        and calling the service via \texttt{rpc\_call()} with the correct exchange
+        name and routing key. Copy directly into a Python script.
+   \item[JavaScript] Browser-side code using the \texttt{window.MicroserviceManager}
+        namespace and the FastAPI bridge REST endpoint to call service methods
+        from a web application.
+   \item[Robot] Robot Framework keyword examples for calling the service's API
+        methods, ready to integrate into test automation workflows.
+\end{description}
+
+\noindent
+Click \textbf{Copy Code} to copy the currently visible tab content to the clipboard.
 
 % ----------------------------------------------------------------------------
 \subsubsection{Settings}
@@ -410,19 +517,29 @@ to configure and start the hub.
 \end{center}
 \vspace{0.5em}
 
-The Local Hub configuration page provides:
+The Local Hub configuration page provides the following options:
 
 \begin{description}
-   \item[Mode] \textbf{Standalone} runs an independent hub on this machine.
-        \textbf{Fleet Orchestrator} starts this hub as a fleet manager that
-        other hubs can join for centralized orchestration.
-        \textbf{Agent (join fleet)} connects to an existing fleet orchestrator
-        as a managed node.
+   \item[Mode] Three radio buttons select the hub operating mode:
+        \begin{itemize}
+           \item \textbf{Standalone} --- runs an independent hub on this machine
+                 (default).
+           \item \textbf{Agent (join fleet)} --- connects to an existing fleet
+                 orchestrator as a managed node.
+           \item \textbf{Fleet Orchestrator} --- starts this hub as a fleet manager
+                 that other hubs can join for centralized orchestration.
+        \end{itemize}
+   \item[Advanced] Click the \textbf{Advanced} link to reveal additional options.
    \item[Bridge URL] The address of the FastAPI bridge
         (e.g., \texttt{http://localhost:1112}).
-        In Electron mode, the bridge can be started directly from this page
-        using the \textbf{Start Bridge} / \textbf{Stop Bridge} buttons.
-        The bridge status and PID are displayed when running.
+        In Electron mode, the bridge can be started directly from this page.
+   \item[XPUB / XSUB Port] Ports used by the EventBus proxy
+        (defaults: \texttt{5555} / \texttt{5556}).
+        Only relevant when using EventBus transport.
+   \item[FastAPI Bridge] A status card shows whether the bridge is
+        \textit{Running} or \textit{Stopped}. Use the \textbf{Start Bridge} /
+        \textbf{Stop Bridge} buttons to control the bridge process directly
+        (Electron mode only).
    \item[Start Hub] Click to start the Local Hub. The hub reads
         \texttt{hub\_processes.json} and makes all configured services
         available for management.
@@ -432,8 +549,8 @@ The Local Hub configuration page provides:
 \subsubsection{Local Hub Dashboard}
 % ----------------------------------------------------------------------------
 
-After starting the hub, the dashboard displays all configured services with
-their current status and control buttons.
+After starting the hub, the dashboard displays hub metadata, all configured
+services with their current status, and control buttons.
 
 \vspace{0.5em}
 \begin{center}
@@ -442,14 +559,17 @@ their current status and control buttons.
 \end{center}
 \vspace{0.5em}
 
-The dashboard provides:
+The dashboard header shows \textbf{Hub ID}, \textbf{Mode} (standalone / agent / orchestrator),
+and the path to the loaded \textbf{Config} file. A toast notification confirms when the hub
+has started successfully. The dashboard provides:
 
 \begin{description}
    \item[Hub Controls] \textbf{Start All} and \textbf{Stop All} buttons to
         batch-control all services. \textbf{Reset} reloads the configuration.
         \textbf{Stop Hub} shuts down the hub and all running processes.
-   \item[Service List] Each configured service shows its name, status
-        (\textit{Stopped} / \textit{Running}), and action buttons:
+   \item[Service List] A panel labelled \textbf{Services (N/M running)} shows each
+        configured service with its name, status (\textit{Stopped} / \textit{Running}),
+        and action buttons:
         start (\,\raisebox{-0.1em}{\small$\blacktriangleright$}\,),
         save config, edit configuration, and delete.
    \item[Import Service] Click to import a microservice package from a folder
@@ -458,7 +578,8 @@ The dashboard provides:
         it to the hub configuration.
    \item[Add Service] Manually add a new service entry to the hub configuration
         by specifying the script path, arguments, and process name.
-   \item[Connections] Shows active broker connections with connection count.
+   \item[Connections] A side panel shows active broker connections with the
+        connection count badge.
 \end{description}
 
 Services are started as subprocess with log file redirection. The hub uses
@@ -572,6 +693,75 @@ The generated service package is ready to run. It can be imported into the
 Local Hub using the \textbf{Import Service} feature, or started manually
 via \texttt{python -m <ServiceName>} from the package directory.
 
+% ----------------------------------------------------------------------------
+\subsubsection{Fleet Orchestrator}
+% ----------------------------------------------------------------------------
+
+The \textbf{Fleet} sub-tab in the \textbf{Service Network} page provides
+centralized orchestration of multiple hubs across different machines.
+
+\paragraph{Connecting to a Fleet}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\textwidth]{pictures/ServiceNetwork/Fleet/ConnectFleet.png}\\[0.3em]
+{\small\textit{Fleet Connection -- Enter the Fleet API URL}}
+\end{center}
+\vspace{0.5em}
+
+When no fleet connection is configured, the page displays a
+\textbf{Service Network Not Configured} prompt. Enter the Fleet API URL
+(e.g., \texttt{http://localhost:2510}) and click \textbf{Connect} to connect to
+an existing fleet orchestrator. The Fleet API is a WebAPI exposed by a hub
+running in \textit{Fleet Orchestrator} mode.
+
+\paragraph{Fleet Dashboard}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/Fleet/FleetDashboard.png}\\[0.3em]
+{\small\textit{Fleet Dashboard -- Overview of All Connected Hubs}}
+\end{center}
+\vspace{0.5em}
+
+Once connected, the Fleet Dashboard shows:
+
+\begin{description}
+   \item[Summary Cards] Three metric cards at the top display \textbf{Total Hubs},
+        \textbf{Online} hubs, and total \textbf{Processes} count across all hubs.
+   \item[Hub Cards] Each connected hub appears as a card showing its name,
+        hostname, running process count, connection count, and the names of
+        configured services as badges. Click \textbf{Details} to drill into a
+        specific hub.
+   \item[Sidebar] The left sidebar lists all fleet hubs with their
+        online status indicator and process count badge.
+   \item[Disconnect] Click \textbf{Disconnect} in the top-right corner to
+        leave the fleet.
+\end{description}
+
+\paragraph{Fleet Hub Details}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/Fleet/FleetHub.png}\\[0.3em]
+{\small\textit{Fleet Hub Details -- Remote Process Management}}
+\end{center}
+\vspace{0.5em}
+
+Clicking \textbf{Details} on a hub card opens its detail view, which mirrors
+the Local Hub Dashboard but operates on the remote hub:
+
+\begin{itemize}
+   \item \textbf{Hub metadata}: Hub ID, hostname, version, and last-seen timestamp.
+   \item \textbf{Start All / Stop All / Reset}: Batch-control all processes on the
+         remote hub.
+   \item \textbf{Processes}: Lists each process with status, a lock icon for
+         fleet-protected processes (\texttt{fleet\_enabled: false}), an expand
+         button, and a start/stop button.
+   \item \textbf{Connections}: Shows broker connections active on the remote hub.
+   \item Click \textbf{Back to Dashboard} to return to the fleet overview.
+\end{itemize}
+
 % ============================================================================
 \subsection{Process Configuration}
 % ============================================================================
@@ -586,15 +776,47 @@ Processes are configured via \texttt{hub\_processes.json}:
         "process_name": "ServiceRegistry",
         "wait_time": 2.0
     },
-    "MyService": {
+    "Calculator": {
         "script": "${python}",
-        "args": ["-m", "MyService"],
+        "args": ["path/to/calculator.py"],
+        "process_name": "Calculator",
+        "wait_time": 1.0,
+        "fleet_enabled": true
+    },
+    "ClewareService": {
+        "script": "${python}",
+        "args": ["-m", "ClewareService"],
         "cwd": "${config_dir}/services",
-        "process_name": "MyService",
-        "wait_time": 1.0
+        "process_name": "ClewareService",
+        "wait_time": 1.0,
+        "service_name": "ServiceCleware"
     }
 }
 \end{verbatim}
+
+\subsubsection{Process Properties}
+
+Each entry in \texttt{hub\_processes.json} supports the following properties:
+
+\begin{description}
+   \item[script] Path to the executable or Python script.
+        Supports \texttt{\$\{python\}} and \texttt{\$\{config\_dir\}} placeholders.
+   \item[args] List of command-line arguments passed to the script.
+   \item[process\_name] Display name used in the dashboard and logs.
+   \item[wait\_time] Seconds to wait after spawning before checking if the process
+        is still alive (default: \texttt{2.0}).
+   \item[cwd] \textit{(optional)} Working directory for the process. Required when
+        using \texttt{-m} module execution (e.g., \texttt{python -m ClewareService}).
+   \item[env] \textit{(optional)} Dictionary of extra environment variables to set
+        for the subprocess.
+   \item[service\_name] \textit{(optional)} The RabbitMQ queue name the service
+        consumes on. Used by the executor to send \texttt{svc\_api\_shutdown} RPC.
+        Falls back to the entry key if omitted.
+   \item[fleet\_enabled] \textit{(optional, default \texttt{false})} When \texttt{true},
+        the process can be started and stopped remotely via Fleet orchestrator
+        commands. Processes without this flag are protected from remote control
+        (shown with a lock icon in the Fleet Hub detail view).
+\end{description}
 
 \subsubsection{Placeholders}
 
