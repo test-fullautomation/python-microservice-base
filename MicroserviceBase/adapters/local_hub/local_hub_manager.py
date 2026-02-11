@@ -950,9 +950,53 @@ class LocalHubManager:
                 hub_name=self._hub_name,
             )
             self._agent.start()
+            self._patch_agent_fleet_guard(self._agent)
             logger.info("Self-agent registered in fleet (hub_id=%s)", self._hub_id)
         except Exception:
             logger.exception("Failed to start self-agent")
+
+    def _patch_agent_fleet_guard(self, agent):
+        """Wrap agent command handlers to enforce per-process fleet_enabled."""
+        orig_start = agent._handle_start_process
+        orig_stop = agent._handle_stop_process
+        process_config = self._process_config
+
+        def _guarded_start(params):
+            process_list = params.get("process_list", [])
+            blocked = [
+                p for p in process_list
+                if not process_config.get(p, {}).get("fleet_enabled", False)
+            ]
+            if blocked:
+                from ProcessHub.fleet.models import FleetCommandResult
+                return FleetCommandResult(
+                    command_id="",
+                    hub_id=agent._hub_id,
+                    success=False,
+                    message="Fleet control not enabled for: " + ", ".join(blocked),
+                    data={"blocked": blocked},
+                )
+            return orig_start(params)
+
+        def _guarded_stop(params):
+            process_list = params.get("process_list", [])
+            blocked = [
+                p for p in process_list
+                if not process_config.get(p, {}).get("fleet_enabled", False)
+            ]
+            if blocked:
+                from ProcessHub.fleet.models import FleetCommandResult
+                return FleetCommandResult(
+                    command_id="",
+                    hub_id=agent._hub_id,
+                    success=False,
+                    message="Fleet control not enabled for: " + ", ".join(blocked),
+                    data={"blocked": blocked},
+                )
+            return orig_stop(params)
+
+        agent._handle_start_process = _guarded_start
+        agent._handle_stop_process = _guarded_stop
 
     def _start_agent(self, orchestrator_url, xpub_port, xsub_port):
         """Start a HubAgent to join a fleet orchestrator."""
@@ -973,6 +1017,7 @@ class LocalHubManager:
                 hub_name=self._hub_name,
             )
             self._agent.start()
+            self._patch_agent_fleet_guard(self._agent)
             logger.info("Fleet agent started, connected to %s", orchestrator_url)
         except ImportError:
             logger.warning("ProcessHub fleet package not available")
