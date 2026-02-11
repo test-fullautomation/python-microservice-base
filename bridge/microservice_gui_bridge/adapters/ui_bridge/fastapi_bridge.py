@@ -65,13 +65,13 @@ Initialize the FastAPI bridge.
 
 * ``host``
 
-  / *Condition*: optional / *Type*: str /
+  / *Condition*: optional / *Type*: str / *Default*: 'localhost' /
 
   Host to bind the server to.
 
 * ``port``
 
-  / *Condition*: optional / *Type*: int /
+  / *Condition*: optional / *Type*: int / *Default*: 8000 /
 
   Port to bind the server to.
       """
@@ -246,7 +246,29 @@ Download service GUI resources and extract them to the web/services/ directory.
          params: Optional[dict] = {}
 
       def _fleet_proxy(method, path, json_body=None):
-         """Forward a request to the FleetWebAPI."""
+         """
+Forward a request to the FleetWebAPI.
+
+**Arguments:**
+
+* ``method``
+
+  / *Condition*: required / *Type*: str /
+
+  HTTP method ('GET' or 'POST').
+
+* ``path``
+
+  / *Condition*: required / *Type*: str /
+
+  API path to forward to.
+
+* ``json_body``
+
+  / *Condition*: optional / *Type*: dict /
+
+  JSON body for POST requests.
+         """
          import httpx
 
          if not bridge._fleet_api_url:
@@ -469,13 +491,33 @@ Download service GUI resources and extract them to the web/services/ directory.
          custom_gui_js: str = ""
 
       def _to_snake_case(name):
-         """Convert PascalCase to snake_case."""
+         """
+Convert PascalCase to snake_case.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  PascalCase string to convert.
+         """
          import re
          s1 = re.sub(r'([A-Z])', r'_\1', name)
          return s1.lower().lstrip('_').replace('__', '_')
 
       def _generate_service_class(body: ScaffoldRequest):
-         """Generate the service class source file content."""
+         """
+Generate the service class source file content.
+
+**Arguments:**
+
+* ``body``
+
+  / *Condition*: required / *Type*: ScaffoldRequest /
+
+  Scaffold request containing service metadata and methods.
+         """
          snake_name = _to_snake_case(body.service_name)
          routing_key = body.routing_key or ('service.' + snake_name)
 
@@ -492,7 +534,7 @@ Download service GUI resources and extract them to the web/services/ directory.
          lines.append('')
          lines.append('class ' + body.service_name + 'Service(ServiceBase):')
          lines.append('   """')
-         lines.append('   ' + (body.description or body.service_name + ' service.'))
+         lines.append((body.description or body.service_name + ' service.'))
          lines.append('   """')
          lines.append('')
          lines.append('   _SERVICE_INFO = {')
@@ -523,27 +565,27 @@ Download service GUI resources and extract them to the web/services/ directory.
 
             # Build docstring
             lines.append('      """')
-            lines.append('      ' + (method.description or method_name.replace('_', ' ').capitalize() + '.'))
+            lines.append(method.description or method_name.replace('_', ' ').capitalize() + '.')
             if method.params:
                lines.append('')
-               lines.append('      **Arguments:**')
+               lines.append('**Arguments:**')
                for p in method.params:
                   if not p.name.strip():
                      continue
                   condition = 'required' if p.required else 'optional'
                   lines.append('')
-                  lines.append('      * ``' + p.name.strip() + '``')
+                  lines.append('* ``' + p.name.strip() + '``')
                   lines.append('')
-                  lines.append('        / *Condition*: ' + condition + ' / *Type*: ' + (p.type or 'str') + ' /')
+                  lines.append('  / *Condition*: ' + condition + ' / *Type*: ' + (p.type or 'str') + ' /')
                   lines.append('')
-                  lines.append('        ' + p.name.strip().replace('_', ' ').capitalize() + '.')
+                  lines.append('  ' + p.name.strip().replace('_', ' ').capitalize() + '.')
             if method.return_type:
                lines.append('')
-               lines.append('      **Returns:**')
+               lines.append('**Returns:**')
                lines.append('')
-               lines.append('        / *Type*: ' + method.return_type + ' /')
+               lines.append('  / *Type*: ' + method.return_type + ' /')
                lines.append('')
-               lines.append('        Result.')
+               lines.append('  Result.')
             lines.append('      """')
             lines.append('      # TODO: Implement ' + method_name)
             lines.append('      pass')
@@ -551,7 +593,17 @@ Download service GUI resources and extract them to the web/services/ directory.
          return '\n'.join(lines) + '\n'
 
       def _generate_main_py(body: ScaffoldRequest):
-         """Generate the main.py entry point."""
+         """
+Generate the main.py entry point.
+
+**Arguments:**
+
+* ``body``
+
+  / *Condition*: required / *Type*: ScaffoldRequest /
+
+  Scaffold request containing service metadata.
+         """
          lines = []
          lines.append('import logging')
          lines.append('import os')
@@ -575,7 +627,7 @@ Download service GUI resources and extract them to the web/services/ directory.
          lines.append('')
          lines.append('def main():')
          lines.append('   """')
-         lines.append('   Run the ' + body.service_name + ' service.')
+         lines.append('Run the ' + body.service_name + ' service.')
          lines.append('   """')
 
          if body.transport == 'eventbus':
@@ -619,7 +671,17 @@ Download service GUI resources and extract them to the web/services/ directory.
          return '\n'.join(lines) + '\n'
 
       def _generate_dunder_main_py(body: ScaffoldRequest):
-         """Generate __main__.py entry point for ``python -m`` execution."""
+         """
+Generate __main__.py entry point for ``python -m`` execution.
+
+**Arguments:**
+
+* ``body``
+
+  / *Condition*: required / *Type*: ScaffoldRequest /
+
+  Scaffold request containing service metadata.
+         """
          lines = []
          lines.append('"""Entry point for running ' + body.service_name + ' as a package.')
          lines.append('')
@@ -637,7 +699,17 @@ Download service GUI resources and extract them to the web/services/ directory.
          return '\n'.join(lines) + '\n'
 
       def _generate_config_jsonp(body: ScaffoldRequest):
-         """Generate config.jsonp for EventBus transport."""
+         """
+Generate config.jsonp for EventBus transport.
+
+**Arguments:**
+
+* ``body``
+
+  / *Condition*: required / *Type*: ScaffoldRequest /
+
+  Scaffold request containing service metadata.
+         """
          routing_key = body.routing_key or ('service.' + _to_snake_case(body.service_name))
          config = {
             "transport": "eventbus",
@@ -648,7 +720,17 @@ Download service GUI resources and extract them to the web/services/ directory.
          return json.dumps(config, indent=2) + '\n'
 
       def _generate_gui_html(body: ScaffoldRequest):
-         """Generate a basic GUI HTML template."""
+         """
+Generate a basic GUI HTML template.
+
+**Arguments:**
+
+* ``body``
+
+  / *Condition*: required / *Type*: ScaffoldRequest /
+
+  Scaffold request containing service metadata.
+         """
          return (
             '<div class="card">\n'
             '  <div class="card-header">\n'
@@ -665,7 +747,17 @@ Download service GUI resources and extract them to the web/services/ directory.
          )
 
       def _generate_gui_js(body: ScaffoldRequest):
-         """Generate a basic GUI JS template."""
+         """
+Generate a basic GUI JS template.
+
+**Arguments:**
+
+* ``body``
+
+  / *Condition*: required / *Type*: ScaffoldRequest /
+
+  Scaffold request containing service metadata.
+         """
          return (
             "/**\n"
             " * GUI for " + body.service_name + " service.\n"

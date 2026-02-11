@@ -50,7 +50,17 @@ except ImportError:
 
 
 def _load_config(config_path):
-    """Load config.json and return the dict (empty dict on failure)."""
+    """
+Load config.json and return the dict (empty dict on failure).
+
+**Arguments:**
+
+* ``config_path``
+
+  / *Condition*: required / *Type*: str /
+
+  Path to the config.json file.
+    """
     try:
         with open(config_path, 'r') as f:
             return json.load(f)

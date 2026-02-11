@@ -1,5 +1,5 @@
 """
-Local Hub Manager — manages a local ProcessHub instance lifecycle.
+Local Hub Manager -- manages a local ProcessHub instance lifecycle.
 
 Wraps ProcessHub APIs (lazy import) so the MicroserviceManager GUI can
 start/stop a ProcessHub on the local machine, manage processes, and
@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class LocalHubManager:
-    """Manages a local ProcessHub instance lifecycle."""
+    """
+Manages a local ProcessHub instance lifecycle.
+    """
 
     def __init__(self, config_path=None):
         self._server = None
@@ -62,21 +64,70 @@ class LocalHubManager:
         fleet_api_port: int = 2510,
         health_timeout: float = 30.0,
     ) -> dict:
-        """Start a local ProcessHub server.
+        """
+Start a local ProcessHub server.
 
-        Args:
-            mode: "standalone", "agent" (join fleet), or "orchestrator".
-            xpub_port: ZMQ XPUB port for the broker.
-            xsub_port: ZMQ XSUB port for the broker.
-            orchestrator_url: Fleet orchestrator ZMQ address (agent mode).
-            hub_id: Hub identifier (agent/orchestrator mode).
-            hub_name: Human-readable hub name (agent/orchestrator mode).
-            process_config: Dict of {name: config} for processes.
-            fleet_api_port: FleetWebAPI port (orchestrator mode).
-            health_timeout: Health check timeout in seconds (orchestrator mode).
+**Arguments:**
 
-        Returns:
-            Status dict.
+* ``mode``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'standalone' /
+
+  "standalone", "agent" (join fleet), or "orchestrator".
+
+* ``xpub_port``
+
+  / *Condition*: optional / *Type*: int / *Default*: 5555 /
+
+  ZMQ XPUB port for the broker.
+
+* ``xsub_port``
+
+  / *Condition*: optional / *Type*: int / *Default*: 5556 /
+
+  ZMQ XSUB port for the broker.
+
+* ``orchestrator_url``
+
+  / *Condition*: optional / *Type*: str /
+
+  Fleet orchestrator ZMQ address (agent mode).
+
+* ``hub_id``
+
+  / *Condition*: optional / *Type*: str /
+
+  Hub identifier (agent/orchestrator mode).
+
+* ``hub_name``
+
+  / *Condition*: optional / *Type*: str /
+
+  Human-readable hub name (agent/orchestrator mode).
+
+* ``process_config``
+
+  / *Condition*: optional / *Type*: dict /
+
+  Dict of {name: config} for processes.
+
+* ``fleet_api_port``
+
+  / *Condition*: optional / *Type*: int / *Default*: 2510 /
+
+  FleetWebAPI port (orchestrator mode).
+
+* ``health_timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: 30.0 /
+
+  Health check timeout in seconds (orchestrator mode).
+
+**Returns:**
+
+  / *Type*: dict /
+
+  Status dict.
         """
         with self._lock:
             if self._running:
@@ -169,7 +220,9 @@ class LocalHubManager:
             return self.get_status()
 
     def stop_hub(self) -> dict:
-        """Stop the local hub."""
+        """
+Stop the local hub.
+        """
         with self._lock:
             if not self._running:
                 return {"error": "Hub is not running"}
@@ -231,7 +284,9 @@ class LocalHubManager:
     # ------------------------------------------------------------------
 
     def get_status(self) -> dict:
-        """Get current hub status."""
+        """
+Get current hub status.
+        """
         if not self._running or self._server is None:
             return {
                 "running": False,
@@ -290,7 +345,17 @@ class LocalHubManager:
     # ------------------------------------------------------------------
 
     def start_processes(self, names: list) -> dict:
-        """Start named processes."""
+        """
+Start named processes.
+
+**Arguments:**
+
+* ``names``
+
+  / *Condition*: required / *Type*: list /
+
+  List of process names to start.
+        """
         if not self._running or self._server is None:
             return {"error": "Hub is not running"}
 
@@ -310,7 +375,23 @@ class LocalHubManager:
         return results
 
     def stop_processes(self, names: list, force: bool = False) -> dict:
-        """Stop named processes."""
+        """
+Stop named processes.
+
+**Arguments:**
+
+* ``names``
+
+  / *Condition*: required / *Type*: list /
+
+  List of process names to stop.
+
+* ``force``
+
+  / *Condition*: optional / *Type*: bool / *Default*: False /
+
+  If True, force-kill the processes.
+        """
         if not self._running or self._server is None:
             return {"error": "Hub is not running"}
 
@@ -336,13 +417,31 @@ class LocalHubManager:
     # ------------------------------------------------------------------
 
     def get_config(self) -> dict:
-        """Get all process configurations."""
+        """
+Get all process configurations.
+        """
         return {
             k: _sanitize_config(v) for k, v in self._process_config.items()
         }
 
     def add_config(self, name: str, config: dict) -> dict:
-        """Add a new process configuration."""
+        """
+Add a new process configuration.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``config``
+
+  / *Condition*: required / *Type*: dict /
+
+  Process configuration dict.
+        """
         if name in self._process_config:
             return {"success": False, "message": f"'{name}' already exists"}
         if not config.get("script"):
@@ -354,7 +453,23 @@ class LocalHubManager:
         return {"success": True, "message": f"Config '{name}' added"}
 
     def update_config(self, name: str, config: dict) -> dict:
-        """Update an existing process configuration."""
+        """
+Update an existing process configuration.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``config``
+
+  / *Condition*: required / *Type*: dict /
+
+  Updated process configuration dict.
+        """
         if name not in self._process_config:
             return {"success": False, "message": f"'{name}' not found"}
         if not config.get("script"):
@@ -366,7 +481,17 @@ class LocalHubManager:
         return {"success": True, "message": f"Config '{name}' updated"}
 
     def remove_config(self, name: str) -> dict:
-        """Remove a process configuration."""
+        """
+Remove a process configuration.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+        """
         if name not in self._process_config:
             return {"success": False, "message": f"'{name}' not found"}
         if self._executor and self._executor.is_running(name):
@@ -378,11 +503,20 @@ class LocalHubManager:
         return {"success": True, "message": f"Config '{name}' removed"}
 
     def remove_service(self, name: str) -> dict:
-        """Remove a service — delete config and managed service folder.
+        """
+Remove a service -- delete config and managed service folder.
 
-        Only deletes the folder if it lives inside the managed
-        ``<config_dir>/services/`` directory (never touches external paths).
-        Stops the process first if it is still running.
+Only deletes the folder if it lives inside the managed
+``<config_dir>/services/`` directory (never touches external paths).
+Stops the process first if it is still running.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Service name.
         """
         if name not in self._process_config:
             return {"success": False, "message": f"'{name}' not found"}
@@ -433,7 +567,23 @@ class LocalHubManager:
         return {"success": True, "message": msg}
 
     def get_service_log(self, name: str, tail: int = 100) -> dict:
-        """Read the last *tail* lines of a process log file."""
+        """
+Read the last *tail* lines of a process log file.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``tail``
+
+  / *Condition*: optional / *Type*: int / *Default*: 100 /
+
+  Number of lines to read from the tail.
+        """
         if not self._executor:
             return {"name": name, "log": "", "log_file": ""}
         log_path = self._executor.get_log_path(name) or ""
@@ -445,7 +595,9 @@ class LocalHubManager:
     # ------------------------------------------------------------------
 
     def get_services_dir(self) -> str:
-        """Return absolute path to ``<config_dir>/services/``, creating it if needed."""
+        """
+Return absolute path to ``<config_dir>/services/``, creating it if needed.
+        """
         if not self._config_path:
             base = os.path.abspath('.')
         else:
@@ -455,18 +607,31 @@ class LocalHubManager:
         return services_dir
 
     def _validate_service_structure(self, service_dir: str) -> dict:
-        """Validate that *service_dir* contains a valid microservice.
+        """
+Validate that *service_dir* contains a valid microservice.
 
-        Hard checks (fail on error):
-        - ``__main__.py`` or ``main.py`` must exist.
-        - The entry-point file must parse without syntax errors.
+Hard checks (fail on error):
+- ``__main__.py`` or ``main.py`` must exist.
+- The entry-point file must parse without syntax errors.
 
-        Soft checks (warn only):
-        - At least one ``.py`` file should import ``ServiceBase``.
-        - At least one ``.py`` file should define ``_SERVICE_INFO``.
+Soft checks (warn only):
+- At least one ``.py`` file should import ``ServiceBase``.
+- At least one ``.py`` file should define ``_SERVICE_INFO``.
 
-        Returns ``{"valid": True, "warnings": [...], "needs_dunder_main": bool}``
-        or raises ``ValueError``.
+**Arguments:**
+
+* ``service_dir``
+
+  / *Condition*: required / *Type*: str /
+
+  Path to the service directory to validate.
+
+**Returns:**
+
+  / *Type*: dict /
+
+  ``{"valid": True, "warnings": [...], "needs_dunder_main": bool}``
+  or raises ``ValueError``.
         """
         has_dunder_main = os.path.isfile(os.path.join(service_dir, '__main__.py'))
         has_main = os.path.isfile(os.path.join(service_dir, 'main.py'))
@@ -582,12 +747,43 @@ class LocalHubManager:
         zip_data: str = "",
         wait_time: float = 1.0,
     ) -> dict:
-        """Import a microservice from a folder or base64-encoded ZIP.
+        """
+Import a microservice from a folder or base64-encoded ZIP.
 
-        Validates structure, copies files into ``<config_dir>/services/{name}/``,
-        and creates a hub config entry using the ``${python}`` placeholder.
+Validates structure, copies files into ``<config_dir>/services/{name}/``,
+and creates a hub config entry using the ``${python}`` placeholder.
 
-        Returns ``{"success": bool, "message": str, "warnings": [...]}``.
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Service name.
+
+* ``source_path``
+
+  / *Condition*: optional / *Type*: str /
+
+  Path to the source directory to import from.
+
+* ``zip_data``
+
+  / *Condition*: optional / *Type*: str /
+
+  Base64-encoded ZIP data to import from.
+
+* ``wait_time``
+
+  / *Condition*: optional / *Type*: float / *Default*: 1.0 /
+
+  Seconds to wait after starting before checking process health.
+
+**Returns:**
+
+  / *Type*: dict /
+
+  ``{"success": bool, "message": str, "warnings": [...]}``.
         """
         if not name:
             return {"success": False, "message": "Service name is required.", "warnings": []}
@@ -661,7 +857,9 @@ class LocalHubManager:
                 dunder_path = os.path.join(target_dir, '__main__.py')
                 with open(dunder_path, 'w', encoding='utf-8') as f:
                     f.write(
-                        '"""Auto-generated entry point for python -m execution."""\n'
+                        '"""\n'
+                        'Auto-generated entry point for python -m execution.\n'
+                        '"""\n'
                         'import os\n'
                         'import sys\n'
                         '\n'
@@ -743,7 +941,9 @@ class LocalHubManager:
     # ------------------------------------------------------------------
 
     def reset(self) -> dict:
-        """Reset the hub (stop processes, clear connections)."""
+        """
+Reset the hub (stop processes, clear connections).
+        """
         if not self._running or self._server is None:
             return {"error": "Hub is not running"}
 
@@ -755,7 +955,9 @@ class LocalHubManager:
     # ------------------------------------------------------------------
 
     def _get_broker_config(self):
-        """Read broker settings from config.json next to the hub config file."""
+        """
+Read broker settings from config.json next to the hub config file.
+        """
         if not self._config_path:
             return 'localhost', 5672
         config_dir = os.path.dirname(os.path.abspath(self._config_path))
@@ -768,7 +970,23 @@ class LocalHubManager:
             return 'localhost', 5672
 
     def _resolve_placeholders(self, value, config_dir):
-        """Replace ${python} and ${config_dir} placeholders in a string."""
+        """
+Replace ${python} and ${config_dir} placeholders in a string.
+
+**Arguments:**
+
+* ``value``
+
+  / *Condition*: required / *Type*: str /
+
+  String that may contain placeholders.
+
+* ``config_dir``
+
+  / *Condition*: required / *Type*: str /
+
+  Absolute path to the config directory.
+        """
         if not isinstance(value, str):
             return value
         value = value.replace('${python}', sys.executable)
@@ -776,14 +994,15 @@ class LocalHubManager:
         return value
 
     def _load_config_file(self):
-        """Load process configurations from the JSON file.
+        """
+Load process configurations from the JSON file.
 
-        Resolves ``${python}`` to ``sys.executable`` and ``${config_dir}``
-        to the directory containing the config file.  Also stores the raw
-        (unresolved) entries in ``_raw_config`` so that ``_save_config_file``
-        can preserve placeholders.
+Resolves ``${python}`` to ``sys.executable`` and ``${config_dir}``
+to the directory containing the config file.  Also stores the raw
+(unresolved) entries in ``_raw_config`` so that ``_save_config_file``
+can preserve placeholders.
 
-        Returns the resolved dict (empty dict if no file or on error).
+Returns the resolved dict (empty dict if no file or on error).
         """
         if not self._config_path:
             return {}
@@ -811,11 +1030,12 @@ class LocalHubManager:
         return resolved
 
     def _save_config_file(self):
-        """Persist process configurations to the JSON file.
+        """
+Persist process configurations to the JSON file.
 
-        Saves ``_raw_config`` which preserves placeholder entries
-        (``${python}``, ``${config_dir}``) for configs loaded from the
-        original file, while new/updated entries are saved as-is.
+Saves ``_raw_config`` which preserves placeholder entries
+(``${python}``, ``${config_dir}``) for configs loaded from the
+original file, while new/updated entries are saved as-is.
         """
         if not self._config_path:
             return
@@ -830,7 +1050,9 @@ class LocalHubManager:
                          self._config_path, exc)
 
     def _tick_loop(self):
-        """Non-blocking tick loop running in a daemon thread."""
+        """
+Non-blocking tick loop running in a daemon thread.
+        """
         while self._running and self._server is not None:
             try:
                 messages = self._server._core.tick()
@@ -850,10 +1072,28 @@ class LocalHubManager:
             time.sleep(self._server._refresh_interval)
 
     def _start_orchestrator(self, fleet_api_port, health_timeout):
-        """Start a FleetOrchestrator + FleetWebAPI alongside the local hub.
+        """
+Start a FleetOrchestrator + FleetWebAPI alongside the local hub.
 
-        Returns:
-            None on success, or an error message string on failure.
+**Arguments:**
+
+* ``fleet_api_port``
+
+  / *Condition*: required / *Type*: int /
+
+  Port for the FleetWebAPI server.
+
+* ``health_timeout``
+
+  / *Condition*: required / *Type*: float /
+
+  Health check timeout in seconds.
+
+**Returns:**
+
+  / *Type*: str or None /
+
+  None on success, or an error message string on failure.
         """
         try:
             from ProcessHub.transport import EventBusTransport, EventBusConfig
@@ -917,11 +1157,12 @@ class LocalHubManager:
             return str(exc)
 
     def _start_self_agent(self):
-        """Register the local hub as an agent in its own fleet.
+        """
+Register the local hub as an agent in its own fleet.
 
-        Creates a **separate** fleet transport for the agent so it does not
-        share the orchestrator's connection (they would conflict on message
-        routing if they shared a single transport).
+Creates a separate fleet transport for the agent so it does not
+share the orchestrator's connection (they would conflict on message
+routing if they shared a single transport).
         """
         try:
             from ProcessHub.transport import EventBusTransport, EventBusConfig
@@ -956,7 +1197,17 @@ class LocalHubManager:
             logger.exception("Failed to start self-agent")
 
     def _patch_agent_fleet_guard(self, agent):
-        """Wrap agent command handlers to enforce per-process fleet_enabled."""
+        """
+Wrap agent command handlers to enforce per-process fleet_enabled.
+
+**Arguments:**
+
+* ``agent``
+
+  / *Condition*: required / *Type*: HubAgent /
+
+  The HubAgent instance to patch.
+        """
         orig_start = agent._handle_start_process
         orig_stop = agent._handle_stop_process
         process_config = self._process_config
@@ -999,7 +1250,29 @@ class LocalHubManager:
         agent._handle_stop_process = _guarded_stop
 
     def _start_agent(self, orchestrator_url, xpub_port, xsub_port):
-        """Start a HubAgent to join a fleet orchestrator."""
+        """
+Start a HubAgent to join a fleet orchestrator.
+
+**Arguments:**
+
+* ``orchestrator_url``
+
+  / *Condition*: required / *Type*: str /
+
+  Fleet orchestrator ZMQ address.
+
+* ``xpub_port``
+
+  / *Condition*: required / *Type*: int /
+
+  ZMQ XPUB port for the broker.
+
+* ``xsub_port``
+
+  / *Condition*: required / *Type*: int /
+
+  ZMQ XSUB port for the broker.
+        """
         try:
             from ProcessHub.fleet import HubAgent
             from ProcessHub.transport import ZmqTransport
@@ -1026,7 +1299,17 @@ class LocalHubManager:
 
 
 def _sanitize_config(config: dict) -> dict:
-    """Return a JSON-safe copy of a process config."""
+    """
+Return a JSON-safe copy of a process config.
+
+**Arguments:**
+
+* ``config``
+
+  / *Condition*: required / *Type*: dict /
+
+  Process configuration dict.
+    """
     safe = {}
     for k, v in config.items():
         if isinstance(v, (str, int, float, bool, type(None))):

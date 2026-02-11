@@ -46,13 +46,14 @@ logger = logging.getLogger(__name__)
 
 
 class ServiceExecutor(ProcessExecutor):
-    """Process executor that sends an RPC shutdown to MicroserviceBase services.
+    """
+Process executor that sends an RPC shutdown to MicroserviceBase services.
 
-    Delegates all operations to a wrapped ``SimpleExecutor``.  On ``stop()``,
-    it first tries to send ``svc_api_shutdown`` via RabbitMQ to the service's
-    queue.  If the service exits within ``shutdown_timeout`` seconds the
-    process is considered stopped.  Otherwise it falls back to the delegate's
-    signal-based stop (CTRL_BREAK_EVENT on Windows, SIGTERM on Linux).
+Delegates all operations to a wrapped ``SimpleExecutor``.  On ``stop()``,
+it first tries to send ``svc_api_shutdown`` via RabbitMQ to the service's
+queue.  If the service exits within ``shutdown_timeout`` seconds the
+process is considered stopped.  Otherwise it falls back to the delegate's
+signal-based stop (CTRL_BREAK_EVENT on Windows, SIGTERM on Linux).
     """
 
     def __init__(
@@ -83,6 +84,23 @@ class ServiceExecutor(ProcessExecutor):
     # -- Delegated methods --------------------------------------------------
 
     def start(self, name, config):
+        """
+Start a named process using the given config.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``config``
+
+  / *Condition*: required / *Type*: dict /
+
+  Process configuration dict with 'script', 'args', 'cwd', etc.
+        """
         self._configs[name] = config
         if self._log_dir:
             return self._start_logged(name, config)
@@ -92,19 +110,54 @@ class ServiceExecutor(ProcessExecutor):
         return self._delegate.start(name, config)
 
     def _get_log_path(self, name):
-        """Return the log file path for a process."""
+        """
+Return the log file path for a process.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+        """
         if not self._log_dir:
             return None
         return os.path.join(self._log_dir, f"{name}.log")
 
     def get_log_path(self, name):
-        """Public accessor for log file path."""
+        """
+Public accessor for log file path.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+        """
         return self._get_log_path(name)
 
     def _start_logged(self, name, config):
-        """Start a process with stdout/stderr redirected to a log file.
+        """
+Start a process with stdout/stderr redirected to a log file.
 
-        Handles both regular and ``cwd``-based (``python -m``) execution.
+Handles both regular and ``cwd``-based (``python -m``) execution.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``config``
+
+  / *Condition*: required / *Type*: dict /
+
+  Process configuration dict.
         """
         if self._delegate.is_running(name):
             pid = self._delegate.get_pid(name)
@@ -205,7 +258,29 @@ class ServiceExecutor(ProcessExecutor):
             return False, str(e), None
 
     def _start_with_cwd(self, name, config, cwd):
-        """Start a process with cwd but without log file (fallback)."""
+        """
+Start a process with cwd but without log file (fallback).
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``config``
+
+  / *Condition*: required / *Type*: dict /
+
+  Process configuration dict.
+
+* ``cwd``
+
+  / *Condition*: required / *Type*: str /
+
+  Working directory for the process.
+        """
         if self._delegate.is_running(name):
             pid = self._delegate.get_pid(name)
             return True, f"Process {name} is already running", pid
@@ -290,7 +365,17 @@ class ServiceExecutor(ProcessExecutor):
             return False, str(e), None
 
     def _close_log(self, name):
-        """Close the log file handle for a process."""
+        """
+Close the log file handle for a process.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+        """
         fh = self._log_handles.pop(name, None)
         if fh:
             try:
@@ -299,7 +384,23 @@ class ServiceExecutor(ProcessExecutor):
                 pass
 
     def _read_log_tail(self, name, max_lines=50):
-        """Read the last *max_lines* lines from a process log file."""
+        """
+Read the last *max_lines* lines from a process log file.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``max_lines``
+
+  / *Condition*: optional / *Type*: int / *Default*: 50 /
+
+  Maximum number of lines to read from the tail.
+        """
         log_path = self._get_log_path(name)
         if not log_path or not os.path.isfile(log_path):
             return ""
@@ -312,18 +413,73 @@ class ServiceExecutor(ProcessExecutor):
             return ""
 
     def read_log(self, name, tail=100):
-        """Public method to read process log. Returns the text content."""
+        """
+Public method to read process log. Returns the text content.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``tail``
+
+  / *Condition*: optional / *Type*: int / *Default*: 100 /
+
+  Number of lines to read from the tail.
+        """
         return self._read_log_tail(name, tail)
 
     def is_running(self, name):
+        """
+Check if a named process is running.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+        """
         return self._delegate.is_running(name)
 
     def get_pid(self, name):
+        """
+Get the PID of a named process.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+        """
         return self._delegate.get_pid(name)
 
     # -- Stop with RPC shutdown attempt -------------------------------------
 
     def stop(self, name, force=False):
+        """
+Stop a named process, attempting RPC shutdown first.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name.
+
+* ``force``
+
+  / *Condition*: optional / *Type*: bool / *Default*: False /
+
+  If True, skip graceful shutdown and force-kill.
+        """
         if self._delegate.is_running(name):
             if self._try_rpc_shutdown(name):
                 # Process exited gracefully after RPC
@@ -338,14 +494,27 @@ class ServiceExecutor(ProcessExecutor):
         return result
 
     def _try_rpc_shutdown(self, process_name):
-        """Send ``svc_api_shutdown`` RPC to the service queue.
+        """
+Send ``svc_api_shutdown`` RPC to the service queue.
 
-        The service's actual RabbitMQ queue name (``_SERVICE_INFO['name']``)
-        may differ from the hub process name.  If a ``service_name`` field
-        is present in the stored config, use that as the routing key for the
-        default exchange; otherwise fall back to *process_name*.
+The service's actual RabbitMQ queue name (``_SERVICE_INFO['name']``)
+may differ from the hub process name.  If a ``service_name`` field
+is present in the stored config, use that as the routing key for the
+default exchange; otherwise fall back to *process_name*.
 
-        Returns ``True`` if the process exited within the timeout.
+**Arguments:**
+
+* ``process_name``
+
+  / *Condition*: required / *Type*: str /
+
+  Process name to shut down.
+
+**Returns:**
+
+  / *Type*: bool /
+
+  ``True`` if the process exited within the timeout.
         """
         import pika
 

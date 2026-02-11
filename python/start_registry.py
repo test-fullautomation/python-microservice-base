@@ -50,12 +50,13 @@ except ImportError:
 
 
 def _setup_logging():
-    """Configure logging to write to a file next to this script.
+    """
+Configure logging to write to a file next to this script.
 
-    When spawned by the ProcessHub executor, stdout/stderr are captured
-    into pipes that nobody reads.  Writing to a full pipe blocks the
-    process, so the StreamHandler is only added when stdout is a real
-    terminal (interactive use).  The FileHandler always captures output.
+When spawned by the ProcessHub executor, stdout/stderr are captured
+into pipes that nobody reads.  Writing to a full pipe blocks the
+process, so the StreamHandler is only added when stdout is a real
+terminal (interactive use).  The FileHandler always captures output.
     """
     log_path = Path(__file__).resolve().parent / 'registry.log'
     handlers = [logging.FileHandler(str(log_path), mode='a')]
@@ -72,7 +73,17 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config(config_path):
-    """Load config.json and return the dict (empty dict on failure)."""
+    """
+Load config.json and return the dict (empty dict on failure).
+
+**Arguments:**
+
+* ``config_path``
+
+  / *Condition*: required / *Type*: str /
+
+  Path to the config.json file.
+    """
     try:
         with open(config_path, 'r') as f:
             return json.load(f)
