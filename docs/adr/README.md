@@ -23,6 +23,11 @@ ADRs document important architectural decisions made during the development of t
 | [ADR-013](013-windows-process-lifecycle-fixes.md) | Windows Process Lifecycle Fixes | Accepted | 2026-02-01 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-014](014-config-placeholder-persistence.md) | Config Placeholder Persistence | Accepted | 2026-02-01 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-015](015-fleet-orchestrator-architecture.md) | Fleet Orchestrator for Multi-Hub Process Management | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-016](016-rabbitmq-as-message-broker.md) | RabbitMQ as Message Broker | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-017](017-svc-api-naming-convention.md) | svc_api_ Naming Convention for Method Discovery | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-018](018-alias-routing-design.md) | Alias Routing via Service Registry | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-019](019-service-delivered-gui-plugins.md) | Service-Delivered GUI Plugin Architecture | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-020](020-exchange-topology-design.md) | Exchange Topology Design | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 
 ## Summary of Design Decisions
 
@@ -36,17 +41,29 @@ The system is built on hexagonal architecture with factory-based dependency inje
 
 3. **Custom Service Registry** (ADR-003): Built as a domain-layer microservice using the same RabbitMQ RPC protocol as all services, providing service discovery, real-time updates, and alias routing — capabilities that external tools (ZooKeeper, Consul, etcd) cannot provide without rebuilding the registry as a bridge.
 
-### GUI Architecture (ADR-005, ADR-006, ADR-007, ADR-008)
+### Service API & Communication (ADR-016, ADR-017, ADR-018)
 
-The GUI supports dual hosting with multi-broker connectivity:
+Service communication and API patterns:
+
+| Feature | Description | ADR |
+|---------|-------------|-----|
+| RabbitMQ Broker | Three exchange types (direct, topic, fanout) for RPC, events, and broadcasts | ADR-016 |
+| svc_api_ Convention | Naming-based method discovery via `dir()` + prefix filtering, docstring metadata | ADR-017 |
+| Alias Routing | `${input}` placeholder substitution in Service Registry for simplified method shortcuts | ADR-018 |
+| Exchange Topology | Three exchanges (`services_request`, `service_information`, `services_update`) with type-per-pattern design | ADR-020 |
+
+### GUI Architecture (ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-019)
+
+The GUI supports dual hosting with multi-broker connectivity and service-delivered plugins:
 
 | Component | Purpose | ADR |
 |-----------|---------|-----|
+| Electron over Qt | Why Electron: service-delivered HTML GUIs need a real browser engine | ADR-004 |
 | Dual-Host GUI | Electron + pure browser from same codebase | ADR-005 |
 | FastAPI Bridge | REST + WebSocket gateway for browsers | ADR-006 |
 | Multi-Broker | Simultaneous connections to multiple RabbitMQ brokers | ADR-007 |
 | Bridge Decoupling | Bridge survives GUI close for persistent service access | ADR-008 |
-| Electron over Qt | Why Electron: service-delivered HTML GUIs need a real browser engine | ADR-004 |
+| Service-Delivered GUI | Services deliver HTML/CSS/JS plugins via RPC, loaded dynamically on demand | ADR-019 |
 
 ### Process Management (ADR-009, ADR-010, ADR-011, ADR-015)
 
@@ -103,6 +120,8 @@ PlantUML diagrams are maintained in [`docs/diagrams/`](../diagrams/). Each diagr
 | [sequence_shutdown.puml](../diagrams/sequence_shutdown.puml) | Two-phase shutdown sequence | ADR-009, ADR-013 |
 | [sequence_service_import.puml](../diagrams/sequence_service_import.puml) | Service import flow | ADR-011 |
 | [state_process_lifecycle.puml](../diagrams/state_process_lifecycle.puml) | Process lifecycle state machine | ADR-009, ADR-010, ADR-013 |
+| [sequence_realtime_update.puml](../diagrams/sequence_realtime_update.puml) | Real-time update broadcast flow | ADR-020, ADR-006 |
+| [sequence_gui_plugin_loading.puml](../diagrams/sequence_gui_plugin_loading.puml) | GUI plugin loading flow | ADR-019, ADR-006 |
 
 ## References
 

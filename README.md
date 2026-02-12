@@ -340,6 +340,12 @@ Architecture diagrams are available in `docs/diagrams/` in PlantUML format:
 | `sequence_shutdown.puml` | Graceful shutdown sequence |
 | `sequence_service_import.puml` | Service import flow |
 | `state_process_lifecycle.puml` | Process state machine |
+| `sequence_realtime_update.puml` | Real-time update broadcast flow |
+| `sequence_gui_plugin_loading.puml` | GUI plugin loading flow |
+
+## Troubleshooting Guide
+
+A problem-oriented reference that maps common symptoms to the relevant ADRs, diagrams, and source files: **[Troubleshooting Guide](docs/troubleshooting-guide.md)**
 
 ## Architecture Decision Records (ADRs)
 
@@ -353,6 +359,15 @@ Design decisions are documented in [`docs/adr/`](docs/adr/README.md), organized 
 | [ADR-002](docs/adr/002-factory-pattern-dependency-injection.md) | Factory Pattern for Dependency Injection |
 | [ADR-003](docs/adr/003-service-registry-over-zookeeper.md) | Custom Service Registry over ZooKeeper |
 
+**Service API & Communication**
+
+| ADR | Title |
+|-----|-------|
+| [ADR-016](docs/adr/016-rabbitmq-as-message-broker.md) | RabbitMQ as Message Broker |
+| [ADR-017](docs/adr/017-svc-api-naming-convention.md) | svc_api_ Naming Convention for Method Discovery |
+| [ADR-018](docs/adr/018-alias-routing-design.md) | Alias Routing via Service Registry |
+| [ADR-020](docs/adr/020-exchange-topology-design.md) | Exchange Topology Design |
+
 **GUI Framework & Architecture**
 
 | ADR | Title |
@@ -362,6 +377,7 @@ Design decisions are documented in [`docs/adr/`](docs/adr/README.md), organized 
 | [ADR-006](docs/adr/006-fastapi-bridge-for-browser-gui.md) | FastAPI Bridge for Browser GUI |
 | [ADR-007](docs/adr/007-multi-broker-connection-architecture.md) | Multi-Broker Connection Architecture |
 | [ADR-008](docs/adr/008-electron-bridge-lifecycle-decoupling.md) | Electron Bridge Lifecycle Decoupling |
+| [ADR-019](docs/adr/019-service-delivered-gui-plugins.md) | Service-Delivered GUI Plugin Architecture |
 
 **Process Management**
 

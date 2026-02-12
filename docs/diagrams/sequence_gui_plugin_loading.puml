@@ -1,0 +1,158 @@
+@startuml sequence_gui_plugin_loading
+!theme plain
+title Service GUI Plugin Loading Sequence
+
+participant "User" as user
+participant "GUI Client\n(app.js)" as gui
+participant "FastAPI Bridge\n(/api/*)" as bridge
+participant "RabbitMQ\n(Broker)" as broker
+participant "Target Service\n(ServiceBase)" as service
+participant "File System\n(web/services/)" as fs
+
+== 1. User Clicks Service in Sidebar ==
+
+user -> gui : Click service item\n(e.g. "ServiceCleware")
+activate gui
+
+gui -> gui : selectService(serviceName)
+gui -> gui : Check gui_support === true
+
+alt gui_support is false
+   gui -> gui : showServiceAPIExplorer()
+   note right of gui
+     No GUI plugin — show the
+     built-in API Explorer panel
+   end note
+else gui_support is true
+   gui -> gui : checkAndGetTheServiceGUIResources(\nserviceName, callback)
+end
+
+== 2. Checksum Verification ==
+
+gui -> gui : Build checksumRequest:\n{method: "svc_api_get_gui_checksum",\n args: null}
+
+alt Browser mode
+   gui -> bridge : POST /api/request\n{method, args, exchange,\n routing_key}
+   activate bridge
+   bridge -> broker : rpc_call(request_data,\nservices_request, routing_key)
+   activate broker
+   broker -> service : deliver
+   activate service
+   service -> service : svc_api_get_gui_checksum()\n→ MD5 of GUIs/ directory
+   service -> broker : reply (MD5 hex string)
+   deactivate service
+   broker -> bridge : callback queue
+   deactivate broker
+   bridge -> gui : {result_data: "a1b2c3d4"}
+   deactivate bridge
+else Electron mode
+   gui -> broker : RPC via AMQP directly
+   broker -> service : deliver
+   service -> broker : reply (MD5 hex string)
+   broker -> gui : callback queue
+end
+
+gui -> gui : Compare checksums:\nremote vs sessionStorage.getItem(\n'gui_checksum_' + serviceName)
+
+alt Checksum matches (cache hit)
+   gui -> gui : Skip download,\ncall callback directly
+   note right of gui
+     Files on disk are current.
+     Jump to step 4 (Load HTML).
+   end note
+else Checksum differs or first visit
+   gui -> gui : Download required
+
+== 3. Download GUI ZIP from Service ==
+
+   alt Browser mode
+      gui -> bridge : POST /api/service-gui-download/\n{service_name}?routing_key=...
+      activate bridge
+
+      bridge -> bridge : _validate_safe_name(service_name)
+      bridge -> broker : rpc_call(\n{method: "svc_api_get_gui_files",\n args: null})
+      activate broker
+      broker -> service : deliver
+      activate service
+      service -> service : svc_api_get_gui_files()\n→ ZIP GUIs/ directory\n→ base64 encode
+      service -> broker : reply (base64 ZIP)
+      deactivate service
+      broker -> bridge : callback queue
+      deactivate broker
+
+      bridge -> bridge : base64 decode → temp .zip
+      bridge -> bridge : Zip-slip protection:\nvalidate all entry paths
+      bridge -> fs : extractall() → web/services/\nServiceCleware1.0.0/
+      activate fs
+      fs --> bridge : OK
+      deactivate fs
+      bridge -> bridge : Clean up temp zip
+      bridge --> gui : {status: "ok"}
+      deactivate bridge
+
+   else Electron mode
+      gui -> broker : RPC: svc_api_get_gui_files()
+      broker -> service : deliver
+      service -> broker : reply (base64 ZIP)
+      broker -> gui : callback queue
+      gui -> gui : electronAPI.extractGUIZip(\nserviceName, base64Data)
+      note right of gui
+        Electron preload extracts
+        ZIP to web/services/ via
+        Node.js fs + AdmZip
+      end note
+   end
+
+   gui -> gui : sessionStorage.setItem(\n'gui_checksum_' + serviceName,\nremoteChecksum)
+
+end
+
+== 4. Load HTML into DOM ==
+
+gui -> gui : loadServiceContent(\nserviceName, contentDiv)
+
+gui -> gui : Check _servicePanels[serviceName]
+
+alt Panel cached in memory (DOM cache hit)
+   gui -> gui : _servicePanels[serviceName]\n.style.display = ''
+   note right of gui
+     Panel was loaded before in this
+     session. Just show the cached
+     DOM element (no fetch needed).
+   end note
+else Panel not cached (first load)
+   gui -> fs : fetch('services/ServiceCleware1.0.0/\nServiceCleware.html')
+   activate fs
+   fs --> gui : HTML content
+   deactivate fs
+
+   gui -> gui : Create wrapper <div>\nwrapper.innerHTML = html\ncontentDiv.appendChild(wrapper)
+   gui -> gui : _servicePanels[serviceName]\n= wrapper  (cache for later)
+
+   == 5. Load and Execute JavaScript ==
+
+   gui -> fs : <script src="services/\nServiceCleware1.0.0/\nServiceCleware.js">
+   activate fs
+   fs --> gui : JS file loaded
+   deactivate fs
+
+   gui -> gui : script.onload:\nwindow.loadServiceCleware()
+
+   note over gui
+     The plugin JS file exposes:
+       window.loadServiceCleware = function() { ... }
+       window.unloadServiceCleware = function() { ... }
+
+     loadServiceCleware() is called immediately
+     to initialize the panel UI and bind events.
+
+     unloadServiceCleware() is called when the
+     user switches to a different service.
+   end note
+
+end
+
+gui --> user : Service panel displayed
+deactivate gui
+
+@enduml

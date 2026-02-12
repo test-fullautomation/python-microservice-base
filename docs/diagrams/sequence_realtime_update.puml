@@ -1,0 +1,105 @@
+@startuml sequence_realtime_update
+!theme plain
+title Real-Time Update Broadcast Sequence
+
+participant "MyService\n(ServiceBase)" as service
+participant "ServiceRegistryPort\n(Adapter)" as reg_port
+participant "RabbitMQ\n(Broker)" as broker
+participant "ServiceRegistry\n(Domain)" as registry
+participant "AMQPRegistryAdapter\n(Fanout Publisher)" as fanout_pub
+participant "AMQPRegistryAdapter\n(Fanout Subscriber)" as fanout_sub
+participant "FastAPI Bridge\n(WebSocket Server)" as bridge
+participant "GUI Client\n(Browser)" as gui
+
+== 1. Service Registration Event ==
+
+service -> reg_port : register(service_info)
+activate reg_port
+
+reg_port -> broker : publish(\nexchange=service_information,\nrouting_key=service.information,\nbody={info: ..., state: "on"})
+activate broker
+
+broker -> registry : deliver event\n(durable queue: service_infor_queue)
+activate registry
+
+registry -> registry : handle_update()\nStore service info in\nservices_information dict
+
+== 2. Registry Broadcasts Updated Service List ==
+
+registry -> registry : notify_updates()
+registry -> fanout_pub : notify_update(services_information)
+activate fanout_pub
+
+fanout_pub -> broker : basic_publish(\nexchange=services_update,\nrouting_key="",\nbody=JSON(all_services_info))
+
+note over fanout_pub, broker
+  **Fanout exchange** delivers
+  to ALL bound queues — no
+  routing key filtering
+end note
+
+deactivate fanout_pub
+deactivate registry
+deactivate reg_port
+
+== 3. Bridge Receives Fanout Message ==
+
+broker -> fanout_sub : deliver to exclusive queue\n(amq.gen-xxx)
+activate fanout_sub
+
+fanout_sub -> fanout_sub : _on_message():\nparse JSON
+fanout_sub -> bridge : handler(services_info_dict)
+activate bridge
+
+note over fanout_sub, bridge
+  Bridge's daemon thread calls
+  subscribe_to_updates(handler)
+  which blocks and dispatches
+  each fanout message to the
+  handler callback
+end note
+
+deactivate fanout_sub
+deactivate broker
+
+== 4. Bridge Pushes to GUI via WebSocket ==
+
+bridge -> bridge : broadcast_update(services_info)
+bridge -> bridge : Build JSON:\n{"action": "services_update",\n "data": {...}}
+
+bridge -> gui : WebSocket send_text(\nws://host:1112/ws/updates)
+activate gui
+
+note over bridge, gui
+  asyncio.run_coroutine_threadsafe()
+  sends to ALL connected WebSocket
+  clients. Disconnected clients are
+  cleaned up automatically.
+end note
+
+deactivate bridge
+
+== 5. GUI Renders Updated Service List ==
+
+gui -> gui : onServicesUpdate(message)
+gui -> gui : handleServicesUpdateForBroker()
+
+gui -> gui : Update sidebar:\n- Add new services\n- Remove unregistered services\n- Update service metadata
+
+deactivate gui
+
+== Alternative: Electron Mode ==
+
+note over gui
+  In **Electron mode**, the GUI
+  subscribes directly to the fanout
+  exchange via AMQP (no WebSocket).
+
+  1. RPC: svc_api_get_realtime_update_exchange()
+     → returns exchange name (e.g. "services_update")
+  2. subscribeToExchange(exchangeName, handler)
+     → creates exclusive queue, binds to fanout
+  3. Messages delivered directly from broker to GUI
+end note
+
+@enduml

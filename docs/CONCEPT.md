@@ -239,6 +239,102 @@ Any UI (Electron, browser, mobile) can connect via:
 - **AMQP** - Direct broker connection (legacy Electron GUI)
 - **FastAPI** - REST API + WebSocket for browser-based clients
 
+### 8. Service-Delivered GUI Plugins
+
+Services deliver their own UI as **HTML/CSS/JS files packaged in a ZIP archive**,
+transferred via RPC, and dynamically loaded into the manager at runtime:
+
+```
+Service (Python)                    Manager GUI (Browser/Electron)
+  │                                       │
+  │  svc_api_get_gui_checksum()           │  1. Check if cached
+  │ ─────────────────────────────────────>│
+  │  → "a1b2c3d4" (MD5)                  │  2. Compare with sessionStorage
+  │                                       │
+  │  svc_api_get_gui_files()              │  3. Download if changed
+  │ ─────────────────────────────────────>│
+  │  → base64-encoded ZIP                 │  4. Extract to web/services/
+  │                                       │     ServiceName1.0.0/
+  │                                       │  5. fetch(ServiceName.html)
+  │                                       │  6. <script src="ServiceName.js">
+```
+
+Each plugin follows a simple convention:
+- `GUIs/` directory in the service package
+- `window.loadServiceName()` / `window.unloadServiceName()` lifecycle functions
+- Access to `window.MicroserviceManager` (alias `MM`) for RPC calls, toasts, etc.
+
+### 9. Dual-Host GUI
+
+The MicroserviceManagerGUI runs in two modes from the **same codebase**:
+
+| Mode | How It Works |
+|------|-------------|
+| **Electron** | Desktop app; communicates with broker directly via AMQP |
+| **Browser** | Opens `http://localhost:1112`; communicates via FastAPI bridge (REST + WebSocket) |
+
+The `web/` directory contains pure HTML/CSS/JS (Bootstrap 5 CDN, no Node.js
+dependencies). Electron wraps this with a `contextBridge` preload for native
+features (file dialogs, process spawning).
+
+### 10. Local Process Hub
+
+The Local Hub manages service processes from the GUI:
+
+```
+GUI  ──REST──>  FastAPI Bridge  ──>  LocalHubManager  ──>  ServiceExecutor
+                                         │                      │
+                                    hub_processes.json     subprocess.Popen()
+```
+
+- **Start/stop** individual processes or the entire hub
+- **Two-phase shutdown**: RPC `svc_api_shutdown` first, signal fallback
+- **Config placeholders**: `${python}` and `${config_dir}` for portability
+- **Service import**: Import microservice packages (ZIP/folder) with AST validation
+
+### 11. Multi-Broker Connections
+
+The GUI supports simultaneous connections to multiple RabbitMQ brokers:
+
+```
+MM.connections = {
+  'broker1:5672': { brokerUrl, routingKey, services, realtimeSubscribed },
+  'broker2:5672': { brokerUrl, routingKey, services, realtimeSubscribed },
+}
+```
+
+Services from different brokers are grouped in the sidebar with broker headers.
+Each broker has its own registry, routing key, and real-time update subscription.
+
+### 12. Fleet Orchestrator
+
+For multi-machine deployments, the Fleet Orchestrator coordinates multiple
+Local Hubs across the network:
+
+```
+Fleet Dashboard (GUI)  ──>  Fleet Orchestrator  ──>  Hub Agent (Machine A)
+                                                ──>  Hub Agent (Machine B)
+                                                ──>  Hub Agent (Machine C)
+```
+
+- **Health monitoring**: 3 states (online / degraded / offline) per hub
+- **Remote process control**: start/stop services on any hub
+- **Self-agent pattern**: the orchestrator's own machine appears as a hub too
+
+### 13. Exchange Topology
+
+RabbitMQ communication uses three exchanges, one per messaging pattern:
+
+| Exchange | Type | Purpose |
+|----------|------|---------|
+| `services_request` | Direct | RPC calls routed to specific services by routing key |
+| `service_information` | Topic | Registration/unregistration events (durable queue) |
+| `services_update` | Fanout | Broadcast full service list to all GUI clients |
+
+Each service gets its own named queue bound to `services_request`. GUI clients
+create exclusive temporary queues on the fanout exchange. RPC replies use the
+default exchange with `reply_to` + `correlation_id` matching.
+
 ## Key Features
 
 ### For Service Developers
@@ -249,15 +345,20 @@ Any UI (Electron, browser, mobile) can connect via:
 | Docstring parsing | API documentation is auto-generated from code |
 | `ServiceBase` inheritance | One base class provides full service lifecycle |
 | Transport injection | Test services without a real broker |
+| GUI plugin delivery | Ship HTML/CSS/JS UI with your service package |
+| Service Creator wizard | Scaffold a new service in minutes |
 
 ### For System Operators
 
 | Feature | Benefit |
 |---------|---------|
 | Service Registry | Central view of all running services |
-| GUI dashboard | Visual monitoring and control |
+| GUI dashboard | Visual monitoring and control (Electron + browser) |
+| Local Process Hub | Start, stop, import, and manage service processes |
 | Alias routing | Simplify complex service calls |
-| FastAPI bridge | REST API for integration with external tools |
+| FastAPI bridge | REST API + WebSocket for browser access |
+| Multi-broker | Connect to multiple RabbitMQ brokers simultaneously |
+| Fleet orchestrator | Coordinate service processes across machines |
 
 ### For Architects
 
@@ -267,6 +368,7 @@ Any UI (Electron, browser, mobile) can connect via:
 | Port interfaces | Explicit contracts between layers |
 | Factory pattern | Centralized adapter wiring |
 | Pluggable transports | No vendor lock-in |
+| 20 ADRs | Every major decision documented with rationale |
 
 ## Design Principles
 
@@ -304,40 +406,59 @@ plain dicts, not pickled objects.
 
 ## Recommended Diagrams
 
+All diagrams are in [`docs/diagrams/`](diagrams/) in PlantUML format.
+
 ### For Understanding the System
 
-| Purpose | Diagram | File |
-|---------|---------|------|
-| **Big picture** | System Overview | `overview.puml` |
-| **All layers** | Architecture | `architecture.puml` |
-| **Component wiring** | Component Diagram | `component.puml` |
+| Purpose | File |
+|---------|------|
+| Big picture — all major components | [`overview.puml`](diagrams/overview.puml) |
+| Hexagonal architecture layers | [`architecture.puml`](diagrams/architecture.puml) |
+| Component wiring and dependencies | [`component.puml`](diagrams/component.puml) |
+| GUI dual-host architecture | [`gui_architecture.puml`](diagrams/gui_architecture.puml) |
+| Local Hub components | [`component_local_hub.puml`](diagrams/component_local_hub.puml) |
+| Fleet orchestrator components | [`component_fleet.puml`](diagrams/component_fleet.puml) |
 
 ### For Understanding Behavior
 
-| Purpose | Diagram | File |
-|---------|---------|------|
-| **Service registration** | Registration Sequence | `sequence_registration.puml` |
-| **RPC call flow** | RPC Sequence | `sequence_rpc.puml` |
-| **Alias routing** | Alias Sequence | `sequence_alias.puml` |
+| Purpose | File |
+|---------|------|
+| Service registration flow | [`sequence_registration.puml`](diagrams/sequence_registration.puml) |
+| RPC request-response flow | [`sequence_rpc.puml`](diagrams/sequence_rpc.puml) |
+| Alias routing flow | [`sequence_alias.puml`](diagrams/sequence_alias.puml) |
+| Two-phase graceful shutdown | [`sequence_shutdown.puml`](diagrams/sequence_shutdown.puml) |
+| Service import flow | [`sequence_service_import.puml`](diagrams/sequence_service_import.puml) |
+| Real-time update broadcast | [`sequence_realtime_update.puml`](diagrams/sequence_realtime_update.puml) |
+| GUI plugin loading | [`sequence_gui_plugin_loading.puml`](diagrams/sequence_gui_plugin_loading.puml) |
+| Process lifecycle state machine | [`state_process_lifecycle.puml`](diagrams/state_process_lifecycle.puml) |
 
 ### For Understanding Code
 
-| Purpose | Diagram | File |
-|---------|---------|------|
-| **Domain classes** | Domain Class Diagram | `class_domain.puml` |
-| **Port interfaces** | Ports Class Diagram | `class_ports.puml` |
-| **Adapter classes** | Adapters Class Diagram | `class_adapters.puml` |
+| Purpose | File |
+|---------|------|
+| Domain layer classes | [`class_domain.puml`](diagrams/class_domain.puml) |
+| Port interfaces | [`class_ports.puml`](diagrams/class_ports.puml) |
+| Adapter implementations | [`class_adapters.puml`](diagrams/class_adapters.puml) |
+
+### For Troubleshooting
+
+See the **[Troubleshooting Guide](troubleshooting-guide.md)** — a problem-oriented
+index that maps symptoms to relevant ADRs, diagrams, and source files.
 
 ## Summary
 
 MicroserviceBase provides:
 
-1. **Convention-based API** - Define `svc_api_*` methods, get auto-discovery
-2. **Central Registry** - Service discovery with alias routing
-3. **Structured Protocol** - Typed request/response messages
-4. **Pluggable Transport** - RabbitMQ, EventBus, or custom
-5. **GUI Reflection** - Any UI can render service information
-6. **Clean Architecture** - Hexagonal layers with dependency injection
+1. **Convention-based API** — Define `svc_api_*` methods, get auto-discovery and docstring-based metadata
+2. **Central Registry** — Service discovery with alias routing and real-time broadcasts
+3. **Structured Protocol** — Typed request/response messages over three exchange types
+4. **Pluggable Transport** — RabbitMQ, EventBus, or custom adapters
+5. **Service-Delivered GUI** — Services ship their own HTML/CSS/JS panels, loaded on demand
+6. **Dual-Host GUI** — Same codebase runs in Electron (desktop) and browser (via FastAPI bridge)
+7. **Local Process Hub** — Start, stop, import, and monitor service processes with graceful shutdown
+8. **Multi-Broker** — Connect to multiple RabbitMQ brokers simultaneously
+9. **Fleet Orchestration** — Coordinate service processes across multiple machines
+10. **Clean Architecture** — Hexagonal layers with dependency injection and 20 documented ADRs
 
 It is designed for:
 - Test automation systems with multiple services
