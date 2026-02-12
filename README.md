@@ -370,6 +370,7 @@ Design decisions are documented in [`docs/adr/`](docs/adr/README.md), organized 
 | [ADR-009](docs/adr/009-service-executor-with-rpc-shutdown.md) | Service Executor with RPC Graceful Shutdown |
 | [ADR-010](docs/adr/010-local-hub-manager.md) | Local Hub Manager for ProcessHub Integration |
 | [ADR-011](docs/adr/011-service-import-with-module-execution.md) | Service Import with Module Execution Pattern |
+| [ADR-015](docs/adr/015-fleet-orchestrator-architecture.md) | Fleet Orchestrator for Multi-Hub Process Management |
 
 **Operational Resilience**
 

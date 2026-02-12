@@ -22,6 +22,7 @@ ADRs document important architectural decisions made during the development of t
 | [ADR-012](012-registry-shutdown-notification.md) | Registry Shutdown Notification to GUI | Accepted | 2026-02-03 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-013](013-windows-process-lifecycle-fixes.md) | Windows Process Lifecycle Fixes | Accepted | 2026-02-01 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-014](014-config-placeholder-persistence.md) | Config Placeholder Persistence | Accepted | 2026-02-01 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-015](015-fleet-orchestrator-architecture.md) | Fleet Orchestrator for Multi-Hub Process Management | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 
 ## Summary of Design Decisions
 
@@ -47,15 +48,16 @@ The GUI supports dual hosting with multi-broker connectivity:
 | Bridge Decoupling | Bridge survives GUI close for persistent service access | ADR-008 |
 | Electron over Qt | Why Electron: service-delivered HTML GUIs need a real browser engine | ADR-004 |
 
-### Process Management (ADR-009, ADR-010, ADR-011)
+### Process Management (ADR-009, ADR-010, ADR-011, ADR-015)
 
-Local process management with graceful lifecycle control:
+Local process management with graceful lifecycle control and multi-hub fleet coordination:
 
 | Feature | Description | ADR |
 |---------|-------------|-----|
 | RPC Shutdown | Two-phase stop: RPC first, signal fallback | ADR-009 |
 | Local Hub Manager | ProcessHub lifecycle + config + status orchestration | ADR-010 |
 | Service Import | ZIP/folder import with `python -m` execution and AST validation | ADR-011 |
+| Fleet Orchestrator | Multi-hub coordination via RabbitMQ with health monitoring and remote process control | ADR-015 |
 
 ### Operational Resilience (ADR-012, ADR-013, ADR-014)
 
