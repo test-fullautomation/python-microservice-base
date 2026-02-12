@@ -23,6 +23,63 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
+def _validate_safe_name(name: str) -> None:
+    """
+Reject names that could escape the intended directory.
+
+Raises ``ValueError`` if *name* contains path separators or ``..``.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  The name to validate (e.g. service name, folder name).
+    """
+    if not name:
+        raise ValueError("Name must not be empty")
+    if os.sep in name or '/' in name or '\\' in name:
+        raise ValueError(f"Name must not contain path separators: {name!r}")
+    if '..' in name:
+        raise ValueError(f"Name must not contain '..': {name!r}")
+
+
+def _ensure_path_within(child: str, parent: str) -> str:
+    """
+Return the *realpath* of *child* and raise ``ValueError`` if it is
+not inside *parent*.
+
+**Arguments:**
+
+* ``child``
+
+  / *Condition*: required / *Type*: str /
+
+  Path to validate.
+
+* ``parent``
+
+  / *Condition*: required / *Type*: str /
+
+  Parent directory that *child* must reside within.
+
+**Returns:**
+
+  / *Type*: str /
+
+  The resolved real path of *child*.
+    """
+    real_child = os.path.realpath(child)
+    real_parent = os.path.realpath(parent)
+    # Normalise to a common separator and ensure trailing separator for prefix check
+    if not real_child.startswith(real_parent + os.sep) and real_child != real_parent:
+        raise ValueError(
+            f"Path {real_child!r} escapes the allowed directory {real_parent!r}"
+        )
+    return real_child
+
+
 class LocalHubManager:
     """
 Manages a local ProcessHub instance lifecycle.
@@ -154,7 +211,8 @@ Start a local ProcessHub server.
                 self._save_config_file()
             self._mode = mode
             self._hub_id = hub_id or f"local-hub-{int(time.time())}"
-            self._hub_name = hub_name or "Local Hub"
+            import platform
+            self._hub_name = hub_name or platform.node() or "Local Hub"
 
             # Create components
             broker_host, broker_port = self._get_broker_config()
@@ -518,6 +576,11 @@ Stops the process first if it is still running.
 
   Service name.
         """
+        try:
+            _validate_safe_name(name)
+        except ValueError as exc:
+            return {"success": False, "message": str(exc)}
+
         if name not in self._process_config:
             return {"success": False, "message": f"'{name}' not found"}
 
@@ -545,6 +608,7 @@ Stops the process first if it is still running.
         # Delete service folder if inside managed services directory
         services_dir = self.get_services_dir()
         service_dir = os.path.join(services_dir, name)
+        _ensure_path_within(service_dir, services_dir)
         folder_deleted = False
         if os.path.isdir(service_dir):
             try:
@@ -584,6 +648,11 @@ Read the last *tail* lines of a process log file.
 
   Number of lines to read from the tail.
         """
+        try:
+            _validate_safe_name(name)
+        except ValueError as exc:
+            return {"name": name, "log": "", "log_file": str(exc)}
+
         if not self._executor:
             return {"name": name, "log": "", "log_file": ""}
         log_path = self._executor.get_log_path(name) or ""
@@ -787,10 +856,16 @@ and creates a hub config entry using the ``${python}`` placeholder.
         """
         if not name:
             return {"success": False, "message": "Service name is required.", "warnings": []}
+        try:
+            _validate_safe_name(name)
+        except ValueError as exc:
+            return {"success": False, "message": str(exc), "warnings": []}
         if name in self._process_config:
             return {"success": False, "message": f"'{name}' already exists in hub config", "warnings": []}
 
-        target_dir = os.path.join(self.get_services_dir(), name)
+        services_dir = self.get_services_dir()
+        target_dir = os.path.join(services_dir, name)
+        _ensure_path_within(target_dir, services_dir)
         if os.path.exists(target_dir):
             return {
                 "success": False,
@@ -815,6 +890,15 @@ and creates a hub config entry using the ``${python}`` placeholder.
                 try:
                     extract_dir = os.path.join(temp_dir, 'extract')
                     with zipfile.ZipFile(zip_path, 'r') as zf:
+                        # Zip-slip protection: reject entries that escape the target directory
+                        for entry in zf.namelist():
+                            target = os.path.realpath(os.path.join(extract_dir, entry))
+                            if not target.startswith(os.path.realpath(extract_dir) + os.sep) and target != os.path.realpath(extract_dir):
+                                return {
+                                    "success": False,
+                                    "message": f"Zip contains unsafe path: {entry!r}",
+                                    "warnings": [],
+                                }
                         zf.extractall(extract_dir)
                 except Exception as exc:
                     return {"success": False, "message": f"Failed to extract ZIP data: {exc}", "warnings": []}
@@ -1068,6 +1152,13 @@ Non-blocking tick loop running in a daemon thread.
             # Fleet orchestrator health-check tick
             if self._fleet_orchestrator is not None:
                 try:
+                    # Direct heartbeat for self-agent: keep the local hub
+                    # "online" without depending on the EventBus round-trip.
+                    # External agents still use the message bus normally.
+                    if self._hub_id:
+                        self._fleet_orchestrator.registry.update_heartbeat(
+                            self._hub_id,
+                        )
                     self._fleet_orchestrator.tick()
                 except Exception:
                     logger.debug("Fleet orchestrator tick error", exc_info=True)
