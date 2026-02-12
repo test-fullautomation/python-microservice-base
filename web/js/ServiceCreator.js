@@ -555,10 +555,10 @@
             '<i class="bi bi-box-seam me-2"></i>' + _escapeHtml(d.serviceName) + ' v' + _escapeHtml(d.version) +
           '</div>' +
           '<div class="creator-summary-body">' +
-            _summaryRow('Description', d.description || '<em class="text-muted">none</em>') +
-            _summaryRow('Short Desc', d.shortDescription || '<em class="text-muted">none</em>') +
-            _summaryRow('Group', d.group || '<em class="text-muted">none</em>') +
-            _summaryRow('Tag', d.tag || '<em class="text-muted">none</em>') +
+            _summaryRow('Description', d.description ? _escapeHtml(d.description) : '<em class="text-muted">none</em>') +
+            _summaryRow('Short Desc', d.shortDescription ? _escapeHtml(d.shortDescription) : '<em class="text-muted">none</em>') +
+            _summaryRow('Group', d.group ? _escapeHtml(d.group) : '<em class="text-muted">none</em>') +
+            _summaryRow('Tag', d.tag ? _escapeHtml(d.tag) : '<em class="text-muted">none</em>') +
             _summaryRow('Routing Key', '<code>' + _escapeHtml(d.routingKey) + '</code>') +
             _summaryRow('Transport', d.transport) +
             _summaryRow('GUI Support', d.guiSupport
@@ -916,13 +916,15 @@
   }
 
   function _generateGuiHtml(d) {
+    var name = _escapeHtml(d.serviceName);
+    var subtitle = _escapeHtml(d.shortDescription || d.description || '');
     return '<div class="card">\n' +
       '  <div class="card-header">\n' +
-      '    <h5>' + d.serviceName + '</h5>\n' +
-      '    <small class="text-muted">' + (d.shortDescription || d.description || '') + '</small>\n' +
+      '    <h5>' + name + '</h5>\n' +
+      '    <small class="text-muted">' + subtitle + '</small>\n' +
       '  </div>\n' +
       '  <div class="card-body">\n' +
-      '    <p>Custom GUI for ' + d.serviceName + '.</p>\n' +
+      '    <p>Custom GUI for ' + name + '.</p>\n' +
       '    <!-- Add your service GUI here -->\n' +
       '  </div>\n' +
       '</div>\n';

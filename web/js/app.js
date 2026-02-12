@@ -1087,7 +1087,7 @@
             if (a.type === 'int' || a.type === 'number') return '0';
             if (a.type === 'bool' || a.type === 'boolean') return 'true';
             var desc = a.description || a.name || 'value';
-            return '"' + desc.replace(/"/g, '\\"') + '"';
+            return '"' + desc.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
           });
           argsValue = '[' + argPlaceholders.join(', ') + ']';
         }

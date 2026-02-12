@@ -42,6 +42,28 @@ from ...ports.ui_bridge import UIBridgePort
 logger = logging.getLogger(__name__)
 
 
+def _validate_safe_name(name: str) -> None:
+   """
+Reject names that could escape the intended directory.
+
+Raises ``ValueError`` if *name* contains path separators or ``..``.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  The name to validate (e.g. service name, folder name).
+   """
+   if not name:
+      raise ValueError("Name must not be empty")
+   if os.sep in name or '/' in name or '\\' in name:
+      raise ValueError(f"Name must not contain path separators: {name!r}")
+   if '..' in name:
+      raise ValueError(f"Name must not contain '..': {name!r}")
+
+
 class FastAPIBridge(UIBridgePort):
    """
 FastAPI implementation of UIBridgePort.
@@ -187,6 +209,11 @@ WebSocket endpoint for real-time service update push.
          """
 Download service GUI resources and extract them to the web/services/ directory.
          """
+         try:
+            _validate_safe_name(service_name)
+         except ValueError as exc:
+            return {"error": str(exc)}
+
          if bridge._request_handler is None:
             return {"error": "No request handler configured"}
 
@@ -211,7 +238,9 @@ Download service GUI resources and extract them to the web/services/ directory.
             if service_name in services_info:
                version = services_info[service_name].get("version", "")
 
-            target_dir = os.path.join(gui_web_path, service_name + version)
+            folder_name = service_name + version
+            _validate_safe_name(folder_name)
+            target_dir = os.path.join(gui_web_path, folder_name)
             os.makedirs(target_dir, exist_ok=True)
 
             zip_bytes = base64.b64decode(result["result_data"])
@@ -219,6 +248,12 @@ Download service GUI resources and extract them to the web/services/ directory.
                f.write(zip_bytes)
 
             with zipfile.ZipFile(zip_path, "r") as zf:
+               # Zip-slip protection
+               real_target = os.path.realpath(target_dir)
+               for entry in zf.namelist():
+                  real_entry = os.path.realpath(os.path.join(target_dir, entry))
+                  if not real_entry.startswith(real_target + os.sep) and real_entry != real_target:
+                     return {"error": f"Zip contains unsafe path: {entry!r}"}
                zf.extractall(target_dir)
 
             logger.info("GUI resources extracted to %s", target_dir)
@@ -789,6 +824,11 @@ Generate a basic GUI JS template.
          """
 Generate scaffolding for a new microservice project.
          """
+         try:
+            _validate_safe_name(body.service_name)
+         except ValueError as exc:
+            return {"status": "error", "error": str(exc)}
+
          snake_name = _to_snake_case(body.service_name)
          folder_name = body.service_name
 
@@ -808,9 +848,14 @@ Generate scaffolding for a new microservice project.
          if body.output_path:
             # Write to disk
             target_dir = os.path.join(body.output_path, folder_name)
+            # Ensure generated files stay within the target directory
+            real_target = os.path.realpath(target_dir)
             try:
                for rel_path, content in files:
                   full_path = os.path.join(target_dir, rel_path)
+                  real_full = os.path.realpath(full_path)
+                  if not real_full.startswith(real_target + os.sep) and real_full != real_target:
+                     return {"status": "error", "error": f"Unsafe relative path: {rel_path!r}"}
                   os.makedirs(os.path.dirname(full_path), exist_ok=True)
                   with open(full_path, 'w', encoding='utf-8') as f:
                      f.write(content)
