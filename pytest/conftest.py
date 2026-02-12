@@ -4,6 +4,7 @@ Shared fixtures for MicroserviceBase unit tests.
 
 import os
 import sys
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -155,3 +156,72 @@ def service_registry(mock_transport, mock_registry, tmp_path):
     reg = ServiceRegistry(transport=mock_transport, registry=mock_registry)
     yield reg
     ServiceRegistry.ALIAS_CONF_PATH = old_path
+
+
+# ---------------------------------------------------------------------------
+#  RabbitMQ integration-test helpers
+# ---------------------------------------------------------------------------
+
+from MicroserviceBase.adapters.config.rabbitmq_config import RabbitMQConfig
+from MicroserviceBase.adapters.transport.rabbitmq_adapter import RabbitMQTransportAdapter
+from MicroserviceBase.adapters.registry.amqp_registry_adapter import AMQPRegistryAdapter
+
+
+def _check_rabbitmq():
+    """Try connecting to RabbitMQ; return True if available."""
+    try:
+        import pika
+        config = RabbitMQConfig(
+            host=os.getenv('RABBITMQ_HOST', 'localhost'),
+            port=int(os.getenv('RABBITMQ_PORT', 5672)),
+            username=os.getenv('RABBITMQ_USERNAME', 'guest'),
+            password=os.getenv('RABBITMQ_PASSWORD', 'guest'),
+        )
+        conn = pika.BlockingConnection(
+            pika.ConnectionParameters(**config.to_connection_params())
+        )
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+RABBITMQ_AVAILABLE = _check_rabbitmq()
+requires_rabbitmq = pytest.mark.skipif(
+    not RABBITMQ_AVAILABLE, reason="RabbitMQ not available"
+)
+
+
+@pytest.fixture
+def rabbitmq_config():
+    """RabbitMQConfig from env vars or defaults."""
+    return RabbitMQConfig(
+        host=os.getenv('RABBITMQ_HOST', 'localhost'),
+        port=int(os.getenv('RABBITMQ_PORT', 5672)),
+        username=os.getenv('RABBITMQ_USERNAME', 'guest'),
+        password=os.getenv('RABBITMQ_PASSWORD', 'guest'),
+    )
+
+
+@pytest.fixture
+def rabbitmq_transport(rabbitmq_config):
+    """Connected RabbitMQTransportAdapter; disconnects on teardown."""
+    transport = RabbitMQTransportAdapter(rabbitmq_config)
+    transport.connect()
+    yield transport
+    transport.disconnect()
+
+
+@pytest.fixture
+def rabbitmq_registry(rabbitmq_config, unique_name):
+    """AMQPRegistryAdapter with a unique update exchange; cleans up on teardown."""
+    update_exchange = f"test_update_{unique_name}"
+    registry = AMQPRegistryAdapter(rabbitmq_config, update_exchange_name=update_exchange)
+    yield registry
+    registry.cleanup()
+
+
+@pytest.fixture
+def unique_name():
+    """UUID-based unique name for test isolation (queues, exchanges)."""
+    return uuid.uuid4().hex[:12]
