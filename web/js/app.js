@@ -213,7 +213,7 @@
     toastEl.setAttribute('aria-atomic', 'true');
     toastEl.innerHTML =
       '<div class="d-flex">' +
-        '<div class="toast-body"><strong>' + title + '</strong><br>' + message + '</div>' +
+        '<div class="toast-body"><strong>' + _escapeHtml(title) + '</strong><br>' + _escapeHtml(message) + '</div>' +
         '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>' +
       '</div>';
 
@@ -1035,7 +1035,7 @@
             var desc = a.description || a.name || 'value';
             if (a.type === 'int' || a.type === 'number') return '0';
             if (a.type === 'bool' || a.type === 'boolean') return 'True';
-            return '\'' + desc.replace(/'/g, "\\'") + '\'';
+            return '\'' + desc.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'';
           });
           argsValue = '[' + argPlaceholders.join(', ') + ']';
         }
@@ -1171,7 +1171,7 @@
             var desc = a.description || a.name || 'value';
             if (a.type === 'int' || a.type === 'number') return '0';
             if (a.type === 'bool' || a.type === 'boolean') return 'true';
-            return '\'' + desc.replace(/'/g, "\\'") + '\'';
+            return '\'' + desc.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'';
           });
           argsValue = '[' + argPlaceholders.join(', ') + ']';
         }
@@ -1841,7 +1841,7 @@
             placeholder.className = 'content-placeholder';
             placeholder.innerHTML =
               '<span><i class="bi bi-exclamation-triangle me-2"></i>' +
-                serviceName + ' has disconnected</span>';
+                _escapeHtml(serviceName) + ' has disconnected</span>';
             contentDiv.appendChild(placeholder);
           }
           listItem.classList.add('service-disabled');
