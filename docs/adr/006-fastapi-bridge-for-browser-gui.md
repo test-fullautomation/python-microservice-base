@@ -1,4 +1,4 @@
-# ADR-004: FastAPI Bridge for Browser GUI
+# ADR-006: FastAPI Bridge for Browser GUI
 
 ## Status
 
@@ -24,7 +24,7 @@ Nguyen Huynh Tri Cuong (MS/EMC51)
 
 ## Context
 
-In the dual-host GUI architecture (ADR-003), browser clients cannot use AMQP directly. Browsers have no TCP socket access, so a server-side bridge is needed to proxy requests between the browser and RabbitMQ.
+In the dual-host GUI architecture (ADR-005), browser clients cannot use AMQP directly. Browsers have no TCP socket access, so a server-side bridge is needed to proxy requests between the browser and RabbitMQ.
 
 Requirements:
 - REST API for service invocation (`POST /api/request`)
@@ -123,5 +123,5 @@ Rejected because:
 ## References
 
 - Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`
-- Related: ADR-003 (Dual-Host GUI)
+- Related: ADR-005 (Dual-Host GUI)
 - Diagram: `docs/diagrams/component.puml`

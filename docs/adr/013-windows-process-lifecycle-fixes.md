@@ -1,4 +1,4 @@
-# ADR-010: Windows Process Lifecycle Fixes
+# ADR-013: Windows Process Lifecycle Fixes
 
 ## Status
 
@@ -124,4 +124,4 @@ Rejected because:
 
 - Source: `MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (signal handling, consume loop)
 - Source: `MicroserviceBase/adapters/local_hub/service_executor.py` (log redirection)
-- Related: ADR-006 (Service Executor)
+- Related: ADR-009 (Service Executor)

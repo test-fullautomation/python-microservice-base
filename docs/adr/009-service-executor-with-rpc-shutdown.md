@@ -1,4 +1,4 @@
-# ADR-006: Service Executor with RPC Graceful Shutdown
+# ADR-009: Service Executor with RPC Graceful Shutdown
 
 ## Status
 
@@ -139,4 +139,4 @@ Deferred because:
 - Source: `MicroserviceBase/adapters/local_hub/service_executor.py`
 - Source: `MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (signal handling)
 - Source: `MicroserviceBase/domain/service_base.py` (svc_api_shutdown)
-- Related: ADR-007 (Local Hub Manager)
+- Related: ADR-010 (Local Hub Manager)

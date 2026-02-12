@@ -1,4 +1,4 @@
-# ADR-009: Registry Shutdown Notification to GUI
+# ADR-012: Registry Shutdown Notification to GUI
 
 ## Status
 

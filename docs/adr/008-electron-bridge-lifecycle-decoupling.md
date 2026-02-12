@@ -1,4 +1,4 @@
-# ADR-012: Electron Bridge Lifecycle Decoupling
+# ADR-008: Electron Bridge Lifecycle Decoupling
 
 ## Status
 
@@ -92,4 +92,4 @@ function isBridgeRunning() {
 
 - Source: `MicroserviceBase/MicroserviceManagerGUI/electron/preload.js`
 - Source: `MicroserviceBase/MicroserviceManagerGUI/electron/main.js`
-- Related: ADR-003 (Dual-Host GUI), ADR-004 (FastAPI Bridge)
+- Related: ADR-005 (Dual-Host GUI), ADR-006 (FastAPI Bridge)

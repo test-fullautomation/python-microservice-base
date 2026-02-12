@@ -1,4 +1,4 @@
-# ADR-003: Dual-Host GUI Architecture (Electron + Browser)
+# ADR-005: Dual-Host GUI Architecture (Electron + Browser)
 
 ## Status
 
@@ -145,4 +145,4 @@ Rejected because:
 ## References
 
 - Source: `MicroserviceBase/MicroserviceManagerGUI/electron/`, `MicroserviceBase/MicroserviceManagerGUI/web/`
-- Related: ADR-004 (FastAPI Bridge)
+- Related: ADR-006 (FastAPI Bridge)

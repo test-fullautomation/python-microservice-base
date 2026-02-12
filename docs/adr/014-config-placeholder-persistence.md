@@ -1,4 +1,4 @@
-# ADR-011: Config Placeholder Persistence
+# ADR-014: Config Placeholder Persistence
 
 ## Status
 
@@ -93,4 +93,4 @@ class LocalHubManager:
 ## References
 
 - Source: `MicroserviceBase/adapters/local_hub/local_hub_manager.py`
-- Related: ADR-007 (Local Hub Manager)
+- Related: ADR-010 (Local Hub Manager)

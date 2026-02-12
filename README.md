@@ -343,22 +343,41 @@ Architecture diagrams are available in `docs/diagrams/` in PlantUML format:
 
 ## Architecture Decision Records (ADRs)
 
-Design decisions are documented in `docs/adr/`:
+Design decisions are documented in [`docs/adr/`](docs/adr/README.md), organized by development phase:
+
+**Core Architecture**
 
 | ADR | Title |
 |-----|-------|
-| ADR-001 | Hexagonal Architecture |
-| ADR-002 | Factory Pattern and Dependency Injection |
-| ADR-003 | Dual-Host GUI Architecture |
-| ADR-004 | FastAPI Bridge for Browser GUI |
-| ADR-005 | Multi-Broker Connection Architecture |
-| ADR-006 | Service Executor with RPC Shutdown |
-| ADR-007 | Local Hub Manager |
-| ADR-008 | Service Import with Module Execution |
-| ADR-009 | Registry Shutdown Notification |
-| ADR-010 | Windows Process Lifecycle Fixes |
-| ADR-011 | Config Placeholder Persistence |
-| ADR-012 | Electron Bridge Lifecycle Decoupling |
+| [ADR-001](docs/adr/001-hexagonal-architecture.md) | Hexagonal Architecture (Ports and Adapters) |
+| [ADR-002](docs/adr/002-factory-pattern-dependency-injection.md) | Factory Pattern for Dependency Injection |
+| [ADR-003](docs/adr/003-service-registry-over-zookeeper.md) | Custom Service Registry over ZooKeeper |
+
+**GUI Framework & Architecture**
+
+| ADR | Title |
+|-----|-------|
+| [ADR-004](docs/adr/004-electron-over-qt-for-gui-framework.md) | Electron over Qt for GUI Framework |
+| [ADR-005](docs/adr/005-dual-host-gui-architecture.md) | Dual-Host GUI Architecture (Electron + Browser) |
+| [ADR-006](docs/adr/006-fastapi-bridge-for-browser-gui.md) | FastAPI Bridge for Browser GUI |
+| [ADR-007](docs/adr/007-multi-broker-connection-architecture.md) | Multi-Broker Connection Architecture |
+| [ADR-008](docs/adr/008-electron-bridge-lifecycle-decoupling.md) | Electron Bridge Lifecycle Decoupling |
+
+**Process Management**
+
+| ADR | Title |
+|-----|-------|
+| [ADR-009](docs/adr/009-service-executor-with-rpc-shutdown.md) | Service Executor with RPC Graceful Shutdown |
+| [ADR-010](docs/adr/010-local-hub-manager.md) | Local Hub Manager for ProcessHub Integration |
+| [ADR-011](docs/adr/011-service-import-with-module-execution.md) | Service Import with Module Execution Pattern |
+
+**Operational Resilience**
+
+| ADR | Title |
+|-----|-------|
+| [ADR-012](docs/adr/012-registry-shutdown-notification.md) | Registry Shutdown Notification to GUI |
+| [ADR-013](docs/adr/013-windows-process-lifecycle-fixes.md) | Windows Process Lifecycle Fixes |
+| [ADR-014](docs/adr/014-config-placeholder-persistence.md) | Config Placeholder Persistence |
 
 ## Package Documentation
 

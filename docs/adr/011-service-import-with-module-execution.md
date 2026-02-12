@@ -1,4 +1,4 @@
-# ADR-008: Service Import with Module Execution Pattern
+# ADR-011: Service Import with Module Execution Pattern
 
 ## Status
 
@@ -27,7 +27,7 @@ Nguyen Huynh Tri Cuong (MS/EMC51)
 
 Users need to import existing microservice packages into the Local Hub for management. Initially, services were launched as `python main.py`, but this causes import failures when the service uses relative imports (e.g., `from .ServiceCleware import ServiceCleware`).
 
-Additionally, the hub process name (folder name) often differs from the service's internal name (`_SERVICE_INFO['name']`), causing RPC shutdown to fail (see ADR-006).
+Additionally, the hub process name (folder name) often differs from the service's internal name (`_SERVICE_INFO['name']`), causing RPC shutdown to fail (see ADR-009).
 
 ## Decision
 
@@ -90,7 +90,7 @@ for node in ast.walk(tree):
                     detected_service_name = ...
 ```
 
-This detected name is stored as `service_name` in the config, enabling correct RPC shutdown routing (see ADR-006).
+This detected name is stored as `service_name` in the config, enabling correct RPC shutdown routing (see ADR-009).
 
 ### Auto-Generated `__main__.py`
 
@@ -156,4 +156,4 @@ Rejected because:
 
 - Source: `MicroserviceBase/adapters/local_hub/local_hub_manager.py` (import_service, _validate_service_structure)
 - Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubDashboard.js` (import UI)
-- Related: ADR-006 (Service Executor), ADR-007 (Local Hub Manager)
+- Related: ADR-009 (Service Executor), ADR-010 (Local Hub Manager)

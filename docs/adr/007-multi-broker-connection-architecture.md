@@ -1,4 +1,4 @@
-# ADR-005: Multi-Broker Connection Architecture
+# ADR-007: Multi-Broker Connection Architecture
 
 ## Status
 
@@ -121,4 +121,4 @@ Deferred because:
 
 - Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/app.js`
 - Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`
-- Related: ADR-003 (Dual-Host GUI), ADR-004 (FastAPI Bridge)
+- Related: ADR-005 (Dual-Host GUI), ADR-006 (FastAPI Bridge)
