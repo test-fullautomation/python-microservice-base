@@ -348,3 +348,265 @@ function applyAliasConfig() {
     MM.showToast('Alias Information', 'Updated!', 'success');
   }
 }
+
+// ---------------------------------------------------------------------------
+// Code Helper — generate example code for calling aliases
+// ---------------------------------------------------------------------------
+
+function _escapeHtmlAlias(str) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+/**
+ * Count ${input} placeholders in an alias arguments string.
+ */
+function _countInputPlaceholders(argsString) {
+  if (!argsString) return 0;
+  var matches = argsString.match(/\$\{input\}/g);
+  return matches ? matches.length : 0;
+}
+
+/**
+ * Generate Python example code for calling aliases via the Service Registry.
+ */
+function _generateAliasPythonCode(aliases, brokerHost, brokerPort, registryKey) {
+  var code = '';
+  code += 'from MicroserviceBase import ServiceBase\n';
+  code += 'from MicroserviceBase.factory import create_transport\n';
+  code += '\n';
+  code += '# Create transport (connects to RabbitMQ broker)\n';
+  code += 'transport = create_transport(\n';
+  code += '    \'rabbitmq\',\n';
+  code += '    cmd_args=[\'--host\', \'' + brokerHost + '\', \'--port\', \'' + brokerPort + '\'],\n';
+  code += '    service_name=\'MyClient\'\n';
+  code += ')\n';
+  code += '\n';
+  code += 'EXCHANGE = \'' + MM.SERVICES_EXCHANGE_NAME + '\'\n';
+  code += 'ROUTING_KEY = \'' + registryKey + '\'  # Service Registry resolves aliases\n';
+  code += '\n';
+  code += 'try:\n';
+
+  var aliasNames = Object.keys(aliases);
+  if (aliasNames.length > 0) {
+    aliasNames.forEach(function (aliasName, idx) {
+      var alias = aliases[aliasName];
+      var serviceName = alias['Service name'] || '';
+      var methodName = alias['Method name'] || '';
+      var argsTemplate = alias['Arguments'] || '';
+      var inputCount = _countInputPlaceholders(argsTemplate);
+
+      var argsValue = 'None';
+      if (inputCount > 0) {
+        var placeholders = [];
+        for (var i = 1; i <= inputCount; i++) {
+          placeholders.push('\'arg' + i + '\'');
+        }
+        argsValue = '[' + placeholders.join(', ') + ']';
+      }
+
+      if (idx > 0) code += '\n';
+      code += '    # ' + aliasName + ' \u2192 ' + serviceName + '.' + methodName + '(' + argsTemplate + ')\n';
+      code += '    request = ServiceBase.create_request_data(\'' + aliasName + '\', ' + argsValue + ')\n';
+      code += '    response = transport.rpc_call(request, EXCHANGE, ROUTING_KEY)\n';
+      code += '    print(f"[' + aliasName + '] {response[\'result\']}: {response[\'result_data\']}")\n';
+    });
+  } else {
+    code += '    # No aliases configured.\n';
+    code += '    pass\n';
+  }
+
+  code += '\nfinally:\n';
+  code += '    transport.disconnect()\n';
+  return code;
+}
+
+/**
+ * Generate Robot Framework example code for calling aliases via the Service Registry.
+ */
+function _generateAliasRobotCode(aliases, brokerHost, brokerPort, registryKey) {
+  var code = '';
+  code += '*** Settings ***\n';
+  code += 'Library    QConnectBase.ConnectionManager\n';
+  code += 'Library    Collections\n';
+  code += '\n';
+  code += '*** Variables ***\n';
+  code += '${BROKER_HOST}        ' + brokerHost + '\n';
+  code += '${BROKER_PORT}        ' + brokerPort + '\n';
+  code += '${ROUTING_KEY}        ' + registryKey + '\n';
+  code += '${CONNECTION_NAME}    Alias_conn\n';
+  code += '\n';
+  code += '*** Test Cases ***\n';
+
+  var aliasNames = Object.keys(aliases);
+  if (aliasNames.length > 0) {
+    aliasNames.forEach(function (aliasName) {
+      var alias = aliases[aliasName];
+      var serviceName = alias['Service name'] || '';
+      var methodName = alias['Method name'] || '';
+      var argsTemplate = alias['Arguments'] || '';
+      var inputCount = _countInputPlaceholders(argsTemplate);
+
+      var argsValue = 'null';
+      if (inputCount > 0) {
+        var placeholders = [];
+        for (var i = 1; i <= inputCount; i++) {
+          placeholders.push('"arg' + i + '"');
+        }
+        argsValue = '[' + placeholders.join(', ') + ']';
+      }
+
+      code += 'Test Alias ' + aliasName + '\n';
+      code += '    [Documentation]    Alias: ' + aliasName + ' -> ' + serviceName + '.' + methodName + '(' + argsTemplate + ')\n';
+      code += '    ${config}=    Evaluate    json.loads(\'{"address":"${BROKER_HOST}","port":"${BROKER_PORT}","routing_key":"${ROUTING_KEY}"}\')    json\n';
+      code += '    Connect    conn_name=${CONNECTION_NAME}\n    ...        conn_type=RabbitmqClient\n    ...        conn_conf=${config}\n';
+      code += '    ${res}=    Verify    conn_name=${CONNECTION_NAME}\n';
+      code += '    ...    send_cmd={ "method": "' + aliasName + '", "args": ' + argsValue + ' }\n';
+      code += '    ...    search_pattern=(.*)\n';
+      code += '    ...    timeout=30\n';
+      code += '    Log To Console    ${res}\n';
+      code += '    [Teardown]    Disconnect    ${CONNECTION_NAME}\n';
+      code += '\n';
+    });
+  } else {
+    code += 'Test No Aliases\n';
+    code += '    [Documentation]    No aliases configured.\n';
+    code += '    Log    No aliases to call.\n';
+  }
+
+  return code;
+}
+
+/**
+ * Generate JavaScript example code for calling aliases via the FastAPI bridge.
+ */
+function _generateAliasJavaScriptCode(aliases, brokerHost, brokerPort, registryKey) {
+  var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : 'http://localhost:8000';
+
+  var code = '';
+  code += '// Using the FastAPI bridge REST endpoint\n';
+  code += 'const API_URL   = \'' + apiUrl + '/api/request\';\n';
+  code += 'const EXCHANGE  = \'' + MM.SERVICES_EXCHANGE_NAME + '\';\n';
+  code += 'const ROUTING_KEY = \'' + registryKey + '\';  // Service Registry resolves aliases\n';
+  code += '\n';
+  code += '/**\n';
+  code += ' * Send an RPC request to the Service Registry to invoke an alias.\n';
+  code += ' * @param {string} aliasName - The alias name.\n';
+  code += ' * @param {Array|null} args - Arguments for the alias.\n';
+  code += ' * @returns {Promise<object>} Service response.\n';
+  code += ' */\n';
+  code += 'async function callAlias(aliasName, args = null) {\n';
+  code += '  const res = await fetch(API_URL, {\n';
+  code += '    method: \'POST\',\n';
+  code += '    headers: { \'Content-Type\': \'application/json\' },\n';
+  code += '    body: JSON.stringify({\n';
+  code += '      method: aliasName,\n';
+  code += '      args,\n';
+  code += '      exchange: EXCHANGE,\n';
+  code += '      routing_key: ROUTING_KEY,\n';
+  code += '    }),\n';
+  code += '  });\n';
+  code += '  if (!res.ok) throw new Error(`Request failed: ${res.status}`);\n';
+  code += '  return res.json();\n';
+  code += '}\n';
+  code += '\n';
+  code += '// --- Example calls ---\n';
+
+  var aliasNames = Object.keys(aliases);
+  if (aliasNames.length > 0) {
+    code += '(async () => {\n';
+    aliasNames.forEach(function (aliasName) {
+      var alias = aliases[aliasName];
+      var serviceName = alias['Service name'] || '';
+      var methodName = alias['Method name'] || '';
+      var argsTemplate = alias['Arguments'] || '';
+      var inputCount = _countInputPlaceholders(argsTemplate);
+
+      var argsValue = 'null';
+      if (inputCount > 0) {
+        var placeholders = [];
+        for (var i = 1; i <= inputCount; i++) {
+          placeholders.push('\'arg' + i + '\'');
+        }
+        argsValue = '[' + placeholders.join(', ') + ']';
+      }
+
+      var varName = 'r_' + aliasName.replace(/\W/g, '_');
+      code += '\n';
+      code += '  // ' + aliasName + ' \u2192 ' + serviceName + '.' + methodName + '(' + argsTemplate + ')\n';
+      code += '  const ' + varName + ' = await callAlias(\'' + aliasName + '\', ' + argsValue + ');\n';
+      code += '  console.log(\'' + aliasName + ':\', ' + varName + ');\n';
+    });
+    code += '})();\n';
+  } else {
+    code += '// No aliases configured.\n';
+  }
+
+  return code;
+}
+
+/**
+ * Show the Code Helper modal with example code for all configured aliases.
+ */
+function showAliasHelper() {
+  var aliases = getAliasConfiguration();
+  if (!aliases || Object.keys(aliases).length === 0) {
+    MM.showToast('Code Helper', 'No aliases configured.', 'warning');
+    return;
+  }
+
+  // Resolve broker host/port
+  var brokerUrl = MM.brokerUrl || 'localhost:5672';
+  var parts = brokerUrl.split(':');
+  var brokerHost = parts[0] || 'localhost';
+  var brokerPort = parts[1] || '5672';
+
+  // Registry routing key — aliases are resolved by the Service Registry
+  var registryKey = MM.routingKey || 'ServiceRegistry';
+
+  // Generate code for each language
+  var pythonCode = _generateAliasPythonCode(aliases, brokerHost, brokerPort, registryKey);
+  var jsCode = _generateAliasJavaScriptCode(aliases, brokerHost, brokerPort, registryKey);
+  var robotCode = _generateAliasRobotCode(aliases, brokerHost, brokerPort, registryKey);
+
+  // Build modal body with language tabs (same structure as service helper)
+  var titleHtml = '<h5>Alias Code Helper</h5>' +
+    '<p class="text-muted mb-3">Example code for calling aliases via the Service Registry.</p>';
+
+  var tabsHtml =
+    '<ul class="nav nav-tabs helper-lang-tabs" role="tablist">' +
+      '<li class="nav-item" role="presentation">' +
+        '<button class="nav-link active" data-bs-toggle="tab" data-bs-target="#helperTabPython" ' +
+          'type="button" role="tab" aria-selected="true">' +
+          '<i class="bi bi-filetype-py me-1"></i>Python</button>' +
+      '</li>' +
+      '<li class="nav-item" role="presentation">' +
+        '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabJS" ' +
+          'type="button" role="tab" aria-selected="false">' +
+          '<i class="bi bi-filetype-js me-1"></i>JavaScript</button>' +
+      '</li>' +
+      '<li class="nav-item" role="presentation">' +
+        '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabRobot" ' +
+          'type="button" role="tab" aria-selected="false">' +
+          '<i class="bi bi-robot me-1"></i>Robot</button>' +
+      '</li>' +
+    '</ul>' +
+    '<div class="tab-content">' +
+      '<div class="tab-pane fade show active" id="helperTabPython" role="tabpanel">' +
+        '<pre class="helper-code-pre" id="helperCodePython">' + _escapeHtmlAlias(pythonCode) + '</pre>' +
+      '</div>' +
+      '<div class="tab-pane fade" id="helperTabJS" role="tabpanel">' +
+        '<pre class="helper-code-pre" id="helperCodeJS">' + _escapeHtmlAlias(jsCode) + '</pre>' +
+      '</div>' +
+      '<div class="tab-pane fade" id="helperTabRobot" role="tabpanel">' +
+        '<pre class="helper-code-pre" id="helperCodeRobot">' + _escapeHtmlAlias(robotCode) + '</pre>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('helperModalTitle').textContent = 'Helper \u2014 Alias';
+  document.getElementById('helperModalBody').innerHTML = titleHtml + tabsHtml;
+
+  var modal = new bootstrap.Modal(document.getElementById('helperModal'));
+  modal.show();
+}
