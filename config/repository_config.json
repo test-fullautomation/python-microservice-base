@@ -14,6 +14,20 @@
    "INTENDEDAUDIENCE" : "Intended Audience :: Developers",
    "TOPIC" : "Topic :: Software Development",
    "INSTALLREQUIRES" : [],
-   "PACKAGEDATA" : ["*.pdf"],
+   "PACKAGEDATA" : [
+      "*.pdf",
+      "MicroserviceManagerGUI/web/*.html",
+      "MicroserviceManagerGUI/web/*.json",
+      "MicroserviceManagerGUI/web/css/*.css",
+      "MicroserviceManagerGUI/web/js/*.js",
+      "MicroserviceManagerGUI/web/img/*",
+      "MicroserviceManagerGUI/web/docs/*.html",
+      "MicroserviceManagerGUI/web/docs/img/*",
+      "MicroserviceManagerGUI/web/services/**/*",
+      "MicroserviceManagerGUI/electron/*.js",
+      "MicroserviceManagerGUI/electron/*.json",
+      "MicroserviceManagerGUI/electron/*.html",
+      "MicroserviceManagerGUI/python/*.py"
+   ],
    "PACKAGEDOC" : "./packagedoc"
 }

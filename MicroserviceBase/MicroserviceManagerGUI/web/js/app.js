@@ -2049,8 +2049,15 @@
    ************************************************************/
 
   var _currentMode = 'services';
+  var _helpVisible = false;
+  var _helpLoaded = false;
+  var _modeBeforeHelp = null;
 
   function switchMode(mode) {
+    // If help overlay is open, close it first then switch
+    if (_helpVisible) {
+      _closeHelpOverlay();
+    }
     if (mode === _currentMode) return;
 
     // Deactivate previous mode
@@ -2129,7 +2136,19 @@
     }
   }
 
+  function _showContentSpinner(containerId) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML =
+      '<div class="content-loading">' +
+      '  <div class="spinner-border" role="status"></div>' +
+      '  <span>Loading...</span>' +
+      '</div>';
+  }
+
   function _activateFleetRemoteSubTab() {
+    var fleetPane = document.getElementById('fleetRemotePane');
+    if (fleetPane && !fleetPane.hasChildNodes()) _showContentSpinner('fleetRemotePane');
     MM.fleetDashboard.activate();
 
     // Bridge URL is available in both browser mode (same origin) and
@@ -2173,6 +2192,8 @@
   }
 
   function _activateLocalHubSubTab() {
+    var hubPane = document.getElementById('localHubPane');
+    if (hubPane && !hubPane.hasChildNodes()) _showContentSpinner('localHubPane');
     if (MM.localHubDashboard) MM.localHubDashboard.activate();
   }
 
@@ -2237,6 +2258,211 @@
   MM.showServiceAPIExplorer = showServiceAPIExplorer;
   MM.showServiceHelper = showServiceHelper;
   MM.switchMode = switchMode;
+
+  /************************************************************
+   *               Help Overlay                                 *
+   ************************************************************/
+
+  function openHelp() {
+    if (_helpVisible) return;
+    _modeBeforeHelp = _currentMode;
+    _currentMode = '__help__';
+    _helpVisible = true;
+
+    // Hide sidebar and all content panels
+    var sidebar = document.querySelector('.app-sidebar');
+    if (sidebar) sidebar.style.display = 'none';
+
+    var serviceContent = document.getElementById('serviceContent');
+    var fleetContent = document.getElementById('fleetContent');
+    var creatorContent = document.getElementById('creatorContent');
+    if (serviceContent) serviceContent.style.display = 'none';
+    if (fleetContent) fleetContent.style.display = 'none';
+    if (creatorContent) creatorContent.style.display = 'none';
+
+    // Remove active from mode buttons
+    var modeButtons = document.querySelectorAll('.mode-btn');
+    modeButtons.forEach(function (btn) { btn.classList.remove('active'); });
+
+    // Highlight help button
+    var btnHelp = document.getElementById('btnHelp');
+    if (btnHelp) btnHelp.classList.add('active');
+
+    // Show help content
+    var helpContent = document.getElementById('helpContent');
+    if (helpContent) {
+      helpContent.style.display = '';
+      // Load HTML on first open, refresh versions every time
+      if (!_helpLoaded) {
+        fetch('docs/help.html')
+          .then(function (res) { return res.text(); })
+          .then(function (html) {
+            helpContent.innerHTML = html;
+            _helpLoaded = true;
+            _wireHelpTOC();
+            _refreshHelpVersions();
+          })
+          .catch(function (err) {
+            helpContent.innerHTML =
+              '<div style="padding:2rem;color:#e74c3c;">' +
+              '<i class="bi bi-exclamation-triangle me-2"></i>Failed to load help: ' +
+              err.message + '</div>';
+          });
+      } else {
+        _refreshHelpVersions();
+      }
+    }
+  }
+
+  /**
+   * Internal: hide help overlay and restore DOM state, but do NOT call switchMode.
+   */
+  function _closeHelpOverlay() {
+    if (!_helpVisible) return;
+    _helpVisible = false;
+
+    var btnHelp = document.getElementById('btnHelp');
+    if (btnHelp) btnHelp.classList.remove('active');
+
+    var helpContent = document.getElementById('helpContent');
+    if (helpContent) helpContent.style.display = 'none';
+
+    // Restore sidebar
+    var sidebar = document.querySelector('.app-sidebar');
+    if (sidebar) sidebar.style.display = '';
+  }
+
+  function closeHelp() {
+    if (!_helpVisible) return;
+    var restoreMode = _modeBeforeHelp || 'services';
+    _closeHelpOverlay();
+    // Force switchMode by temporarily resetting _currentMode
+    _currentMode = '__help__';
+    switchMode(restoreMode);
+  }
+
+  function toggleHelp() {
+    if (_helpVisible) {
+      closeHelp();
+    } else {
+      openHelp();
+    }
+  }
+
+  /**
+   * Fetch and display version info. Called every time help is opened
+   * so it picks up a bridge that started after first load.
+   */
+  function _refreshHelpVersions() {
+    var helpContent = document.getElementById('helpContent');
+    if (!helpContent) return;
+
+    var guiVersionEl = helpContent.querySelector('#docsGuiVersion');
+    var baseVersionEl = helpContent.querySelector('#docsBaseVersion');
+
+    if (guiVersionEl && !guiVersionEl._loaded) {
+      fetch('version.json')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          guiVersionEl.textContent = data.version || 'unknown';
+          guiVersionEl._loaded = true;
+        })
+        .catch(function () {
+          guiVersionEl.textContent = 'unknown';
+        });
+    }
+
+    if (baseVersionEl) {
+      if (window.electronAPI && window.electronAPI.getPackageVersion) {
+        // Electron mode: query the Python configured in Settings
+        var pythonPath = (_settings && _settings.pythonPath) || 'python';
+        window.electronAPI.getPackageVersion(pythonPath, 'MicroserviceBase')
+          .then(function (ver) {
+            baseVersionEl.textContent = ver;
+          });
+      } else {
+        baseVersionEl.textContent = 'unknown';
+      }
+    }
+  }
+
+  function _wireHelpTOC() {
+    var helpContent = document.getElementById('helpContent');
+    if (!helpContent) return;
+
+    // Close button
+    var closeBtn = helpContent.querySelector('#docsCloseBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () { closeHelp(); });
+    }
+
+    // Smooth-scroll TOC links
+    var tocLinks = helpContent.querySelectorAll('.docs-toc a[href^="#"]');
+    var docsBody = helpContent.querySelector('#docsBody');
+
+    tocLinks.forEach(function (link) {
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+        var targetId = link.getAttribute('href').substring(1);
+        var target = document.getElementById(targetId);
+        if (target && docsBody) {
+          var targetRect = target.getBoundingClientRect();
+          var bodyRect = docsBody.getBoundingClientRect();
+          docsBody.scrollTo({
+            top: docsBody.scrollTop + (targetRect.top - bodyRect.top),
+            behavior: 'smooth'
+          });
+        }
+      });
+    });
+
+    // Scroll-spy: highlight active TOC link on scroll
+    if (docsBody && tocLinks.length > 0) {
+      var sections = helpContent.querySelectorAll('.docs-section[id]');
+      docsBody.addEventListener('scroll', function () {
+        var bodyRect = docsBody.getBoundingClientRect();
+        var activeId = '';
+        sections.forEach(function (sec) {
+          var secRect = sec.getBoundingClientRect();
+          if (secRect.top - bodyRect.top <= 40) {
+            activeId = sec.id;
+          }
+        });
+        tocLinks.forEach(function (link) {
+          var isActive = link.getAttribute('href') === '#' + activeId;
+          link.classList.toggle('active', isActive);
+        });
+      });
+      // Trigger initial highlight
+      tocLinks[0].classList.add('active');
+    }
+
+    // Click-to-zoom lightbox for images
+    var docImages = helpContent.querySelectorAll('.docs-figure img');
+    docImages.forEach(function (img) {
+      img.addEventListener('click', function () {
+        var overlay = document.createElement('div');
+        overlay.className = 'docs-lightbox';
+        var zoomed = document.createElement('img');
+        zoomed.src = img.src;
+        zoomed.alt = img.alt;
+        overlay.appendChild(zoomed);
+        overlay.addEventListener('click', function () {
+          document.body.removeChild(overlay);
+        });
+        document.body.appendChild(overlay);
+      });
+    });
+  }
+
+  // Wire help button
+  var btnHelp = document.getElementById('btnHelp');
+  if (btnHelp) {
+    btnHelp.addEventListener('click', function () { toggleHelp(); });
+  }
+
+  MM.toggleHelp = toggleHelp;
+  MM.closeHelp = closeHelp;
 
   /************************************************************
    *               Settings Management                         *
@@ -2365,5 +2591,9 @@
 
   // Expose getSettings for other modules (e.g., LocalHubDashboard)
   MM.getSettings = function () { return _settings; };
+
+  // App initialization complete — hide loading overlay
+  var _loadingOverlay = document.getElementById('loadingOverlay');
+  if (_loadingOverlay) _loadingOverlay.classList.remove('active');
 
 })();

@@ -478,6 +478,20 @@ html, body {
   color: #fff;
 }
 
+/* ---------- Content Loading Spinner ---------- */
+.content-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: #6c757d;
+}
+.content-loading .spinner-border {
+  width: 2rem;
+  height: 2rem;
+  margin-right: 0.75rem;
+}
+
 /* ---------- Toast Container ---------- */
 .toast-container {
   position: fixed;

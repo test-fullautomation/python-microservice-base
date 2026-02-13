@@ -33,6 +33,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    show: false,
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
@@ -48,6 +49,10 @@ function createWindow() {
   }
 
   mainWindow.loadFile(path.join(__dirname, '..', 'web', 'index.html'));
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
 
   // Minimize to tray instead of closing
   mainWindow.on('close', (event) => {
