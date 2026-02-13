@@ -683,6 +683,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * Get the installed version of a Python package.
+   * @param {string} [pythonPath='python'] - Path to the Python interpreter.
+   * @param {string} [packageName='MicroserviceBase'] - Package name to query.
+   * @returns {Promise<string>} Version string or 'unknown'.
+   */
+  getPackageVersion: (pythonPath, packageName) => {
+    return new Promise((resolve) => {
+      const py = pythonPath || 'python';
+      const pkg = packageName || 'MicroserviceBase';
+      const cmd = 'from importlib.metadata import version; print(version("' + pkg + '"))';
+      child_process.execFile(py, ['-c', cmd], { timeout: 5000 }, (err, stdout) => {
+        if (err) {
+          resolve('unknown');
+          return;
+        }
+        resolve(stdout.trim() || 'unknown');
+      });
+    });
+  },
+
+  /**
    * Check if the bridge process is running.
    * @returns {{ running: boolean, pid: number|null }}
    */

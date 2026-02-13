@@ -886,6 +886,9 @@ Generate scaffolding for a new microservice project.
       if os.path.isdir(gui_path):
          from fastapi.staticfiles import StaticFiles
          app.mount("/gui", StaticFiles(directory=gui_path, html=True), name="gui")
+         logger.info("GUI mounted at /gui from %s", gui_path)
+      else:
+         logger.warning("GUI web folder not found at %s — /gui will not be available", gui_path)
 
       self._app = app
 

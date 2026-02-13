@@ -1,0 +1,392 @@
+/* ==========================================================================
+   Help / User Guide Styles
+   ========================================================================== */
+
+/* ---------- Help Button (navbar) ---------- */
+.btn-help {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.btn-help:hover {
+  color: #fff;
+}
+
+.btn-help.active {
+  color: #3498db;
+}
+
+/* ---------- Docs Layout ---------- */
+.docs-layout {
+  display: flex;
+  /* Use viewport height minus navbar so the layout always fills the screen,
+     regardless of parent overflow/padding. Negative margin cancels .app-content padding. */
+  height: calc(100vh - var(--navbar-height));
+  margin: -1.5rem;
+}
+
+/* ---------- Docs TOC Sidebar ---------- */
+.docs-toc {
+  width: 240px;
+  min-width: 200px;
+  background-color: #fff;
+  border-right: 1px solid #dee2e6;
+  overflow-y: auto;
+  padding: 1rem 0;
+  flex-shrink: 0;
+}
+
+.docs-toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem 0.75rem;
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 0.5rem;
+}
+
+.docs-toc-header h6 {
+  margin: 0;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.docs-toc-close {
+  background: transparent;
+  border: none;
+  color: #95a5a6;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.docs-toc-close:hover {
+  color: #e74c3c;
+  background-color: rgba(231, 76, 60, 0.1);
+}
+
+.docs-toc a {
+  display: block;
+  padding: 0.4rem 1rem;
+  color: #555;
+  text-decoration: none;
+  font-size: 0.85rem;
+  border-left: 3px solid transparent;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.docs-toc a:hover {
+  color: #2c3e50;
+  background-color: rgba(52, 152, 219, 0.05);
+}
+
+.docs-toc a.active {
+  color: #3498db;
+  border-left-color: #3498db;
+  background-color: rgba(52, 152, 219, 0.08);
+  font-weight: 500;
+}
+
+/* ---------- Docs Body ---------- */
+.docs-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  max-width: 900px;
+}
+
+/* ---------- Sections ---------- */
+.docs-section {
+  margin-bottom: 2.5rem;
+}
+
+.docs-section h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #2c3e50;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #3498db;
+  margin-bottom: 1rem;
+}
+
+.docs-section h2 i {
+  margin-right: 0.5rem;
+  color: #3498db;
+}
+
+.docs-section h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #34495e;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.docs-section p,
+.docs-section ul,
+.docs-section ol {
+  color: #555;
+  line-height: 1.7;
+  font-size: 0.92rem;
+}
+
+.docs-section ul {
+  padding-left: 1.25rem;
+}
+
+.docs-section li {
+  margin-bottom: 0.3rem;
+}
+
+/* ---------- Code Blocks ---------- */
+.docs-code {
+  background-color: #1a252f;
+  color: #ecf0f1;
+  padding: 1rem;
+  border-radius: 6px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  white-space: pre;
+}
+
+.docs-inline-code {
+  background-color: rgba(52, 152, 219, 0.1);
+  color: #2c3e50;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85em;
+}
+
+/* ---------- Callout Boxes ---------- */
+.docs-callout {
+  border-left: 4px solid;
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.docs-callout-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.docs-callout.info {
+  border-color: #3498db;
+  background-color: rgba(52, 152, 219, 0.08);
+}
+
+.docs-callout.info .docs-callout-title {
+  color: #3498db;
+}
+
+.docs-callout.tip {
+  border-color: #2ecc71;
+  background-color: rgba(46, 204, 113, 0.08);
+}
+
+.docs-callout.tip .docs-callout-title {
+  color: #27ae60;
+}
+
+.docs-callout.warning {
+  border-color: #f39c12;
+  background-color: rgba(243, 156, 18, 0.08);
+}
+
+.docs-callout.warning .docs-callout-title {
+  color: #e67e22;
+}
+
+.docs-callout.danger {
+  border-color: #e74c3c;
+  background-color: rgba(231, 76, 60, 0.08);
+}
+
+.docs-callout.danger .docs-callout-title {
+  color: #c0392b;
+}
+
+/* ---------- About Section ---------- */
+.docs-about-cards {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.docs-about-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  flex: 1;
+  min-width: 0;
+}
+
+.docs-about-card-icon {
+  font-size: 1.6rem;
+  color: #3498db;
+  flex-shrink: 0;
+}
+
+.docs-about-card-label {
+  font-size: 0.78rem;
+  color: #7f8c8d;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.docs-about-card-version {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.docs-info-table {
+  width: 100%;
+  font-size: 0.9rem;
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+}
+
+.docs-info-table tr {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.docs-info-table tr:last-child {
+  border-bottom: none;
+}
+
+.docs-info-table td {
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  vertical-align: top;
+  color: #555;
+}
+
+.docs-info-table td:first-child {
+  white-space: nowrap;
+  color: #7f8c8d;
+  width: 130px;
+}
+
+.docs-info-table a {
+  color: #3498db;
+  text-decoration: none;
+}
+
+.docs-info-table a:hover {
+  text-decoration: underline;
+}
+
+.docs-tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.78rem;
+  background-color: rgba(52, 152, 219, 0.1);
+  color: #2980b9;
+  border-radius: 999px;
+  margin: 0.1rem 0.2rem 0.1rem 0;
+}
+
+/* ---------- Images & Figures ---------- */
+.docs-figure {
+  margin: 1rem 0;
+}
+
+.docs-figure img {
+  max-width: 100%;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+
+.docs-figure img:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.docs-figure figcaption {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: #7f8c8d;
+  font-style: italic;
+}
+
+/* Lightbox overlay for click-to-zoom */
+.docs-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+
+.docs-lightbox img {
+  max-width: 92vw;
+  max-height: 92vh;
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- Keyboard Shortcuts ---------- */
+.docs-kbd {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8em;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  color: #2c3e50;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 3px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* ---------- Scrollbar (docs body) ---------- */
+.docs-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.docs-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-body::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.docs-body::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+/* ---------- TOC Scrollbar ---------- */
+.docs-toc::-webkit-scrollbar {
+  width: 4px;
+}
+
+.docs-toc::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-toc::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+}
