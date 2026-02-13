@@ -32,6 +32,9 @@
         <span class="connection-dot" id="connectionDot"></span>
         <span id="connectionLabel">Disconnected</span>
       </span>
+      <button class="btn-help" id="btnReportIssue" title="Report Issue">
+        <i class="bi bi-bug"></i>
+      </button>
       <button class="btn-help" id="btnHelp" title="User Guide">
         <i class="bi bi-question-circle"></i>
       </button>
@@ -187,6 +190,37 @@
         <div class="modal-footer">
           <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
           <button class="btn btn-primary" id="btnSettingsSave">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Report Issue Modal ===== -->
+  <div class="modal fade" id="reportIssueModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-bug me-2"></i>Report Issue</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Summary</label>
+            <input type="text" class="form-control" id="issueTitle" placeholder="Brief description of the issue">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Details (optional)</label>
+            <textarea class="form-control" id="issueBody" rows="4" placeholder="Steps to reproduce, expected vs actual behavior..."></textarea>
+          </div>
+          <div class="form-text">
+            This will open a pre-filled issue on GitHub. Environment info (version, platform) will be included automatically.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-danger" id="btnSubmitIssue">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Open on GitHub
+          </button>
         </div>
       </div>
     </div>

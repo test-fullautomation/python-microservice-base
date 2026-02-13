@@ -30,6 +30,7 @@
 
 import asyncio
 import base64
+import importlib.metadata
 import json
 import logging
 import os
@@ -174,6 +175,17 @@ Route a service request through the transport layer.
             result="pass",
             result_data=result,
          )
+
+      @app.get("/api/version")
+      def get_version():
+         """
+Return the installed MicroserviceBase package version.
+         """
+         try:
+            version = importlib.metadata.version("MicroserviceBase")
+         except importlib.metadata.PackageNotFoundError:
+            version = "unknown"
+         return {"version": version}
 
       @app.get("/api/services")
       def get_services():

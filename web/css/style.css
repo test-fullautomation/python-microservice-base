@@ -520,6 +520,16 @@ html, body {
   filter: invert(1);
 }
 
+/* ---------- Report Issue Modal ---------- */
+#reportIssueModal .modal-header {
+  background-color: var(--navbar-bg);
+  color: #fff;
+}
+
+#reportIssueModal .modal-header .btn-close {
+  filter: invert(1);
+}
+
 /* ---------- Scrollbar Styling (sidebar) ---------- */
 .app-sidebar::-webkit-scrollbar {
   width: 6px;

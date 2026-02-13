@@ -2548,15 +2548,35 @@
     if (settingsModal) settingsModal.hide();
   }
 
+  function _fetchBaseVersion() {
+    if (window.electronAPI && window.electronAPI.getPackageVersion) {
+      var pyPath = (_settings && _settings.pythonPath) || 'python';
+      window.electronAPI.getPackageVersion(pyPath, 'MicroserviceBase')
+        .then(function (ver) { MM._baseVersion = ver; })
+        .catch(function () {});
+    } else if (MM.serviceClient && MM.serviceClient.apiUrl) {
+      fetch(MM.serviceClient.apiUrl + '/api/version')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data && data.version) {
+            MM._baseVersion = data.version;
+          }
+        })
+        .catch(function () {});
+    }
+  }
+
   function loadSettings() {
     if (window.electronAPI && window.electronAPI.loadSettings) {
       window.electronAPI.loadSettings()
         .then(function (settings) {
           _settings = settings || {};
           console.log('[app] Settings loaded from file:', Object.keys(_settings));
+          _fetchBaseVersion();
         })
         .catch(function () {
           _settings = {};
+          _fetchBaseVersion();
         });
     } else {
       try {
@@ -2568,6 +2588,7 @@
       } catch (e) {
         _settings = {};
       }
+      _fetchBaseVersion();
     }
   }
 
@@ -2591,6 +2612,148 @@
 
   // Expose getSettings for other modules (e.g., LocalHubDashboard)
   MM.getSettings = function () { return _settings; };
+
+  /************************************************************
+   *               Report Issue                                 *
+   ************************************************************/
+
+  var reportIssueModal = null;
+  var GITHUB_ISSUES_URL = 'https://github.com/test-fullautomation/python-microservice-base/issues/new';
+
+  /**
+   * Open a URL in the default browser (Electron) or a new tab (browser mode).
+   */
+  function _openUrl(url) {
+    if (window.electronAPI && window.electronAPI.openExternal) {
+      window.electronAPI.openExternal(url);
+    } else {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
+
+  /**
+   * Collect environment info as a markdown string for the issue body.
+   */
+  function _collectEnvironmentInfo() {
+    var lines = [];
+
+    lines.push('## Environment');
+
+    // GUI version — prefer eagerly-cached value, fall back to help page element
+    var guiVersion = MM._guiVersion || 'unknown';
+    if (guiVersion === 'unknown') {
+      var guiVersionEl = document.querySelector('#docsGuiVersion');
+      if (guiVersionEl && guiVersionEl.textContent && guiVersionEl.textContent !== 'loading...') {
+        guiVersion = guiVersionEl.textContent;
+      }
+    }
+    lines.push('- **GUI Version**: ' + guiVersion);
+
+    // MicroserviceBase version
+    var baseVersion = MM._baseVersion || 'unknown';
+    lines.push('- **MicroserviceBase Version**: ' + baseVersion);
+
+    // Platform
+    lines.push('- **Platform**: ' + navigator.platform);
+    lines.push('- **User Agent**: ' + navigator.userAgent);
+
+    // Connected brokers
+    var brokerKeys = Object.keys(MM.connections || {});
+    if (brokerKeys.length > 0) {
+      lines.push('- **Connected Brokers**: ' + brokerKeys.join(', '));
+    } else {
+      lines.push('- **Connected Brokers**: none');
+    }
+
+    // Services count
+    var serviceCount = MM.servicesInfor ? Object.keys(MM.servicesInfor).length : 0;
+    lines.push('- **Services**: ' + serviceCount + ' loaded');
+
+    return lines.join('\n');
+  }
+
+  function openReportIssue() {
+    // Clear previous input
+    var titleInput = document.getElementById('issueTitle');
+    var bodyInput = document.getElementById('issueBody');
+    if (titleInput) titleInput.value = '';
+    if (bodyInput) bodyInput.value = '';
+
+    if (!reportIssueModal) {
+      reportIssueModal = new bootstrap.Modal(document.getElementById('reportIssueModal'));
+    }
+    reportIssueModal.show();
+  }
+
+  function submitReportIssue() {
+    var titleInput = document.getElementById('issueTitle');
+    var bodyInput = document.getElementById('issueBody');
+
+    var title = titleInput ? titleInput.value.trim() : '';
+    if (!title) {
+      showToast('Validation', 'Please provide a summary for the issue.', 'warning');
+      titleInput.focus();
+      return;
+    }
+
+    var userBody = bodyInput ? bodyInput.value.trim() : '';
+    var envInfo = _collectEnvironmentInfo();
+
+    var bodyParts = ['## Description'];
+    if (userBody) {
+      bodyParts.push(userBody);
+    } else {
+      bodyParts.push('_No additional details provided._');
+    }
+    bodyParts.push('');
+    bodyParts.push(envInfo);
+
+    var body = bodyParts.join('\n');
+
+    var url = GITHUB_ISSUES_URL + '?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
+
+    // URL length safety: browsers/GitHub typically support ~8000 chars
+    var MAX_URL_LENGTH = 7500;
+    if (url.length > MAX_URL_LENGTH) {
+      var truncatedNote = '\n\n_(Details truncated due to URL length limits. Please add remaining details manually.)_';
+      var availableBodyLength = MAX_URL_LENGTH
+        - (GITHUB_ISSUES_URL + '?title=' + encodeURIComponent(title) + '&body=').length;
+      // Decode, truncate, re-encode
+      var truncatedBody = body.substring(0, Math.max(100, availableBodyLength / 3)) + truncatedNote;
+      url = GITHUB_ISSUES_URL + '?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(truncatedBody);
+    }
+
+    _openUrl(url);
+
+    if (reportIssueModal) reportIssueModal.hide();
+    showToast('Report Issue', 'Issue page opened in your browser.', 'success');
+  }
+
+  // Wire Report Issue button
+  var btnReportIssue = document.getElementById('btnReportIssue');
+  if (btnReportIssue) {
+    btnReportIssue.addEventListener('click', function () {
+      openReportIssue();
+    });
+  }
+
+  // Wire submit button
+  var btnSubmitIssue = document.getElementById('btnSubmitIssue');
+  if (btnSubmitIssue) {
+    btnSubmitIssue.addEventListener('click', function () {
+      submitReportIssue();
+    });
+  }
+
+  // Eagerly fetch versions so env info is available even if help was never opened
+  fetch('version.json')
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (data && data.version) {
+        MM._guiVersion = data.version;
+      }
+    })
+    .catch(function () {});
 
   // App initialization complete — hide loading overlay
   var _loadingOverlay = document.getElementById('loadingOverlay');

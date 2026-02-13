@@ -5,7 +5,7 @@
  * @version 2.1.0
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, shell } = require('electron');
 
 let amqp, fs, os, path, unzipper, child_process;
 try {
@@ -206,6 +206,18 @@ function _resolveServicesPath(folderPath) {
 // discoverable even after the GUI is closed.
 
 contextBridge.exposeInMainWorld('electronAPI', {
+
+  /**
+   * Open an external URL in the default browser.
+   * Only allows http/https URLs for safety.
+   * @param {string} url - The URL to open.
+   * @returns {Promise<void>|undefined}
+   */
+  openExternal: (url) => {
+    if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+      return shell.openExternal(url);
+    }
+  },
 
   /**
    * Show a native open dialog (folder or file picker).
