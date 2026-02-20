@@ -4,5 +4,8 @@
   "bridge_host": "localhost",
   "bridge_port": 1112,
   "registry_routing_key": "ServiceRegistry",
-  "update_exchange_name": "services_update"
+  "update_exchange_name": "services_update",
+  "health_check_enabled": true,
+  "health_check_interval": 30,
+  "health_check_max_failures": 2
 }
