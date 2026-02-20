@@ -43,6 +43,7 @@ Configuration for connecting to RabbitMQ.
    virtual_host: str = '/'
    username: str = 'guest'
    password: str = 'guest'
+   heartbeat: int = 10
 
    def to_connection_params(self):
       """
@@ -58,6 +59,7 @@ Convert to pika ConnectionParameters kwargs.
          'port': self.port,
          'virtual_host': self.virtual_host,
          'credentials': pika.PlainCredentials(self.username, self.password),
+         'heartbeat': self.heartbeat,
       }
 
    @classmethod

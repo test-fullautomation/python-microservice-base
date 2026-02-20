@@ -12,6 +12,7 @@
     <a href="#getting-started">Getting Started</a>
     <a href="#connecting">Connecting to Broker</a>
     <a href="#services-mode">Services Mode</a>
+    <a href="#alias-routing">Alias Routing</a>
     <a href="#service-network">Service Network</a>
     <a href="#service-creator">Service Creator</a>
     <a href="#settings">Settings</a>
@@ -219,6 +220,97 @@
         <img src="docs/img/code-helper.png" alt="Code Helper modal showing Python code snippet with language tabs">
         <figcaption>Code Helper &mdash; auto-generated Python snippet with language tabs (Python, JavaScript, Robot). Use "Copy Code" to grab it.</figcaption>
       </figure>
+    </section>
+
+    <!-- Alias Routing -->
+    <section class="docs-section" id="alias-routing">
+      <h2><i class="bi bi-signpost-2"></i>Alias Routing</h2>
+      <p>
+        Aliases let you create <strong>user-friendly shortcuts</strong> that map to
+        service methods with pre-configured arguments. Instead of calling a complex
+        API with multiple parameters, you define an alias with fixed values and only
+        pass the variable parts at call time.
+      </p>
+
+      <h3>How It Works</h3>
+      <p>
+        An alias definition consists of three parts:
+      </p>
+      <ul>
+        <li><strong>Alias name</strong> &mdash; the shortcut name callers will use
+          (e.g. <span class="docs-inline-code">turn_on_led</span>)</li>
+        <li><strong>Target service &amp; method</strong> &mdash; the actual service
+          method to call
+          (e.g. <span class="docs-inline-code">ServiceCleware.svc_api_set_switch</span>)</li>
+        <li><strong>Arguments template</strong> &mdash; a comma-separated list of
+          values where <span class="docs-inline-code">${input}</span> placeholders
+          are replaced by the caller's arguments</li>
+      </ul>
+
+      <div class="docs-callout info">
+        <div class="docs-callout-title"><i class="bi bi-info-circle me-1"></i>Example</div>
+        <p style="margin-bottom:0.5rem;">
+          Alias <span class="docs-inline-code">turn_on_led</span> with arguments
+          <span class="docs-inline-code">710925,17,${input}</span> maps to
+          <span class="docs-inline-code">svc_api_set_switch</span>.
+        </p>
+        <p style="margin-bottom:0;">
+          Calling <span class="docs-inline-code">turn_on_led</span> with argument
+          <span class="docs-inline-code">[1]</span> becomes
+          <span class="docs-inline-code">svc_api_set_switch(710925, 17, 1)</span>
+          &mdash; the device ID and port are fixed, only the state is variable.
+        </p>
+      </div>
+
+      <h3>Managing Aliases</h3>
+      <p>
+        The <strong>Alias</strong> entry appears in the sidebar under
+        <strong>Alias Manager</strong> when connected to a broker. Click it to open
+        the alias configuration panel.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/alias.png" alt="Alias Configuration panel showing alias table with service and method dropdowns">
+        <figcaption>Alias Configuration &mdash; define aliases by selecting a target service and method, with an arguments template using <code>${input}</code> placeholders.</figcaption>
+      </figure>
+      <ul>
+        <li>Click <strong>+</strong> to add a new alias row</li>
+        <li>Select the target <strong>Service</strong> and <strong>Method</strong>
+          from the dropdowns</li>
+        <li>Enter the arguments template &mdash; use
+          <span class="docs-inline-code">${input}</span> for values the caller
+          provides</li>
+        <li>Click <strong>Apply</strong> to save the configuration</li>
+        <li>Click <strong>&minus;</strong> to remove an alias</li>
+      </ul>
+
+      <h3>Calling Aliases</h3>
+      <p>
+        Aliases are resolved by the <strong>Service Registry</strong>. Send alias
+        requests to the Registry's routing key, just like a normal service call, but
+        use the alias name as the method:
+      </p>
+      <pre class="docs-code">request = ServiceBase.create_request_data('turn_on_led', [1])
+response = transport.rpc_call(request, 'services_request', 'service.registry')</pre>
+      <p>
+        The Registry looks up the alias, substitutes
+        <span class="docs-inline-code">${input}</span> placeholders with your
+        arguments, and forwards the request to the target service.
+      </p>
+
+      <div class="docs-callout tip">
+        <div class="docs-callout-title"><i class="bi bi-lightbulb me-1"></i>Tip</div>
+        Click the <i class="bi bi-code-slash"></i> icon in the alias panel to open
+        the <strong>Code Helper</strong> with ready-to-use code snippets for calling
+        each configured alias from Python, JavaScript, or Robot Framework.
+      </div>
+
+      <h3>Multiple Inputs</h3>
+      <p>
+        You can use multiple <span class="docs-inline-code">${input}</span>
+        placeholders. Each one is replaced in order by the caller's arguments:
+      </p>
+      <pre class="docs-code"># Alias "quick_add" with arguments: ${input},${input}
+# Calling quick_add([3, 5]) → svc_api_add(3, 5)</pre>
     </section>
 
     <!-- Service Network -->

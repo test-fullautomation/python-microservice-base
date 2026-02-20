@@ -23,66 +23,67 @@ function populateTable(data) {
   const tbody = table.getElementsByTagName('tbody')[0];
   const headers = Array.from(table.querySelector('thead tr').children).map(th => th.textContent).slice(0,4);
 
-  if (data === null || data == "" || data.length === 0 || JSON.stringify(data) === '{}')
-  {
-    addRow();
-  }
-  Object.keys(data).forEach((key, index) => {
-    const row = tbody.insertRow();
+  if (data && typeof data === 'object') {
+    Object.keys(data).forEach((key) => {
+      const row = tbody.insertRow();
 
-    headers.forEach((header, colIndex) => {
-      const cell = row.insertCell();
-      if (colIndex === 0) {
-        const input = document.createElement('input');
-        input.classList.add("form-control");
-        input.style.width = "180px";
-        input.type = 'text';
-        input.value = key;
-        input.dataset.type = 'name';
-        cell.appendChild(input);
-      } else if (colIndex === 3)
-      {
-        const input = document.createElement('input');
-        input.classList.add("form-control");
-        input.style.width = "180px";
-        input.type = 'text';
-        input.value = data[key][header];
-        input.dataset.type = 'args';
-        cell.appendChild(input);
-      } else {
-        const select = document.createElement('select');
-        select.classList.add("form-control");
-        select.style.width = "180px";
-        const option = document.createElement('option');
-        option.value = data[key][header];
-        option.textContent = data[key][header];
-        select.appendChild(option);
-        cell.appendChild(select);
-      }
-    });
+      headers.forEach((header, colIndex) => {
+        const cell = row.insertCell();
+        if (colIndex === 0) {
+          const input = document.createElement('input');
+          input.classList.add("form-control");
+          input.style.width = "180px";
+          input.type = 'text';
+          input.value = key;
+          input.dataset.type = 'name';
+          cell.appendChild(input);
+        } else if (colIndex === 3)
+        {
+          const input = document.createElement('input');
+          input.classList.add("form-control");
+          input.style.width = "180px";
+          input.type = 'text';
+          input.value = data[key][header];
+          input.dataset.type = 'args';
+          cell.appendChild(input);
+        } else {
+          const select = document.createElement('select');
+          select.classList.add("form-control");
+          select.style.width = "180px";
+          const option = document.createElement('option');
+          option.value = data[key][header];
+          option.textContent = data[key][header];
+          select.appendChild(option);
+          cell.appendChild(select);
+        }
+      });
 
-    const minusCell = row.insertCell();
-    const minusButton = document.createElement('button');
-    minusButton.textContent = '-';
-    minusButton.style.width = "38px";
-    minusButton.onclick = function() {
-      row.remove();
-    };
-    minusButton.classList.add('btn', 'btn-danger');
-    minusCell.appendChild(minusButton);
+      // Minus button
+      const minusCell = row.insertCell();
+      const minusButton = document.createElement('button');
+      minusButton.textContent = '-';
+      minusButton.style.width = "38px";
+      minusButton.onclick = function() {
+        removeRow(row);
+      };
+      minusButton.classList.add('btn', 'btn-danger');
+      minusCell.appendChild(minusButton);
 
-    if (index === Object.keys(data).length - 1) {
+      // Plus button (inserts a new row after this one)
       const plusCell = row.insertCell();
       const plusButton = document.createElement('button');
       plusButton.textContent = '+';
       plusButton.style.width = "38px";
-      plusButton.onclick = addRow;
+      plusButton.onclick = function() {
+        insertRowAfter(row);
+      };
       plusButton.classList.add('btn', 'btn-primary');
       plusCell.appendChild(plusButton);
-    } else {
-      row.insertCell();
-    }
-  });
+    });
+  }
+
+  // Always append one empty row at the end (no minus button)
+  addRow();
 }
 
 function unloadServiceAlias() {
@@ -153,8 +154,11 @@ function requestUpdateAliasInfor(data) {
   });
 }
 
-function addRow() {
-  const tableBody = document.querySelector('#data-table tbody');
+/**
+ * Create an empty row element with comboboxes wired up.
+ * Does NOT insert it into the DOM — caller decides where to put it.
+ */
+function _createEmptyRow() {
   const newRow = document.createElement('tr');
 
   newRow.innerHTML = `
@@ -164,55 +168,112 @@ function addRow() {
     <td class="col-3"><input type="text" class="form-control textbox" data-type="args" /></td>
   `;
 
-  const minusBtn = document.createElement('button');
-  minusBtn.textContent = '-';
-  minusBtn.style.width = "38px";
-  minusBtn.onclick = function () {
-    removeRow(newRow);
-  };
-  minusBtn.classList.add('btn', 'btn-danger');
-
-  const minusCell = document.createElement('td');
-  minusCell.appendChild(minusBtn);
-  newRow.appendChild(minusCell);
-
-  const prevLastRow = tableBody.querySelector(`tr:nth-last-child(1)`);
-  if (prevLastRow) {
-    const prevLastCell = prevLastRow.lastElementChild;
-    prevLastCell.innerHTML = '';
-  }
-
-  tableBody.appendChild(newRow);
-
-  const plusBtn = document.createElement('button');
-  plusBtn.textContent = '+';
-  plusBtn.style.width = "38px";
-  plusBtn.onclick = addRow;
-  plusBtn.classList.add('btn', 'btn-primary');
-
-  const plusCell = document.createElement('td');
-  plusCell.appendChild(plusBtn);
-  newRow.appendChild(plusCell);
-
-  rowIndex++;
-
   const serviceCombobox = newRow.querySelector('.combobox1');
   const methodCombobox = newRow.querySelector('.combobox2');
 
   populateServiceCombobox(serviceCombobox);
 
   serviceCombobox.addEventListener('change', function () {
-    const selectedValue = serviceCombobox.value;
-    populateMethodCombobox(selectedValue, methodCombobox);
+    populateMethodCombobox(serviceCombobox.value, methodCombobox);
   });
 
   populateMethodCombobox(serviceCombobox.value, methodCombobox);
 
   methodCombobox.addEventListener('change', function () {
-    const selectedMethod = methodCombobox.value;
-    const selectedService = serviceCombobox.value;
-    addMethodArgumentRows(selectedService, selectedMethod, newRow);
+    addMethodArgumentRows(serviceCombobox.value, methodCombobox.value, newRow);
   });
+
+  return newRow;
+}
+
+/**
+ * Enforce the rule: the last non-dynamic row has NO minus button,
+ * all other non-dynamic rows HAVE a minus button.
+ * Call this after every row add/remove.
+ */
+function _updateMinusButtons() {
+  const tableBody = document.querySelector('#data-table tbody');
+  const rows = Array.from(tableBody.querySelectorAll('tr:not([data-dynamic-row])'));
+  if (rows.length === 0) return;
+
+  rows.forEach(function (row, idx) {
+    var isLast = (idx === rows.length - 1);
+    var minusCell = row.cells[4]; // 5th cell = minus column
+    if (!minusCell) return;
+    var minusBtn = minusCell.querySelector('.btn-danger');
+
+    if (isLast) {
+      // Last row: remove minus button if present
+      if (minusBtn) minusBtn.remove();
+    } else {
+      // Non-last row: add minus button if missing
+      if (!minusBtn) {
+        var btn = document.createElement('button');
+        btn.textContent = '-';
+        btn.style.width = "38px";
+        btn.onclick = function () { removeRow(row); };
+        btn.classList.add('btn', 'btn-danger');
+        minusCell.appendChild(btn);
+      }
+    }
+  });
+}
+
+/**
+ * Append an empty row at the end of the table.
+ */
+function addRow() {
+  const tableBody = document.querySelector('#data-table tbody');
+  const newRow = _createEmptyRow();
+
+  // Minus cell (empty — _updateMinusButtons decides)
+  const minusCell = document.createElement('td');
+  newRow.appendChild(minusCell);
+
+  // Plus button
+  const plusCell = document.createElement('td');
+  const plusBtn = document.createElement('button');
+  plusBtn.textContent = '+';
+  plusBtn.style.width = "38px";
+  plusBtn.onclick = function () { insertRowAfter(newRow); };
+  plusBtn.classList.add('btn', 'btn-primary');
+  plusCell.appendChild(plusBtn);
+  newRow.appendChild(plusCell);
+
+  tableBody.appendChild(newRow);
+  rowIndex++;
+  _updateMinusButtons();
+}
+
+/**
+ * Insert a new empty row after the given reference row.
+ */
+function insertRowAfter(refRow) {
+  const tableBody = document.querySelector('#data-table tbody');
+  const newRow = _createEmptyRow();
+
+  // Minus cell (empty — _updateMinusButtons decides)
+  const minusCell = document.createElement('td');
+  newRow.appendChild(minusCell);
+
+  // Plus button
+  const plusCell = document.createElement('td');
+  const plusBtn = document.createElement('button');
+  plusBtn.textContent = '+';
+  plusBtn.style.width = "38px";
+  plusBtn.onclick = function () { insertRowAfter(newRow); };
+  plusBtn.classList.add('btn', 'btn-primary');
+  plusCell.appendChild(plusBtn);
+  newRow.appendChild(plusCell);
+
+  // Insert after refRow (skip past its dynamic hint rows)
+  var insertBefore = refRow.nextSibling;
+  while (insertBefore && insertBefore.getAttribute('data-dynamic-row') === 'true') {
+    insertBefore = insertBefore.nextSibling;
+  }
+  tableBody.insertBefore(newRow, insertBefore);
+  rowIndex++;
+  _updateMinusButtons();
 }
 
 function addMethodArgumentRows(serviceName, methodName, row)
@@ -260,14 +321,15 @@ function removeRow(mainRow) {
   const table = document.getElementById('data-table');
   const tableBody = table.querySelector('tbody');
 
+  // Remove dynamic hint rows belonging to this row
   let nextSibling = mainRow.nextSibling;
-
   while (nextSibling && nextSibling.getAttribute('data-dynamic-row') === 'true') {
     tableBody.removeChild(nextSibling);
     nextSibling = mainRow.nextSibling;
   }
 
   tableBody.removeChild(mainRow);
+  _updateMinusButtons();
 }
 
 function getAliasConfiguration()

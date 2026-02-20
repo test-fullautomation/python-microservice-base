@@ -1328,6 +1328,7 @@ routing if they shared a single transport).
                 server=self._server,
                 hub_id=self._hub_id,
                 hub_name=self._hub_name,
+                server_transport=self._transport,
             )
             self._agent.start()
             self._patch_agent_fleet_guard(self._agent)
@@ -1427,6 +1428,7 @@ Start a HubAgent to join a fleet orchestrator.
                 server=self._server,
                 hub_id=self._hub_id,
                 hub_name=self._hub_name,
+                server_transport=self._transport,
             )
             self._agent.start()
             self._patch_agent_fleet_guard(self._agent)

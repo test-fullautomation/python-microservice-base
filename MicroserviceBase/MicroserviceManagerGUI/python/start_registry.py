@@ -143,6 +143,19 @@ def main():
         )
         discovery_thread.start()
 
+        if config.get('health_check_enabled', True):
+            health_thread = threading.Thread(
+                target=service_registry.run_health_check_loop,
+                kwargs={
+                    'interval': int(config.get('health_check_interval', 30)),
+                    'max_failures': int(config.get('health_check_max_failures', 2)),
+                    'broker_host': broker_host,
+                    'broker_port': broker_port,
+                },
+                daemon=True,
+            )
+            health_thread.start()
+
         service_registry.register_service()
 
         logger.info("Service Registry running. Press CTRL+C to stop.")
@@ -150,6 +163,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")
     finally:
+        service_registry.stop_health_check()
         try:
             service_registry._broadcast_shutdown_sentinel()
         except Exception:
