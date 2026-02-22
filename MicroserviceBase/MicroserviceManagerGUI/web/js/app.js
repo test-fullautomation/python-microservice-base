@@ -235,6 +235,35 @@
     showToast('Warning', message, 'warning');
   }
 
+  /**
+   * Show a confirmation modal (Bootstrap-based replacement for native confirm()).
+   * Native confirm() causes an Electron focus bug on Windows where all inputs
+   * become unresponsive after the dialog is dismissed.
+   *
+   * @param {string} message - The confirmation message to display.
+   * @param {Function} onConfirm - Callback invoked when the user clicks Confirm.
+   */
+  function showConfirm(message, onConfirm) {
+    var modalEl = document.getElementById('confirmModal');
+    var bodyEl = document.getElementById('confirmModalBody');
+    var okBtn = document.getElementById('confirmModalOkBtn');
+    bodyEl.textContent = message;
+
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    // Clone-replace OK button to remove old listeners
+    var newOk = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOk, okBtn);
+    newOk.id = 'confirmModalOkBtn';
+
+    newOk.onclick = function () {
+      modal.hide();
+      onConfirm();
+    };
+
+    modal.show();
+  }
+
   /************************************************************
    *               Functions: GUI Element Handling             *
    ************************************************************/
@@ -332,9 +361,9 @@
    * @param {string} brokerUrl - The broker address to disconnect.
    */
   function confirmDisconnectBroker(brokerUrl) {
-    if (confirm('Disconnect from broker ' + brokerUrl + '?')) {
+    MM.showConfirm('Disconnect from broker ' + brokerUrl + '?', function () {
       disconnectBroker(brokerUrl);
-    }
+    });
   }
 
   /**
@@ -2250,6 +2279,7 @@
   MM.loadContent = loadContent;
   MM.changeConnectButtonState = changeConnectButtonState;
   MM.showToast = showToast;
+  MM.showConfirm = showConfirm;
   MM.showWarningDialog = showWarningDialog;
   MM.activateItemAndLoadContent = activateItemAndLoadContent;
   MM.SERVICES_EXCHANGE_NAME = SERVICES_EXCHANGE_NAME;

@@ -35,6 +35,10 @@ the relevant subsystem.
 | [18](#18-multiple-brokers-but-services-appear-under-wrong-broker) | Multiple brokers but services appear under wrong broker | Multi-Broker |
 | [19](#19-gui-works-in-browser-but-websocket-disconnects) | GUI works in browser but WebSocket disconnects | Bridge |
 | [20](#20-service-registers-but-disappears-immediately) | Service registers but disappears immediately | Registration |
+| [21](#21-fleet-dashboard-stuck-at-loading-fleet-data) | Fleet Dashboard stuck at "Loading fleet data..." | Fleet |
+| [22](#22-fleet-shows-fleet-unreachable-loop-after-disconnect) | Fleet shows "Fleet Unreachable" loop after disconnect | Fleet |
+| [23](#23-port-2510-not-released-after-hub-restart-errno-10048) | Port 2510 not released after hub restart (Errno 10048) | Fleet |
+| [24](#24-fleet-api-calls-fail-with-err_connection_refused-in-electron) | Fleet API calls fail with ERR_CONNECTION_REFUSED in Electron | Fleet |
 
 ---
 
@@ -416,6 +420,117 @@ A remote hub was online but now shows as offline in the Fleet dashboard.
 
 ---
 
+### 21. Fleet Dashboard stuck at "Loading fleet data..."
+
+The Fleet tab shows a spinner or "Loading fleet data..." forever after clicking
+Connect.
+
+**Investigate:**
+
+| Resource | What to check |
+|----------|---------------|
+| [sequence_fleet_connect.puml](diagrams/sequence_fleet_connect.puml) | Full fleet connect sequence: configure → poll → render |
+| [`FleetDashboard.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | `onFleetUpdate()` — fingerprint comparison, `_lastFleetJson` initial value |
+| [`FleetClient.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `_resolveUrl()` — is the poll reaching the bridge? Check browser console for network errors |
+| [`fastapi_bridge.py`](../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | `/api/fleet/status` proxy — is `bridge._fleet_api_url` set? |
+
+**Common causes:**
+- `_lastFleetJson` initialized to `''` instead of `null`, causing the first
+  render to be skipped when `_fleetFingerprint()` also returns `''` for empty
+  hub data — the fingerprints match so no render is triggered
+- `onUpdate(onFleetUpdate)` callback not registered before `startPolling()` —
+  poll results fire but nobody handles them
+- Bridge `_fleet_api_url` is `None` — the `/api/fleet/status` proxy returns 503
+  but the dashboard doesn't show the error (error handler only fires after the
+  first successful load)
+- `_updateCallbacks` accumulated duplicate callbacks from repeated `activate()`
+  calls — a `TypeError` in one callback prevents subsequent callbacks from
+  firing
+
+---
+
+### 22. Fleet shows "Fleet Unreachable" loop after disconnect
+
+Clicking Disconnect shows the configure prompt briefly, then immediately flips
+back to "Fleet Unreachable — Failed to fetch".
+
+**Investigate:**
+
+| Resource | What to check |
+|----------|---------------|
+| [sequence_fleet_disconnect.puml](diagrams/sequence_fleet_disconnect.puml) | Manual disconnect sequence |
+| [`FleetDashboard.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | Disconnect handler — does it re-register `onUpdate` after `disconnect()`? |
+| [`FleetClient.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `disconnect()` — does it clear `_updateCallbacks`? |
+
+**Common causes:**
+- **Race condition:** disconnect handler calls `fleetClient.disconnect()` (which
+  clears callbacks and stops polling), then immediately calls
+  `fleetClient.onUpdate(onFleetUpdate)` again, re-registering the callback.  An
+  in-flight poll (initiated before `disconnect()`) resolves and triggers the
+  freshly-registered callback with an error, which renders the error screen and
+  starts a new cycle
+- Fix: do **not** call `onUpdate()` in the disconnect handler — only register it
+  in the Connect button handler
+
+---
+
+### 23. Port 2510 not released after hub restart (Errno 10048)
+
+Starting the hub as orchestrator after a stop fails with:
+`[Errno 10048] error while attempting to bind on address ('0.0.0.0', 2510)`
+
+**Investigate:**
+
+| Resource | What to check |
+|----------|---------------|
+| [sequence_hub_stop_fleet_autodisconnect.puml](diagrams/sequence_hub_stop_fleet_autodisconnect.puml) | Hub stop sequence — uvicorn graceful shutdown |
+| [sequence_hub_restart_fleet_reconnect.puml](diagrams/sequence_hub_restart_fleet_reconnect.puml) | Hub restart — `_wait_for_port_free` before bind |
+| [`local_hub_manager.py`](../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | `stop_hub()` — uvicorn `should_exit` + thread join; `_start_orchestrator()` — `_wait_for_port_free()` |
+
+**Common causes:**
+- **`FleetWebAPI.stop()` is a no-op** — it logs a message but never actually
+  shuts down the uvicorn server thread.  The daemon thread keeps running and
+  holds the socket.  Fix: manage `uvicorn.Server` directly in
+  `LocalHubManager`, bypass `FleetWebAPI.start()`, and set
+  `server.should_exit = True` on stop
+- Orphan process from a previous session holds the port — `_wait_for_port_free()`
+  detects this and force-kills the holder on Windows (`netstat` + `taskkill`)
+- `_wait_for_port_free()` probed `127.0.0.1` but the server was bound to
+  `0.0.0.0` — on Windows these are separate bindings, the probe may succeed even
+  when the port is still in use
+- Thread join timeout too short — uvicorn may take several seconds to close all
+  connections and release the socket
+
+---
+
+### 24. Fleet API calls fail with ERR_CONNECTION_REFUSED in Electron
+
+Browser console shows `GET http://localhost:2510/api/fleet/status net::ERR_CONNECTION_REFUSED`
+instead of proxying through the bridge at port 1112.
+
+**Investigate:**
+
+| Resource | What to check |
+|----------|---------------|
+| [sequence_fleet_connect.puml](diagrams/sequence_fleet_connect.puml) | Fleet connect — `_bridgeOrigin()` resolution |
+| [`FleetClient.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `_bridgeOrigin()` — does it return `http://localhost:1112` in Electron? |
+| [`LocalHubClient.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubClient.js) | `_apiUrl()` — reference implementation with correct Electron fallback |
+| [`ServiceClient.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceClient.js) | `constructor()` — `apiUrl` defaults to `window.location.origin` which is `file://` in Electron |
+
+**Common causes:**
+- `MM.serviceClient.apiUrl` is `file://` in Electron (set from
+  `window.location.origin` in the `ServiceClient` constructor, and never updated
+  to the bridge URL).  `_useProxy()` checked this value and returned `false`,
+  causing FleetClient to hit port 2510 directly instead of proxying through the
+  bridge
+- Fix: replace `_useProxy()` / `_resolveUrl()` with a `_bridgeOrigin()` helper
+  that falls back to `http://localhost:1112` when `apiUrl` is not HTTP — same
+  pattern as `LocalHubClient._apiUrl()`
+- `setApiUrl()` is defined on `ServiceClient` but never called from `app.js`
+  (the bridge URL is never propagated to the client after bridge startup)
+
+---
+
 ## Service Import
 
 ### 16. Service import fails with validation error
@@ -510,7 +625,7 @@ resources for that layer.
 | AMQP Registry | [`amqp_registry_adapter.py`](../MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | [020](adr/020-exchange-topology-design.md), [012](adr/012-registry-shutdown-notification.md) | [sequence_registration.puml](diagrams/sequence_registration.puml) |
 | FastAPI Bridge | [`fastapi_bridge.py`](../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | [006](adr/006-fastapi-bridge-for-browser-gui.md), [008](adr/008-electron-bridge-lifecycle-decoupling.md) | [gui_architecture.puml](diagrams/gui_architecture.puml) |
 | Service Executor | [`service_executor.py`](../MicroserviceBase/adapters/local_hub/service_executor.py) | [009](adr/009-service-executor-with-rpc-shutdown.md), [013](adr/013-windows-process-lifecycle-fixes.md) | [sequence_shutdown.puml](diagrams/sequence_shutdown.puml), [state_process_lifecycle.puml](diagrams/state_process_lifecycle.puml) |
-| Local Hub Manager | [`local_hub_manager.py`](../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | [010](adr/010-local-hub-manager.md), [014](adr/014-config-placeholder-persistence.md) | [component_local_hub.puml](diagrams/component_local_hub.puml) |
+| Local Hub Manager | [`local_hub_manager.py`](../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | [010](adr/010-local-hub-manager.md), [014](adr/014-config-placeholder-persistence.md) | [component_local_hub.puml](diagrams/component_local_hub.puml), [sequence_hub_stop_fleet_autodisconnect.puml](diagrams/sequence_hub_stop_fleet_autodisconnect.puml), [sequence_hub_restart_fleet_reconnect.puml](diagrams/sequence_hub_restart_fleet_reconnect.puml) |
 
 ### GUI Layer
 
@@ -519,7 +634,8 @@ resources for that layer.
 | Main App | [`app.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | [005](adr/005-dual-host-gui-architecture.md), [007](adr/007-multi-broker-connection-architecture.md), [019](adr/019-service-delivered-gui-plugins.md) | [gui_architecture.puml](diagrams/gui_architecture.puml) |
 | Service Client | [`ServiceClient.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceClient.js) | [016](adr/016-rabbitmq-as-message-broker.md) | [sequence_rpc.puml](diagrams/sequence_rpc.puml) |
 | Local Hub Dashboard | [`LocalHubDashboard.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubDashboard.js) | [010](adr/010-local-hub-manager.md) | [component_local_hub.puml](diagrams/component_local_hub.puml) |
-| Fleet Dashboard | [`FleetDashboard.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | [015](adr/015-fleet-orchestrator-architecture.md) | [component_fleet.puml](diagrams/component_fleet.puml) |
+| Fleet Dashboard | [`FleetDashboard.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | [015](adr/015-fleet-orchestrator-architecture.md) | [component_fleet.puml](diagrams/component_fleet.puml), [sequence_fleet_connect.puml](diagrams/sequence_fleet_connect.puml), [sequence_fleet_disconnect.puml](diagrams/sequence_fleet_disconnect.puml) |
+| Fleet Client | [`FleetClient.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | [015](adr/015-fleet-orchestrator-architecture.md) | [sequence_fleet_connect.puml](diagrams/sequence_fleet_connect.puml), [sequence_fleet_disconnect.puml](diagrams/sequence_fleet_disconnect.puml) |
 | Service Creator | [`ServiceCreator.js`](../MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceCreator.js) | [011](adr/011-service-import-with-module-execution.md) | — |
 | Electron Wrapper | [`electron/`](../MicroserviceBase/MicroserviceManagerGUI/electron/) | [004](adr/004-electron-over-qt-for-gui-framework.md), [005](adr/005-dual-host-gui-architecture.md) | [gui_architecture.puml](diagrams/gui_architecture.puml) |
 
@@ -539,3 +655,7 @@ diagram:
 | Service import | [sequence_service_import.puml](diagrams/sequence_service_import.puml) | `LocalHubDashboard.js` → `fastapi_bridge.py` → `local_hub_manager.py` |
 | GUI plugin loading | [sequence_gui_plugin_loading.puml](diagrams/sequence_gui_plugin_loading.puml) | `app.js` → `fastapi_bridge.py` → `service_base.py` (`svc_api_get_gui_files`) |
 | Real-time update broadcast | [sequence_realtime_update.puml](diagrams/sequence_realtime_update.puml) | `service_registry.py` → `amqp_registry_adapter.py` (fanout) → `fastapi_bridge.py` (WS) → `app.js` |
+| Fleet connect | [sequence_fleet_connect.puml](diagrams/sequence_fleet_connect.puml) | `FleetDashboard.js` → `FleetClient.js` → `fastapi_bridge.py` → FleetWebAPI |
+| Fleet disconnect (manual) | [sequence_fleet_disconnect.puml](diagrams/sequence_fleet_disconnect.puml) | `FleetDashboard.js` → `FleetClient.js` → `fastapi_bridge.py` |
+| Hub stop → fleet auto-disconnect | [sequence_hub_stop_fleet_autodisconnect.puml](diagrams/sequence_hub_stop_fleet_autodisconnect.puml) | `LocalHubDashboard.js` → `fastapi_bridge.py` → `local_hub_manager.py` (uvicorn shutdown) |
+| Hub restart → fleet reconnect | [sequence_hub_restart_fleet_reconnect.puml](diagrams/sequence_hub_restart_fleet_reconnect.puml) | `LocalHubDashboard.js` → `fastapi_bridge.py` → `local_hub_manager.py` → FleetWebAPI |

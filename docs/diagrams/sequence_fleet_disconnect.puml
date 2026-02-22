@@ -1,0 +1,78 @@
+@startuml sequence_fleet_disconnect
+!theme plain
+title Fleet Disconnect Sequence (Manual)
+
+participant "User" as user
+participant "FleetDashboard\n(FleetDashboard.js)" as dashboard
+participant "FleetClient\n(FleetClient.js)" as client
+participant "Bootstrap Modal\n(#confirmModal)" as modal
+participant "FastAPI Bridge\n(localhost:1112)" as bridge
+
+== 1. User Clicks Disconnect ==
+
+user -> dashboard : Click "Disconnect" button\n(in dashboard header)
+activate dashboard
+
+dashboard -> modal : MM.showConfirm(\n"Disconnect from fleet?",\nonConfirm)
+activate modal
+modal --> user : Bootstrap modal shown
+
+alt User clicks Cancel
+   user -> modal : Click Cancel
+   modal -> modal : modal.hide()
+   deactivate modal
+   note right of modal
+     No action taken.
+     Polling continues.
+   end note
+   deactivate dashboard
+
+else User clicks Confirm
+   user -> modal : Click Confirm
+   modal -> modal : modal.hide()
+   modal -> dashboard : onConfirm()
+   deactivate modal
+
+== 2. Stop Polling and Clear State ==
+
+   dashboard -> client : disconnect()
+   activate client
+
+   client -> client : stopPolling()\n→ clearInterval(_pollTimer)
+
+   client -> client : _fleetApiUrl = null
+   client -> client : _updateCallbacks = []
+   client -> client : localStorage.removeItem(\n'mm_fleet_api_url')
+
+== 3. Clear Bridge-Side Fleet URL ==
+
+   client -> bridge : POST /api/fleet/config\n{ fleet_api_url: "" }
+   activate bridge
+   note right of client
+     Best-effort: if bridge is
+     unreachable, error is swallowed.
+   end note
+
+   bridge -> bridge : bridge._fleet_api_url = None
+   bridge --> client : { fleet_api_url: null }
+   deactivate bridge
+
+   client --> dashboard : Promise resolved
+   deactivate client
+
+== 4. Reset Dashboard UI ==
+
+   dashboard -> dashboard : _lastFleetData = null
+   dashboard -> dashboard : _lastFleetJson = null
+   dashboard -> dashboard : _consecutiveErrors = 0
+
+   dashboard -> dashboard : renderSidebar(null)\n→ clear fleet sidebar
+
+   dashboard -> dashboard : renderConfigurePrompt()\n→ show URL input form
+
+   dashboard --> user : Configure prompt displayed
+   deactivate dashboard
+
+end
+
+@enduml

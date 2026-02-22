@@ -93,6 +93,7 @@ Manages a local ProcessHub instance lifecycle.
         self._fleet_transport = None
         self._fleet_orchestrator = None
         self._fleet_web_api = None
+        self._fleet_uvi_server = None   # uvicorn.Server for graceful shutdown
         self._fleet_api_port = None
         self._agent_transport = None   # separate transport for self-agent
         self._running = False
@@ -277,6 +278,49 @@ Start a local ProcessHub server.
             )
             return self.get_status()
 
+    @staticmethod
+    def _wait_for_port_free(port, timeout=3.0):
+        """Wait until *port* is free, killing orphan holders if needed."""
+        if port is None:
+            return
+        import socket
+        import time
+        import sys
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind(("127.0.0.1", port))
+                    return  # port is free
+                except OSError:
+                    pass
+            time.sleep(0.3)
+
+        # Port still held — on Windows, try to kill orphan processes
+        if sys.platform == "win32":
+            import subprocess
+            try:
+                out = subprocess.check_output(
+                    f'netstat -ano -p TCP | findstr "LISTENING" | findstr ":{port} "',
+                    shell=True, text=True,
+                )
+                my_pid = os.getpid()
+                for line in out.strip().splitlines():
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        pid = int(parts[-1])
+                        if pid != my_pid and pid != 0:
+                            logger.info("Force-killing PID %d holding port %d", pid, port)
+                            subprocess.call(
+                                ["taskkill", "/F", "/PID", str(pid)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+            except Exception:
+                logger.debug("_wait_for_port_free: kill failed for port %d", port, exc_info=True)
+
     def stop_hub(self) -> dict:
         """
 Stop the local hub.
@@ -288,11 +332,22 @@ Stop the local hub.
             self._running = False
 
             if self._fleet_web_api is not None:
+                # Signal uvicorn to shut down gracefully (FleetWebAPI.stop()
+                # is a no-op — it never actually stops the server thread).
+                uvi = self._fleet_uvi_server
+                if uvi is not None:
+                    uvi.should_exit = True
+                thread = getattr(self._fleet_web_api, '_server_thread', None)
+                if thread is not None:
+                    thread.join(timeout=5)
                 try:
                     self._fleet_web_api.stop()
                 except Exception:
                     logger.debug("Error stopping fleet web API", exc_info=True)
                 self._fleet_web_api = None
+                self._fleet_uvi_server = None
+                # Safety net: wait for port release if join wasn't enough.
+                self._wait_for_port_free(self._fleet_api_port)
 
             if self._fleet_orchestrator is not None:
                 try:
@@ -1271,12 +1326,29 @@ Start a FleetOrchestrator + FleetWebAPI alongside the local hub.
             self._fleet_orchestrator.start()
             logger.info("FleetOrchestrator started")
 
+            self._wait_for_port_free(fleet_api_port)
             self._fleet_web_api = FleetWebAPI(
                 orchestrator=self._fleet_orchestrator,
                 host="0.0.0.0",
                 port=fleet_api_port,
             )
-            self._fleet_web_api.start()
+            # FleetWebAPI.start() uses uvicorn.run() which provides no way
+            # to shut down the server.  We bypass it and create a
+            # uvicorn.Server ourselves so we can set should_exit later.
+            import uvicorn as _uvicorn
+            _uvi_cfg = _uvicorn.Config(
+                app=self._fleet_web_api._app,
+                host="0.0.0.0",
+                port=fleet_api_port,
+                log_level="warning",
+            )
+            self._fleet_uvi_server = _uvicorn.Server(config=_uvi_cfg)
+            self._fleet_web_api._server_thread = threading.Thread(
+                target=self._fleet_uvi_server.run,
+                name="fleet-web-api",
+                daemon=True,
+            )
+            self._fleet_web_api._server_thread.start()
 
             logger.info(
                 "FleetWebAPI started on 0.0.0.0:%d", fleet_api_port,

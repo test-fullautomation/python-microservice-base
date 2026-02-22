@@ -652,10 +652,11 @@
     var resetBtn = document.getElementById('lhBtnReset');
     if (resetBtn) {
       resetBtn.onclick = function () {
-        if (!confirm('Reset the local hub? This will stop all processes and clear connections.')) return;
-        MM.localHubClient.resetHub()
-          .then(function () { MM.showToast('Reset', 'Hub has been reset.', 'success'); _refreshAfterAction(); })
-          .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        MM.showConfirm('Reset the local hub? This will stop all processes and clear connections.', function () {
+          MM.localHubClient.resetHub()
+            .then(function () { MM.showToast('Reset', 'Hub has been reset.', 'success'); _refreshAfterAction(); })
+            .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        });
       };
     }
 
@@ -663,15 +664,24 @@
     var stopHubBtn = document.getElementById('lhBtnStopHub');
     if (stopHubBtn) {
       stopHubBtn.onclick = function () {
-        if (!confirm('Stop the local hub?')) return;
-        MM.localHubClient.stopHub()
-          .then(function () {
-            MM.showToast('Hub Stopped', 'Local ProcessHub has been stopped.', 'success');
-            MM.localHubClient.stopPolling();
-            _lastFingerprint = '';
-            renderSetupForm();
-          })
-          .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        MM.showConfirm('Stop the local hub?', function () {
+          MM.localHubClient.stopHub()
+            .then(function () {
+              MM.showToast('Hub Stopped', 'Local ProcessHub has been stopped.', 'success');
+              MM.localHubClient.stopPolling();
+              _lastFingerprint = '';
+              renderSetupForm();
+              // Orchestrator was part of the hub — disconnect fleet.
+              if (MM.fleetClient) {
+                MM.fleetClient.disconnect();
+              }
+              if (MM.fleetDashboard) {
+                MM.fleetDashboard.renderSidebar(null);
+                MM.fleetDashboard.renderConfigurePrompt();
+              }
+            })
+            .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        });
       };
     }
 
@@ -698,17 +708,18 @@
     removeBtns.forEach(function (btn) {
       btn.onclick = function () {
         var procName = btn.getAttribute('data-process');
-        if (!confirm('Remove "' + procName + '"? This will delete the config and any managed service files.')) return;
-        MM.localHubClient.removeService(procName)
-          .then(function (data) {
-            if (data.success) {
-              MM.showToast('Removed', data.message, 'success');
-              _refreshAfterAction();
-            } else {
-              MM.showToast('Error', data.message, 'danger');
-            }
-          })
-          .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        MM.showConfirm('Remove "' + procName + '"? This will delete the config and any managed service files.', function () {
+          MM.localHubClient.removeService(procName)
+            .then(function (data) {
+              if (data.success) {
+                MM.showToast('Removed', data.message, 'success');
+                _refreshAfterAction();
+              } else {
+                MM.showToast('Error', data.message, 'danger');
+              }
+            })
+            .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        });
       };
     });
 
