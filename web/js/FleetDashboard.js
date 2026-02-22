@@ -12,7 +12,8 @@
 
   var _activeHubId = null;
   var _lastFleetData = null;
-  var _lastFleetJson = '';
+  var _lastFleetJson = null;
+  var _consecutiveErrors = 0;
 
   // ---- Helpers ----
 
@@ -126,10 +127,7 @@
     if (!content) return;
 
     if (!data) {
-      content.innerHTML =
-        '<div class="content-placeholder">' +
-          '<span><i class="bi bi-cloud-slash me-2"></i>Unable to load fleet data</span>' +
-        '</div>';
+      renderError(new Error('Unable to load fleet data'));
       return;
     }
 
@@ -217,9 +215,8 @@
       dashDisconnectBtn.onclick = function () {
         MM.fleetClient.disconnect().then(function () {
           _lastFleetData = null;
-          _lastFleetJson = '';
+          _lastFleetJson = null;
           _activeHubId = null;
-          MM.fleetClient.onUpdate(onFleetUpdate);
           renderSidebar(null);
           renderConfigurePrompt();
         });
@@ -480,10 +477,11 @@
     var resetBtn = document.getElementById('fleetBtnReset');
     if (resetBtn) {
       resetBtn.onclick = function () {
-        if (!confirm('Reset hub ' + (hub.hub_name || hub.hub_id) + '?')) return;
-        MM.fleetClient.resetHub(hub.hub_id)
-          .then(function () { MM.showToast('Command Sent', 'Reset command sent to ' + (hub.hub_name || hub.hub_id), 'success'); _refreshAfterAction(); })
-          .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        MM.showConfirm('Reset hub ' + (hub.hub_name || hub.hub_id) + '?', function () {
+          MM.fleetClient.resetHub(hub.hub_id)
+            .then(function () { MM.showToast('Command Sent', 'Reset command sent to ' + (hub.hub_name || hub.hub_id), 'success'); _refreshAfterAction(); })
+            .catch(function (err) { MM.showToast('Error', err.message, 'danger'); });
+        });
       };
     }
 
@@ -538,6 +536,7 @@
           .then(function () {
             try { localStorage.setItem('mm_fleet_api_url', url); } catch (e) {}
             MM.showToast('Fleet Connected', 'Fleet API URL set to ' + url, 'success');
+            MM.fleetClient.onUpdate(onFleetUpdate);
             MM.fleetClient.startPolling();
           })
           .catch(function (err) {
@@ -583,8 +582,7 @@
       disconnectBtn.onclick = function () {
         MM.fleetClient.disconnect().then(function () {
           _lastFleetData = null;
-          _lastFleetJson = '';
-          MM.fleetClient.onUpdate(onFleetUpdate);
+          _lastFleetJson = null;
           renderConfigurePrompt();
         });
       };
@@ -595,13 +593,24 @@
 
   function onFleetUpdate(data, err) {
     if (err) {
-      // Only show error if we don't have any cached data
-      if (!_lastFleetData) {
+      _consecutiveErrors++;
+      if (_lastFleetData && _consecutiveErrors >= 2) {
+        // Was connected but orchestrator went down — auto-disconnect.
+        _lastFleetData = null;
+        _lastFleetJson = null;
+        _consecutiveErrors = 0;
+        MM.fleetClient.disconnect();
+        renderSidebar(null);
+        renderConfigurePrompt();
+        MM.showToast('Fleet Disconnected', 'Lost connection to fleet orchestrator.', 'warning');
+      } else if (!_lastFleetData) {
+        // Never loaded successfully (wrong URL, etc.) — show error with Retry.
+        renderSidebar(null);
         renderError(err);
       }
-      renderSidebar(_lastFleetData);
       return;
     }
+    _consecutiveErrors = 0;
 
     // Skip re-render if nothing meaningful changed — preserves UI state
     // (expanded config panels, scroll position, etc.)
@@ -634,12 +643,14 @@
     activate: function () {
       _activeHubId = null;
       _lastFleetData = null;
-      _lastFleetJson = '';
+      _lastFleetJson = null;
+      _consecutiveErrors = 0;
       MM.fleetClient.onUpdate(onFleetUpdate);
     },
     deactivate: function () {
       _activeHubId = null;
     },
+    onUpdate: onFleetUpdate,
     renderConfigurePrompt: renderConfigurePrompt,
     renderDashboard: renderDashboard,
     renderSidebar: renderSidebar

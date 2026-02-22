@@ -1,17 +1,11 @@
 /**
  * @fileoverview Fleet API client for the Service Network tab.
  *
- * Supports two transport modes:
- *   - **Direct mode** (Electron or when fleet URL is known):
- *     Calls the FleetWebAPI directly at the configured URL.
- *   - **Proxy mode** (browser via FastAPI bridge):
- *     Calls /api/fleet/* on the same origin; the bridge forwards to the fleet.
+ * All fleet API calls are proxied through the FastAPI bridge
+ * (``/api/fleet/*``).  The bridge forwards requests to the fleet
+ * orchestrator URL configured via ``/api/fleet/config``.
  *
- * Direct mode is used whenever a fleet URL has been configured (via
- * ``configure()``). Proxy mode is the fallback when running inside the
- * FastAPI-hosted GUI and no explicit fleet URL has been set yet.
- *
- * @version 1.1.0
+ * @version 1.2.0
  */
 
 (function () {
@@ -24,34 +18,24 @@
   var _updateCallbacks = [];
 
   /**
-   * Determine whether to use the FastAPI bridge proxy.
-   * Always proxy when a bridge URL is available — avoids CORS issues and
-   * ensures the fleet URL only needs to be configured on the bridge side.
-   * Falls back to direct mode only in Electron when no bridge is available.
+   * Return the FastAPI bridge base URL.
+   * In browser mode, serviceClient.apiUrl already points to the bridge.
+   * In Electron, origin is file:// so we fall back to the default bridge
+   * address (http://localhost:1112) — same pattern as LocalHubClient.
    */
-  function _useProxy() {
-    var origin = window.location.origin || '';
-    if (origin.indexOf('http') === 0) return true;   // browser: always proxy
-    // Electron: proxy through bridge if bridge URL is available
-    var bridgeUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
-    if (bridgeUrl && bridgeUrl.indexOf('http') === 0) return true;
-    return false;
+  function _bridgeOrigin() {
+    var origin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    if (origin && origin.indexOf('http') === 0) return origin;
+    return 'http://localhost:1112';
   }
 
   /**
-   * Resolve the base URL for a fleet API call.
-   * - Direct mode: fleet URL + path  (e.g. http://localhost:2510/api/fleet/status)
-   * - Proxy mode:  same-origin + path (e.g. /api/fleet/status)
+   * Resolve the URL for a fleet API call.
+   * Always proxies through the FastAPI bridge — the bridge forwards to the
+   * fleet orchestrator URL configured via /api/fleet/config.
    */
   function _resolveUrl(path) {
-    if (_useProxy()) {
-      var origin = MM.serviceClient ? MM.serviceClient.apiUrl : window.location.origin;
-      return origin + path;
-    }
-    if (_fleetApiUrl) {
-      return _fleetApiUrl.replace(/\/+$/, '') + path;
-    }
-    return path; // should not happen — caller checks isConfigured()
+    return _bridgeOrigin() + path;
   }
 
   function _fetchJson(method, path, body) {
@@ -86,21 +70,14 @@
     configure: function (fleetApiUrl) {
       _fleetApiUrl = fleetApiUrl ? fleetApiUrl.replace(/\/+$/, '') : null;
 
-      // Inform the bridge so proxy mode works.
-      // In browser mode this is the primary config path; in Electron it's
-      // best-effort (bridge may not be running).
-      var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
-      if (bridgeOrigin && bridgeOrigin.indexOf('http') === 0) {
-        return fetch(bridgeOrigin + '/api/fleet/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fleet_api_url: fleetApiUrl || '' })
-        })
-          .then(function (res) { return res.json(); })
-          .catch(function () { return { fleet_api_url: _fleetApiUrl }; });
-      }
-
-      return Promise.resolve({ fleet_api_url: _fleetApiUrl });
+      // Tell the bridge so it can proxy fleet requests.
+      return fetch(_bridgeOrigin() + '/api/fleet/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fleet_api_url: fleetApiUrl || '' })
+      })
+        .then(function (res) { return res.json(); })
+        .catch(function () { return { fleet_api_url: _fleetApiUrl }; });
     },
 
     /**
@@ -108,7 +85,7 @@
      * @returns {boolean}
      */
     isConfigured: function () {
-      return !!_fleetApiUrl || _useProxy();
+      return !!_fleetApiUrl;
     },
 
     /**
@@ -239,14 +216,11 @@
       try { localStorage.removeItem('mm_fleet_api_url'); } catch (e) {}
 
       // Best-effort: clear the bridge-side URL too
-      var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
-      if (bridgeOrigin && bridgeOrigin.indexOf('http') === 0) {
-        fetch(bridgeOrigin + '/api/fleet/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fleet_api_url: '' })
-        }).catch(function () {});
-      }
+      fetch(_bridgeOrigin() + '/api/fleet/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fleet_api_url: '' })
+      }).catch(function () {});
 
       return Promise.resolve();
     }

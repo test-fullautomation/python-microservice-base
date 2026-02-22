@@ -441,7 +441,13 @@ Forward a request to the FleetWebAPI.
       @app.post("/api/local-hub/stop")
       def local_hub_stop():
          mgr = _get_local_hub_manager()
-         return mgr.stop_hub()
+         result = mgr.stop_hub()
+         # Orchestrator is part of the hub — clear fleet URL so the proxy
+         # returns 503 and the GUI auto-disconnects from the fleet.
+         if bridge._fleet_api_url:
+            logger.info("Clearing fleet API URL (hub stopped)")
+            bridge._fleet_api_url = None
+         return result
 
       @app.get("/api/local-hub/status")
       def local_hub_status():
