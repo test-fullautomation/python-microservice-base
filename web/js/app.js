@@ -41,6 +41,11 @@
     DISCONNECTED: 'disconnected'
   };
 
+  const DEFAULT_GROUP = 'Other';
+
+  // Internal services hidden from the sidebar.
+  const HIDDEN_SERVICES = ['ServiceRegistry'];
+
   const IMAGE_PATH = {
     READY: 'img/ready.png',
     NOT_READY: 'img/not_ready.png',
@@ -432,12 +437,219 @@
       return;
     }
 
-    // --- Cache miss: fetch HTML, create cached wrapper, load script ---
+    // --- Cache miss: multi-tier GUI detection ---
     var folderPath = SERVICES_GUI_FOLDER + '/' + serviceName + MM.servicesInfor[serviceName].version;
-    var externalContentFile = folderPath + '/' + serviceName + '.html';
 
-    fetch(externalContentFile)
-      .then(function (response) { return response.text(); })
+    _loadServiceGUIMultiTier(serviceName, folderPath, contentDiv, callbackName);
+  }
+
+  /**
+   * Multi-tier GUI loading: schema → QML/Widget Shell → Qt WASM → HTML → API Explorer.
+   *
+   * Tier 1a: gui_schema.json "renderer":"qt"      → QtShellManager (QML Shell)
+   * Tier 1b: gui_schema.json "renderer":"widget"   → WidgetShellManager (Widget Shell)
+   * Tier 1c: gui_schema.json (no renderer)         → SchemaRenderer (Bootstrap)
+   * Tier 1d: *.qml file in service folder           → QtShellManager (QML Shell)
+   * Tier 1e: *.ui file in service folder            → WidgetShellManager (Widget Shell)
+   * Tier 2:  .wasm file                             → QtWasmLoader (per-service WASM)
+   * Tier 3:  .html file                             → Custom HTML
+   * Tier 4:  Fallback                               → API Explorer
+   */
+  function _loadServiceGUIMultiTier(serviceName, folderPath, contentDiv, callbackName) {
+    var schemaUrl = folderPath + '/gui_schema.json';
+    var htmlUrl = folderPath + '/' + serviceName + '.html';
+
+    // Tier 1: Try gui_schema.json
+    fetch(schemaUrl)
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('no schema');
+        return resp.json();
+      })
+      .then(function (schema) {
+        // Tier 1a: Schema with renderer:"qt" → load via QML Shell
+        if (schema.renderer === 'qt' && window.QtShellManager) {
+          var qmlFile = schema.qml_file || 'ServiceUI.qml';
+          var qmlUrl = folderPath + '/' + qmlFile;
+          _loadQmlShellGUI(serviceName, qmlUrl, contentDiv, callbackName);
+          return;
+        }
+
+        // Tier 1b: Schema with renderer:"widget" → load via Widget Shell
+        if (schema.renderer === 'widget' && window.WidgetShellManager) {
+          var uiFile = schema.ui_file || 'ServiceUI.ui';
+          var uiUrl = folderPath + '/' + uiFile;
+          _loadWidgetShellGUI(serviceName, uiUrl, contentDiv, callbackName);
+          return;
+        }
+
+        // Tier 1c: Schema without renderer → render via SchemaRenderer (Bootstrap)
+        _deactivateCurrentPanel();
+        var wrapper = document.createElement('div');
+        wrapper.setAttribute('data-cached-service', serviceName);
+        contentDiv.appendChild(wrapper);
+        _servicePanels[serviceName] = wrapper;
+        _activePanelName = serviceName;
+        window.SchemaRenderer.render(schema, wrapper, serviceName);
+        // Set unload to cleanup live timers
+        window['unload' + serviceName] = function () {
+          window.SchemaRenderer.cleanup();
+        };
+        unloadFunction = window['unload' + serviceName];
+        if (callbackName && typeof window[callbackName] === 'function') {
+          window[callbackName]();
+        }
+      })
+      .catch(function () {
+        // Tier 1d: Check for .qml files → QML Shell (only if shell runtime is loaded)
+        // Tier 1e: Check for .ui files → Widget Shell
+        var qmlPromise = window.QtShellManager
+          ? window.QtShellManager.detect(folderPath)
+          : Promise.resolve({ hasQml: false, qmlFile: null });
+        var uiPromise = window.WidgetShellManager
+          ? window.WidgetShellManager.detect(folderPath)
+          : Promise.resolve({ hasUi: false, uiFile: null });
+
+        Promise.all([qmlPromise, uiPromise]).then(function (results) {
+          var qmlResult = results[0];
+          var uiResult = results[1];
+
+          if (qmlResult.hasQml) {
+            var qmlUrl = folderPath + '/' + qmlResult.qmlFile;
+            _loadQmlShellGUI(serviceName, qmlUrl, contentDiv, callbackName,
+                             folderPath, htmlUrl);
+          } else if (uiResult.hasUi) {
+            var uiUrl = folderPath + '/' + uiResult.uiFile;
+            _loadWidgetShellGUI(serviceName, uiUrl, contentDiv, callbackName,
+                                folderPath, htmlUrl);
+          } else {
+            _tryQtWasmOrHtml(serviceName, folderPath, htmlUrl, contentDiv, callbackName);
+          }
+        });
+      });
+  }
+
+  /**
+   * Load a service GUI via the shared QML Shell.
+   * Falls through to WASM/HTML tier on failure when folderPath/htmlUrl provided.
+   */
+  function _loadQmlShellGUI(serviceName, qmlUrl, contentDiv, callbackName,
+                             folderPath, htmlUrl) {
+    _deactivateCurrentPanel();
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('data-cached-service', serviceName);
+    wrapper.style.cssText = 'height:calc(100vh - 56px - 3rem);';
+    contentDiv.appendChild(wrapper);
+    _servicePanels[serviceName] = wrapper;
+    _activePanelName = serviceName;
+
+    window.QtShellManager.loadQml(qmlUrl, wrapper, serviceName)
+      .catch(function (err) {
+        console.warn('QtShellManager failed for', serviceName, err);
+        // Remove the failed panel and fall through to next tier.
+        if (folderPath) {
+          wrapper.remove();
+          delete _servicePanels[serviceName];
+          _activePanelName = null;
+          _tryQtWasmOrHtml(serviceName, folderPath, htmlUrl, contentDiv, callbackName);
+        }
+      });
+
+    // No-op: panel cache hides/shows via display:none.
+    window['unload' + serviceName] = function () {};
+    unloadFunction = window['unload' + serviceName];
+    if (callbackName && typeof window[callbackName] === 'function') {
+      window[callbackName]();
+    }
+  }
+
+  /**
+   * Load a service GUI via the shared Widget Shell.
+   * Falls through to WASM/HTML tier on failure when folderPath/htmlUrl provided.
+   */
+  function _loadWidgetShellGUI(serviceName, uiUrl, contentDiv, callbackName,
+                                folderPath, htmlUrl) {
+    _deactivateCurrentPanel();
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('data-cached-service', serviceName);
+    wrapper.style.cssText = 'height:calc(100vh - 56px - 3rem);';
+    contentDiv.appendChild(wrapper);
+    _servicePanels[serviceName] = wrapper;
+    _activePanelName = serviceName;
+
+    window.WidgetShellManager.loadWidget(uiUrl, wrapper, serviceName)
+      .catch(function (err) {
+        console.warn('WidgetShellManager failed for', serviceName, err);
+        // Remove the failed panel and fall through to next tier.
+        if (folderPath) {
+          wrapper.remove();
+          delete _servicePanels[serviceName];
+          _activePanelName = null;
+          _tryQtWasmOrHtml(serviceName, folderPath, htmlUrl, contentDiv, callbackName);
+        }
+      });
+
+    // No-op: panel cache hides/shows via display:none.
+    window['unload' + serviceName] = function () {};
+    unloadFunction = window['unload' + serviceName];
+    if (callbackName && typeof window[callbackName] === 'function') {
+      window[callbackName]();
+    }
+  }
+
+  /**
+   * Tier 2/3 fallback: try per-service Qt WASM, then custom HTML.
+   */
+  function _tryQtWasmOrHtml(serviceName, folderPath, htmlUrl, contentDiv, callbackName) {
+    if (window.QtWasmLoader) {
+      window.QtWasmLoader.detect(folderPath)
+        .then(function (hasWasm) {
+          if (hasWasm) {
+            _deactivateCurrentPanel();
+            var wrapper = document.createElement('div');
+            wrapper.setAttribute('data-cached-service', serviceName);
+            wrapper.style.cssText = 'height:calc(100vh - 56px - 3rem);';
+            contentDiv.appendChild(wrapper);
+            _servicePanels[serviceName] = wrapper;
+            _activePanelName = serviceName;
+
+            window.QtWasmLoader.load(folderPath, wrapper, serviceName)
+              .catch(function (err) {
+                console.warn('QtWasmLoader failed for', serviceName, err);
+                MM.showToast('Qt WASM', 'Failed to load: ' + err.message, 'warning');
+              });
+
+            // No-op: panel cache hides/shows via display:none.
+            // QtWasmLoader.unload() destroys the WASM instance which
+            // cannot be re-created on cache-hit, so only call it on
+            // full teardown (e.g., disconnect).
+            window['unload' + serviceName] = function () {};
+            unloadFunction = window['unload' + serviceName];
+            if (callbackName && typeof window[callbackName] === 'function') {
+              window[callbackName]();
+            }
+          } else {
+            // Tier 3: Try custom HTML
+            _fetchAndRenderServiceGUI(serviceName, htmlUrl, contentDiv, callbackName);
+          }
+        });
+    } else {
+      // Tier 3: Try custom HTML (QtWasmLoader not loaded)
+      _fetchAndRenderServiceGUI(serviceName, htmlUrl, contentDiv, callbackName);
+    }
+  }
+
+  /**
+   * Fetch a service GUI HTML file and render it in the content panel.
+   * Also loads the companion .js script.
+   */
+  function _fetchAndRenderServiceGUI(serviceName, htmlUrl, contentDiv, callbackName) {
+    fetch(htmlUrl)
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status);
+        }
+        return response.text();
+      })
       .then(function (htmlContent) {
         _deactivateCurrentPanel();
 
@@ -449,7 +661,7 @@
         _servicePanels[serviceName] = wrapper;
         _activePanelName = serviceName;
 
-        var scriptSrc = externalContentFile.replace('.html', '.js');
+        var scriptSrc = htmlUrl.replace('.html', '.js');
         if (!isScriptAlreadyAdded(scriptSrc)) {
           var script = document.createElement('script');
           script.src = scriptSrc;
@@ -478,7 +690,24 @@
         }
       })
       .catch(function (error) {
-        console.error('Error loading service content:', error);
+        // <ServiceName>.html not found — try discovering the actual .html file
+        var folderPath = htmlUrl.substring(0, htmlUrl.lastIndexOf('/'));
+        MM.listServiceFiles(folderPath)
+          .then(function (files) {
+            var htmlFile = files.find(function (f) { return f.endsWith('.html'); });
+            if (htmlFile) {
+              var altUrl = folderPath + '/' + htmlFile;
+              console.log('Retrying with discovered file:', altUrl);
+              _fetchAndRenderServiceGUI(serviceName, altUrl, contentDiv, callbackName);
+            } else {
+              console.warn('No .html file found in', folderPath, '- showing API explorer');
+              showServiceAPIExplorer(serviceName);
+            }
+          })
+          .catch(function () {
+            console.warn('Cannot discover GUI files for', serviceName, '- showing API explorer');
+            showServiceAPIExplorer(serviceName);
+          });
       });
   }
 
@@ -775,6 +1004,26 @@
 
     var methods = serviceInfo.methods || [];
     var methodsInfo = serviceInfo.methods_info || {};
+
+    // If SchemaAutoGen + SchemaRenderer are available and methods_info has data,
+    // generate a schema-driven UI instead of the raw API explorer.
+    if (window.SchemaAutoGen && window.SchemaRenderer &&
+        methods.length > 0 && Object.keys(methodsInfo).length > 0) {
+      var schema = window.SchemaAutoGen.fromMethodsInfo(serviceName, serviceInfo);
+      var wrapper = document.createElement('div');
+      wrapper.setAttribute('data-cached-service', serviceName);
+      contentDiv.appendChild(wrapper);
+      _servicePanels[serviceName] = wrapper;
+      _activePanelName = serviceName;
+      window.SchemaRenderer.render(schema, wrapper, serviceName);
+      window['unload' + serviceName] = function () {
+        window.SchemaRenderer.cleanup();
+      };
+      unloadFunction = window['unload' + serviceName];
+      return;
+    }
+
+    // Fallback: manual API Explorer for services with no metadata
 
     // Build method options
     var methodOptions = '<option value="" disabled selected>-- Select a method --</option>';
@@ -1604,7 +1853,9 @@
    */
   function extractServicesInformation(data) {
     var accordionData = Object.values(data).reduce(function (acc, service) {
-      var existingItem = acc.find(function (item) { return item.title === service.group; });
+      if (HIDDEN_SERVICES.indexOf(service.name) !== -1) return acc;
+      var group = service.group || DEFAULT_GROUP;
+      var existingItem = acc.find(function (item) { return item.title === group; });
       var newItem = {
         label: service.name,
         iconSrc: IMAGE_PATH.READY,
@@ -1613,13 +1864,11 @@
       };
 
       if (!existingItem) {
-        if (service.group !== '') {
-          acc.push({
-            title: service.group,
-            contentId: 'content-' + service.group.replace(/ /g, '-').toLowerCase(),
-            items: [newItem]
-          });
-        }
+        acc.push({
+          title: group,
+          contentId: 'content-' + group.replace(/ /g, '-').toLowerCase(),
+          items: [newItem]
+        });
       } else {
         existingItem.items.push(newItem);
       }
@@ -1731,11 +1980,13 @@
           console.log('GUI resources downloaded for', serviceName);
           if (callbackFunc) callbackFunc();
         } else {
-          console.error('Failed to download GUI resources for', serviceName);
+          console.warn('Failed to download GUI resources for', serviceName, '- showing API explorer');
+          showServiceAPIExplorer(serviceName);
         }
       })
       .catch(function (error) {
-        console.error('Error downloading GUI resources:', error);
+        console.warn('Error downloading GUI resources:', error, '- showing API explorer');
+        showServiceAPIExplorer(serviceName);
       });
   }
 
@@ -1884,7 +2135,6 @@
     // Check if any new services appeared on this broker
     Object.keys(updatedServices).forEach(function (serviceName) {
       var svcInfo = updatedServices[serviceName];
-      if (!svcInfo.group || svcInfo.group === '') return;
 
       if (!brokerSection.querySelector('.list-group-item[data-service-name="' + serviceName + '"]')) {
         var newServiceData = {};
@@ -2285,6 +2535,27 @@
   MM.SERVICES_EXCHANGE_NAME = SERVICES_EXCHANGE_NAME;
   MM.CONNECTION_STATUS = CONNECTION_STATUS;
   MM.SERVICES_GUI_FOLDER = SERVICES_GUI_FOLDER;
+
+  /**
+   * List files in a service GUI folder.
+   * Works in both Electron (via preload) and web/FastAPI (via API) modes.
+   * @param {string} folderPath - Relative path (e.g. "services/MyService1.0.0").
+   * @returns {Promise<string[]>} Array of filenames.
+   */
+  MM.listServiceFiles = function (folderPath) {
+    // Electron mode: use preload's synchronous fs.readdirSync
+    if (window.electronAPI && typeof window.electronAPI.listDir === 'function') {
+      return Promise.resolve(window.electronAPI.listDir(folderPath));
+    }
+    // Web/FastAPI mode: use list-dir API
+    var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    return fetch(apiUrl + '/api/list-dir/' + encodeURIComponent(folderPath))
+      .then(function (resp) {
+        if (!resp.ok) throw new Error('list-dir failed');
+        return resp.json();
+      })
+      .then(function (data) { return data.files || []; });
+  };
   MM.showServiceAPIExplorer = showServiceAPIExplorer;
   MM.showServiceHelper = showServiceHelper;
   MM.switchMode = switchMode;
