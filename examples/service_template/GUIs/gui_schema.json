@@ -1,0 +1,46 @@
+{
+  "$schema": "microservice-gui/1.0",
+  "service": "MyService",
+  "layout": "tabs",
+  "title": "MyService",
+  "subtitle": "Example service with schema-driven GUI",
+  "sections": [
+    {
+      "id": "greeting",
+      "label": "Greeting",
+      "components": [
+        {
+          "type": "method-form",
+          "method": "svc_api_hello",
+          "fields": [
+            {
+              "arg": "name",
+              "label": "Your Name",
+              "widget": "text",
+              "placeholder": "World"
+            }
+          ],
+          "submit_label": "Say Hello",
+          "result_display": "text"
+        }
+      ]
+    },
+    {
+      "id": "version",
+      "label": "Version",
+      "components": [
+        {
+          "type": "method-form",
+          "method": "svc_api_get_version",
+          "fields": [],
+          "submit_label": "Get Version",
+          "result_display": "json"
+        },
+        {
+          "type": "text",
+          "content": "Fetches the current service version from the running instance."
+        }
+      ]
+    }
+  ]
+}

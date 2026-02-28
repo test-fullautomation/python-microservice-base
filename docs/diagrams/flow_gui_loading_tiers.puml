@@ -1,0 +1,121 @@
+@startuml flow_gui_loading_tiers
+!theme plain
+title Multi-Tier GUI Loading — Decision Flow
+
+start
+
+:User clicks service in sidebar;
+
+if (gui_support === true?) then (yes)
+else (no)
+  :showServiceAPIExplorer();
+  note right: **Tier 4**\nAuto-generated API form
+  stop
+endif
+
+:checkAndGetTheServiceGUIResources()
+→ loadServiceContent();
+
+if (Panel cached in\n_servicePanels?) then (yes)
+  :Show cached DOM panel
+  (restore unloadFunction);
+  stop
+else (no)
+endif
+
+:Build folderPath =
+"services/{Name}{Version}";
+
+partition "_loadServiceGUIMultiTier()" {
+
+  :fetch(folderPath + '/gui_schema.json');
+
+  if (gui_schema.json found?) then (yes)
+
+    if (schema.renderer === "qt"?) then (yes)
+      :qmlFile = schema.qml_file
+      or "ServiceUI.qml";
+      :qmlUrl = folderPath + '/' + qmlFile;
+      #LightBlue:_loadQmlShellGUI()
+      → **QtShellManager.loadQml()**;
+      note right: **Tier 1a**\nSchema + Qt renderer\n→ QML Shell
+      stop
+
+    else (no)
+      #LightGreen:SchemaRenderer.render(schema);
+      note right: **Tier 1b**\nSchema → Bootstrap form
+      stop
+
+    endif
+
+  else (not found)
+  endif
+
+  if (window.QtShellManager\navailable?) then (yes)
+
+    :QtShellManager.detect(folderPath)
+    → /api/list-dir/ for *.qml;
+
+    if (.qml file found?) then (yes)
+      :qmlUrl = folderPath + '/' + qmlFile;
+      #LightBlue:_loadQmlShellGUI()
+      → **QtShellManager.loadQml()**;
+      note right: **Tier 1c**\n.qml file detected\n→ QML Shell
+      stop
+
+    else (no)
+    endif
+
+  else (no)
+  endif
+
+  partition "_tryQtWasmOrHtml()" {
+
+    if (window.QtWasmLoader\navailable?) then (yes)
+
+      :QtWasmLoader.detect(folderPath)
+      → /api/list-dir/ for *.wasm;
+
+      if (.wasm file found?) then (yes)
+        #Orange:QtWasmLoader.load(folder, wrapper);
+        note right: **Tier 2**\nPer-service Qt WASM binary
+        stop
+
+      else (no)
+      endif
+
+    else (no)
+    endif
+
+    :fetch(folderPath + '/'
+    + serviceName + '.html');
+
+    if ({Name}.html found?) then (yes)
+      #Wheat:_fetchAndRenderServiceGUI()
+      → inject HTML + load JS;
+      note right: **Tier 3**\nCustom HTML + JS
+      stop
+
+    else (not found)
+    endif
+
+    :/api/list-dir/ → any .html file?;
+
+    if (alternate .html found?) then (yes)
+      #Wheat:_fetchAndRenderServiceGUI()
+      with discovered file;
+      note right: **Tier 3** (alternate)
+      stop
+
+    else (no)
+      :showServiceAPIExplorer();
+      note right: **Tier 4** (fallback)\nAuto-generated API form
+      stop
+
+    endif
+
+  }
+
+}
+
+@enduml

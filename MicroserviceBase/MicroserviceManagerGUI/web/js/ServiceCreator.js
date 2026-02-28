@@ -34,6 +34,8 @@
       routingKey: '',
       transport: 'rabbitmq',
       guiSupport: false,
+      guiMode: 'schema',       // 'schema' | 'custom'
+      guiSchema: null,         // gui_schema.json object (when mode is 'schema')
       methods: [],
       outputPath: '',
       customGuiHtml: null,
@@ -322,16 +324,17 @@
     container.appendChild(row);
   }
 
-  // Step 3: GUI Support
+  // Step 3: GUI Support — Schema Builder + Custom HTML/JS tabs
   function _renderStep3(container) {
     var hasGui = _formData.guiSupport;
+    var guiMode = _formData.guiMode || 'schema';
     var htmlContent = _formData.customGuiHtml || _generateGuiHtml(_formData);
 
     container.innerHTML =
       '<div class="creator-content' + (hasGui ? ' has-gui-preview' : '') + '">' +
         '<div class="creator-header">' +
           '<h4><i class="bi bi-3-circle me-2"></i>GUI Support</h4>' +
-          '<p>Choose whether to include a GUI template for your service.</p>' +
+          '<p>Choose whether to include a GUI for your service.</p>' +
         '</div>' +
         '<div class="card">' +
           '<div class="card-body">' +
@@ -339,50 +342,81 @@
               '<input class="form-check-input" type="checkbox" id="cfGuiSupport"' +
                 (hasGui ? ' checked' : '') + '>' +
               '<label class="form-check-label fw-semibold" for="cfGuiSupport">' +
-                'Generate GUI template' +
+                'Generate GUI' +
               '</label>' +
             '</div>' +
             '<div id="guiPreviewArea" style="display:' + (hasGui ? '' : 'none') + '">' +
 
-              // Toolbar
-              '<div class="gui-preview-toolbar">' +
-                '<button class="btn btn-outline-secondary btn-sm" id="btnResetGuiTemplate">' +
-                  '<i class="bi bi-arrow-counterclockwise me-1"></i>Reset to Template' +
-                '</button>' +
-                '<label class="btn btn-outline-primary btn-sm mb-0" id="lblUploadHtml">' +
-                  '<i class="bi bi-upload me-1"></i>Upload HTML' +
-                  '<input type="file" accept=".html,.htm" id="cfUploadHtml" class="d-none">' +
-                '</label>' +
+              // Mode tabs
+              '<ul class="nav nav-tabs mb-3" id="guiModeTabs">' +
+                '<li class="nav-item">' +
+                  '<button class="nav-link' + (guiMode === 'schema' ? ' active' : '') + '" ' +
+                    'data-gui-mode="schema" type="button">' +
+                    '<i class="bi bi-diagram-3 me-1"></i>Schema Builder (Recommended)' +
+                  '</button>' +
+                '</li>' +
+                '<li class="nav-item">' +
+                  '<button class="nav-link' + (guiMode === 'custom' ? ' active' : '') + '" ' +
+                    'data-gui-mode="custom" type="button">' +
+                    '<i class="bi bi-code-slash me-1"></i>Custom HTML/JS' +
+                  '</button>' +
+                '</li>' +
+              '</ul>' +
+
+              // Schema Builder tab content
+              '<div id="guiSchemaPane" style="display:' + (guiMode === 'schema' ? '' : 'none') + '">' +
+                _renderSchemaBuilder() +
               '</div>' +
 
-              // Side-by-side editor + preview
-              '<div class="gui-preview-layout">' +
-                '<div>' +
-                  '<label class="form-label fw-semibold form-label-sm">HTML Editor</label>' +
-                  '<textarea class="gui-html-editor" id="cfGuiHtmlEditor" spellcheck="false">' +
-                    _escapeHtml(htmlContent) +
-                  '</textarea>' +
+              // Custom HTML/JS tab content
+              '<div id="guiCustomPane" style="display:' + (guiMode === 'custom' ? '' : 'none') + '">' +
+
+                // Toolbar
+                '<div class="gui-preview-toolbar">' +
+                  '<button class="btn btn-outline-secondary btn-sm" id="btnResetGuiTemplate">' +
+                    '<i class="bi bi-arrow-counterclockwise me-1"></i>Reset to Template' +
+                  '</button>' +
+                  '<label class="btn btn-outline-primary btn-sm mb-0" id="lblUploadHtml">' +
+                    '<i class="bi bi-upload me-1"></i>Upload HTML' +
+                    '<input type="file" accept=".html,.htm" id="cfUploadHtml" class="d-none">' +
+                  '</label>' +
                 '</div>' +
-                '<div>' +
-                  '<label class="form-label fw-semibold form-label-sm">Live Preview</label>' +
-                  '<div class="gui-preview-render" id="guiPreviewRender">' +
-                    htmlContent +
+
+                // Side-by-side editor + preview
+                '<div class="gui-preview-layout">' +
+                  '<div>' +
+                    '<label class="form-label fw-semibold form-label-sm">HTML Editor</label>' +
+                    '<textarea class="gui-html-editor" id="cfGuiHtmlEditor" spellcheck="false">' +
+                      _escapeHtml(htmlContent) +
+                    '</textarea>' +
+                  '</div>' +
+                  '<div>' +
+                    '<label class="form-label fw-semibold form-label-sm">Live Preview</label>' +
+                    '<div class="gui-preview-render" id="guiPreviewRender">' +
+                      htmlContent +
+                    '</div>' +
+                  '</div>' +
+                '</div>' +
+
+                // JS upload dropzone
+                '<div class="mt-3">' +
+                  '<label class="form-label fw-semibold form-label-sm">JavaScript File (optional)</label>' +
+                  '<div class="gui-js-dropzone" id="guiJsDropzone">' +
+                    '<i class="bi bi-filetype-js me-2"></i>' +
+                    '<span id="guiJsDropzoneLabel">' +
+                      (_uploadedJsFileName
+                        ? '<span class="badge bg-info me-1">' + _escapeHtml(_uploadedJsFileName) + '</span> Drop or click to replace'
+                        : 'Drag &amp; drop a .js file here, or click to browse') +
+                    '</span>' +
+                    '<input type="file" accept=".js" id="cfUploadJs" class="d-none">' +
                   '</div>' +
                 '</div>' +
               '</div>' +
 
-              // JS upload dropzone
-              '<div class="mt-3">' +
-                '<label class="form-label fw-semibold form-label-sm">JavaScript File (optional)</label>' +
-                '<div class="gui-js-dropzone" id="guiJsDropzone">' +
-                  '<i class="bi bi-filetype-js me-2"></i>' +
-                  '<span id="guiJsDropzoneLabel">' +
-                    (_uploadedJsFileName
-                      ? '<span class="badge bg-info me-1">' + _escapeHtml(_uploadedJsFileName) + '</span> Drop or click to replace'
-                      : 'Drag &amp; drop a .js file here, or click to browse') +
-                  '</span>' +
-                  '<input type="file" accept=".js" id="cfUploadJs" class="d-none">' +
-                '</div>' +
+              // Schema Live Preview (below schema builder)
+              '<div id="guiSchemaPreview" class="mt-3" style="display:' + (guiMode === 'schema' ? '' : 'none') + '">' +
+                '<label class="form-label fw-semibold form-label-sm">Live Preview</label>' +
+                '<div class="gui-preview-render" id="schemaPreviewRender" style="min-height:200px;"></div>' +
               '</div>' +
 
             '</div>' +
@@ -395,8 +429,24 @@
     var checkbox = document.getElementById('cfGuiSupport');
     var previewArea = document.getElementById('guiPreviewArea');
     var creatorContent = container.querySelector('.creator-content');
-    var editor = document.getElementById('cfGuiHtmlEditor');
-    var preview = document.getElementById('guiPreviewRender');
+
+    // Tab switching
+    var modeTabs = document.querySelectorAll('#guiModeTabs .nav-link');
+    var schemaPane = document.getElementById('guiSchemaPane');
+    var customPane = document.getElementById('guiCustomPane');
+    var schemaPreview = document.getElementById('guiSchemaPreview');
+
+    modeTabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        modeTabs.forEach(function (t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        var mode = tab.getAttribute('data-gui-mode');
+        _formData.guiMode = mode;
+        schemaPane.style.display = mode === 'schema' ? '' : 'none';
+        customPane.style.display = mode === 'custom' ? '' : 'none';
+        schemaPreview.style.display = mode === 'schema' ? '' : 'none';
+      });
+    });
 
     // Toggle GUI support
     checkbox.addEventListener('change', function () {
@@ -404,92 +454,600 @@
       previewArea.style.display = checkbox.checked ? '' : 'none';
       if (checkbox.checked) {
         creatorContent.classList.add('has-gui-preview');
-        if (!editor.value.trim()) {
-          var tpl = _generateGuiHtml(_formData);
-          editor.value = tpl;
-          preview.innerHTML = tpl;
-        }
+        _refreshSchemaPreview();
       } else {
         creatorContent.classList.remove('has-gui-preview');
       }
     });
 
+    // ---- Schema Builder wiring ----
+    _wireSchemaBuilder();
+    if (hasGui && guiMode === 'schema') {
+      _refreshSchemaPreview();
+    }
+
+    // ---- Custom HTML/JS wiring ----
+    var editor = document.getElementById('cfGuiHtmlEditor');
+    var preview = document.getElementById('guiPreviewRender');
+
     // Debounced live preview
     var _debounceTimer = null;
-    editor.addEventListener('input', function () {
-      clearTimeout(_debounceTimer);
-      _debounceTimer = setTimeout(function () {
-        preview.innerHTML = editor.value;
-      }, 200);
-    });
+    if (editor) {
+      editor.addEventListener('input', function () {
+        clearTimeout(_debounceTimer);
+        _debounceTimer = setTimeout(function () {
+          preview.innerHTML = editor.value;
+        }, 200);
+      });
+    }
 
     // HTML file upload
     var htmlFileInput = document.getElementById('cfUploadHtml');
-    htmlFileInput.addEventListener('change', function () {
-      if (htmlFileInput.files && htmlFileInput.files[0]) {
-        _readFileAsText(htmlFileInput.files[0], function (text) {
-          editor.value = text;
-          preview.innerHTML = text;
-          _formData.customGuiHtml = text;
-        });
-      }
-    });
+    if (htmlFileInput) {
+      htmlFileInput.addEventListener('change', function () {
+        if (htmlFileInput.files && htmlFileInput.files[0]) {
+          _readFileAsText(htmlFileInput.files[0], function (text) {
+            editor.value = text;
+            preview.innerHTML = text;
+            _formData.customGuiHtml = text;
+          });
+        }
+      });
+    }
 
     // HTML drag-and-drop on editor
-    editor.addEventListener('dragover', function (e) { e.preventDefault(); });
-    editor.addEventListener('drop', function (e) {
-      e.preventDefault();
-      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file && /\.(html?|htm)$/i.test(file.name)) {
-        _readFileAsText(file, function (text) {
-          editor.value = text;
-          preview.innerHTML = text;
-          _formData.customGuiHtml = text;
-        });
-      }
-    });
+    if (editor) {
+      editor.addEventListener('dragover', function (e) { e.preventDefault(); });
+      editor.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file && /\.(html?|htm)$/i.test(file.name)) {
+          _readFileAsText(file, function (text) {
+            editor.value = text;
+            preview.innerHTML = text;
+            _formData.customGuiHtml = text;
+          });
+        }
+      });
+    }
 
     // JS file upload
     var jsFileInput = document.getElementById('cfUploadJs');
     var jsDropzone = document.getElementById('guiJsDropzone');
     var jsLabel = document.getElementById('guiJsDropzoneLabel');
 
-    jsDropzone.addEventListener('click', function () { jsFileInput.click(); });
-    jsFileInput.addEventListener('change', function () {
-      if (jsFileInput.files && jsFileInput.files[0]) {
-        _handleJsUpload(jsFileInput.files[0], jsLabel);
-      }
-    });
+    if (jsDropzone) {
+      jsDropzone.addEventListener('click', function () { jsFileInput.click(); });
+      jsFileInput.addEventListener('change', function () {
+        if (jsFileInput.files && jsFileInput.files[0]) {
+          _handleJsUpload(jsFileInput.files[0], jsLabel);
+        }
+      });
 
-    // JS drag-and-drop
-    jsDropzone.addEventListener('dragover', function (e) {
-      e.preventDefault();
-      jsDropzone.classList.add('dragover');
-    });
-    jsDropzone.addEventListener('dragleave', function () {
-      jsDropzone.classList.remove('dragover');
-    });
-    jsDropzone.addEventListener('drop', function (e) {
-      e.preventDefault();
-      jsDropzone.classList.remove('dragover');
-      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file && /\.js$/i.test(file.name)) {
-        _handleJsUpload(file, jsLabel);
-      }
-    });
+      // JS drag-and-drop
+      jsDropzone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        jsDropzone.classList.add('dragover');
+      });
+      jsDropzone.addEventListener('dragleave', function () {
+        jsDropzone.classList.remove('dragover');
+      });
+      jsDropzone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        jsDropzone.classList.remove('dragover');
+        var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file && /\.js$/i.test(file.name)) {
+          _handleJsUpload(file, jsLabel);
+        }
+      });
+    }
 
     // Reset to Template
-    document.getElementById('btnResetGuiTemplate').addEventListener('click', function () {
-      var tpl = _generateGuiHtml(_formData);
-      editor.value = tpl;
-      preview.innerHTML = tpl;
-      _formData.customGuiHtml = null;
-      _formData.customGuiJs = null;
-      _uploadedJsFileName = '';
-      jsLabel.innerHTML = 'Drag &amp; drop a .js file here, or click to browse';
-    });
+    var resetBtn = document.getElementById('btnResetGuiTemplate');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        var tpl = _generateGuiHtml(_formData);
+        editor.value = tpl;
+        preview.innerHTML = tpl;
+        _formData.customGuiHtml = null;
+        _formData.customGuiJs = null;
+        _uploadedJsFileName = '';
+        jsLabel.innerHTML = 'Drag &amp; drop a .js file here, or click to browse';
+      });
+    }
 
     _wireNavButtons();
+  }
+
+  // ---- Schema Builder HTML ----
+
+  function _renderSchemaBuilder() {
+    var schema = _formData.guiSchema || _buildSchemaFromMethods();
+    var sections = schema.sections || [];
+
+    var html = '';
+
+    // Layout selector
+    html += '<div class="mb-3">' +
+      '<label class="form-label fw-semibold form-label-sm">Layout</label>' +
+      '<select class="form-select form-select-sm" id="cfSchemaLayout" style="width:200px;">' +
+        '<option value="tabs"' + (schema.layout === 'tabs' ? ' selected' : '') + '>Tabs</option>' +
+        '<option value="single"' + (schema.layout === 'single' ? ' selected' : '') + '>Single</option>' +
+        '<option value="accordion"' + (schema.layout === 'accordion' ? ' selected' : '') + '>Accordion</option>' +
+      '</select>' +
+    '</div>';
+
+    // Title / Subtitle
+    html += '<div class="row mb-3">' +
+      '<div class="col">' +
+        '<label class="form-label form-label-sm">Title</label>' +
+        '<input type="text" class="form-control form-control-sm" id="cfSchemaTitle" ' +
+          'value="' + _escapeHtml(schema.title || _formData.serviceName) + '" placeholder="Service Title">' +
+      '</div>' +
+      '<div class="col">' +
+        '<label class="form-label form-label-sm">Subtitle</label>' +
+        '<input type="text" class="form-control form-control-sm" id="cfSchemaSubtitle" ' +
+          'value="' + _escapeHtml(schema.subtitle || '') + '" placeholder="Short description">' +
+      '</div>' +
+    '</div>';
+
+    // Sections
+    html += '<div id="schemaSectionsContainer">';
+    sections.forEach(function (section, idx) {
+      html += _renderSchemaSection(section, idx);
+    });
+    html += '</div>';
+
+    // Add section button
+    html += '<button class="btn btn-outline-primary btn-sm mt-2" id="btnAddSchemaSection">' +
+      '<i class="bi bi-plus-lg me-1"></i>Add Section</button>';
+
+    // Export button
+    html += '<button class="btn btn-outline-secondary btn-sm mt-2 ms-2" id="btnExportSchema">' +
+      '<i class="bi bi-download me-1"></i>Export as JSON</button>';
+
+    return html;
+  }
+
+  function _renderSchemaSection(section, idx) {
+    var comps = section.components || [];
+
+    var html = '<div class="card mb-2 schema-section-card" data-section-idx="' + idx + '">' +
+      '<div class="card-header py-2 d-flex justify-content-between align-items-center">' +
+        '<div class="d-flex align-items-center gap-2">' +
+          '<input type="text" class="form-control form-control-sm" style="width:200px;" ' +
+            'data-sfield="label" value="' + _escapeHtml(section.label || '') + '" placeholder="Section Label">' +
+          '<input type="text" class="form-control form-control-sm" style="width:120px;" ' +
+            'data-sfield="id" value="' + _escapeHtml(section.id || '') + '" placeholder="Section ID">' +
+        '</div>' +
+        '<button class="btn btn-outline-danger btn-sm btn-remove-section" title="Remove section">' +
+          '<i class="bi bi-trash"></i></button>' +
+      '</div>' +
+      '<div class="card-body py-2">';
+
+    // Components within the section
+    comps.forEach(function (comp, cIdx) {
+      html += _renderSchemaComponent(comp, idx, cIdx);
+    });
+
+    html += '<button class="btn btn-outline-primary btn-sm btn-add-component" ' +
+      'data-section-idx="' + idx + '">' +
+      '<i class="bi bi-plus me-1"></i>Add Component</button>';
+
+    html += '</div></div>';
+    return html;
+  }
+
+  function _renderSchemaComponent(comp, sectionIdx, compIdx) {
+    var type = comp.type || 'method-form';
+    var html = '<div class="border rounded p-2 mb-2 schema-component-card" ' +
+      'data-section-idx="' + sectionIdx + '" data-comp-idx="' + compIdx + '">' +
+      '<div class="d-flex justify-content-between align-items-center mb-2">' +
+        '<div class="d-flex align-items-center gap-2">' +
+          '<select class="form-select form-select-sm" style="width:150px;" data-cfield="type">' +
+            '<option value="method-form"' + (type === 'method-form' ? ' selected' : '') + '>Method Form</option>' +
+            '<option value="result-table"' + (type === 'result-table' ? ' selected' : '') + '>Result Table</option>' +
+            '<option value="text"' + (type === 'text' ? ' selected' : '') + '>Static Text</option>' +
+            '<option value="live-status"' + (type === 'live-status' ? ' selected' : '') + '>Live Status</option>' +
+          '</select>' +
+          '<span class="badge bg-secondary">' + _escapeHtml(type) + '</span>' +
+        '</div>' +
+        '<button class="btn btn-outline-danger btn-sm btn-remove-component" title="Remove">' +
+          '<i class="bi bi-x-lg"></i></button>' +
+      '</div>';
+
+    // Type-specific fields
+    if (type === 'method-form') {
+      html += _renderMethodFormFields(comp);
+    } else if (type === 'result-table') {
+      html += _renderResultTableFields(comp);
+    } else if (type === 'text') {
+      html += '<div class="mb-2">' +
+        '<textarea class="form-control form-control-sm" data-cfield="content" rows="2" ' +
+          'placeholder="Text content">' + _escapeHtml(comp.content || '') + '</textarea></div>';
+    } else if (type === 'live-status') {
+      html += _renderLiveStatusFields(comp);
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  function _renderMethodFormFields(comp) {
+    var methods = _formData.methods || [];
+    var methodOptions = '<option value="">-- Select method --</option>';
+    methods.forEach(function (m) {
+      var fullName = 'svc_api_' + m.name;
+      methodOptions += '<option value="' + _escapeHtml(fullName) + '"' +
+        (comp.method === fullName ? ' selected' : '') + '>' + _escapeHtml(fullName) + '</option>';
+    });
+
+    var html = '<div class="row mb-2">' +
+      '<div class="col-6">' +
+        '<label class="form-label form-label-sm">Method</label>' +
+        '<select class="form-select form-select-sm" data-cfield="method">' +
+          methodOptions +
+        '</select>' +
+      '</div>' +
+      '<div class="col-3">' +
+        '<label class="form-label form-label-sm">Submit Label</label>' +
+        '<input type="text" class="form-control form-control-sm" data-cfield="submit_label" ' +
+          'value="' + _escapeHtml(comp.submit_label || 'Execute') + '">' +
+      '</div>' +
+      '<div class="col-3">' +
+        '<label class="form-label form-label-sm">Result Display</label>' +
+        '<select class="form-select form-select-sm" data-cfield="result_display">' +
+          '<option value="text"' + (comp.result_display === 'text' ? ' selected' : '') + '>Text</option>' +
+          '<option value="json"' + (comp.result_display === 'json' ? ' selected' : '') + '>JSON</option>' +
+          '<option value="table"' + (comp.result_display === 'table' ? ' selected' : '') + '>Table</option>' +
+          '<option value="image"' + (comp.result_display === 'image' ? ' selected' : '') + '>Image</option>' +
+          '<option value="none"' + (comp.result_display === 'none' ? ' selected' : '') + '>None</option>' +
+        '</select>' +
+      '</div>' +
+    '</div>';
+
+    // Fields (auto-populated from method params when method is selected)
+    html += '<div class="schema-fields-container" data-cfield="fields">';
+    var fields = comp.fields || [];
+    fields.forEach(function (f, fIdx) {
+      html += _renderSchemaField(f, fIdx);
+    });
+    html += '</div>';
+
+    return html;
+  }
+
+  function _renderSchemaField(field, idx) {
+    return '<div class="d-flex gap-2 mb-1 schema-field-row" data-field-idx="' + idx + '">' +
+      '<input type="text" class="form-control form-control-sm" style="flex:2;" ' +
+        'data-ffield="arg" value="' + _escapeHtml(field.arg || '') + '" placeholder="arg name" readonly>' +
+      '<input type="text" class="form-control form-control-sm" style="flex:2;" ' +
+        'data-ffield="label" value="' + _escapeHtml(field.label || '') + '" placeholder="Label">' +
+      '<select class="form-select form-select-sm" style="flex:1.5;" data-ffield="widget">' +
+        '<option value="text"' + (field.widget === 'text' ? ' selected' : '') + '>Text</option>' +
+        '<option value="number"' + (field.widget === 'number' ? ' selected' : '') + '>Number</option>' +
+        '<option value="textarea"' + (field.widget === 'textarea' ? ' selected' : '') + '>Textarea</option>' +
+        '<option value="checkbox"' + (field.widget === 'checkbox' ? ' selected' : '') + '>Checkbox</option>' +
+        '<option value="select"' + (field.widget === 'select' ? ' selected' : '') + '>Select</option>' +
+        '<option value="file"' + (field.widget === 'file' ? ' selected' : '') + '>File</option>' +
+      '</select>' +
+      '<input type="text" class="form-control form-control-sm" style="flex:2;" ' +
+        'data-ffield="placeholder" value="' + _escapeHtml(field.placeholder || '') + '" placeholder="Placeholder">' +
+    '</div>';
+  }
+
+  function _renderResultTableFields(comp) {
+    var methods = _formData.methods || [];
+    var methodOptions = '<option value="">-- Select method --</option>';
+    methods.forEach(function (m) {
+      var fullName = 'svc_api_' + m.name;
+      methodOptions += '<option value="' + _escapeHtml(fullName) + '"' +
+        (comp.method === fullName ? ' selected' : '') + '>' + _escapeHtml(fullName) + '</option>';
+    });
+
+    return '<div class="row mb-2">' +
+      '<div class="col-6">' +
+        '<label class="form-label form-label-sm">Method</label>' +
+        '<select class="form-select form-select-sm" data-cfield="method">' +
+          methodOptions + '</select>' +
+      '</div>' +
+      '<div class="col-6">' +
+        '<label class="form-label form-label-sm">Auto-refresh (ms, 0=off)</label>' +
+        '<input type="number" class="form-control form-control-sm" data-cfield="auto_refresh" ' +
+          'value="' + (comp.auto_refresh || 0) + '" min="0" step="1000">' +
+      '</div>' +
+    '</div>';
+  }
+
+  function _renderLiveStatusFields(comp) {
+    var methods = _formData.methods || [];
+    var methodOptions = '<option value="">-- Select method --</option>';
+    methods.forEach(function (m) {
+      var fullName = 'svc_api_' + m.name;
+      methodOptions += '<option value="' + _escapeHtml(fullName) + '"' +
+        (comp.method === fullName ? ' selected' : '') + '>' + _escapeHtml(fullName) + '</option>';
+    });
+
+    return '<div class="row mb-2">' +
+      '<div class="col-4">' +
+        '<label class="form-label form-label-sm">Method</label>' +
+        '<select class="form-select form-select-sm" data-cfield="method">' +
+          methodOptions + '</select>' +
+      '</div>' +
+      '<div class="col-4">' +
+        '<label class="form-label form-label-sm">Interval (ms)</label>' +
+        '<input type="number" class="form-control form-control-sm" data-cfield="interval_ms" ' +
+          'value="' + (comp.interval_ms || 5000) + '" min="1000" step="1000">' +
+      '</div>' +
+      '<div class="col-4">' +
+        '<label class="form-label form-label-sm">Format</label>' +
+        '<input type="text" class="form-control form-control-sm" data-cfield="format" ' +
+          'value="' + _escapeHtml(comp.format || '') + '" placeholder="{key}">' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ---- Schema Builder wiring ----
+
+  function _wireSchemaBuilder() {
+    // Layout change
+    var layoutSel = document.getElementById('cfSchemaLayout');
+    if (layoutSel) {
+      layoutSel.addEventListener('change', function () { _refreshSchemaPreview(); });
+    }
+
+    // Title/subtitle change
+    var titleInput = document.getElementById('cfSchemaTitle');
+    var subtitleInput = document.getElementById('cfSchemaSubtitle');
+    if (titleInput) titleInput.addEventListener('input', function () { _refreshSchemaPreview(); });
+    if (subtitleInput) subtitleInput.addEventListener('input', function () { _refreshSchemaPreview(); });
+
+    // Add section
+    var addSectionBtn = document.getElementById('btnAddSchemaSection');
+    if (addSectionBtn) {
+      addSectionBtn.addEventListener('click', function () {
+        var schema = _collectSchemaFromDOM();
+        schema.sections.push({
+          id: 'section_' + (schema.sections.length + 1),
+          label: 'New Section',
+          components: []
+        });
+        _formData.guiSchema = schema;
+        _rerenderSchemaBuilder();
+      });
+    }
+
+    // Export as JSON
+    var exportBtn = document.getElementById('btnExportSchema');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        var schema = _collectSchemaFromDOM();
+        var json = JSON.stringify(schema, null, 2);
+        var blob = new Blob([json], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'gui_schema.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    // Wire section/component events via delegation
+    var sectionsContainer = document.getElementById('schemaSectionsContainer');
+    if (sectionsContainer) {
+      sectionsContainer.addEventListener('click', function (e) {
+        var target = e.target.closest('button');
+        if (!target) return;
+
+        if (target.classList.contains('btn-remove-section')) {
+          var card = target.closest('.schema-section-card');
+          if (card) {
+            card.remove();
+            _refreshSchemaPreview();
+          }
+        } else if (target.classList.contains('btn-remove-component')) {
+          var comp = target.closest('.schema-component-card');
+          if (comp) {
+            comp.remove();
+            _refreshSchemaPreview();
+          }
+        } else if (target.classList.contains('btn-add-component')) {
+          var sIdx = parseInt(target.getAttribute('data-section-idx'), 10);
+          var schema = _collectSchemaFromDOM();
+          if (schema.sections[sIdx]) {
+            schema.sections[sIdx].components.push({
+              type: 'method-form',
+              method: '',
+              fields: [],
+              submit_label: 'Execute',
+              result_display: 'text'
+            });
+            _formData.guiSchema = schema;
+            _rerenderSchemaBuilder();
+          }
+        }
+      });
+
+      // Detect method selection changes to auto-populate fields
+      sectionsContainer.addEventListener('change', function (e) {
+        var sel = e.target;
+        if (sel.getAttribute('data-cfield') === 'method' &&
+            sel.closest('.schema-component-card')) {
+          _autoPopulateFieldsForComponent(sel);
+        }
+        if (sel.getAttribute('data-cfield') === 'type') {
+          // Component type changed — rebuild schema and re-render
+          var schema = _collectSchemaFromDOM();
+          _formData.guiSchema = schema;
+          _rerenderSchemaBuilder();
+        }
+        _refreshSchemaPreview();
+      });
+
+      // Any input change triggers preview refresh
+      sectionsContainer.addEventListener('input', function () { _refreshSchemaPreview(); });
+    }
+  }
+
+  function _autoPopulateFieldsForComponent(methodSelect) {
+    var compCard = methodSelect.closest('.schema-component-card');
+    if (!compCard) return;
+
+    var methodName = methodSelect.value;
+    var fieldsContainer = compCard.querySelector('.schema-fields-container');
+    if (!fieldsContainer) return;
+
+    // Look up method params from _formData.methods
+    var methodDef = _formData.methods.find(function (m) {
+      return 'svc_api_' + m.name === methodName;
+    });
+
+    fieldsContainer.innerHTML = '';
+
+    if (methodDef && methodDef.params) {
+      methodDef.params.forEach(function (p, idx) {
+        var TYPE_MAP = { 'int': 'number', 'float': 'number', 'bool': 'checkbox' };
+        var widget = TYPE_MAP[p.type] || 'text';
+        var label = (p.name || 'arg').split('_').map(function (w) {
+          return w.charAt(0).toUpperCase() + w.slice(1);
+        }).join(' ');
+
+        fieldsContainer.innerHTML += _renderSchemaField({
+          arg: p.name,
+          label: label,
+          widget: widget,
+          placeholder: ''
+        }, idx);
+      });
+    }
+  }
+
+  function _rerenderSchemaBuilder() {
+    var sectionsContainer = document.getElementById('schemaSectionsContainer');
+    if (!sectionsContainer) return;
+
+    var schema = _formData.guiSchema || _buildSchemaFromMethods();
+    var html = '';
+    (schema.sections || []).forEach(function (section, idx) {
+      html += _renderSchemaSection(section, idx);
+    });
+    sectionsContainer.innerHTML = html;
+
+    // Re-wire delegated events are already on the parent
+    _refreshSchemaPreview();
+  }
+
+  function _refreshSchemaPreview() {
+    var previewEl = document.getElementById('schemaPreviewRender');
+    if (!previewEl || !window.SchemaRenderer) return;
+
+    var schema = _collectSchemaFromDOM();
+    _formData.guiSchema = schema;
+
+    previewEl.innerHTML = '';
+    window.SchemaRenderer.render(schema, previewEl, _formData.serviceName || 'MyService');
+  }
+
+  function _collectSchemaFromDOM() {
+    var layout = (document.getElementById('cfSchemaLayout') || {}).value || 'tabs';
+    var title = (document.getElementById('cfSchemaTitle') || {}).value || '';
+    var subtitle = (document.getElementById('cfSchemaSubtitle') || {}).value || '';
+
+    var sections = [];
+    var sectionCards = document.querySelectorAll('.schema-section-card');
+    sectionCards.forEach(function (card) {
+      var section = {
+        id: (card.querySelector('[data-sfield="id"]') || {}).value || '',
+        label: (card.querySelector('[data-sfield="label"]') || {}).value || '',
+        components: []
+      };
+
+      card.querySelectorAll('.schema-component-card').forEach(function (compEl) {
+        var comp = {};
+        comp.type = (compEl.querySelector('[data-cfield="type"]') || {}).value || 'method-form';
+        comp.method = (compEl.querySelector('[data-cfield="method"]') || {}).value || '';
+        comp.submit_label = (compEl.querySelector('[data-cfield="submit_label"]') || {}).value || 'Execute';
+        comp.result_display = (compEl.querySelector('[data-cfield="result_display"]') || {}).value || 'text';
+        comp.content = (compEl.querySelector('[data-cfield="content"]') || {}).value || '';
+        comp.auto_refresh = parseInt((compEl.querySelector('[data-cfield="auto_refresh"]') || {}).value || '0', 10);
+        comp.interval_ms = parseInt((compEl.querySelector('[data-cfield="interval_ms"]') || {}).value || '5000', 10);
+        comp.format = (compEl.querySelector('[data-cfield="format"]') || {}).value || '';
+
+        // Collect fields
+        comp.fields = [];
+        compEl.querySelectorAll('.schema-field-row').forEach(function (row) {
+          comp.fields.push({
+            arg: (row.querySelector('[data-ffield="arg"]') || {}).value || '',
+            label: (row.querySelector('[data-ffield="label"]') || {}).value || '',
+            widget: (row.querySelector('[data-ffield="widget"]') || {}).value || 'text',
+            placeholder: (row.querySelector('[data-ffield="placeholder"]') || {}).value || ''
+          });
+        });
+
+        section.components.push(comp);
+      });
+
+      sections.push(section);
+    });
+
+    return {
+      '$schema': 'microservice-gui/1.0',
+      service: _formData.serviceName || 'MyService',
+      layout: layout,
+      title: title,
+      subtitle: subtitle,
+      sections: sections
+    };
+  }
+
+  function _buildSchemaFromMethods() {
+    // Build an initial schema from the methods defined in Step 2
+    var methods = _formData.methods || [];
+    var sections = [];
+
+    methods.forEach(function (m) {
+      var fields = [];
+      (m.params || []).forEach(function (p) {
+        var TYPE_MAP = { 'int': 'number', 'float': 'number', 'bool': 'checkbox' };
+        var widget = TYPE_MAP[p.type] || 'text';
+        var label = (p.name || 'arg').split('_').map(function (w) {
+          return w.charAt(0).toUpperCase() + w.slice(1);
+        }).join(' ');
+
+        fields.push({
+          arg: p.name,
+          label: label,
+          widget: widget,
+          placeholder: ''
+        });
+      });
+
+      var sectionLabel = (m.name || 'method').split('_').map(function (w) {
+        return w.charAt(0).toUpperCase() + w.slice(1);
+      }).join(' ');
+
+      sections.push({
+        id: 'svc_api_' + m.name,
+        label: sectionLabel,
+        components: [{
+          type: 'method-form',
+          method: 'svc_api_' + m.name,
+          fields: fields,
+          submit_label: 'Execute',
+          result_display: 'text'
+        }]
+      });
+    });
+
+    return {
+      '$schema': 'microservice-gui/1.0',
+      service: _formData.serviceName || 'MyService',
+      layout: sections.length > 1 ? 'tabs' : 'single',
+      title: _formData.serviceName || 'MyService',
+      subtitle: _formData.shortDescription || _formData.description || '',
+      sections: sections
+    };
   }
 
   function _readFileAsText(file, callback) {
@@ -522,8 +1080,12 @@
     }
     if (d.guiSupport) {
       tree += '\u2514\u2500\u2500 GUIs/\n';
-      tree += '    \u251c\u2500\u2500 service.html' + (d.customGuiHtml ? ' (custom)' : '') + '\n';
-      tree += '    \u2514\u2500\u2500 service.js' + (d.customGuiJs ? ' (custom)' : '') + '\n';
+      if (d.guiMode === 'schema') {
+        tree += '    \u2514\u2500\u2500 gui_schema.json\n';
+      } else {
+        tree += '    \u251c\u2500\u2500 service.html' + (d.customGuiHtml ? ' (custom)' : '') + '\n';
+        tree += '    \u2514\u2500\u2500 service.js' + (d.customGuiJs ? ' (custom)' : '') + '\n';
+      }
     }
 
     // Build methods summary
@@ -563,8 +1125,9 @@
             _summaryRow('Transport', d.transport) +
             _summaryRow('GUI Support', d.guiSupport
               ? '<span class="badge bg-success">Yes</span>' +
-                (d.customGuiHtml ? ' <span class="badge bg-info">custom HTML</span>' : '') +
-                (d.customGuiJs ? ' <span class="badge bg-info">custom JS</span>' : '')
+                (d.guiMode === 'schema' ? ' <span class="badge bg-primary">Schema-driven</span>' : '') +
+                (d.guiMode === 'custom' && d.customGuiHtml ? ' <span class="badge bg-info">custom HTML</span>' : '') +
+                (d.guiMode === 'custom' && d.customGuiJs ? ' <span class="badge bg-info">custom JS</span>' : '')
               : '<span class="badge bg-secondary">No</span>') +
             '<div class="creator-summary-methods">' +
               '<div class="fw-semibold mb-2" style="font-size:0.85rem">API Methods (' + d.methods.length + ')</div>' +
@@ -718,6 +1281,13 @@
     // Step 3
     el = document.getElementById('cfGuiSupport');
     if (el) _formData.guiSupport = el.checked;
+    // Determine active GUI mode
+    var activeTab = document.querySelector('#guiModeTabs .nav-link.active');
+    if (activeTab) _formData.guiMode = activeTab.getAttribute('data-gui-mode') || 'schema';
+    // Collect schema from DOM if in schema mode
+    if (_formData.guiMode === 'schema' && document.getElementById('schemaSectionsContainer')) {
+      _formData.guiSchema = _collectSchemaFromDOM();
+    }
     el = document.getElementById('cfGuiHtmlEditor');
     if (el) _formData.customGuiHtml = el.value || null;
 
@@ -968,8 +1538,12 @@
       files.push({ path: 'config.jsonp', content: _generateConfigJsonp(d) });
     }
     if (d.guiSupport) {
-      files.push({ path: 'GUIs/service.html', content: d.customGuiHtml || _generateGuiHtml(d) });
-      files.push({ path: 'GUIs/service.js', content: d.customGuiJs || _generateGuiJs(d) });
+      if (d.guiMode === 'schema' && d.guiSchema) {
+        files.push({ path: 'GUIs/gui_schema.json', content: JSON.stringify(d.guiSchema, null, 2) });
+      } else {
+        files.push({ path: 'GUIs/service.html', content: d.customGuiHtml || _generateGuiHtml(d) });
+        files.push({ path: 'GUIs/service.js', content: d.customGuiJs || _generateGuiJs(d) });
+      }
     }
     return files;
   }
@@ -1121,6 +1695,8 @@
         };
       }),
       output_path: d.outputPath,
+      gui_mode: d.guiMode || 'schema',
+      gui_schema: d.guiSchema || null,
       custom_gui_html: d.customGuiHtml || '',
       custom_gui_js: d.customGuiJs || ''
     };

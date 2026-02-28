@@ -1,0 +1,21 @@
+import QmlProject 1.3
+
+Project {
+    mainFile: "qml/ServiceUI.qml"
+
+    QmlFiles {
+        directory: "qml"
+    }
+
+    QmlFiles {
+        directory: "GUIs"
+    }
+
+    QmlFiles {
+        directory: "stubs/MicroserviceBase"
+    }
+
+    importPaths: [
+        "stubs"
+    ]
+}

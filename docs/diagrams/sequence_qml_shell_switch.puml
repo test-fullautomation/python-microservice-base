@@ -1,0 +1,89 @@
+@startuml sequence_qml_shell_switch
+!theme plain
+title QML Shell — Switching Between QML Services
+
+participant "User" as user
+participant "GUI Client\n(app.js)" as gui
+participant "QtShellManager\n(JS)" as mgr
+participant "qtshell.wasm\n(QML Engine)" as shell
+participant "ShellController\n(C++)" as ctrl
+participant "ServiceBridge\n(C++ Singleton)" as bridge
+participant "Browser\n(Network)" as net
+
+== Previous State: Service A's QML is displayed ==
+
+user -> gui : Click Service B\n(also has .qml)
+activate gui
+
+gui -> gui : loadServiceContent()\ncache miss
+
+gui -> gui : _loadQmlShellGUI()\nCreate new wrapper <div>
+
+gui -> mgr : loadQml(qmlUrlB, containerB, "ServiceB")
+activate mgr
+
+mgr -> mgr : _shellLoaded === true\n(no WASM reload!)
+
+mgr -> mgr : Build new card DOM\n(card-header + card-body + badge)
+
+== Canvas Reparenting ==
+
+mgr -> mgr : _reparentAndLoad()
+
+mgr -> mgr : Move Qt canvas children\nfrom old _qtContainer\nto new canvasContainer
+note right
+  while (_qtContainer.firstChild)
+    canvasContainer.appendChild(
+      _qtContainer.firstChild)
+  _qtContainer = canvasContainer
+end note
+
+== Load New Service QML ==
+
+mgr -> bridge : _callWithString(\n'qtshell_setServiceName',\n"ServiceB")
+activate bridge
+bridge -> bridge : m_serviceName = "ServiceB"
+bridge --> mgr
+deactivate bridge
+
+mgr -> mgr : _readFileAsText(qmlUrlB)\nXHR GET ServiceUI.qml for B
+mgr -> net : XHR GET ServiceUI.qml (~5 KB)
+activate net
+net --> mgr : QML source text
+deactivate net
+
+mgr -> mgr : _loadQmlSource(sourceB, baseUrlB)\n_allocUTF8(sourceB)\n_allocUTF8(baseUrlB)
+
+mgr -> ctrl : _qtshell_loadQmlSource(srcPtrB, urlPtrB)
+activate ctrl
+
+ctrl -> ctrl : clearQml()
+ctrl -> ctrl : item->setParentItem(nullptr)\nitem->deleteLater()\ncomponent->deleteLater()
+note right: Destroy Service A's\nQML items
+
+ctrl -> ctrl : new QQmlComponent(engine)\nsetData(sourceB, baseUrlB)
+
+ctrl -> ctrl : onComponentStatusChanged(Ready)
+ctrl -> ctrl : component->create(rootContext)\n→ QQuickItem
+ctrl -> ctrl : item->setParentItem(shellContainer)\nitem->setWidth/Height (fill)
+
+ctrl --> mgr
+deactivate ctrl
+
+mgr -> mgr : _qtshell_free(srcPtrB)\n_qtshell_free(urlPtrB)
+mgr -> mgr : statusBadge = "Running" ✓
+mgr --> gui
+deactivate mgr
+
+gui --> user : Service B's QML UI displayed\n(instant switch — no WASM reload)
+deactivate gui
+
+note over user, net
+  **Key point:**
+  qtshell.wasm is shared GUI infrastructure (loaded once).
+  Switching services only fetches the ~5 KB .qml file via XHR.
+  Qt's canvas children are reparented to the new container.
+  QML source is passed via setData() (not loadUrl).
+end note
+
+@enduml

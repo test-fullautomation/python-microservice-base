@@ -237,6 +237,9 @@ Download service GUI resources and extract them to the web/services/ directory.
          if not isinstance(result, dict) or "result_data" not in result:
             return {"error": "Failed to retrieve GUI files"}
 
+         if result.get("result") != "pass" or not result["result_data"]:
+            return {"error": "Service returned no GUI files (check GUIs/ folder)"}
+
          gui_web_path = os.path.join(
             os.path.dirname(__file__), '..', '..',
             'MicroserviceManagerGUI', 'web', 'services'
@@ -268,6 +271,26 @@ Download service GUI resources and extract them to the web/services/ directory.
                      return {"error": f"Zip contains unsafe path: {entry!r}"}
                zf.extractall(target_dir)
 
+            # Ensure the expected <ServiceName>.html/.js exist.
+            # If the ZIP used different names (e.g. "service.html" instead
+            # of "MyService.html"), create copies so the GUI can find them.
+            expected_html = os.path.join(target_dir, service_name + ".html")
+            expected_js = os.path.join(target_dir, service_name + ".js")
+            if not os.path.isfile(expected_html):
+               for f in os.listdir(target_dir):
+                  if f.lower().endswith(".html"):
+                     import shutil
+                     shutil.copy2(os.path.join(target_dir, f), expected_html)
+                     logger.info("Copied %s -> %s.html", f, service_name)
+                     break
+            if not os.path.isfile(expected_js):
+               for f in os.listdir(target_dir):
+                  if f.lower().endswith(".js"):
+                     import shutil
+                     shutil.copy2(os.path.join(target_dir, f), expected_js)
+                     logger.info("Copied %s -> %s.js", f, service_name)
+                     break
+
             logger.info("GUI resources extracted to %s", target_dir)
             return {"status": "ok", "path": target_dir}
          except Exception as exc:
@@ -276,6 +299,115 @@ Download service GUI resources and extract them to the web/services/ directory.
          finally:
             if os.path.exists(zip_path):
                os.remove(zip_path)
+
+      # ---- Service GUI directory listing ----
+
+      @app.get("/api/list-dir/{dir_path:path}")
+      def list_service_gui_dir(dir_path: str):
+         """List files in a service GUI subdirectory under web/."""
+         gui_web_path = os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'MicroserviceManagerGUI', 'web'
+         )
+         target = os.path.realpath(os.path.join(gui_web_path, dir_path))
+         allowed = os.path.realpath(gui_web_path)
+         if not target.startswith(allowed + os.sep):
+            return {"error": "Path outside allowed directory"}
+         if not os.path.isdir(target):
+            return {"files": []}
+         return {"files": [f for f in os.listdir(target) if os.path.isfile(os.path.join(target, f))]}
+
+      # ---- Service GUI schema endpoint ----
+
+      @app.get("/api/service-schema/{service_name}")
+      def get_service_schema(service_name: str):
+         """
+Return gui_schema.json for a service.
+
+If the service folder contains a gui_schema.json file, return its contents.
+Otherwise, auto-generate a schema from the service's methods_info metadata.
+         """
+         try:
+            _validate_safe_name(service_name)
+         except ValueError as exc:
+            return {"error": str(exc)}
+
+         # Look for gui_schema.json in the service's GUI folder
+         gui_web_path = os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'MicroserviceManagerGUI', 'web', 'services'
+         )
+
+         services_info = bridge._services_info_provider() if bridge._services_info_provider else {}
+         version = ""
+         if service_name in services_info:
+            version = services_info[service_name].get("version", "")
+
+         folder_name = service_name + version
+         schema_path = os.path.join(gui_web_path, folder_name, "gui_schema.json")
+
+         if os.path.isfile(schema_path):
+            try:
+               with open(schema_path, 'r', encoding='utf-8') as f:
+                  schema = json.load(f)
+               return {"status": "ok", "schema": schema, "source": "file"}
+            except Exception as exc:
+               logger.warning("Failed to read gui_schema.json: %s", exc)
+
+         # Auto-generate from methods_info
+         if service_name in services_info:
+            svc = services_info[service_name]
+            methods = svc.get("methods", [])
+            methods_info = svc.get("methods_info", {})
+
+            if methods and methods_info:
+               sections = []
+               for method_name in methods:
+                  m_info = methods_info.get(method_name, {})
+                  fields = []
+                  for arg in m_info.get("arguments", []):
+                     arg_type = (arg.get("type", "str") or "str").lower()
+                     widget_map = {
+                        "int": "number", "float": "number",
+                        "bool": "checkbox", "boolean": "checkbox",
+                     }
+                     fields.append({
+                        "arg": arg.get("name", "arg"),
+                        "label": " ".join(
+                           w.capitalize()
+                           for w in (arg.get("name", "arg")).split("_")
+                        ),
+                        "widget": widget_map.get(arg_type, "text"),
+                        "placeholder": arg.get("description", ""),
+                     })
+
+                  label = " ".join(
+                     w.capitalize()
+                     for w in method_name.replace("svc_api_", "").replace("api_", "").split("_")
+                  )
+                  sections.append({
+                     "id": method_name,
+                     "label": label,
+                     "components": [{
+                        "type": "method-form",
+                        "method": method_name,
+                        "fields": fields,
+                        "submit_label": "Execute",
+                        "result_display": "json",
+                     }],
+                  })
+
+               schema = {
+                  "$schema": "microservice-gui/1.0",
+                  "service": service_name,
+                  "layout": "tabs" if len(sections) > 1 else "single",
+                  "title": svc.get("name", service_name),
+                  "subtitle": svc.get("description", svc.get("shortdesc", "")),
+                  "sections": sections,
+               }
+               return {"status": "ok", "schema": schema, "source": "auto"}
+
+         return {"status": "ok", "schema": None, "source": "none"}
 
       # ---- Fleet proxy endpoints ----
 
@@ -538,6 +670,8 @@ Forward a request to the FleetWebAPI.
          routing_key: str = ""
          transport: str = "rabbitmq"
          gui_support: bool = False
+         gui_mode: str = "schema"          # "schema" | "custom"
+         gui_schema: Optional[dict] = None  # gui_schema.json content when gui_mode == "schema"
          methods: List[ScaffoldMethod] = []
          output_path: str = ""
          custom_gui_html: str = ""
@@ -860,8 +994,11 @@ Generate scaffolding for a new microservice project.
             files.append(('config.jsonp', _generate_config_jsonp(body)))
 
          if body.gui_support:
-            files.append(('GUIs/service.html', body.custom_gui_html or _generate_gui_html(body)))
-            files.append(('GUIs/service.js', body.custom_gui_js or _generate_gui_js(body)))
+            if body.gui_mode == 'schema' and body.gui_schema:
+               files.append(('GUIs/gui_schema.json', json.dumps(body.gui_schema, indent=2)))
+            else:
+               files.append(('GUIs/service.html', body.custom_gui_html or _generate_gui_html(body)))
+               files.append(('GUIs/service.js', body.custom_gui_js or _generate_gui_js(body)))
 
          if body.output_path:
             # Write to disk

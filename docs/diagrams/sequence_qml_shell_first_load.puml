@@ -1,0 +1,118 @@
+@startuml sequence_qml_shell_first_load
+!theme plain
+title QML Shell — First Load Sequence
+
+participant "User" as user
+participant "GUI Client\n(app.js)" as gui
+participant "QtShellManager\n(JS)" as mgr
+participant "Browser\n(Network)" as net
+participant "qtshell.wasm\n(QML Engine)" as shell
+participant "ShellController\n(C++)" as ctrl
+participant "ServiceBridge\n(C++ Singleton)" as bridge
+
+== 1. User Clicks Service ==
+
+user -> gui : Click service\n(has .qml or schema renderer:"qt")
+activate gui
+
+gui -> gui : _loadServiceGUIMultiTier()
+gui -> gui : Detect QML (Tier 1a or 1c)
+
+gui -> gui : _loadQmlShellGUI()\nCreate wrapper <div>
+
+gui -> mgr : loadQml(qmlUrl, container, serviceName)
+activate mgr
+
+== 2. Load Shared Shell Infrastructure (one-time) ==
+
+note over mgr, net
+  qtshell.js + qtshell.wasm are **GUI infrastructure**,
+  pre-built by build_wasm.bat and deployed to web/qt-shell/.
+  They provide the shared QML engine for all services.
+end note
+
+mgr -> mgr : _shellLoaded === false\n_shellLoading = true\nQueue pending load
+
+mgr -> mgr : _ensureBridge()\nRegister window.callMicroservice
+
+mgr -> mgr : Build card DOM\n(card-header + card-body + badge)
+
+mgr -> net : Create <script>\nsrc="qt-shell/qtshell.js"
+activate net
+
+net -> net : Load qtshell.js + qtshell.wasm\nfrom local GUI assets\n(pre-deployed infrastructure)
+
+net --> mgr : script.onload
+deactivate net
+
+mgr -> mgr : Find factory function:\nwindow.qtshell_entry ||\ncreateQtAppInstance ||\nqtshellModule || Module
+
+mgr -> shell : factory({ qtContainerElements: [container] })
+activate shell
+
+shell -> shell : QGuiApplication + QQmlApplicationEngine
+shell -> shell : Register ServiceBridge\nas context property
+shell -> shell : Load main.qml\n(ApplicationWindow + shellContainer)
+shell -> shell : Create ShellController
+
+shell --> mgr : Promise resolves (Module instance)
+
+mgr -> mgr : _shellModule = instance\n_shellLoaded = true\n_shellLoading = false
+
+== 3. Process Pending QML Load ==
+
+mgr -> mgr : _reparentAndLoad()
+
+mgr -> bridge : _callWithString(\n'qtshell_setServiceName',\nserviceName)
+activate bridge
+note right
+  Manual UTF-8 marshaling:
+  _allocUTF8(str) → ptr
+  _qtshell_setServiceName(ptr)
+  _qtshell_free(ptr)
+end note
+bridge -> bridge : m_serviceName = serviceName
+bridge --> mgr
+deactivate bridge
+
+mgr -> mgr : _readFileAsText(qmlUrl)\nXHR GET ServiceUI.qml\n(works for file:// and http://)
+activate mgr
+mgr -> net : XHR GET ServiceUI.qml (~5 KB)
+activate net
+net --> mgr : QML source text
+deactivate net
+deactivate mgr
+
+mgr -> mgr : _loadQmlSource(source, baseUrl)\n_allocUTF8(source)\n_allocUTF8(baseUrl)
+
+mgr -> ctrl : _qtshell_loadQmlSource(srcPtr, urlPtr)
+activate ctrl
+
+ctrl -> ctrl : clearQml() (no-op first time)
+ctrl -> ctrl : new QQmlComponent(engine)\nsetData(source, baseUrl)
+
+ctrl -> ctrl : onComponentStatusChanged(Ready)
+ctrl -> ctrl : component->create(rootContext)\n→ QQuickItem
+ctrl -> ctrl : item->setParentItem(shellContainer)\nitem->setWidth/Height (fill)
+
+ctrl --> mgr
+deactivate ctrl
+
+mgr -> mgr : _qtshell_free(srcPtr)\n_qtshell_free(urlPtr)
+mgr -> mgr : statusBadge = "Running" ✓
+mgr --> gui
+deactivate mgr
+
+gui --> user : Qt Quick Controls\nrendered in browser
+deactivate gui
+deactivate shell
+
+note over user, shell
+  **qtshell.wasm is GUI infrastructure, not per-service.**
+  It is pre-built and deployed to web/qt-shell/ once.
+  After first load it stays in memory — subsequent services
+  only fetch their .qml file (~5 KB each).
+  The browser also caches qtshell.wasm across sessions.
+end note
+
+@enduml

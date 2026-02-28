@@ -1,0 +1,17 @@
+{
+    "name": "MyWidgetService",
+    "version": "1.0.0",
+    "routing_key": "MyWidgetService_routing_key",
+    "description": "Example C++ service with Qt Widget UI (.ui file)",
+    "shortdesc": "Widget UI Demo",
+    "group": "Examples",
+    "tag": "example",
+    "gui_support": true,
+    "downloadable": false,
+
+    "broker_host": "localhost",
+    "broker_port": 5672,
+    "broker_vhost": "/",
+    "broker_user": "guest",
+    "broker_pass": "guest"
+}

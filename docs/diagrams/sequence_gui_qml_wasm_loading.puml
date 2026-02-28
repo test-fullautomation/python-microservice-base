@@ -1,0 +1,239 @@
+@startuml sequence_gui_qml_wasm_loading
+!theme plain
+title Service GUI Loading — QML & WASM Services
+footer Covers Tier 1a/1c (QML Shell) and Tier 2 (per-service WASM)
+
+participant "User" as user
+participant "GUI Client\n(app.js)" as gui
+participant "FastAPI Bridge\n(/api/*)" as bridge
+participant "RabbitMQ\n(Broker)" as broker
+participant "C++ Service\n(ServiceBase)" as service
+participant "File System\n(web/services/)" as fs
+participant "QtShellManager\n(JS)" as qml_mgr
+participant "QtWasmLoader\n(JS)" as wasm_mgr
+participant "QML Shell\n(qtshell.wasm)" as shell
+
+== 1. User Clicks Service ==
+
+user -> gui : Click service item\n(e.g. "MyService")
+activate gui
+
+gui -> gui : selectService(serviceName)
+gui -> gui : gui_support === true\n→ checkAndGetTheServiceGUIResources()
+
+== 2. Checksum Verification (same for all service types) ==
+
+gui -> bridge : POST /api/request\n{method: "svc_api_get_gui_checksum",\n routing_key: "MyService"}
+activate bridge
+bridge -> broker : publish to services_request
+activate broker
+broker -> service : deliver
+activate service
+service -> service : svc_api_get_gui_checksum()\n→ walk GUIs/ directory\n→ MD5(paths + contents)
+service --> broker : reply {result_data: "a1b2c3..."}
+deactivate service
+broker --> bridge : callback queue
+deactivate broker
+bridge --> gui : {result: "pass",\n result_data: "a1b2c3..."}
+deactivate bridge
+
+gui -> gui : Compare with sessionStorage\n'gui_checksum_' + serviceName
+
+alt Checksum matches (cache hit)
+   gui -> gui : Skip download → go to Load phase
+else Checksum differs or first visit
+
+== 3. Download GUI Resources ==
+
+   gui -> bridge : POST /api/service-gui-download/\nMyService?routing_key=MyService
+   activate bridge
+   bridge -> broker : {method: "svc_api_get_gui_files"}
+   activate broker
+   broker -> service : deliver
+   activate service
+
+   service -> service : svc_api_get_gui_files()
+   note right of service
+     C++ ServiceBase:
+     1. Walk GUIs/ directory
+     2. Create ZIP (STORE)
+     3. base64_encode(zip_bytes)
+     4. Return as JSON string
+
+     GUIs/ may contain:
+     • ServiceUI.qml (QML service)
+     • *.wasm + *.js (WASM service)
+     • *.html + *.js (HTML service)
+     • gui_schema.json (schema service)
+   end note
+
+   service --> broker : reply {result_data: "<base64 ZIP>"}
+   deactivate service
+   broker --> bridge : callback queue
+   deactivate broker
+
+   bridge -> bridge : base64 decode → ZIP bytes
+   bridge -> bridge : Zip-slip path validation
+   bridge -> fs : Extract to web/services/\nMyService1.0.0/
+   activate fs
+   fs --> bridge : OK
+   deactivate fs
+   bridge --> gui : {status: "ok"}
+   deactivate bridge
+
+   gui -> gui : sessionStorage.setItem(\n'gui_checksum_MyService', checksum)
+
+end
+
+== 4. Detect GUI Type (Multi-Tier) ==
+
+gui -> gui : loadServiceContent()\n→ _loadServiceGUIMultiTier()
+
+gui -> fs : fetch('services/MyService1.0.0/\ngui_schema.json')
+activate fs
+fs --> gui : response
+deactivate fs
+
+alt gui_schema.json found with renderer: "qt"
+
+   == 5a. Load via QML Shell (Tier 1a — schema + Qt renderer) ==
+
+   gui -> gui : qmlFile = schema.qml_file\n|| "ServiceUI.qml"
+   gui -> qml_mgr : QtShellManager.loadQml(\nqmlUrl, container, serviceName)
+   activate qml_mgr
+
+   alt QML Shell not yet loaded (first service)
+
+      qml_mgr -> qml_mgr : Load qtshell.wasm\n(~9 MB, one-time)
+      note right of qml_mgr
+        Browser caches the WASM binary.
+        Subsequent services skip this step.
+      end note
+      qml_mgr -> shell : createQtAppInstance()
+      activate shell
+      shell -> shell : Initialize QML engine\n+ ServiceBridge singleton
+      shell --> qml_mgr : instance ready
+      qml_mgr -> qml_mgr : _shellLoaded = true
+
+   else QML Shell already loaded
+      qml_mgr -> shell : qtshell_clearQml()
+      note right of qml_mgr: Unload previous service's QML
+   end
+
+   qml_mgr -> shell : qtshell_setServiceName("MyService")
+   qml_mgr -> shell : qtshell_loadQml(qmlUrl)
+   shell -> fs : HTTP fetch ServiceUI.qml\n(~2-50 KB)
+   activate fs
+   fs --> shell : QML source
+   deactivate fs
+   shell -> shell : QQmlComponent::loadUrl()\n→ parse QML\n→ create Qt Quick items
+   shell -> shell : Parent items into\nshell container
+   shell --> qml_mgr : qmlReady()
+   deactivate shell
+
+   qml_mgr --> gui : Load complete
+   deactivate qml_mgr
+
+else no gui_schema.json → detect .qml files
+
+   == 5b. Load via QML Shell (Tier 1c — .qml auto-detect) ==
+
+   gui -> bridge : GET /api/list-dir/\nservices/MyService1.0.0/
+   activate bridge
+   bridge --> gui : file list
+   deactivate bridge
+
+   gui -> gui : Find *.qml file in listing
+
+   alt .qml file found
+      gui -> qml_mgr : QtShellManager.loadQml(\nqmlUrl, container, serviceName)
+      activate qml_mgr
+      note right of qml_mgr
+        Same flow as Tier 1a above:
+        Load shell if needed → load .qml
+      end note
+      qml_mgr --> gui : Load complete
+      deactivate qml_mgr
+
+   else no .qml → check for WASM
+
+      == 5c. Load via WASM Loader (Tier 2 — per-service WASM) ==
+
+      gui -> bridge : GET /api/list-dir/\nservices/MyService1.0.0/
+      activate bridge
+      bridge --> gui : file list
+      deactivate bridge
+
+      gui -> gui : Find *.wasm file in listing
+
+      alt .wasm file found
+         gui -> wasm_mgr : QtWasmLoader.load(\nfolderPath, wrapper)
+         activate wasm_mgr
+
+         wasm_mgr -> wasm_mgr : Create <canvas>
+         wasm_mgr -> fs : <script> load .js loader
+         activate fs
+         fs --> wasm_mgr : JS loaded
+         deactivate fs
+         wasm_mgr -> wasm_mgr : Create WASM instance\n(per-service, ~13 MB)
+         note right of wasm_mgr
+           Each WASM service loads its
+           own Qt runtime — no sharing.
+           Much larger than QML Shell.
+         end note
+         wasm_mgr --> gui : Load complete
+         deactivate wasm_mgr
+
+      else no .wasm → fall through to HTML (Tier 3) or API Explorer (Tier 4)
+         gui -> gui : _tryHtmlFallback()\nor showServiceAPIExplorer()
+      end
+   end
+end
+
+gui --> user : Service GUI rendered
+deactivate gui
+
+== 6. Runtime Interaction (QML Shell) ==
+
+user -> shell : Click button in QML UI\n(e.g. "Say Hello")
+activate shell
+
+shell -> shell : QML onClicked:\nServiceBridge.callService(\n"MyService", "svc_api_hello",\n["World"])
+
+shell -> gui : JS bridge:\ncallMicroservice(request)
+activate gui
+gui -> bridge : POST /api/request\n{method, args, routing_key}
+activate bridge
+bridge -> broker : publish
+activate broker
+broker -> service : deliver
+activate service
+service -> service : svc_api_hello(["World"])\n→ "Hello, World!"
+service --> broker : reply
+deactivate service
+broker --> bridge : callback queue
+deactivate broker
+bridge --> gui : {result: "pass",\n result_data: "Hello, World!"}
+deactivate bridge
+gui --> shell : Promise.resolve(data)
+deactivate gui
+
+shell -> shell : ServiceBridge::handleResponse()\n→ emit responseReceived(\n"svc_api_hello", "Hello, World!")
+shell -> shell : QML Connections:\nresultLabel.text = data
+deactivate shell
+
+user <-- shell : Result displayed in QML UI
+
+note over user, shell
+  **QML Shell vs per-service WASM comparison:**
+
+  |=                |= QML Shell (Tier 1a/1c) |= Per-service WASM (Tier 2) |
+  | First load      | ~9 MB (shared)          | ~13 MB (per service)       |
+  | Switch service  | ~5 KB (.qml only)       | ~13 MB (new WASM)          |
+  | 10 services     | ~9 MB + 50 KB           | ~130 MB total              |
+  | Design tool     | Qt Creator / QDS        | Qt Creator                 |
+  | UI file         | .qml (text)             | Compiled in binary         |
+  | Hot reload      | Yes (re-fetch qml)      | No (rebuild needed)        |
+end note
+
+@enduml

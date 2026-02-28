@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ServiceForm</class>
+ <widget class="QWidget" name="ServiceForm">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>350</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Widget Shell Example</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing">
+    <number>12</number>
+   </property>
+   <property name="margin">
+    <number>16</number>
+   </property>
+
+   <!-- Header -->
+   <item>
+    <widget class="QLabel" name="headerLabel">
+     <property name="text">
+      <string>Widget Shell Example</string>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>16</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Say Hello section -->
+   <item>
+    <layout class="QHBoxLayout" name="helloLayout">
+     <item>
+      <widget class="QLabel" name="nameLabel">
+       <property name="text">
+        <string>Name:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="nameInput">
+       <property name="placeholderText">
+        <string>Enter your name</string>
+       </property>
+       <property name="text">
+        <string>World</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="helloButton">
+       <property name="text">
+        <string>Say Hello</string>
+       </property>
+       <!-- Auto-wiring: calls svc_api_hello with nameInput value -->
+       <property name="serviceMethod" stdset="0">
+        <string>svc_api_hello</string>
+       </property>
+       <property name="serviceArgs" stdset="0">
+        <string>nameInput</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- Echo section -->
+   <item>
+    <layout class="QHBoxLayout" name="echoLayout">
+     <item>
+      <widget class="QLabel" name="echoLabel">
+       <property name="text">
+        <string>Message:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="echoInput">
+       <property name="placeholderText">
+        <string>Enter a message to echo</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="echoButton">
+       <property name="text">
+        <string>Echo</string>
+       </property>
+       <!-- Auto-wiring: calls svc_api_echo with echoInput value -->
+       <property name="serviceMethod" stdset="0">
+        <string>svc_api_echo</string>
+       </property>
+       <property name="serviceArgs" stdset="0">
+        <string>echoInput</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- Compute section -->
+   <item>
+    <layout class="QHBoxLayout" name="computeLayout">
+     <item>
+      <widget class="QLabel" name="computeLabel">
+       <property name="text">
+        <string>Numbers:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="numbersInput">
+       <property name="placeholderText">
+        <string>Comma-separated (e.g., 1,2,3)</string>
+       </property>
+       <property name="text">
+        <string>1,2,3</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="computeButton">
+       <property name="text">
+        <string>Compute Sum</string>
+       </property>
+       <!-- Auto-wiring: calls svc_api_compute with numbersInput value -->
+       <property name="serviceMethod" stdset="0">
+        <string>svc_api_compute</string>
+       </property>
+       <property name="serviceArgs" stdset="0">
+        <string>numbersInput</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+
+   <!-- Result display -->
+   <item>
+    <widget class="QLabel" name="resultLabel">
+     <property name="text">
+      <string>Result will appear here...</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>12</pointsize>
+      </font>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::StyledPanel</enum>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>60</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Spacer -->
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+    </spacer>
+   </item>
+
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

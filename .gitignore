@@ -13,3 +13,15 @@ MicroserviceBase/MicroserviceManagerGUI/node_modules
 MicroserviceBase/MicroserviceManagerGUI/web/services/*
 !MicroserviceBase/MicroserviceManagerGUI/web/services/ServiceAlias*/
 MicroserviceBase/MicroserviceManagerGUI/electron/alias.json
+
+# Editor temporary/backup files
+*.tmp.*
+
+# Qt Creator user-specific project files
+*.user
+
+# Build output directories
+deploy/
+
+# CMake user presets (machine-specific)
+CMakeUserPresets.json

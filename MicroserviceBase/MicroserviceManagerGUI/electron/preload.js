@@ -243,53 +243,61 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * List files in a service GUI folder.
+   * @param {string} folderPath - Relative path (e.g. "services/MyService1.0.0").
+   * @returns {string[]} Array of filenames (files only, no directories).
+   */
+  listDir: (folderPath) => {
+    const fullPath = _resolveServicesPath(folderPath);
+    try {
+      return fs.readdirSync(fullPath).filter((f) => {
+        try { return fs.statSync(path.join(fullPath, f)).isFile(); }
+        catch (_) { return false; }
+      });
+    } catch (_) {
+      return [];
+    }
+  },
+
+  /**
    * Extract a base64-encoded ZIP file to a folder.
    * @param {string} folderPath - Relative path for extraction (under web/).
    * @param {string} base64Data - Base64-encoded ZIP content.
    * @returns {Promise<void>}
    */
-  extractGUIZip: (folderPath, base64Data) => {
-    return new Promise((resolve, reject) => {
-      const fullPath = _resolveServicesPath(folderPath);
+  extractGUIZip: async (folderPath, base64Data) => {
+    const fullPath = _resolveServicesPath(folderPath);
+    await fs.promises.mkdir(fullPath, { recursive: true });
 
-      fs.mkdir(fullPath, { recursive: true }, (mkdirErr) => {
-        if (mkdirErr) {
-          reject(mkdirErr);
-          return;
+    // Decode base64 directly to Buffer (avoids atob overhead).
+    const zipBuffer = Buffer.from(base64Data, 'base64');
+    const zipFilePath = path.join(os.tmpdir(), 'mm_gui_' + Date.now() + '.zip');
+
+    try {
+      await fs.promises.writeFile(zipFilePath, zipBuffer);
+
+      // Use Open.file() + entry.buffer() to read each entry fully into
+      // memory before writing. The streaming unzipper.Extract() corrupts
+      // medium/large files (content appears rotated/shifted).
+      const directory = await unzipper.Open.file(zipFilePath);
+
+      for (const entry of directory.files) {
+        if (entry.type === 'Directory') {
+          await fs.promises.mkdir(path.join(fullPath, entry.path), { recursive: true });
+          continue;
         }
+        // Ensure parent directory exists.
+        const destPath = path.join(fullPath, entry.path);
+        await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
 
-        const decodedBytes = atob(base64Data);
-        const bytes = new Uint8Array(decodedBytes.length);
-        for (let i = 0; i < decodedBytes.length; i++) {
-          bytes[i] = decodedBytes.charCodeAt(i);
-        }
+        const content = await entry.buffer();
+        await fs.promises.writeFile(destPath, content);
+      }
 
-        const zipFilePath = path.join(os.tmpdir(), 'mm_gui_' + Date.now() + '.zip');
-
-        fs.writeFile(zipFilePath, Buffer.from(bytes), (writeErr) => {
-          if (writeErr) {
-            reject(writeErr);
-            return;
-          }
-
-          fs.createReadStream(zipFilePath)
-            .pipe(unzipper.Extract({ path: fullPath }))
-            .on('close', () => {
-              console.log('All files received and extracted to', fullPath);
-              fs.unlink(zipFilePath, (unlinkErr) => {
-                if (unlinkErr) {
-                  console.error('Error deleting zip file:', unlinkErr);
-                }
-              });
-              resolve();
-            })
-            .on('error', (extractErr) => {
-              fs.unlink(zipFilePath, () => {});
-              reject(extractErr);
-            });
-        });
-      });
-    });
+      console.log('All files received and extracted to', fullPath);
+    } finally {
+      fs.unlink(zipFilePath, () => {});
+    }
   },
 
   /**
