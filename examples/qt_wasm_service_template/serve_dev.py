@@ -145,7 +145,12 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/":
             path = "/myqtwasmservice.html"
 
-        file_path = os.path.join(self.directory, path.lstrip("/"))
+        file_path = os.path.realpath(
+            os.path.join(self.directory, path.lstrip("/"))
+        )
+        if not file_path.startswith(os.path.realpath(self.directory)):
+            self.send_error(403, "Forbidden")
+            return
         if not os.path.isfile(file_path):
             self.send_error(404, "File not found")
             return
