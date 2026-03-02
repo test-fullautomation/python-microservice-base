@@ -431,6 +431,16 @@
       // Restore unloadFunction reference
       var unloadName = 'unload' + serviceName;
       unloadFunction = window[unloadName] || null;
+
+      // Re-register the correct shell's response callbacks so the active
+      // shell receives service responses (not the previously active shell).
+      var shellType = _servicePanels[serviceName].getAttribute('data-shell-type');
+      if (shellType === 'qml' && window.QtShellManager) {
+        window.QtShellManager.activateBridge();
+      } else if (shellType === 'widget' && window.WidgetShellManager) {
+        window.WidgetShellManager.activateBridge();
+      }
+
       if (callbackName !== '' && typeof window[callbackName] === 'function') {
         window[callbackName]();
       }
@@ -542,6 +552,8 @@
     _servicePanels[serviceName] = wrapper;
     _activePanelName = serviceName;
 
+    wrapper.setAttribute('data-shell-type', 'qml');
+
     window.QtShellManager.loadQml(qmlUrl, wrapper, serviceName)
       .catch(function (err) {
         console.warn('QtShellManager failed for', serviceName, err);
@@ -575,6 +587,8 @@
     contentDiv.appendChild(wrapper);
     _servicePanels[serviceName] = wrapper;
     _activePanelName = serviceName;
+
+    wrapper.setAttribute('data-shell-type', 'widget');
 
     window.WidgetShellManager.loadWidget(uiUrl, wrapper, serviceName)
       .catch(function (err) {

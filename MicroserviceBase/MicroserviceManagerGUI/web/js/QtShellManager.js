@@ -148,6 +148,16 @@
      */
     isLoaded: function () {
       return _shellLoaded;
+    },
+
+    /**
+     * Re-register this shell's response callbacks as the active handler.
+     * Called by app.js on panel cache hit to ensure responses route to the
+     * correct shell when switching back to a previously visited service.
+     */
+    activateBridge: function () {
+      window._shellResponseCallback = _callbackResponse;
+      window._shellErrorCallback = _callbackError;
     }
   };
 
@@ -353,33 +363,36 @@
    * ================================================================ */
 
   function _ensureBridge() {
-    if (typeof window.callMicroservice === 'function') return;
-
-    window.callMicroservice = function (serviceName, method, args) {
-      var serviceInfo = MM.servicesInfor[serviceName];
-      if (!serviceInfo) {
-        _callbackError(method, 'Service "' + serviceName + '" not found');
-        return Promise.reject(new Error('Service "' + serviceName + '" not found'));
-      }
-      var routingKey = serviceInfo.routing_key;
-      return MM.requestService(
-        { method: method, args: args },
-        'services_request',
-        routingKey
-      ).then(function (resp) {
-        // Route the response back to C++ ServiceBridge via exported function.
-        var resultData = (resp && resp.result_data !== undefined)
-          ? (typeof resp.result_data === 'string'
-              ? resp.result_data
-              : JSON.stringify(resp.result_data))
-          : JSON.stringify(resp);
-        _callbackResponse(method, resultData);
-        return resp;
-      }).catch(function (err) {
-        _callbackError(method, err.message || String(err));
-        throw err;
-      });
-    };
+    // Install shared callMicroservice bridge if not yet defined.
+    if (typeof window.callMicroservice !== 'function') {
+      window.callMicroservice = function (serviceName, method, args) {
+        var serviceInfo = MM.servicesInfor[serviceName];
+        if (!serviceInfo) {
+          if (window._shellErrorCallback) window._shellErrorCallback(method, 'Service "' + serviceName + '" not found');
+          return Promise.reject(new Error('Service "' + serviceName + '" not found'));
+        }
+        var routingKey = serviceInfo.routing_key;
+        return MM.requestService(
+          { method: method, args: args },
+          'services_request',
+          routingKey
+        ).then(function (resp) {
+          var resultData = (resp && resp.result_data !== undefined)
+            ? (typeof resp.result_data === 'string'
+                ? resp.result_data
+                : JSON.stringify(resp.result_data))
+            : JSON.stringify(resp);
+          if (window._shellResponseCallback) window._shellResponseCallback(method, resultData);
+          return resp;
+        }).catch(function (err) {
+          if (window._shellErrorCallback) window._shellErrorCallback(method, err.message || String(err));
+          throw err;
+        });
+      };
+    }
+    // Register this shell's callbacks as the active handler.
+    window._shellResponseCallback = _callbackResponse;
+    window._shellErrorCallback = _callbackError;
   }
 
   /**

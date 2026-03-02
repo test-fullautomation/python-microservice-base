@@ -196,20 +196,36 @@
    * for Qt C++ code to call via emscripten::val.
    */
   function _ensureBridge() {
-    if (typeof window.callMicroservice === 'function') return;
-
-    window.callMicroservice = function (serviceName, method, args) {
-      var serviceInfo = MM.servicesInfor[serviceName];
-      if (!serviceInfo) {
-        return Promise.reject(new Error('Service "' + serviceName + '" not found'));
-      }
-      var routingKey = serviceInfo.routing_key;
-      return MM.requestService(
-        { method: method, args: args },
-        'services_request',
-        routingKey
-      );
-    };
+    // Install shared callMicroservice bridge if not yet defined.
+    if (typeof window.callMicroservice !== 'function') {
+      window.callMicroservice = function (serviceName, method, args) {
+        var serviceInfo = MM.servicesInfor[serviceName];
+        if (!serviceInfo) {
+          if (window._shellErrorCallback) window._shellErrorCallback(method, 'Service "' + serviceName + '" not found');
+          return Promise.reject(new Error('Service "' + serviceName + '" not found'));
+        }
+        var routingKey = serviceInfo.routing_key;
+        return MM.requestService(
+          { method: method, args: args },
+          'services_request',
+          routingKey
+        ).then(function (resp) {
+          var resultData = (resp && resp.result_data !== undefined)
+            ? (typeof resp.result_data === 'string'
+                ? resp.result_data
+                : JSON.stringify(resp.result_data))
+            : JSON.stringify(resp);
+          if (window._shellResponseCallback) window._shellResponseCallback(method, resultData);
+          return resp;
+        }).catch(function (err) {
+          if (window._shellErrorCallback) window._shellErrorCallback(method, err.message || String(err));
+          throw err;
+        });
+      };
+    }
+    // Per-service WASM handles responses via emscripten::val — clear shell callbacks.
+    window._shellResponseCallback = null;
+    window._shellErrorCallback = null;
   }
 
   function _esc(str) {
