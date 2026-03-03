@@ -16,10 +16,10 @@ A C++ microservice has **two runtime components**:
 ```
 ┌─ Server/Desktop Process ──────────────────────┐    ┌─ Browser (QML Shell WASM) ─────────┐
 │                                                │    │                                     │
-│  MyService : ServiceBase                       │    │  ServiceUI.qml (loaded at runtime)  │
+│  MyQMLService : ServiceBase                       │    │  ServiceUI.qml (loaded at runtime)  │
 │  ├─ Infrastructure (ServiceBase)               │    │  ├─ TextField, Button, ListView...  │
 │  │   ├─ RabbitMQ transport                     │    │  └─ ServiceBridge.callService(       │
-│  │   ├─ Registration / unregistration          │    │        "MyService",                  │
+│  │   ├─ Registration / unregistration          │    │        "MyQMLService",                  │
 │  │   ├─ Request dispatch (svc_api_* pattern)   │    │        "svc_api_hello", [name])      │
 │  │   └─ Graceful shutdown                      │    │                                     │
 │  └─ Business API                               │    │  ServiceBridge (C++ singleton)       │
@@ -172,7 +172,7 @@ ColumnLayout {
             Button {
                 text: "Say Hello"
                 onClicked: ServiceBridge.callService(
-                    "MyService", "svc_api_hello", [nameInput.text])
+                    "MyQMLService", "svc_api_hello", [nameInput.text])
             }
         }
     }
@@ -282,7 +282,7 @@ examples/cpp_qml_service_template/
 ├── service_config.json             # Service metadata (name, version, routing_key, broker)
 ├── src/
 │   ├── main.cpp                    # Create transport, instantiate service, serve()
-│   └── MyService.h/cpp             # : ServiceBase, implements svc_api_* methods
+│   └── MyQMLService.h/cpp             # : ServiceBase, implements svc_api_* methods
 ├── qml/
 │   └── ServiceUI.qml               # QML UI designed in Qt Creator (drag-and-drop)
 ├── GUIs/
@@ -293,11 +293,11 @@ examples/cpp_qml_service_template/
 ### Service Developer Workflow
 
 1. **Design UI**: Open Qt Creator → File → New → Qt Quick Application → design `ServiceUI.qml` visually (drag-and-drop controls, set properties)
-2. **Implement API**: Write `MyService.cpp` — inherit `ServiceBase`, implement `svc_api_*` methods
-3. **Wire UI to API**: In QML, call `ServiceBridge.callService("MyService", "svc_api_method", [args])` from button `onClicked` handlers
+2. **Implement API**: Write `MyQMLService.cpp` — inherit `ServiceBase`, implement `svc_api_*` methods
+3. **Wire UI to API**: In QML, call `ServiceBridge.callService("MyQMLService", "svc_api_method", [args])` from button `onClicked` handlers
 4. **Preview locally**: Run QML in Qt Creator to verify layout and interactions
-5. **Deploy backend**: Build `MyService.exe`, start it (connects to RabbitMQ, registers)
-6. **Deploy UI**: Copy `ServiceUI.qml` to `web/services/MyService1.0.0/`
+5. **Deploy backend**: Build `MyQMLService.exe`, start it (connects to RabbitMQ, registers)
+6. **Deploy UI**: Copy `ServiceUI.qml` to `web/services/MyQMLService1.0.0/`
 7. **Done**: MicroserviceManager detects the .qml file, loads it in the shared QML Shell
 
 ## Files to Create
@@ -333,7 +333,7 @@ examples/cpp_qml_service_template/
 | 15 | `CMakeLists.txt` | Links against ServiceBase library |
 | 16 | `service_config.json` | Service metadata |
 | 17 | `src/main.cpp` | Entry point |
-| 18 | `src/MyService.h/cpp` | Example service with svc_api_* methods |
+| 18 | `src/MyQMLService.h/cpp` | Example service with svc_api_* methods |
 | 19 | `qml/ServiceUI.qml` | Example QML UI |
 | 20 | `README.md` | Developer workflow guide |
 

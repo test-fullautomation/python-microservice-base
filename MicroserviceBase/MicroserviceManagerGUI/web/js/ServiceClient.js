@@ -45,6 +45,11 @@
       this._ws = null;
       this._wsReady = false;
       this._updateCallbacks = [];
+      this._intentionalClose = false;
+      this._reconnectDelay = 0;
+      this._reconnectTimer = null;
+      this._RECONNECT_BASE = 1000;    // 1 second
+      this._RECONNECT_MAX = 30000;    // 30 seconds cap
     }
 
     /**
@@ -83,48 +88,101 @@
           return;
         }
 
-        const wsUrl = this.apiUrl.replace(/^http/, 'ws') + '/ws/updates';
+        this._intentionalClose = false;
+        this._connectWs(resolve, reject);
+      });
+    }
 
-        try {
-          this._ws = new WebSocket(wsUrl);
-        } catch (e) {
+    /**
+     * Create the WebSocket and wire handlers.
+     * @param {Function} [resolve] - Promise resolve (only for initial connect).
+     * @param {Function} [reject]  - Promise reject  (only for initial connect).
+     * @private
+     */
+    _connectWs(resolve, reject) {
+      const wsUrl = this.apiUrl.replace(/^http/, 'ws') + '/ws/updates';
+      const isInitial = typeof resolve === 'function';
+
+      try {
+        this._ws = new WebSocket(wsUrl);
+      } catch (e) {
+        if (isInitial) {
           reject(new Error('Failed to connect to update stream: ' + e.message));
+        }
+        this._scheduleReconnect();
+        return;
+      }
+
+      this._ws.onopen = () => {
+        this._wsReady = true;
+        this._reconnectDelay = 0;
+        if (isInitial) {
+          console.log(' [x] Connected to FastAPI update stream at', wsUrl);
+        } else {
+          console.log(' [x] Reconnected to FastAPI update stream at', wsUrl);
+        }
+        if (isInitial) resolve();
+      };
+
+      this._ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.action === 'services_update') {
+            this._updateCallbacks.forEach(cb => cb(message.data));
+          }
+        } catch (e) {
+          console.error('Error parsing update message:', e);
+        }
+      };
+
+      this._ws.onerror = (error) => {
+        console.error('Update stream error:', error);
+        if (isInitial) reject(error);
+      };
+
+      this._ws.onclose = () => {
+        this._wsReady = false;
+        this._ws = null;
+        if (this._intentionalClose) {
+          console.log(' [x] Update stream disconnected');
           return;
         }
+        console.warn(' [x] Update stream lost — will reconnect');
+        this._scheduleReconnect();
+      };
+    }
 
-        this._ws.onopen = () => {
-          this._wsReady = true;
-          console.log(' [x] Connected to FastAPI update stream at', wsUrl);
-          resolve();
-        };
+    /**
+     * Schedule a reconnect attempt with exponential backoff.
+     * @private
+     */
+    _scheduleReconnect() {
+      if (this._intentionalClose || this._reconnectTimer) return;
 
-        this._ws.onmessage = (event) => {
-          try {
-            const message = JSON.parse(event.data);
-            if (message.action === 'services_update') {
-              this._updateCallbacks.forEach(cb => cb(message.data));
-            }
-          } catch (e) {
-            console.error('Error parsing update message:', e);
-          }
-        };
+      if (this._reconnectDelay === 0) {
+        this._reconnectDelay = this._RECONNECT_BASE;
+      } else {
+        this._reconnectDelay = Math.min(this._reconnectDelay * 2, this._RECONNECT_MAX);
+      }
 
-        this._ws.onerror = (error) => {
-          console.error('Update stream error:', error);
-          reject(error);
-        };
-
-        this._ws.onclose = () => {
-          this._wsReady = false;
-          console.log(' [x] Update stream disconnected');
-        };
-      });
+      console.log(' [x] Reconnecting in', this._reconnectDelay / 1000, 's ...');
+      this._reconnectTimer = setTimeout(() => {
+        this._reconnectTimer = null;
+        if (!this._intentionalClose) {
+          this._connectWs();
+        }
+      }, this._reconnectDelay);
     }
 
     /**
      * Disconnect from the transport.
      */
     disconnect() {
+      this._intentionalClose = true;
+      if (this._reconnectTimer) {
+        clearTimeout(this._reconnectTimer);
+        this._reconnectTimer = null;
+      }
       if (this._ws) {
         this._ws.close();
         this._ws = null;
@@ -184,7 +242,7 @@
 
       // In browser mode, use WebSocket updates
       this.onServicesUpdate(callback);
-      if (!this._wsReady && !this._ws) {
+      if (!this._wsReady && !this._ws && !this._reconnectTimer) {
         this.connectUpdates().catch(function (err) {
           console.error('[ServiceClient] Failed to connect WebSocket updates:', err);
         });

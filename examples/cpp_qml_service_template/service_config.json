@@ -1,7 +1,7 @@
 {
-    "name": "MyService",
+    "name": "MyQMLService",
     "version": "1.0.0",
-    "routing_key": "MyService",
+    "routing_key": "MyQMLService",
     "description": "Example C++ service with QML UI — demonstrates the 3-part pattern.",
     "shortdesc": "Example QML Service",
     "group": "Examples",

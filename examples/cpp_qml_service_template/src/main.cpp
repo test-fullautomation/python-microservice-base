@@ -1,15 +1,15 @@
-// main.cpp — Entry point for the MyService backend.
+// main.cpp — Entry point for the MyQMLService backend.
 //
 // Loads configuration, creates the service, registers with RabbitMQ, and serves.
 
-#include "MyService.h"
+#include "MyQMLService.h"
 
 #include <fstream>
 #include <iostream>
 #include <csignal>
 #include <filesystem>
 
-static MyService* g_service = nullptr;
+static MyQMLService* g_service = nullptr;
 
 void signalHandler(int /*sig*/) {
     if (g_service) {
@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Create service.
-    MyService service(info, config);
+    MyQMLService service(info, config);
     g_service = &service;
 
     // Handle Ctrl+C for graceful shutdown.

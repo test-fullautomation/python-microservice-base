@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: ===================================================================
-:: build_deploy.bat — Build MyService + MyServicePreview and collect
+:: build_deploy.bat — Build MyQMLService + MyQMLServicePreview and collect
 ::                    all executables and runtime DLLs into deploy/
 :: ===================================================================
 ::
@@ -18,8 +18,8 @@ setlocal enabledelayedexpansion
 ::
 :: Output:
 ::   deploy/
-::   ├── MyService.exe              Backend service
-::   ├── MyServicePreview.exe       QML UI preview
+::   ├── MyQMLService.exe              Backend service
+::   ├── MyQMLServicePreview.exe       QML UI preview
 ::   ├── service_config.json        Service configuration
 ::   ├── qml/ServiceUI.qml          QML UI file
 ::   ├── stubs/MicroserviceBase/     Design-time stubs
@@ -139,20 +139,20 @@ mkdir "%DEPLOY_DIR%"
 :: Find executables — Visual Studio generators put them under Debug/ or Release/
 :: while Ninja puts them directly in the build dir.
 set "EXE_DIR=%BUILD_DIR%"
-if exist "%BUILD_DIR%\%BUILD_TYPE%\MyService.exe"        set "EXE_DIR=%BUILD_DIR%\%BUILD_TYPE%"
-if exist "%BUILD_DIR%\%BUILD_TYPE%\MyServicePreview.exe"  set "EXE_DIR=%BUILD_DIR%\%BUILD_TYPE%"
+if exist "%BUILD_DIR%\%BUILD_TYPE%\MyQMLService.exe"        set "EXE_DIR=%BUILD_DIR%\%BUILD_TYPE%"
+if exist "%BUILD_DIR%\%BUILD_TYPE%\MyQMLServicePreview.exe"  set "EXE_DIR=%BUILD_DIR%\%BUILD_TYPE%"
 echo   Exe location: %EXE_DIR%
 
 :: Copy executables
 set "FOUND_BACKEND=0"
-if exist "%EXE_DIR%\MyService.exe" (
-    copy /Y "%EXE_DIR%\MyService.exe" "%DEPLOY_DIR%\" >nul
-    echo   Copied MyService.exe
+if exist "%EXE_DIR%\MyQMLService.exe" (
+    copy /Y "%EXE_DIR%\MyQMLService.exe" "%DEPLOY_DIR%\" >nul
+    echo   Copied MyQMLService.exe
     set "FOUND_BACKEND=1"
 )
-if exist "%EXE_DIR%\MyServicePreview.exe" (
-    copy /Y "%EXE_DIR%\MyServicePreview.exe" "%DEPLOY_DIR%\" >nul
-    echo   Copied MyServicePreview.exe
+if exist "%EXE_DIR%\MyQMLServicePreview.exe" (
+    copy /Y "%EXE_DIR%\MyQMLServicePreview.exe" "%DEPLOY_DIR%\" >nul
+    echo   Copied MyQMLServicePreview.exe
 )
 
 :: Copy service config
@@ -167,13 +167,13 @@ if exist "%SCRIPT_DIR%qml" (
     echo   Copied qml\
 )
 
-:: Copy stubs (needed by MyServicePreview at runtime)
+:: Copy stubs (needed by MyQMLServicePreview at runtime)
 if exist "%SCRIPT_DIR%stubs" (
     xcopy /E /I /Y /Q "%SCRIPT_DIR%stubs" "%DEPLOY_DIR%\stubs" >nul
     echo   Copied stubs\
 )
 
-:: Copy GUIs folder (served by MyService via svc_api_get_gui_files)
+:: Copy GUIs folder (served by MyQMLService via svc_api_get_gui_files)
 if exist "%SCRIPT_DIR%GUIs" (
     xcopy /E /I /Y /Q "%SCRIPT_DIR%GUIs" "%DEPLOY_DIR%\GUIs" >nul
     echo   Copied GUIs\
@@ -183,9 +183,9 @@ if exist "%SCRIPT_DIR%GUIs" (
 echo.
 echo ===== Running windeployqt =====
 
-:: Run on MyServicePreview (Qt Quick app — pulls in all Qt deps).
+:: Run on MyQMLServicePreview (Qt Quick app — pulls in all Qt deps).
 :: Capture output to a temp file to avoid flooding the log with per-file lines.
-if exist "%DEPLOY_DIR%\MyServicePreview.exe" (
+if exist "%DEPLOY_DIR%\MyQMLServicePreview.exe" (
     set "DEPLOY_LOG=%TEMP%\windeployqt_%RANDOM%.log"
     "%WINDEPLOYQT%" ^
         --dir "%DEPLOY_DIR%" ^
@@ -193,7 +193,7 @@ if exist "%DEPLOY_DIR%\MyServicePreview.exe" (
         --no-translations ^
         --no-opengl-sw ^
         --no-system-d3d-compiler ^
-        "%DEPLOY_DIR%\MyServicePreview.exe" > "!DEPLOY_LOG!" 2>&1
+        "%DEPLOY_DIR%\MyQMLServicePreview.exe" > "!DEPLOY_LOG!" 2>&1
     if errorlevel 1 (
         echo WARNING: windeployqt returned errors. Details:
         type "!DEPLOY_LOG!"
@@ -242,19 +242,19 @@ echo   Build type:  %BUILD_TYPE%
 echo   Output:      %DEPLOY_DIR%
 echo.
 echo   Executables:
-if exist "%DEPLOY_DIR%\MyService.exe"        echo     MyService.exe          (backend service)
-if exist "%DEPLOY_DIR%\MyServicePreview.exe"  echo     MyServicePreview.exe   (QML UI preview)
-if not exist "%DEPLOY_DIR%\MyService.exe" (
-    echo     [MyService.exe not built — backend dependencies may be missing]
+if exist "%DEPLOY_DIR%\MyQMLService.exe"        echo     MyQMLService.exe          (backend service)
+if exist "%DEPLOY_DIR%\MyQMLServicePreview.exe"  echo     MyQMLServicePreview.exe   (QML UI preview)
+if not exist "%DEPLOY_DIR%\MyQMLService.exe" (
+    echo     [MyQMLService.exe not built — backend dependencies may be missing]
 )
 echo.
 echo   To run the backend:
 echo     cd %DEPLOY_DIR%
-echo     MyService.exe
+echo     MyQMLService.exe
 echo.
 echo   To preview the QML UI:
 echo     cd %DEPLOY_DIR%
-echo     MyServicePreview.exe
+echo     MyQMLServicePreview.exe
 echo.
 
 endlocal

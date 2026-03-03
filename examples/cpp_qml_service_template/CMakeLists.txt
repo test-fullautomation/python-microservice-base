@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(MyService VERSION 1.0.0 LANGUAGES CXX)
+project(MyQMLService VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -88,10 +88,10 @@ endif()
 # Opens ServiceUI.qml in a native Qt Quick window with the stub
 # ServiceBridge. Enables the Design tab in Qt Creator.
 #
-# Run target: MyServicePreview
+# Run target: MyQMLServicePreview
 # Design:     Open qml/ServiceUI.qml → click "Design" tab
 # ---------------------------------------------------------------------------
-qt_add_executable(MyServicePreview
+qt_add_executable(MyQMLServicePreview
     preview/main.cpp
     preview/LiveServiceBridge.h
     preview/LiveServiceBridge.cpp
@@ -103,7 +103,7 @@ qt_add_executable(MyServicePreview
 )
 
 # Launch as a GUI window (no console) on Windows, bundle on macOS.
-set_target_properties(MyServicePreview PROPERTIES
+set_target_properties(MyQMLServicePreview PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
@@ -116,7 +116,7 @@ set_source_files_properties(
     PROPERTIES HEADER_FILE_ONLY TRUE
 )
 
-target_link_libraries(MyServicePreview PRIVATE
+target_link_libraries(MyQMLServicePreview PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Qml
@@ -124,14 +124,14 @@ target_link_libraries(MyServicePreview PRIVATE
     Qt6::QuickControls2
 )
 
-target_include_directories(MyServicePreview PRIVATE preview)
+target_include_directories(MyQMLServicePreview PRIVATE preview)
 
 # Link against CppServiceBase for --live mode (direct RabbitMQ RPC).
 # When backend deps are available, the preview can connect to the service
 # directly without needing MicroserviceManager.
 if(BUILD_BACKEND)
-    target_link_libraries(MyServicePreview PRIVATE CppServiceBase)
-    target_compile_definitions(MyServicePreview PRIVATE HAS_LIVE_BRIDGE)
+    target_link_libraries(MyQMLServicePreview PRIVATE CppServiceBase)
+    target_compile_definitions(MyQMLServicePreview PRIVATE HAS_LIVE_BRIDGE)
 else()
     # Without CppServiceBase, LiveServiceBridge won't compile.
     # Exclude it from the build — stub mode only.
@@ -141,7 +141,7 @@ else()
     )
 endif()
 
-target_compile_definitions(MyServicePreview PRIVATE
+target_compile_definitions(MyQMLServicePreview PRIVATE
     STUBS_IMPORT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/stubs"
     QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
 )
@@ -150,25 +150,25 @@ target_compile_definitions(MyServicePreview PRIVATE
 # Backend executable (only if deps are available)
 # ---------------------------------------------------------------------------
 if(BUILD_BACKEND)
-    add_executable(MyService
+    add_executable(MyQMLService
         src/main.cpp
-        src/MyService.h
-        src/MyService.cpp
+        src/MyQMLService.h
+        src/MyQMLService.cpp
     )
-    target_include_directories(MyService PRIVATE src)
-    target_link_libraries(MyService PRIVATE CppServiceBase)
+    target_include_directories(MyQMLService PRIVATE src)
+    target_link_libraries(MyQMLService PRIVATE CppServiceBase)
 else()
-    message(STATUS "Backend build skipped. Use MyServicePreview to design the QML UI.")
+    message(STATUS "Backend build skipped. Use MyQMLServicePreview to design the QML UI.")
 
     # IDE-only OBJECT library: shows backend sources in the project tree
     # with full code model support (include paths, syntax highlighting).
     # EXCLUDE_FROM_ALL ensures it is never actually compiled.
-    add_library(MyService_IDE OBJECT EXCLUDE_FROM_ALL
+    add_library(MyQMLService_IDE OBJECT EXCLUDE_FROM_ALL
         src/main.cpp
-        src/MyService.h
-        src/MyService.cpp
+        src/MyQMLService.h
+        src/MyQMLService.cpp
     )
-    target_include_directories(MyService_IDE PRIVATE
+    target_include_directories(MyQMLService_IDE PRIVATE
         src
         "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/domain/service_base_cpp/include"
     )
@@ -176,27 +176,27 @@ else()
     # Provide nlohmann/json.hpp to the code model.
     find_package(nlohmann_json CONFIG QUIET)
     if(nlohmann_json_FOUND)
-        target_link_libraries(MyService_IDE PRIVATE nlohmann_json::nlohmann_json)
+        target_link_libraries(MyQMLService_IDE PRIVATE nlohmann_json::nlohmann_json)
     else()
         find_path(_NJ_INC nlohmann/json.hpp HINTS ${_VCPKG_INC_HINT} QUIET)
         if(_NJ_INC)
-            target_include_directories(MyService_IDE PRIVATE ${_NJ_INC})
+            target_include_directories(MyQMLService_IDE PRIVATE ${_NJ_INC})
         endif()
     endif()
 
     # Provide amqp.h to the code model.
     find_package(rabbitmq-c CONFIG QUIET)
     if(rabbitmq-c_FOUND)
-        target_link_libraries(MyService_IDE PRIVATE rabbitmq::rabbitmq)
+        target_link_libraries(MyQMLService_IDE PRIVATE rabbitmq::rabbitmq)
     else()
         find_path(_RMQ_INC amqp.h HINTS ${_VCPKG_INC_HINT} QUIET)
         if(_RMQ_INC)
-            target_include_directories(MyService_IDE PRIVATE ${_RMQ_INC})
+            target_include_directories(MyQMLService_IDE PRIVATE ${_RMQ_INC})
         endif()
     endif()
 
     # Non-source files visible in project tree.
-    add_custom_target(MyService_ConfigFiles SOURCES
+    add_custom_target(MyQMLService_ConfigFiles SOURCES
         service_config.json
         README.md
     )

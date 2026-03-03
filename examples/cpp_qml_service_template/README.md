@@ -3,7 +3,7 @@
 Demonstrates the **3-part pattern** for building C++ microservices with Qt QML UIs:
 
 1. **Infrastructure** — `ServiceBase` library handles RabbitMQ transport, registration, request dispatch
-2. **Business API** — `MyService` implements `svc_api_*` methods (C++ backend)
+2. **Business API** — `MyQMLService` implements `svc_api_*` methods (C++ backend)
 3. **UI** — `ServiceUI.qml` designed in Qt Creator (loaded by the shared QML Shell)
 
 ## Project Structure
@@ -14,8 +14,8 @@ cpp_qml_service_template/
 ├── service_config.json     # Service metadata + broker config
 ├── src/
 │   ├── main.cpp            # Entry point: load config, register, serve
-│   ├── MyService.h         # Service class declaration
-│   └── MyService.cpp       # svc_api_* method implementations
+│   ├── MyQMLService.h         # Service class declaration
+│   └── MyQMLService.cpp       # svc_api_* method implementations
 ├── qml/
 │   └── ServiceUI.qml       # QML UI (design in Qt Creator)
 └── GUIs/
@@ -34,10 +34,10 @@ Open `qml/ServiceUI.qml` in Qt Creator's visual QML editor:
 
 ### 2. Implement the API
 
-Edit `src/MyService.cpp` — add `svc_api_*` methods:
+Edit `src/MyQMLService.cpp` — add `svc_api_*` methods:
 
 ```cpp
-json MyService::svc_api_hello(const json& args) {
+json MyQMLService::svc_api_hello(const json& args) {
     std::string name = args[0].get<std::string>();
     return "Hello, " + name + "!";
 }
@@ -59,7 +59,7 @@ In the QML file, call `ServiceBridge.callService()`:
 Button {
     text: "Say Hello"
     onClicked: ServiceBridge.callService(
-        "MyService", "svc_api_hello", [nameInput.text])
+        "MyQMLService", "svc_api_hello", [nameInput.text])
 }
 
 Connections {
@@ -78,7 +78,7 @@ cmake .. -DCMAKE_PREFIX_PATH=/path/to/vcpkg/installed/x64-windows
 cmake --build . --config Release
 
 # Run the service (connects to RabbitMQ)
-./MyService ../service_config.json
+./MyQMLService ../service_config.json
 ```
 
 ### 5. Deploy UI
@@ -86,12 +86,12 @@ cmake --build . --config Release
 Copy the QML file to the service's GUI folder:
 
 ```bash
-cp qml/ServiceUI.qml /path/to/web/services/MyService1.0.0/ServiceUI.qml
+cp qml/ServiceUI.qml /path/to/web/services/MyQMLService1.0.0/ServiceUI.qml
 ```
 
 ### 6. Done
 
-Open MicroserviceManager in the browser. Click "MyService" in the sidebar. The QML UI loads in the shared QML Shell — native Qt Quick controls, no per-service WASM build needed.
+Open MicroserviceManager in the browser. Click "MyQMLService" in the sidebar. The QML UI loads in the shared QML Shell — native Qt Quick controls, no per-service WASM build needed.
 
 ## API Methods
 
@@ -117,9 +117,9 @@ Open MicroserviceManager in the browser. Click "MyService" in the sidebar. The Q
    ```
 
 2. **Rename the service class** — in `src/`:
-   - `MyService.h` → `YourService.h`
-   - `MyService.cpp` → `YourService.cpp`
-   - Replace `MyService` with `YourService` in all files
+   - `MyQMLService.h` → `YourService.h`
+   - `MyQMLService.cpp` → `YourService.cpp`
+   - Replace `MyQMLService` with `YourService` in all files
 
 3. **Update `service_config.json`**:
    ```json
@@ -133,7 +133,7 @@ Open MicroserviceManager in the browser. Click "MyService" in the sidebar. The Q
    ```
 
 4. **Update `CMakeLists.txt`**:
-   - Change target name `MyService` → `YourService`
+   - Change target name `MyQMLService` → `YourService`
    - Update source file names to match step 2
 
 5. **Add business methods** in `YourService.cpp`:

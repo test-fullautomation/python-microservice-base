@@ -1,4 +1,4 @@
-// MyService.h — Example C++ microservice with svc_api_* methods.
+// MyQMLService.h — Example C++ microservice with svc_api_* methods.
 //
 // Demonstrates the 3-part pattern:
 //   1. Infrastructure: ServiceBase (handles RabbitMQ, dispatch, registration)
@@ -9,9 +9,9 @@
 
 #include <ServiceBase.h>
 
-class MyService : public ServiceBase {
+class MyQMLService : public ServiceBase {
 public:
-    MyService(const ServiceInfo& info, const ServiceConfig& config);
+    MyQMLService(const ServiceInfo& info, const ServiceConfig& config);
 
 private:
     // --- Business API methods ---

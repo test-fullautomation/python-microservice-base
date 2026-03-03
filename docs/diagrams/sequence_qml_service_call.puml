@@ -16,18 +16,18 @@ participant "C++ Backend\n(ServiceBase)" as backend
 user -> qml : Click "Say Hello" button
 activate qml
 
-qml -> bridge : ServiceBridge.callService(\n"MyService",\n"svc_api_hello",\n["World"])
+qml -> bridge : ServiceBridge.callService(\n"MyQMLService",\n"svc_api_hello",\n["World"])
 activate bridge
 
 == WASM → JS Bridge (fire-and-forget) ==
 
 bridge -> bridge : EM_ASM {\n  var svc = UTF8ToString($0);\n  var method = UTF8ToString($1);\n  var args = JSON.parse(\n    UTF8ToString($2));\n  window.callMicroservice(\n    svc, method, args);\n}
 
-bridge -> mgr : window.callMicroservice(\n"MyService", "svc_api_hello", ["World"])
+bridge -> mgr : window.callMicroservice(\n"MyQMLService", "svc_api_hello", ["World"])
 activate mgr
 deactivate bridge
 
-mgr -> mgr : Lookup MM.servicesInfor["MyService"]\n→ routing_key
+mgr -> mgr : Lookup MM.servicesInfor["MyQMLService"]\n→ routing_key
 
 mgr -> client : MM.requestService(\n{method: "svc_api_hello",\n args: ["World"]},\n"services_request",\nroutingKey)
 activate client

@@ -2,11 +2,11 @@
 // LiveServiceBridge — connects the QML preview directly to a backend
 // service via RabbitMQ (no MicroserviceManager needed).
 //
-// Usage:  MyServicePreview.exe --live [--broker host:port]
+// Usage:  MyQMLServicePreview.exe --live [--broker host:port]
 //
 // Prerequisites:
 //   1. RabbitMQ running
-//   2. MyService.exe (backend) running and registered
+//   2. MyQMLService.exe (backend) running and registered
 //
 // Reads broker settings from service_config.json next to the exe.
 
@@ -65,7 +65,7 @@ public:
     void setServiceName(const QString &name);
 
     // Called from QML:
-    //   ServiceBridge.callService("MyService", "svc_api_hello", ["world"])
+    //   ServiceBridge.callService("MyQMLService", "svc_api_hello", ["world"])
     Q_INVOKABLE void callService(const QString &serviceName,
                                  const QString &method,
                                  const QJsonArray &args);

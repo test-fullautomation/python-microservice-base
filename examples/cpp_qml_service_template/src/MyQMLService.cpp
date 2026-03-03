@@ -1,11 +1,11 @@
-// MyService.cpp — Example service implementing svc_api_* business methods.
+// MyQMLService.cpp — Example service implementing svc_api_* business methods.
 
-#include "MyService.h"
+#include "MyQMLService.h"
 
 #include <numeric>
 #include <stdexcept>
 
-MyService::MyService(const ServiceInfo& info, const ServiceConfig& config)
+MyQMLService::MyQMLService(const ServiceInfo& info, const ServiceConfig& config)
     : ServiceBase(info, config)
 {
     // Register business API methods with metadata.
@@ -32,7 +32,7 @@ MyService::MyService(const ServiceInfo& info, const ServiceConfig& config)
         });
 }
 
-json MyService::svc_api_hello(const json& args) {
+json MyQMLService::svc_api_hello(const json& args) {
     std::string name = "World";
     if (args.is_array() && !args.empty()) {
         name = args[0].get<std::string>();
@@ -42,14 +42,14 @@ json MyService::svc_api_hello(const json& args) {
     return "Hello, " + name + "!";
 }
 
-json MyService::svc_api_echo(const json& args) {
+json MyQMLService::svc_api_echo(const json& args) {
     if (args.is_array() && !args.empty()) {
         return args[0];
     }
     return args;
 }
 
-json MyService::svc_api_compute(const json& args) {
+json MyQMLService::svc_api_compute(const json& args) {
     json numbers;
     if (args.is_array() && !args.empty()) {
         numbers = args[0];

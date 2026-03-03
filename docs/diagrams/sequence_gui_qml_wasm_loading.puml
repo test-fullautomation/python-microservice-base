@@ -15,7 +15,7 @@ participant "QML Shell\n(qtshell.wasm)" as shell
 
 == 1. User Clicks Service ==
 
-user -> gui : Click service item\n(e.g. "MyService")
+user -> gui : Click service item\n(e.g. "MyQMLService")
 activate gui
 
 gui -> gui : selectService(serviceName)
@@ -23,7 +23,7 @@ gui -> gui : gui_support === true\n→ checkAndGetTheServiceGUIResources()
 
 == 2. Checksum Verification (same for all service types) ==
 
-gui -> bridge : POST /api/request\n{method: "svc_api_get_gui_checksum",\n routing_key: "MyService"}
+gui -> bridge : POST /api/request\n{method: "svc_api_get_gui_checksum",\n routing_key: "MyQMLService"}
 activate bridge
 bridge -> broker : publish to services_request
 activate broker
@@ -120,7 +120,7 @@ alt gui_schema.json found with renderer: "qt"
       note right of qml_mgr: Unload previous service's QML
    end
 
-   qml_mgr -> shell : qtshell_setServiceName("MyService")
+   qml_mgr -> shell : qtshell_setServiceName("MyQMLService")
    qml_mgr -> shell : qtshell_loadQml(qmlUrl)
    shell -> fs : HTTP fetch ServiceUI.qml\n(~2-50 KB)
    activate fs
@@ -198,7 +198,7 @@ deactivate gui
 user -> shell : Click button in QML UI\n(e.g. "Say Hello")
 activate shell
 
-shell -> shell : QML onClicked:\nServiceBridge.callService(\n"MyService", "svc_api_hello",\n["World"])
+shell -> shell : QML onClicked:\nServiceBridge.callService(\n"MyQMLService", "svc_api_hello",\n["World"])
 
 shell -> gui : JS bridge:\ncallMicroservice(request)
 activate gui

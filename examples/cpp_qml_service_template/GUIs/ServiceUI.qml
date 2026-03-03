@@ -23,7 +23,7 @@ Rectangle {
             anchors.leftMargin: 20
             anchors.top: parent.top
             anchors.topMargin: 14
-            text: "MyService"
+            text: "MyQMLService"
             font.pixelSize: 22
             font.bold: true
             color: "#ffffff"
@@ -89,7 +89,7 @@ Rectangle {
             font.pixelSize: 14
             highlighted: true
             onClicked: ServiceBridge.callService(
-                "MyService", "svc_api_hello", [nameInput.text])
+                "MyQMLService", "svc_api_hello", [nameInput.text])
         }
     }
 
@@ -141,7 +141,7 @@ Rectangle {
             font.pixelSize: 14
             highlighted: true
             onClicked: ServiceBridge.callService(
-                "MyService", "svc_api_echo", [echoInput.text])
+                "MyQMLService", "svc_api_echo", [echoInput.text])
         }
     }
 
@@ -210,7 +210,7 @@ Rectangle {
                     if (!isNaN(n)) nums.push(n);
                 }
                 ServiceBridge.callService(
-                    "MyService", "svc_api_compute", [nums]);
+                    "MyQMLService", "svc_api_compute", [nums]);
             }
         }
     }
@@ -280,7 +280,7 @@ Rectangle {
         font.pixelSize: 13
         flat: true
         onClicked: ServiceBridge.callService(
-            "MyService", "svc_api_get_version", [])
+            "MyQMLService", "svc_api_get_version", [])
     }
 
     // ---- Handle responses ----

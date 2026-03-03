@@ -8,8 +8,11 @@
  *
  *   - serviceMethod: Method name to call (e.g., "svc_api_hello")
  *   - serviceArgs:   Comma-separated objectNames of input widgets
+ *   - serviceResult: objectName of the widget to display the response in
+ *                    (optional — falls back to "resultLabel" if not set)
  *
- * Response text is routed to a QLabel with objectName "resultLabel".
+ * Response text is routed per-button to the widget named in serviceResult,
+ * or to a shared QLabel with objectName "resultLabel" as the default fallback.
  */
 
 #pragma once
@@ -17,6 +20,7 @@
 #include <QObject>
 #include <QWidget>
 #include <QPointer>
+#include <QHash>
 
 class ServiceBridge;
 
@@ -52,8 +56,16 @@ private:
      * Find all QPushButton children with serviceMethod/serviceArgs
      * dynamic properties and connect their clicked() signal to
      * ServiceBridge::callService().
+     *
+     * Also reads serviceResult property per button to build a
+     * method → target widget map for response routing.
      */
     void wireButtons();
+
+    /**
+     * Set text and style on a target widget (QLabel, QLineEdit, etc.).
+     */
+    void setWidgetResult(QWidget *widget, const QString &text, const QString &style) const;
 
     /**
      * Extract the current text/value from a widget by objectName,
@@ -67,4 +79,7 @@ private:
     QWidget        *m_rootContainer = nullptr;
     ServiceBridge  *m_bridge = nullptr;
     QPointer<QWidget> m_currentWidget;
+
+    /** method name → objectName of target widget for response routing */
+    QHash<QString, QString> m_methodResultMap;
 };

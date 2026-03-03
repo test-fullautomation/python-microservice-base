@@ -1,13 +1,13 @@
 // preview/main.cpp — QML viewer for designing and testing ServiceUI.qml.
 //
 // Modes:
-//   MyServicePreview.exe                Stub mode — mock responses (design)
-//   MyServicePreview.exe --live         Live mode — direct RabbitMQ RPC
-//   MyServicePreview.exe --live --broker host:port
+//   MyQMLServicePreview.exe                Stub mode — mock responses (design)
+//   MyQMLServicePreview.exe --live         Live mode — direct RabbitMQ RPC
+//   MyQMLServicePreview.exe --live --broker host:port
 //
 // Prerequisites for live mode:
 //   1. RabbitMQ running
-//   2. MyService.exe (backend) running and registered
+//   2. MyQMLService.exe (backend) running and registered
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -186,8 +186,8 @@ int main(int argc, char *argv[])
 
     // ---- Load QML inside an ApplicationWindow wrapper ----
     const QString modeTitle = liveMode
-        ? QStringLiteral("MyService Preview [LIVE]")
-        : QStringLiteral("MyService Preview [STUB]");
+        ? QStringLiteral("MyQMLService Preview [LIVE]")
+        : QStringLiteral("MyQMLService Preview [STUB]");
 
     const QString wrapper = QStringLiteral(
         "import QtQuick 2.15\n"

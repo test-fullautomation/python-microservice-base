@@ -24,6 +24,11 @@ function parseArgs(argName, defaultValue) {
 
 const debugValue = parseArgs('devTools', false);
 
+// Resolve icon path — in dev it's in build-resources/, in packaged app it's an extraResource
+const iconPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'icon.png')
+  : path.join(__dirname, '..', 'build-resources', 'icon.png');
+
 // Expose packaging metadata to preload via environment variables
 process.env.DASGUI_IS_PACKAGED = app.isPackaged ? '1' : '0';
 process.env.DASGUI_USER_DATA = app.getPath('userData');
@@ -35,7 +40,7 @@ function createWindow() {
     height: 800,
     show: false,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -69,7 +74,6 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
   const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
   tray.setToolTip('Microservice Manager GUI');

@@ -26,7 +26,7 @@
     "productName": "DevAtServGUI",
     "directories": {
       "output": "dist",
-      "buildResources": "build"
+      "buildResources": "build-resources"
     },
     "files": [
       "electron/**/*",
@@ -60,12 +60,24 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build-resources/installers",
+        "to": "installers",
+        "filter": [
+          "*.exe",
+          "*.whl"
+        ]
+      },
+      {
+        "from": "build-resources/icon.png",
+        "to": "icon.png"
       }
     ],
     "asar": true,
     "win": {
       "target": "nsis",
-      "icon": "build/icon.png"
+      "icon": "build-resources/icon.png"
     },
     "nsis": {
       "oneClick": false,
@@ -73,14 +85,15 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DevAtServGUI"
+      "shortcutName": "DevAtServGUI",
+      "include": "build-resources/installer.nsh"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "icon": "build/icon.png"
+      "icon": "build-resources/icon.png"
     }
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ===================================================================
-# build_deploy.sh — Build MyService + MyServicePreview and collect
+# build_deploy.sh — Build MyQMLService + MyQMLServicePreview and collect
 #                   all executables and runtime libraries into deploy/
 # ===================================================================
 #
@@ -16,8 +16,8 @@
 #
 # Output:
 #   deploy/
-#   ├── MyService                   Backend service
-#   ├── MyServicePreview            QML UI preview
+#   ├── MyQMLService                   Backend service
+#   ├── MyQMLServicePreview            QML UI preview
 #   ├── service_config.json         Service configuration
 #   ├── qml/ServiceUI.qml           QML UI file
 #   ├── stubs/MicroserviceBase/      Design-time stubs
@@ -127,14 +127,14 @@ mkdir -p "$DEPLOY_DIR"
 
 # Copy executables
 FOUND_BACKEND=0
-if [ -f "$BUILD_DIR/MyService" ]; then
-    cp "$BUILD_DIR/MyService" "$DEPLOY_DIR/"
-    echo "  Copied MyService"
+if [ -f "$BUILD_DIR/MyQMLService" ]; then
+    cp "$BUILD_DIR/MyQMLService" "$DEPLOY_DIR/"
+    echo "  Copied MyQMLService"
     FOUND_BACKEND=1
 fi
-if [ -f "$BUILD_DIR/MyServicePreview" ]; then
-    cp "$BUILD_DIR/MyServicePreview" "$DEPLOY_DIR/"
-    echo "  Copied MyServicePreview"
+if [ -f "$BUILD_DIR/MyQMLServicePreview" ]; then
+    cp "$BUILD_DIR/MyQMLServicePreview" "$DEPLOY_DIR/"
+    echo "  Copied MyQMLServicePreview"
 fi
 
 # Copy service config
@@ -149,7 +149,7 @@ if [ -d "$SCRIPT_DIR/qml" ]; then
     echo "  Copied qml/"
 fi
 
-# Copy stubs (needed by MyServicePreview at runtime)
+# Copy stubs (needed by MyQMLServicePreview at runtime)
 if [ -d "$SCRIPT_DIR/stubs" ]; then
     cp -r "$SCRIPT_DIR/stubs" "$DEPLOY_DIR/stubs"
     echo "  Copied stubs/"
@@ -164,12 +164,12 @@ mkdir -p "$DEPLOY_DIR/lib"
 # Try macdeployqt / linuxdeployqt if available
 if [ "$(uname)" = "Darwin" ] && command -v macdeployqt &>/dev/null; then
     echo "  Running macdeployqt..."
-    macdeployqt "$DEPLOY_DIR/MyServicePreview" \
+    macdeployqt "$DEPLOY_DIR/MyQMLServicePreview" \
         -qmldir="$SCRIPT_DIR/qml" \
         -always-overwrite 2>/dev/null || true
 elif command -v linuxdeployqt &>/dev/null; then
     echo "  Running linuxdeployqt..."
-    linuxdeployqt "$DEPLOY_DIR/MyServicePreview" \
+    linuxdeployqt "$DEPLOY_DIR/MyQMLServicePreview" \
         -qmldir="$SCRIPT_DIR/qml" \
         -always-overwrite 2>/dev/null || true
 else
@@ -229,7 +229,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$DIR/lib:${LD_LIBRARY_PATH:-}"
 export QML2_IMPORT_PATH="$DIR/stubs:$DIR/lib:${QML2_IMPORT_PATH:-}"
 export QT_PLUGIN_PATH="$DIR/plugins:${QT_PLUGIN_PATH:-}"
-exec "$DIR/MyService" "$@"
+exec "$DIR/MyQMLService" "$@"
 LAUNCHER
 chmod +x "$DEPLOY_DIR/run_service.sh"
 
@@ -239,7 +239,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$DIR/lib:${LD_LIBRARY_PATH:-}"
 export QML2_IMPORT_PATH="$DIR/stubs:$DIR/lib:${QML2_IMPORT_PATH:-}"
 export QT_PLUGIN_PATH="$DIR/plugins:${QT_PLUGIN_PATH:-}"
-exec "$DIR/MyServicePreview" "$@"
+exec "$DIR/MyQMLServicePreview" "$@"
 LAUNCHER
 chmod +x "$DEPLOY_DIR/run_preview.sh"
 
@@ -253,9 +253,9 @@ echo "  Build type:  $BUILD_TYPE"
 echo "  Output:      $DEPLOY_DIR"
 echo ""
 echo "  Executables:"
-[ -f "$DEPLOY_DIR/MyService" ]        && echo "    MyService              (backend service)"
-[ -f "$DEPLOY_DIR/MyServicePreview" ] && echo "    MyServicePreview       (QML UI preview)"
-[ ! -f "$DEPLOY_DIR/MyService" ]      && echo "    [MyService not built — backend deps may be missing]"
+[ -f "$DEPLOY_DIR/MyQMLService" ]        && echo "    MyQMLService              (backend service)"
+[ -f "$DEPLOY_DIR/MyQMLServicePreview" ] && echo "    MyQMLServicePreview       (QML UI preview)"
+[ ! -f "$DEPLOY_DIR/MyQMLService" ]      && echo "    [MyQMLService not built — backend deps may be missing]"
 echo ""
 echo "  To run:"
 echo "    cd $DEPLOY_DIR"

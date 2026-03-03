@@ -62,8 +62,9 @@ Open `ui/ServiceUI.ui` in Qt Designer (standalone or via Qt Creator).
 |----------|------|---------|---------|
 | `serviceMethod` | `QString` | `svc_api_hello` | Method to call on click |
 | `serviceArgs` | `QString` | `nameInput,ageInput` | Comma-separated objectNames of input widgets |
+| `serviceResult` | `QString` | `helloResult` | objectName of the widget to display the response (optional) |
 
-Name your result display label `resultLabel` — the Widget Shell routes responses there.
+If `serviceResult` is not set, the response falls back to a QLabel named `resultLabel`.
 
 Supported input widget types: `QLineEdit`, `QSpinBox`, `QDoubleSpinBox`, `QComboBox`, `QCheckBox`.
 
