@@ -82,22 +82,7 @@ void WidgetController::wireButtons()
 {
     if (!m_currentWidget || !m_bridge) return;
 
-    // Find the result label (if present).
-    QLabel *resultLabel = m_currentWidget->findChild<QLabel *>("resultLabel");
-
-    // Connect bridge signals to the result label.
-    if (resultLabel) {
-        connect(m_bridge, &ServiceBridge::responseReceived, this,
-                [resultLabel](const QString &method, const QString &result) {
-                    resultLabel->setText(method + ": " + result);
-                    resultLabel->setStyleSheet("color: green;");
-                });
-        connect(m_bridge, &ServiceBridge::errorOccurred, this,
-                [resultLabel](const QString &method, const QString &error) {
-                    resultLabel->setText(method + " error: " + error);
-                    resultLabel->setStyleSheet("color: red;");
-                });
-    }
+    m_methodResultMap.clear();
 
     // Find all QPushButtons and wire those with serviceMethod property.
     auto buttons = m_currentWidget->findChildren<QPushButton *>();
@@ -108,6 +93,13 @@ void WidgetController::wireButtons()
         }
 
         QString method = methodVar.toString();
+
+        // Read per-button result target (serviceResult property).
+        QVariant resultVar = btn->property("serviceResult");
+        if (resultVar.isValid() && !resultVar.toString().isEmpty()) {
+            m_methodResultMap.insert(method, resultVar.toString().trimmed());
+        }
+
         QVariant argsVar = btn->property("serviceArgs");
         QStringList argNames;
         if (argsVar.isValid() && !argsVar.toString().isEmpty()) {
@@ -136,9 +128,33 @@ void WidgetController::wireButtons()
                     bridge->callService(QString(), method, args);
                 });
 
+        QString resultTarget = m_methodResultMap.value(method, "resultLabel");
         qDebug() << "WidgetController: wired" << btn->objectName()
-                 << "→" << method << "args:" << argNames;
+                 << "→" << method << "args:" << argNames << "result:" << resultTarget;
     }
+
+    // Route responses to per-button target widget, fallback to resultLabel.
+    QWidget *rootWidget = m_currentWidget;
+    connect(m_bridge, &ServiceBridge::responseReceived, this,
+            [this, rootWidget](const QString &method, const QString &result) {
+                QString targetName = m_methodResultMap.value(method, "resultLabel");
+                QWidget *target = rootWidget->findChild<QWidget *>(targetName);
+                if (target) {
+                    setWidgetResult(target, method + ": " + result, "color: green;");
+                } else {
+                    qWarning() << "WidgetController: result target not found:" << targetName;
+                }
+            });
+    connect(m_bridge, &ServiceBridge::errorOccurred, this,
+            [this, rootWidget](const QString &method, const QString &error) {
+                QString targetName = m_methodResultMap.value(method, "resultLabel");
+                QWidget *target = rootWidget->findChild<QWidget *>(targetName);
+                if (target) {
+                    setWidgetResult(target, method + " error: " + error, "color: red;");
+                } else {
+                    qWarning() << "WidgetController: result target not found:" << targetName;
+                }
+            });
 }
 
 QString WidgetController::extractWidgetValue(QWidget *widget) const
@@ -169,4 +185,20 @@ QString WidgetController::extractWidgetValue(QWidget *widget) const
         return textProp.toString();
     }
     return QString();
+}
+
+void WidgetController::setWidgetResult(QWidget *widget, const QString &text,
+                                        const QString &style) const
+{
+    if (auto *label = qobject_cast<QLabel *>(widget)) {
+        label->setText(text);
+        label->setStyleSheet(style);
+    } else if (auto *lineEdit = qobject_cast<QLineEdit *>(widget)) {
+        lineEdit->setText(text);
+        lineEdit->setStyleSheet(style);
+    } else {
+        // Generic fallback via "text" property.
+        widget->setProperty("text", text);
+        widget->setStyleSheet(style);
+    }
 }

@@ -887,6 +887,65 @@
   }
 
   /**
+   * Create a single service list-item button for the sidebar.
+   *
+   * @param {object} item - { label, iconSrc, serviceName, downloadable }
+   * @param {string} [brokerUrl] - The broker URL to tag on the element.
+   * @returns {HTMLElement}
+   */
+  function _createServiceListItem(item, brokerUrl) {
+    var listItem = document.createElement('button');
+    listItem.type = 'button';
+    listItem.classList.add('list-group-item', 'list-group-item-action');
+    listItem.setAttribute('aria-current', 'true');
+    listItem.setAttribute('data-service-name', item.serviceName);
+    if (brokerUrl) {
+      listItem.setAttribute('data-broker-url', brokerUrl);
+    }
+
+    listItem.onclick = function () {
+      if (listItem.classList.contains('service-disabled')) {
+        return;
+      }
+      activateItemAndLoadContent(listItem, item.serviceName);
+    };
+
+    var icon = document.createElement('img');
+    icon.src = item.iconSrc;
+    icon.alt = 'Icon';
+    icon.classList.add('icon');
+
+    var label = document.createTextNode(item.label);
+
+    var helperBtn = document.createElement('span');
+    helperBtn.classList.add('helper-btn');
+    helperBtn.innerHTML = '<i class="bi bi-code-slash"></i>';
+    helperBtn.title = 'Code Example';
+    helperBtn.onclick = function (e) {
+      e.stopPropagation();
+      showServiceHelper(item.serviceName);
+    };
+
+    listItem.appendChild(icon);
+    listItem.appendChild(label);
+    listItem.appendChild(helperBtn);
+
+    if (item.downloadable) {
+      var downloadBtn = document.createElement('span');
+      downloadBtn.classList.add('helper-btn', 'download-btn');
+      downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+      downloadBtn.title = 'Download Service';
+      downloadBtn.onclick = function (e) {
+        e.stopPropagation();
+        downloadServiceFiles(item.serviceName);
+      };
+      listItem.appendChild(downloadBtn);
+    }
+
+    return listItem;
+  }
+
+  /**
    * Dynamically generates accordion items for services in the sidebar.
    * Supports multi-broker by appending to the correct broker section.
    *
@@ -935,56 +994,7 @@
       listGroup.classList.add('list-group');
 
       section.items.forEach(function (item) {
-        var listItem = document.createElement('button');
-        listItem.type = 'button';
-        listItem.classList.add('list-group-item', 'list-group-item-action');
-        listItem.setAttribute('aria-current', 'true');
-        listItem.setAttribute('data-service-name', item.serviceName);
-        if (brokerUrl) {
-          listItem.setAttribute('data-broker-url', brokerUrl);
-        }
-
-        // Direct function binding instead of eval()
-        listItem.onclick = function () {
-          if (listItem.classList.contains('service-disabled')) {
-            return;
-          }
-          activateItemAndLoadContent(listItem, item.serviceName);
-        };
-
-        var icon = document.createElement('img');
-        icon.src = item.iconSrc;
-        icon.alt = 'Icon';
-        icon.classList.add('icon');
-
-        var label = document.createTextNode(item.label);
-
-        var helperBtn = document.createElement('span');
-        helperBtn.classList.add('helper-btn');
-        helperBtn.innerHTML = '<i class="bi bi-code-slash"></i>';
-        helperBtn.title = 'Code Example';
-        helperBtn.onclick = function (e) {
-          e.stopPropagation();
-          showServiceHelper(item.serviceName);
-        };
-
-        listItem.appendChild(icon);
-        listItem.appendChild(label);
-        listItem.appendChild(helperBtn);
-
-        if (item.downloadable) {
-          var downloadBtn = document.createElement('span');
-          downloadBtn.classList.add('helper-btn', 'download-btn');
-          downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
-          downloadBtn.title = 'Download Service';
-          downloadBtn.onclick = function (e) {
-            e.stopPropagation();
-            downloadServiceFiles(item.serviceName);
-          };
-          listItem.appendChild(downloadBtn);
-        }
-
-        listGroup.appendChild(listItem);
+        listGroup.appendChild(_createServiceListItem(item, brokerUrl));
       });
 
       accordionBody.appendChild(listGroup);
@@ -2154,7 +2164,27 @@
         var newServiceData = {};
         newServiceData[serviceName] = svcInfo;
         var newItems = extractServicesInformation(newServiceData);
-        createAccordionItems(newItems, brokerUrl);
+
+        // Try to append to an existing group before creating a new one.
+        var added = false;
+        var prefix = sanitizeBrokerId(brokerUrl) + '_';
+        newItems.forEach(function (group) {
+          var existingCollapse = brokerSection.querySelector('#' + prefix + group.contentId);
+          if (existingCollapse) {
+            var listGroup = existingCollapse.querySelector('.list-group');
+            if (listGroup) {
+              group.items.forEach(function (item) {
+                listGroup.appendChild(_createServiceListItem(item, brokerUrl));
+              });
+              added = true;
+            }
+          }
+        });
+
+        if (!added) {
+          createAccordionItems(newItems, brokerUrl);
+        }
+
         console.log('[app] New service appeared:', serviceName, 'on', brokerUrl);
         showToast('Service Online', serviceName + ' is now available.', 'success');
       }
