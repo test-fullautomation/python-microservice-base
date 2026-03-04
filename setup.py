@@ -155,12 +155,16 @@ if ( ('install' in listCmdArgs) or ('build' in listCmdArgs) or ('sdist' in listC
     print(COLBY + "Entering extended installation")
     print()
 
-    print(COLBY + "Extended setup step 1/5: Calling the documentation builder")
-    print()
+    if os.environ.get('SKIP_DOCBUILD'):
+        print(COLBY + "Extended setup step 1/5: Skipping documentation builder (SKIP_DOCBUILD set)")
+        print()
+    else:
+        print(COLBY + "Extended setup step 1/5: Calling the documentation builder")
+        print()
 
-    nReturn = oExtendedSetup.genpackagedoc()
-    if nReturn != SUCCESS:
-        sys.exit(nReturn)
+        nReturn = oExtendedSetup.genpackagedoc()
+        if nReturn != SUCCESS:
+            sys.exit(nReturn)
 
     # NOTE: Skipping convert_repo_readme() - the automatic conversion does not produce
     # the expected view and takes too much time to debug. README.md and README.rst

@@ -72,6 +72,18 @@
       {
         "from": "build-resources/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "../../examples",
+        "to": "examples",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.log",
+          "!**/build/**",
+          "!**/dist/**",
+          "!**/.qt/**"
+        ]
       }
     ],
     "asar": true,

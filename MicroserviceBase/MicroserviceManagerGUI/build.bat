@@ -6,6 +6,9 @@ REM   (default) Build NSIS installer (.exe)
 
 cd /d "%~dp0"
 
+REM --- Configurable Python path (edit here or set before calling) ---
+if not defined PYTHON_PATH set "PYTHON_PATH=C:\Program Files\RobotFramework\python3\python.exe"
+
 echo [1/3] Checking prerequisites...
 where node >nul 2>&1 || (echo ERROR: Node.js not found in PATH && exit /b 1)
 where npm >nul 2>&1 || (echo ERROR: npm not found in PATH && exit /b 1)
@@ -19,7 +22,22 @@ if not exist node_modules (
     )
 )
 
-echo [3/3] Building...
+echo [3/4] Building MicroserviceBase wheel...
+if not exist "%PYTHON_PATH%" (
+    echo WARNING: Python not found at %PYTHON_PATH%, skipping wheel build
+    goto skip_wheel
+)
+set "SKIP_DOCBUILD=1"
+"%PYTHON_PATH%" -m pip wheel --no-deps -w "%~dp0build-resources\installers" "%~dp0..\.."
+set "SKIP_DOCBUILD="
+if errorlevel 1 (
+    echo WARNING: Wheel build failed, installer will fall back to PyPI
+) else (
+    echo Wheel built to build-resources\installers\
+)
+:skip_wheel
+
+echo [4/4] Building...
 if "%1"=="--pack" (
     echo Building unpacked directory...
     call npx electron-builder --dir
