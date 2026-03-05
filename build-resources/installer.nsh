@@ -5,21 +5,24 @@
 ;   1. Bundled: uses installers from build/installers/ (offline/enterprise)
 ;   2. Download: fetches from GitHub releases (lightweight distribution)
 ;
-; Also provides a wizard page for installing the MicroserviceBase Python
-; library via pip and saving the Python path to settings.json.
+; Also provides a wizard page for installing the MicroserviceBase and
+; ProcessHub Python libraries via pip and saving the Python path to settings.json.
 ;
 ; To bundle installers for offline install, place them in build/installers/:
 ;   build/installers/otp_win64_<ver>.exe
 ;   build/installers/rabbitmq-server-<ver>.exe
-;   build/installers/MicroserviceBase-<ver>-py3-none-any.whl
+;   build/installers/microservicebase-<ver>-py3-none-any.whl
+;   build/installers/processhub-<ver>-py3-none-any.whl
 ;
 ; Versions — update these when upgrading:
 !define ERLANG_VER  "26.2.5"
 !define RABBITMQ_VER "4.0.5"
 !define MSB_VER     "2.0.0"
+!define PHB_VER     "1.1.0"
 !define ERLANG_INSTALLER  "otp_win64_${ERLANG_VER}.exe"
 !define RABBITMQ_INSTALLER "rabbitmq-server-${RABBITMQ_VER}.exe"
-!define MSB_WHEEL   "MicroserviceBase-${MSB_VER}-py3-none-any.whl"
+!define MSB_WHEEL   "microservicebase-${MSB_VER}-py3-none-any.whl"
+!define PHB_WHEEL   "processhub-${PHB_VER}-py3-none-any.whl"
 !define ERLANG_URL  "https://github.com/erlang/otp/releases/download/OTP-${ERLANG_VER}/${ERLANG_INSTALLER}"
 !define RABBITMQ_URL "https://github.com/rabbitmq/rabbitmq-server/releases/download/v${RABBITMQ_VER}/${RABBITMQ_INSTALLER}"
 
@@ -252,6 +255,48 @@ Function InstallMicroserviceBase
 FunctionEnd
 
 ; ===================================================================
+; Install ProcessHub Python library via pip
+; Tries bundled wheel first, then falls back to PyPI.
+; Uses $MSB_PythonPath as the Python executable.
+; ===================================================================
+Function InstallProcessHub
+  DetailPrint "Installing ProcessHub Python library..."
+
+  ; Try bundled wheel
+  StrCpy $R2 "$INSTDIR\resources\installers\${PHB_WHEEL}"
+  IfFileExists $R2 phb_install_wheel
+
+  ; No bundled wheel — install from PyPI
+  DetailPrint "No bundled wheel found — installing from PyPI..."
+  Goto phb_install_pypi
+
+  phb_install_wheel:
+  DetailPrint "Found bundled wheel: $R2"
+  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install "$R2"'
+  Pop $R0
+  Pop $R1
+  ${If} $R0 == "0"
+    DetailPrint "ProcessHub installed successfully from bundled wheel."
+    Return
+  ${EndIf}
+  DetailPrint "Bundled wheel install failed (exit code $R0) — falling back to PyPI..."
+
+  phb_install_pypi:
+  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install "ProcessHub"'
+  Pop $R0
+  Pop $R1
+  ${If} $R0 == "0"
+    DetailPrint "ProcessHub installed successfully from PyPI."
+  ${Else}
+    DetailPrint "ProcessHub pip install failed (exit code $R0)."
+    MessageBox MB_OK|MB_ICONEXCLAMATION \
+      "Failed to install ProcessHub Python library.$\n$\n\
+      Please install manually by running:$\n\
+      $MSB_PythonPath -m pip install ProcessHub"
+  ${EndIf}
+FunctionEnd
+
+; ===================================================================
 ; Save the chosen Python path into settings.json
 ; Uses PowerShell ConvertFrom-Json / ConvertTo-Json for safe JSON editing.
 ; ===================================================================
@@ -300,10 +345,12 @@ Function MSB_DetectExisting
 
   ; Only run detection if the file actually exists
   IfFileExists $MSB_PythonPath 0 msb_detect_nofile
+
+    ; Detect MicroserviceBase
     nsExec::ExecToStack `"$MSB_PythonPath" -c "from importlib.metadata import version; print(version('MicroserviceBase'))"`
-    Pop $R0  ; exit code
-    Pop $R1  ; stdout (version string or error)
-    ; Trim trailing \r\n from Python output
+    Pop $R0
+    Pop $R1
+    ; Trim trailing \r\n
     ${Do}
       StrLen $R2 $R1
       ${If} $R2 == 0
@@ -319,11 +366,47 @@ Function MSB_DetectExisting
         ${ExitDo}
       ${EndIf}
     ${Loop}
+
+    ; Detect ProcessHub
+    nsExec::ExecToStack `"$MSB_PythonPath" -c "from importlib.metadata import version; print(version('ProcessHub'))"`
+    Pop $R4
+    Pop $R5
+    ; Trim trailing \r\n
+    ${Do}
+      StrLen $R2 $R5
+      ${If} $R2 == 0
+        ${ExitDo}
+      ${EndIf}
+      IntOp $R2 $R2 - 1
+      StrCpy $R3 $R5 1 $R2
+      ${If} $R3 == "$\r"
+      ${OrIf} $R3 == "$\n"
+      ${OrIf} $R3 == " "
+        StrCpy $R5 $R5 $R2
+      ${Else}
+        ${ExitDo}
+      ${EndIf}
+    ${Loop}
+
+    ; Build status text
+    StrCpy $R6 ""
     ${If} $R0 == "0"
     ${AndIf} $R1 != ""
-      ${NSD_SetText} $MSB_StatusLabel "Detected: MicroserviceBase $R1 (will upgrade/reinstall)"
+      StrCpy $R6 "MSB $R1"
+    ${EndIf}
+    ${If} $R4 == "0"
+    ${AndIf} $R5 != ""
+      ${If} $R6 != ""
+        StrCpy $R6 "$R6, PHB $R5"
+      ${Else}
+        StrCpy $R6 "PHB $R5"
+      ${EndIf}
+    ${EndIf}
+
+    ${If} $R6 != ""
+      ${NSD_SetText} $MSB_StatusLabel "Detected: $R6 (will upgrade/reinstall)"
     ${Else}
-      ${NSD_SetText} $MSB_StatusLabel "MicroserviceBase not found — will be installed fresh"
+      ${NSD_SetText} $MSB_StatusLabel "Libraries not found — will be installed fresh"
     ${EndIf}
     Return
 
@@ -463,8 +546,8 @@ Function MSB_PageCreate
     Abort
   ${EndIf}
 
-  ; Checkbox — "Install MicroserviceBase Python library"
-  ${NSD_CreateCheckBox} 0 0u 100% 12u "Install MicroserviceBase Python library"
+  ; Checkbox — "Install Python libraries (MicroserviceBase + ProcessHub)"
+  ${NSD_CreateCheckBox} 0 0u 100% 12u "Install Python libraries (MicroserviceBase + ProcessHub)"
   Pop $MSB_CheckBox
   ${If} $MSB_DoInstall == "1"
     ${NSD_Check} $MSB_CheckBox
@@ -590,9 +673,10 @@ FunctionEnd
     DetailPrint "RabbitMQ Server detected — skipping."
   ${EndIf}
 
-  ; --- MicroserviceBase Python library ---
+  ; --- Python libraries (MicroserviceBase + ProcessHub) ---
   ${If} $MSB_DoInstall == "1"
     Call InstallMicroserviceBase
+    Call InstallProcessHub
   ${EndIf}
   ${If} $MSB_PythonPath != ""
     Call SavePythonPathToSettings
