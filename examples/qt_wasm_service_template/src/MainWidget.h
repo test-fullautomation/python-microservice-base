@@ -2,17 +2,16 @@
  * @file MainWidget.h
  * @brief Main UI widget for the Qt WASM service template.
  *
- * Demonstrates a simple form that calls a microservice method
- * and displays the result.
+ * Uses a .ui file (ServiceUI.ui) designed in Qt Designer.
+ * Connects buttons to ServiceBridge calls for microservice interaction.
  */
 
 #pragma once
 
 #include <QWidget>
 
-class QLineEdit;
-class QLabel;
-class QPushButton;
+namespace Ui { class ServiceForm; }
+
 class ServiceBridge;
 
 class MainWidget : public QWidget
@@ -21,17 +20,16 @@ class MainWidget : public QWidget
 
 public:
     explicit MainWidget(QWidget *parent = nullptr);
+    ~MainWidget();
 
 private slots:
     void onHelloClicked();
-    void onVersionClicked();
+    void onEchoClicked();
+    void onComputeClicked();
     void onResponse(const QString &method, const QString &result);
     void onError(const QString &method, const QString &error);
 
 private:
-    QLineEdit   *m_nameEdit;
-    QLabel      *m_resultLabel;
-    QPushButton *m_helloBtn;
-    QPushButton *m_versionBtn;
-    ServiceBridge *m_bridge;
+    Ui::ServiceForm *ui;
+    ServiceBridge   *m_bridge;
 };

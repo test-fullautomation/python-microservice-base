@@ -255,9 +255,11 @@ def main():
 
     handler = lambda *a, **kw: DevHandler(*a, directory=build_dir, **kw)
     server = http.server.HTTPServer(("", port), handler)
+    server.timeout = 1
 
     try:
-        server.serve_forever()
+        while True:
+            server.handle_request()
     except KeyboardInterrupt:
         print("\nServer stopped.")
         server.server_close()

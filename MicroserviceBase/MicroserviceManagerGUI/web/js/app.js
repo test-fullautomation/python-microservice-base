@@ -71,7 +71,18 @@
       unloadFunction = null;
     }
     if (_activePanelName && _servicePanels[_activePanelName]) {
-      _servicePanels[_activePanelName].style.display = 'none';
+      var panel = _servicePanels[_activePanelName];
+      var shellType = panel.getAttribute('data-shell-type');
+      if (shellType === 'wasm' || shellType === 'qml' || shellType === 'widget') {
+        // Canvas-based panels: use visibility:hidden instead of display:none
+        // to keep non-zero dimensions. display:none makes canvas 0x0 which
+        // crashes the WASM requestAnimationFrame loop (createImageData fails).
+        panel.style.visibility = 'hidden';
+        panel.style.position = 'absolute';
+        panel.style.pointerEvents = 'none';
+      } else {
+        panel.style.display = 'none';
+      }
     }
     _activePanelName = null;
     // Remove non-cached children (API explorer, placeholders)
@@ -426,7 +437,13 @@
     // --- Cache hit: show existing panel without re-running loadFunction ---
     if (_servicePanels[serviceName]) {
       _deactivateCurrentPanel();
-      _servicePanels[serviceName].style.display = '';
+      var panel = _servicePanels[serviceName];
+      var shellType = panel.getAttribute('data-shell-type');
+      // Restore visibility — undo both display:none and visibility:hidden hiding
+      panel.style.display = '';
+      panel.style.visibility = '';
+      panel.style.position = '';
+      panel.style.pointerEvents = '';
       _activePanelName = serviceName;
       // Restore unloadFunction reference
       var unloadName = 'unload' + serviceName;
@@ -434,7 +451,6 @@
 
       // Re-register the correct shell's response callbacks so the active
       // shell receives service responses (not the previously active shell).
-      var shellType = _servicePanels[serviceName].getAttribute('data-shell-type');
       if (shellType === 'qml' && window.QtShellManager) {
         window.QtShellManager.activateBridge();
       } else if (shellType === 'widget' && window.WidgetShellManager) {
@@ -621,6 +637,7 @@
             _deactivateCurrentPanel();
             var wrapper = document.createElement('div');
             wrapper.setAttribute('data-cached-service', serviceName);
+            wrapper.setAttribute('data-shell-type', 'wasm');
             wrapper.style.cssText = 'height:calc(100vh - 56px - 3rem);';
             contentDiv.appendChild(wrapper);
             _servicePanels[serviceName] = wrapper;

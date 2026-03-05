@@ -76,6 +76,7 @@ if(EMSCRIPTEN)
         src/MainWidget.cpp
         src/ServiceBridge.h
         src/ServiceBridge.cpp
+        src/ServiceUI.ui
     )
 
     target_include_directories(myqtwasmservice PRIVATE
@@ -170,13 +171,14 @@ else()
     # WASM/GUI files aren't compiled on desktop, but show them in IDE
     set_source_files_properties(
         wasm/main.cpp src/MainWidget.h src/MainWidget.cpp
-        src/ServiceBridge.h src/ServiceBridge.cpp
+        src/ServiceBridge.h src/ServiceBridge.cpp src/ServiceUI.ui
         PROPERTIES HEADER_FILE_ONLY TRUE
     )
     target_sources(MyQtWasmService PRIVATE
         wasm/main.cpp
         src/MainWidget.h src/MainWidget.cpp
         src/ServiceBridge.h src/ServiceBridge.cpp
+        src/ServiceUI.ui
         service_config.json
     )
 endif()
