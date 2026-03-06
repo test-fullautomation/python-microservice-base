@@ -1,0 +1,132 @@
+@startuml component_qt_template_wasm
+!theme plain
+title WASM Service Template (Standalone) -- Architecture
+footer Per-Service Binary  |  Full Qt Runtime  |  ~13 MB per service
+
+skinparam defaultFontSize 13
+skinparam rectangle {
+    BackgroundColor<<gui>> #BBDEFB
+    BackgroundColor<<service>> #E3F2FD
+    BackgroundColor<<ui>> #FFE0B2
+    BackgroundColor<<backend>> #C8E6C9
+}
+skinparam component {
+    BackgroundColor<<js>> #E3F2FD
+    BackgroundColor<<wasm>> #FFE0B2
+    BackgroundColor<<cpp>> #F3E5F5
+    BackgroundColor<<infra>> #C8E6C9
+    BackgroundColor<<config>> #F5F5F5
+    BackgroundColor<<api>> #E3F2FD
+}
+skinparam nodesep 12
+skinparam ranksep 14
+
+legend top left
+  |=  Color |= Meaning |
+  | <#BBDEFB> | GUI (MicroserviceManagerGUI) |
+  | <#FFE0B2> | Service UI (WASM) |
+  | <#F3E5F5> | Qt C++ (compiled into binary) |
+  | <#E3F2FD> | Business API |
+  | <#C8E6C9> | Infrastructure |
+endlegend
+
+' ============================================================================
+' GUI LAYER (MicroserviceManagerGUI)
+' ============================================================================
+
+rectangle "GUI -- MicroserviceManagerGUI" <<gui>> as GUI {
+    component "app.js\ndetects *.wasm in\nservice directory" <<js>> as AppJS
+    component "QtWasmLoader.js\nload(folder, container)" <<js>> as WasmLdr
+    component "window.callMicroservice()\n-> MM.requestService()\n-> POST /api/request" <<js>> as CallBridge
+    component "FastAPI Bridge\nPOST /api/request" <<infra>> as FastAPI
+
+    AppJS --> WasmLdr : WASM detected
+    CallBridge --> FastAPI : HTTP POST
+}
+
+' ============================================================================
+' SERVICE LAYER (what the developer creates)
+' ============================================================================
+
+rectangle "SERVICE -- MyWasmService (developer creates this)" <<service>> as SVC {
+
+    ' --- UI sub-layer ---
+    rectangle "UI" <<ui>> as UILayer {
+        component "ServiceUI.ui\n(compiled into binary via uic)\nQt Designer form" <<wasm>> as UiFile
+
+        rectangle "Standalone WASM Binary -- myservice.wasm (~13 MB each)" <<cpp>> as WasmRT {
+            component "MainWidget (C++)\nUi::ServiceForm\nconnects signals/slots" <<cpp>> as MainWidget
+            component "ServiceBridge (C++)\ncallService() via EM_JS\npollResult() via QTimer" <<cpp>> as SvcBridge
+            component "Full Qt Runtime\n(Qt Widgets + Qt Core)\ncompiled into binary" <<cpp>> as QtRT
+
+            MainWidget --> SvcBridge : button slot\n-> callService()
+        }
+
+        UiFile --> MainWidget : uic generates\nUi::ServiceForm
+        WasmRT --> QtRT : includes
+    }
+
+    ' --- Service backend sub-layer ---
+    rectangle "Service (Backend)" <<backend>> as BELayer {
+        component "main.cpp\nloads config, creates service,\nregisters, starts consuming" <<api>> as MainCpp
+        component "MyWasmService\nextends ServiceBase\nregisters svc_api_* methods" <<api>> as MySvc
+        component "service_config.json\nname, routing_key,\nbroker host/port" <<config>> as SvcCfg
+        component "CppServiceBase Library\nServiceBase, RabbitMQConnection,\nServiceInfo" <<infra>> as CppLib
+        component "RabbitMQ Broker\nservices_request exchange" <<infra>> as RMQ
+
+        MainCpp --> MySvc : creates
+        MainCpp --> SvcCfg : reads
+        MySvc --> CppLib : extends
+        RMQ --> CppLib : deliver to\nservice queue
+    }
+}
+
+' Force GUI above SERVICE
+GUI -[hidden]down-> SVC
+
+' ============================================================================
+' CONNECTIONS: GUI <-> SERVICE
+' ============================================================================
+
+WasmLdr -[#1565C0,bold]-> WasmRT : load .wasm + .js\n(~13 MB per service)
+SvcBridge -[#CC0000,bold]-> CallBridge : EM_JS\n-> JS callback
+FastAPI -[#CC0000]-> RMQ : AMQP publish
+
+' Response flow
+RMQ -[#009900,dashed]-> FastAPI : callback queue
+FastAPI -[#009900,dashed]-> CallBridge : JSON response
+
+' ============================================================================
+' KEY NOTES
+' ============================================================================
+
+note right of WasmRT
+  **Standalone WASM -- Key Differences:**
+  1. .ui compiled into binary (uic -> C++ header)
+  2. UI logic in C++ slots (MainWidget class)
+  3. ServiceBridge uses EM_JS for JS interop
+  4. QTimer polls for async JS results
+  5. Full Qt runtime per service (~13 MB each)
+  6. No shell sharing -- each is independent
+  7. Switch = unload + reload entire WASM
+  **Hot-reload: No** (requires recompile)
+end note
+
+note right of UiFile
+  **Build Pipeline:**
+  ServiceUI.ui --(uic)--> ui_serviceform.h
+  main.cpp includes ui_serviceform.h
+  Emscripten compiles all -> .wasm + .js
+end note
+
+note bottom of RMQ
+  **WASM Template at Scale:**
+  |= Metric          |= Value           |
+  | Binary size       | ~13 MB per svc    |
+  | 10 services total | ~130 MB           |
+  | Service switch    | ~13 MB reload     |
+  | Code required     | C++ slots         |
+  | Advantage         | Full C++ control  |
+end note
+
+@enduml

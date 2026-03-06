@@ -1,0 +1,164 @@
+@startuml component_qt_service_templates
+!theme plain
+title Qt C++ Service Templates -- Architecture Comparison (Overview)
+footer See detailed diagrams: component_qt_template_qml / _widget / _wasm
+
+skinparam defaultFontSize 13
+skinparam rectangle {
+    BackgroundColor<<browser>> #BBDEFB
+    BackgroundColor<<infra>> #C8E6C9
+    BackgroundColor<<qmlcol>> #FFF8E1
+    BackgroundColor<<widgetcol>> #F3E5F5
+    BackgroundColor<<wasmcol>> #E3F2FD
+}
+skinparam component {
+    BackgroundColor<<js>> #E3F2FD
+    BackgroundColor<<api>> #E3F2FD
+    BackgroundColor<<qml>> #FFE0B2
+    BackgroundColor<<widget>> #E1BEE7
+    BackgroundColor<<wasm>> #BBDEFB
+    BackgroundColor<<infra>> #C8E6C9
+    BackgroundColor<<config>> #F5F5F5
+}
+skinparam nodesep 12
+skinparam ranksep 14
+
+legend top left
+  |=  Color |= Meaning |
+  | <#FFE0B2> | QML Template |
+  | <#E1BEE7> | Widget Template |
+  | <#BBDEFB> | WASM Template / Browser |
+  | <#E3F2FD> | Business API |
+  | <#C8E6C9> | Infrastructure |
+endlegend
+
+' ============================================================================
+' ROW 1: BROWSER HOST
+' ============================================================================
+
+rectangle "Browser -- Detection & Routing" <<browser>> as Row1 {
+    component "app.js\nloadServiceGUI()" <<js>> as AppJS
+    component "QtShellManager" <<js>> as QmlMgr
+    component "WidgetShellManager" <<js>> as WidgetMgr
+    component "QtWasmLoader" <<js>> as WasmLdr
+
+    AppJS -[#FF8F00]-> QmlMgr : *.qml
+    AppJS -[#9C27B0]-> WidgetMgr : *.ui
+    AppJS -[#1565C0]-> WasmLdr : *.wasm
+}
+
+' ============================================================================
+' ROW 2: UI LAYER (three columns)
+' ============================================================================
+
+rectangle "UI Layer -- Template-Specific Frontend" as Row2 {
+
+    rectangle "QML UI" <<qmlcol>> as QmlUI {
+        component "ServiceUI.qml\n(QML + JS)" <<qml>> as QmlFile
+        component "QML Shell\nqtshell.wasm (~9 MB)" <<qml>> as QmlShell
+        component "ServiceBridge" <<qml>> as QmlBridge
+
+        QmlFile --> QmlShell : swap ~5 KB
+        QmlShell --> QmlBridge
+    }
+
+    rectangle "Widget UI" <<widgetcol>> as WidgetUI {
+        component "ServiceUI.ui\n(Designer XML)" <<widget>> as WidgetFile
+        component "Widget Shell\nwidgetshell.wasm (~12 MB)" <<widget>> as WidgetShell
+        component "WidgetController\n(auto-wire)" <<widget>> as WidgetCtrl
+        component "ServiceBridge" <<widget>> as WidgetBridge
+
+        WidgetFile --> WidgetShell : swap ~3 KB
+        WidgetShell --> WidgetCtrl
+        WidgetCtrl --> WidgetBridge
+    }
+
+    rectangle "WASM UI (Standalone)" <<wasmcol>> as WasmUI {
+        component "ServiceUI.ui\n(compiled via uic)" <<wasm>> as WasmFile
+        component "MainWidget\n(C++ slots)" <<wasm>> as WasmWidget
+        component "ServiceBridge\n(EM_JS)" <<wasm>> as WasmBridgeComp
+        component "myservice.wasm\n(~13 MB each)" <<wasm>> as WasmBinary
+
+        WasmFile --> WasmWidget
+        WasmWidget --> WasmBridgeComp
+        WasmBridgeComp --> WasmBinary
+    }
+
+    QmlUI -[hidden]right-> WidgetUI
+    WidgetUI -[hidden]right-> WasmUI
+}
+
+' ============================================================================
+' ROW 3: BUSINESS API (shared pattern)
+' ============================================================================
+
+rectangle "Business API -- Same Pattern for All Templates" as Row3 {
+
+    rectangle " QML Service " <<qmlcol>> as QmlBiz {
+        component "MyQmlService\n: ServiceBase" <<api>> as QmlSvc
+        component "main.cpp +\nconfig.json" <<config>> as QmlMain
+        QmlMain --> QmlSvc
+    }
+
+    rectangle " Widget Service " <<widgetcol>> as WidgetBiz {
+        component "MyWidgetService\n: ServiceBase" <<api>> as WidgetSvc
+        component " main.cpp +\nconfig.json" <<config>> as WidgetMain
+        WidgetMain --> WidgetSvc
+    }
+
+    rectangle " WASM Service " <<wasmcol>> as WasmBiz {
+        component "MyWasmService\n: ServiceBase" <<api>> as WasmSvc
+        component "main.cpp +\n config.json" <<config>> as WasmMain
+        WasmMain --> WasmSvc
+    }
+
+    QmlBiz -[hidden]right-> WidgetBiz
+    WidgetBiz -[hidden]right-> WasmBiz
+}
+
+' ============================================================================
+' ROW 4: SHARED INFRASTRUCTURE
+' ============================================================================
+
+rectangle "Shared Infrastructure" <<infra>> as Row4 {
+    component "CppServiceBase Library" <<infra>> as CppLib
+    component "FastAPI Bridge" <<infra>> as FastAPI
+    component "RabbitMQ Broker" <<infra>> as RMQ
+
+    FastAPI -right-> RMQ : AMQP
+    RMQ -right-> CppLib : deliver
+}
+
+' ============================================================================
+' CROSS-ROW CONNECTIONS
+' ============================================================================
+
+QmlMgr --> QmlFile
+WidgetMgr --> WidgetFile
+WasmLdr --> WasmBinary
+
+QmlBridge --> FastAPI
+WidgetBridge --> FastAPI
+WasmBridgeComp --> FastAPI
+
+QmlSvc --> CppLib
+WidgetSvc --> CppLib
+WasmSvc --> CppLib
+
+' ============================================================================
+' COMPARISON TABLE
+' ============================================================================
+
+note bottom of Row4
+  **Template Comparison:**
+  |=              |= QML         |= Widget       |= WASM (Standalone) |
+  | UI file       | .qml (text)  | .ui (XML)     | .ui -> compiled     |
+  | Shell         | Shared 9 MB  | Shared 12 MB  | Per-svc 13 MB       |
+  | Switch cost   | ~5 KB        | ~3 KB         | ~13 MB reload       |
+  | UI logic      | QML/JS       | Auto-wired    | C++ slots           |
+  | Hot-reload    | Yes          | Yes           | No (recompile)      |
+  | Design tool   | Qt Creator   | Qt Designer   | Qt Creator          |
+  | 10 services   | ~9 MB total  | ~12 MB total  | ~130 MB total       |
+end note
+
+@enduml

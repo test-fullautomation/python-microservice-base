@@ -181,4 +181,35 @@ else()
         src/ServiceUI.ui
         service_config.json
     )
+
+    # --- IDE code-model support (desktop kit) ---
+    # When Qt is installed on the host, run uic to generate ui_ServiceUI.h
+    # and add Qt include paths so Qt Creator can resolve symbols in WASM
+    # source files.  The backend does NOT link Qt — this is purely for IDE
+    # browsing and code navigation.
+    find_package(Qt6 QUIET COMPONENTS Widgets)
+    if(TARGET Qt6::uic)
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ui_ServiceUI.h"
+            COMMAND Qt6::uic
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/ServiceUI.ui"
+                -o "${CMAKE_CURRENT_BINARY_DIR}/ui_ServiceUI.h"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/ServiceUI.ui"
+            COMMENT "uic: generating ui_ServiceUI.h (IDE code model)"
+        )
+        add_custom_target(uic_ide ALL
+            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ui_ServiceUI.h"
+        )
+        add_dependencies(MyQtWasmService uic_ide)
+        target_include_directories(MyQtWasmService PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}"
+        )
+    endif()
+    if(TARGET Qt6::Widgets)
+        target_include_directories(MyQtWasmService SYSTEM PRIVATE
+            $<TARGET_PROPERTY:Qt6::Core,INTERFACE_INCLUDE_DIRECTORIES>
+            $<TARGET_PROPERTY:Qt6::Gui,INTERFACE_INCLUDE_DIRECTORIES>
+            $<TARGET_PROPERTY:Qt6::Widgets,INTERFACE_INCLUDE_DIRECTORIES>
+        )
+    endif()
 endif()

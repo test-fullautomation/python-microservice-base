@@ -7,12 +7,13 @@
 
 const { contextBridge, ipcRenderer, shell } = require('electron');
 
-let amqp, fs, os, path, unzipper, child_process;
+let amqp, fs, os, path, crypto, unzipper, child_process;
 try {
   amqp = require('amqplib/callback_api');
   fs = require('fs');
   os = require('os');
   path = require('path');
+  crypto = require('crypto');
   unzipper = require('unzipper');
   child_process = require('child_process');
   console.log('[preload] All Node.js modules loaded successfully');
@@ -239,6 +240,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
       fs.access(fullPath, fs.constants.F_OK, (err) => {
         resolve(!err);
       });
+    });
+  },
+
+  /**
+   * Compute an MD5 checksum of all files in a service GUI folder.
+   * Mirrors the Python ServiceBase.svc_api_get_gui_checksum() algorithm:
+   *   for each file (sorted), hash relative_path + file_content.
+   * @param {string} folderPath - Relative path (e.g. "services/MyService1.0.0").
+   * @returns {Promise<string|null>} MD5 hex-digest, or null if folder missing.
+   */
+  computeGuiChecksum: (folderPath) => {
+    return new Promise((resolve) => {
+      const fullPath = _resolveServicesPath(folderPath);
+      if (!fs.existsSync(fullPath)) { resolve(null); return; }
+
+      // Recursively collect all files with relative paths (sorted)
+      const allFiles = [];
+      const walk = (dir) => {
+        let entries;
+        try { entries = fs.readdirSync(dir).sort(); } catch (_) { return; }
+        for (const name of entries) {
+          const fp = path.join(dir, name);
+          try {
+            if (fs.statSync(fp).isDirectory()) { walk(fp); }
+            else { allFiles.push(path.relative(fullPath, fp).replace(/\\/g, '/')); }
+          } catch (_) { /* skip unreadable */ }
+        }
+      };
+      walk(fullPath);
+
+      const hasher = crypto.createHash('md5');
+      for (const relPath of allFiles) {
+        hasher.update(relPath, 'utf8');
+        try {
+          const content = fs.readFileSync(path.join(fullPath, relPath));
+          hasher.update(content);
+        } catch (_) { /* skip unreadable */ }
+      }
+      resolve(hasher.digest('hex'));
     });
   },
 
