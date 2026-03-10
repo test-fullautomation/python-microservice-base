@@ -28,6 +28,7 @@ ADRs document important architectural decisions made during the development of t
 | [ADR-018](018-alias-routing-design.md) | Alias Routing via Service Registry | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-019](019-service-delivered-gui-plugins.md) | Service-Delivered GUI Plugin Architecture | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-020](020-exchange-topology-design.md) | Exchange Topology Design | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-021](021-schema-driven-ui-builder.md) | Multi-Tier GUI Loading Architecture | Accepted | 2026-02-25 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 
 ## Summary of Design Decisions
 
@@ -64,6 +65,7 @@ The GUI supports dual hosting with multi-broker connectivity and service-deliver
 | Multi-Broker | Simultaneous connections to multiple RabbitMQ brokers | ADR-007 |
 | Bridge Decoupling | Bridge survives GUI close for persistent service access | ADR-008 |
 | Service-Delivered GUI | Services deliver HTML/CSS/JS plugins via RPC, loaded dynamically on demand | ADR-019 |
+| Multi-Tier GUI Loading | 4-tier waterfall: Qt C++ (QML/Widget/WASM), Schema (Bootstrap), HTML/JS, Auto-gen | ADR-021 |
 
 ### Process Management (ADR-009, ADR-010, ADR-011, ADR-015)
 
@@ -122,6 +124,7 @@ PlantUML diagrams are maintained in [`docs/diagrams/`](../diagrams/). Each diagr
 | [state_process_lifecycle.puml](../diagrams/state_process_lifecycle.puml) | Process lifecycle state machine | ADR-009, ADR-010, ADR-013 |
 | [sequence_realtime_update.puml](../diagrams/sequence_realtime_update.puml) | Real-time update broadcast flow | ADR-020, ADR-006 |
 | [sequence_gui_plugin_loading.puml](../diagrams/sequence_gui_plugin_loading.puml) | GUI plugin loading flow | ADR-019, ADR-006 |
+| [flow_gui_loading_tiers.puml](../diagrams/flow_gui_loading_tiers.puml) | Multi-tier GUI detection waterfall | ADR-021 |
 
 ## References
 

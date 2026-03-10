@@ -38,12 +38,21 @@ partition "_loadServiceGUIMultiTier()" {
       :qmlUrl = folderPath + '/' + qmlFile;
       #LightBlue:_loadQmlShellGUI()
       → **QtShellManager.loadQml()**;
-      note right: **Tier 1a**\nSchema + Qt renderer\n→ QML Shell
+      note right: **Tier 1a: QML Shell**\nSchema + Qt renderer
       stop
 
-    else (no)
+    elseif (schema.renderer === "widget"?) then (yes)
+      :uiFile = schema.ui_file
+      or "ServiceUI.ui";
+      :uiUrl = folderPath + '/' + uiFile;
+      #Plum:_loadWidgetShellGUI()
+      → **WidgetShellManager.loadWidget()**;
+      note right: **Tier 1b: Widget Shell**\nSchema + Widget renderer
+      stop
+
+    else (no renderer)
       #LightGreen:SchemaRenderer.render(schema);
-      note right: **Tier 1b**\nSchema → Bootstrap form
+      note right: **Tier 2: Schema**\nBootstrap form from JSON
       stop
 
     endif
@@ -60,7 +69,25 @@ partition "_loadServiceGUIMultiTier()" {
       :qmlUrl = folderPath + '/' + qmlFile;
       #LightBlue:_loadQmlShellGUI()
       → **QtShellManager.loadQml()**;
-      note right: **Tier 1c**\n.qml file detected\n→ QML Shell
+      note right: **Tier 1a: QML Shell**\n.qml file detected
+      stop
+
+    else (no)
+    endif
+
+  else (no)
+  endif
+
+  if (window.WidgetShellManager\navailable?) then (yes)
+
+    :WidgetShellManager.detect(folderPath)
+    → /api/list-dir/ for *.ui;
+
+    if (.ui file found?) then (yes)
+      :uiUrl = folderPath + '/' + uiFile;
+      #Plum:_loadWidgetShellGUI()
+      → **WidgetShellManager.loadWidget()**;
+      note right: **Tier 1b: Widget Shell**\n.ui file detected
       stop
 
     else (no)
@@ -78,7 +105,7 @@ partition "_loadServiceGUIMultiTier()" {
 
       if (.wasm file found?) then (yes)
         #Orange:QtWasmLoader.load(folder, wrapper);
-        note right: **Tier 2**\nPer-service Qt WASM binary
+        note right: **Tier 1c: Per-Service WASM**\nStandalone Qt binary
         stop
 
       else (no)
