@@ -536,18 +536,37 @@ Forward a request to the FleetWebAPI.
 
       def _get_local_hub_manager():
          if bridge._local_hub_manager is None:
-            from ..local_hub.local_hub_manager import LocalHubManager
-            # Prefer env var (set by launcher.py for packaged apps),
-            # fall back to relative path for development mode.
-            hub_config_path = os.environ.get('DASGUI_HUB_CONFIG')
-            if not hub_config_path:
-               hub_config_path = os.path.join(
-                  os.path.dirname(__file__), '..', '..',
-                  'MicroserviceManagerGUI', 'python', 'hub_processes.json'
+            hub_type = os.environ.get('DASGUI_HUB_TYPE', 'local')
+
+            if hub_type == 'nomad':
+               from ..nomad_hub.nomad_hub_adapter import NomadHubAdapter
+               nomad_addr = os.environ.get(
+                  'NOMAD_ADDR', 'http://127.0.0.1:4646')
+               nomad_token = os.environ.get('NOMAD_TOKEN', '')
+               nomad_namespace = os.environ.get(
+                  'NOMAD_NAMESPACE', 'default')
+               nomad_dc = os.environ.get('NOMAD_DC', 'dc1')
+               bridge._local_hub_manager = NomadHubAdapter(
+                  address=nomad_addr, token=nomad_token,
+                  namespace=nomad_namespace, datacenter=nomad_dc,
+                  on_status_change=lambda s: bridge.broadcast_update(s),
                )
-            bridge._local_hub_manager = LocalHubManager(
-               config_path=hub_config_path
-            )
+               logger.info('Hub backend: Nomad (%s)', nomad_addr)
+            else:
+               from ..local_hub.local_hub_manager import LocalHubManager
+               # Prefer env var (set by launcher.py for packaged apps),
+               # fall back to relative path for development mode.
+               hub_config_path = os.environ.get('DASGUI_HUB_CONFIG')
+               if not hub_config_path:
+                  hub_config_path = os.path.join(
+                     os.path.dirname(__file__), '..', '..',
+                     'MicroserviceManagerGUI', 'python',
+                     'hub_processes.json'
+                  )
+               bridge._local_hub_manager = LocalHubManager(
+                  config_path=hub_config_path
+               )
+               logger.info('Hub backend: local (%s)', hub_config_path)
          return bridge._local_hub_manager
 
       @app.post("/api/local-hub/start")
@@ -646,6 +665,281 @@ Forward a request to the FleetWebAPI.
             zip_data=body.zip_data,
             wait_time=body.wait_time,
          )
+
+      # ---- Nomad agent management & proxy endpoints ----
+
+      class NomadConfigBody(BaseModel):
+         nomad_url: str = ""
+
+      class NomadAgentStartBody(BaseModel):
+         mode: str = "dev"              # "dev" or "config"
+         bind_addr: str = "0.0.0.0"
+         http_port: int = 4646
+         datacenter: str = "dc1"
+         node_name: str = ""
+         config_file: str = ""          # path to .hcl config file
+         data_dir: str = ""             # data directory
+         nomad_path: str = "nomad"      # path to nomad binary
+         extra_args: list = []
+
+      def _get_nomad_agent():
+         """Get the managed Nomad agent subprocess info."""
+         if not hasattr(bridge, '_nomad_agent_proc'):
+            bridge._nomad_agent_proc = None
+            bridge._nomad_agent_log = []
+         return bridge._nomad_agent_proc
+
+      @app.post("/api/nomad/agent/start")
+      def nomad_agent_start(body: NomadAgentStartBody):
+         import subprocess, shutil, threading
+
+         # Check if already running
+         proc = _get_nomad_agent()
+         if proc and proc.poll() is None:
+            return {"success": False,
+                    "message": "Nomad agent already running (PID %d)" % proc.pid,
+                    "pid": proc.pid}
+
+         # Find nomad binary
+         nomad_bin = body.nomad_path or 'nomad'
+         resolved = shutil.which(nomad_bin)
+         if not resolved:
+            return {"success": False,
+                    "message": "Nomad binary not found: '%s'. "
+                               "Install from https://developer.hashicorp.com/nomad/install" % nomad_bin}
+
+         # Build command
+         args = [resolved, 'agent']
+         if body.mode == 'dev':
+            args.append('-dev')
+            if body.bind_addr and body.bind_addr != '127.0.0.1':
+               args.extend(['-bind', body.bind_addr])
+            if body.node_name:
+               args.extend(['-node', body.node_name])
+            if body.datacenter != 'dc1':
+               args.extend(['-dc', body.datacenter])
+         else:
+            # Config mode
+            if body.config_file:
+               args.extend(['-config', body.config_file])
+            if body.data_dir:
+               args.extend(['-data-dir', body.data_dir])
+            if body.bind_addr:
+               args.extend(['-bind', body.bind_addr])
+            if body.node_name:
+               args.extend(['-node', body.node_name])
+            if body.datacenter != 'dc1':
+               args.extend(['-dc', body.datacenter])
+
+         for arg in (body.extra_args or []):
+            args.append(str(arg))
+
+         logger.info('Starting Nomad agent: %s', ' '.join(args))
+         bridge._nomad_agent_log = []
+
+         try:
+            proc = subprocess.Popen(
+               args,
+               stdout=subprocess.PIPE,
+               stderr=subprocess.STDOUT,
+               text=True,
+               bufsize=1,
+            )
+         except Exception as e:
+            return {"success": False, "message": "Failed to start: %s" % e}
+
+         bridge._nomad_agent_proc = proc
+
+         # Background thread to capture log output
+         def _read_output():
+            max_lines = 500
+            try:
+               for line in proc.stdout:
+                  line = line.rstrip('\n')
+                  bridge._nomad_agent_log.append(line)
+                  if len(bridge._nomad_agent_log) > max_lines:
+                     bridge._nomad_agent_log = bridge._nomad_agent_log[-max_lines:]
+            except Exception:
+               pass
+
+         t = threading.Thread(target=_read_output, daemon=True,
+                              name='nomad-agent-log')
+         t.start()
+
+         # Auto-configure client after brief startup delay
+         import time
+         nomad_url = 'http://127.0.0.1:%d' % body.http_port
+
+         def _auto_configure():
+            time.sleep(2)
+            _ensure_nomad(nomad_url)
+
+         threading.Thread(target=_auto_configure, daemon=True).start()
+
+         return {"success": True, "pid": proc.pid,
+                 "message": "Nomad agent started (PID %d)" % proc.pid,
+                 "nomad_url": nomad_url}
+
+      @app.post("/api/nomad/agent/stop")
+      def nomad_agent_stop():
+         proc = _get_nomad_agent()
+         if not proc or proc.poll() is not None:
+            bridge._nomad_agent_proc = None
+            return {"success": True, "message": "Nomad agent not running"}
+
+         pid = proc.pid
+         logger.info('Stopping Nomad agent (PID %d)', pid)
+         try:
+            proc.terminate()
+            try:
+               proc.wait(timeout=10)
+            except Exception:
+               proc.kill()
+         except Exception as e:
+            return {"success": False,
+                    "message": "Failed to stop PID %d: %s" % (pid, e)}
+
+         bridge._nomad_agent_proc = None
+         return {"success": True,
+                 "message": "Nomad agent stopped (PID %d)" % pid}
+
+      @app.get("/api/nomad/agent/status")
+      def nomad_agent_status():
+         proc = _get_nomad_agent()
+         running = proc is not None and proc.poll() is None
+         return {
+            "running": running,
+            "pid": proc.pid if running else None,
+            "nomad_url": getattr(bridge, '_nomad_url', None),
+         }
+
+      @app.get("/api/nomad/agent/log")
+      def nomad_agent_log(tail: int = 100):
+         logs = getattr(bridge, '_nomad_agent_log', [])
+         lines = logs[-tail:] if len(logs) > tail else logs
+         return {"log": '\n'.join(lines)}
+
+      def _get_nomad_client():
+         """Lazy-create a NomadClient for proxy endpoints."""
+         if not hasattr(bridge, '_nomad_client'):
+            bridge._nomad_client = None
+            bridge._nomad_url = None
+         return bridge._nomad_client
+
+      def _ensure_nomad(url=None):
+         if url and url != getattr(bridge, '_nomad_url', None):
+            from ..nomad_hub.nomad_client import NomadClient
+            bridge._nomad_client = NomadClient(
+               address=url,
+               token=os.environ.get('NOMAD_TOKEN', ''),
+               namespace=os.environ.get('NOMAD_NAMESPACE', 'default'),
+            )
+            bridge._nomad_url = url
+            logger.info('Nomad client configured: %s', url)
+         return getattr(bridge, '_nomad_client', None)
+
+      @app.post("/api/nomad/config")
+      def nomad_config_set(body: NomadConfigBody):
+         url = body.nomad_url or ''
+         if url:
+            _ensure_nomad(url)
+            return {"nomad_url": url, "status": "configured"}
+         bridge._nomad_client = None
+         bridge._nomad_url = None
+         return {"nomad_url": "", "status": "cleared"}
+
+      @app.get("/api/nomad/health")
+      def nomad_health():
+         nc = _get_nomad_client()
+         if not nc:
+            # Auto-configure from env or default
+            url = os.environ.get('NOMAD_ADDR', 'http://127.0.0.1:4646')
+            nc = _ensure_nomad(url)
+         if not nc:
+            return {"status": "not configured"}
+         try:
+            info = nc.agent_self()
+            member = info.get('member', {})
+            return {"status": "ok", "server": member.get('Name', ''),
+                    "address": bridge._nomad_url}
+         except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+      @app.get("/api/nomad/jobs")
+      def nomad_list_jobs():
+         nc = _get_nomad_client()
+         if not nc:
+            return []
+         try:
+            return nc.list_jobs()
+         except Exception as e:
+            logger.error('Nomad list jobs: %s', e)
+            return []
+
+      @app.get("/api/nomad/jobs/{job_id}")
+      def nomad_get_job(job_id: str):
+         nc = _get_nomad_client()
+         if not nc:
+            return {"error": "Nomad not configured"}
+         return nc.get_job(job_id)
+
+      @app.get("/api/nomad/jobs/{job_id}/allocations")
+      def nomad_get_allocations(job_id: str):
+         nc = _get_nomad_client()
+         if not nc:
+            return []
+         return nc.get_allocations(job_id)
+
+      class NomadStopBody(BaseModel):
+         purge: bool = False
+
+      @app.post("/api/nomad/jobs/{job_id}/start")
+      def nomad_start_job(job_id: str):
+         nc = _get_nomad_client()
+         if not nc:
+            return {"success": False, "message": "Nomad not configured"}
+         try:
+            # Re-register the job (Nomad restarts stopped jobs on re-register)
+            job = nc.get_job(job_id)
+            result = nc.register_job(job)
+            return {"success": True, "eval_id": result.get("EvalID", "")}
+         except Exception as e:
+            return {"success": False, "message": str(e)}
+
+      @app.post("/api/nomad/jobs/{job_id}/stop")
+      def nomad_stop_job(job_id: str, body: NomadStopBody = None):
+         nc = _get_nomad_client()
+         if not nc:
+            return {"success": False, "message": "Nomad not configured"}
+         try:
+            purge = body.purge if body else False
+            result = nc.stop_job(job_id, purge=purge)
+            return {"success": True, "eval_id": result.get("EvalID", "")}
+         except Exception as e:
+            return {"success": False, "message": str(e)}
+
+      @app.get("/api/nomad/jobs/{job_id}/logs")
+      def nomad_get_logs(job_id: str, type: str = "stdout"):
+         nc = _get_nomad_client()
+         if not nc:
+            return {"name": job_id, "log": "(Nomad not configured)"}
+         try:
+            allocs = nc.get_allocations(job_id)
+            if not allocs:
+               return {"name": job_id, "log": "(no allocations)"}
+            latest = sorted(allocs,
+                            key=lambda a: a.get('CreateIndex', 0),
+                            reverse=True)[0]
+            alloc_id = latest['ID']
+            task_states = latest.get('TaskStates') or {}
+            task_name = next(iter(task_states), None)
+            if not task_name:
+               return {"name": job_id, "log": "(no task found)"}
+            log_text = nc.get_logs(alloc_id, task_name, log_type=type)
+            return {"name": job_id, "log": log_text,
+                    "alloc_id": alloc_id, "task": task_name}
+         except Exception as e:
+            return {"name": job_id, "log": f"(error: {e})"}
 
       # ---- Service Scaffolding endpoint ----
 
