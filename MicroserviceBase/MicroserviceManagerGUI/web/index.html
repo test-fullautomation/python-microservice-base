@@ -102,10 +102,16 @@
                     data-bs-target="#localHubPane" type="button" role="tab">
               <i class="bi bi-pc-display me-1"></i>Local Hub</button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tabNomad" data-bs-toggle="tab"
+                    data-bs-target="#nomadPane" type="button" role="tab">
+              <i class="bi bi-hdd-rack me-1"></i>Nomad</button>
+          </li>
         </ul>
         <div class="tab-content fleet-tab-content" id="fleetSubTabContent">
           <div class="tab-pane fade show active" id="fleetRemotePane" role="tabpanel"></div>
           <div class="tab-pane fade" id="localHubPane" role="tabpanel"></div>
+          <div class="tab-pane fade" id="nomadPane" role="tabpanel"></div>
         </div>
       </div>
     </main>
@@ -258,6 +264,8 @@
   <script src="js/FleetDashboard.js"></script>
   <script src="js/LocalHubClient.js"></script>
   <script src="js/LocalHubDashboard.js"></script>
+  <script src="js/NomadClient.js"></script>
+  <script src="js/NomadDashboard.js"></script>
   <script src="js/SchemaRenderer.js"></script>
   <script src="js/SchemaAutoGen.js"></script>
   <script src="js/QtWasmLoader.js"></script>

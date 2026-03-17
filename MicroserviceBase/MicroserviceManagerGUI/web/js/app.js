@@ -2539,9 +2539,13 @@
 
     // Activate the currently visible sub-tab
     var localTab = document.getElementById('tabLocalHub');
+    var nomadTab = document.getElementById('tabNomad');
     var isLocalActive = localTab && localTab.classList.contains('active');
+    var isNomadActive = nomadTab && nomadTab.classList.contains('active');
 
-    if (isLocalActive) {
+    if (isNomadActive) {
+      _activateNomadSubTab();
+    } else if (isLocalActive) {
       _activateLocalHubSubTab();
     } else {
       _activateFleetRemoteSubTab();
@@ -2550,10 +2554,12 @@
     // Wire sub-tab switch events
     var tabLocalHub = document.getElementById('tabLocalHub');
     var tabFleetRemote = document.getElementById('tabFleetRemote');
+    var tabNomad = document.getElementById('tabNomad');
 
     if (tabLocalHub) {
       tabLocalHub._mmHandler = tabLocalHub._mmHandler || function () {
         _deactivateFleetRemoteSubTab();
+        _deactivateNomadSubTab();
         _activateLocalHubSubTab();
       };
       tabLocalHub.removeEventListener('shown.bs.tab', tabLocalHub._mmHandler);
@@ -2562,10 +2568,20 @@
     if (tabFleetRemote) {
       tabFleetRemote._mmHandler = tabFleetRemote._mmHandler || function () {
         _deactivateLocalHubSubTab();
+        _deactivateNomadSubTab();
         _activateFleetRemoteSubTab();
       };
       tabFleetRemote.removeEventListener('shown.bs.tab', tabFleetRemote._mmHandler);
       tabFleetRemote.addEventListener('shown.bs.tab', tabFleetRemote._mmHandler);
+    }
+    if (tabNomad) {
+      tabNomad._mmHandler = tabNomad._mmHandler || function () {
+        _deactivateFleetRemoteSubTab();
+        _deactivateLocalHubSubTab();
+        _activateNomadSubTab();
+      };
+      tabNomad.removeEventListener('shown.bs.tab', tabNomad._mmHandler);
+      tabNomad.addEventListener('shown.bs.tab', tabNomad._mmHandler);
     }
   }
 
@@ -2634,10 +2650,19 @@
     if (MM.localHubDashboard) MM.localHubDashboard.deactivate();
   }
 
+  function _activateNomadSubTab() {
+    if (MM.nomadDashboard) MM.nomadDashboard.activate();
+  }
+
+  function _deactivateNomadSubTab() {
+    if (MM.nomadDashboard) MM.nomadDashboard.deactivate();
+  }
+
   function deactivateFleetMode() {
     if (MM.fleetClient) MM.fleetClient.stopPolling();
     if (MM.fleetDashboard) MM.fleetDashboard.deactivate();
     if (MM.localHubDashboard) MM.localHubDashboard.deactivate();
+    if (MM.nomadDashboard) MM.nomadDashboard.deactivate();
   }
 
   function activateCreatorMode() {

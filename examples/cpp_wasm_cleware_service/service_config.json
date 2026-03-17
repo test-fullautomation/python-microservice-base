@@ -1,0 +1,17 @@
+{
+    "name": "ServiceCleware",
+    "version": "1.0.0",
+    "routing_key": "ServiceCleware",
+    "description": "C++ service to control Cleware USB switch box devices with Qt WASM UI.",
+    "shortdesc": "Cleware Controllers",
+    "group": "Switch Boxes",
+    "tag": "",
+    "gui_support": true,
+    "downloadable": false,
+
+    "broker_host": "localhost",
+    "broker_port": 5672,
+    "broker_vhost": "/",
+    "broker_user": "guest",
+    "broker_pass": "guest"
+}

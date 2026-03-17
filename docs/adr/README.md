@@ -29,6 +29,7 @@ ADRs document important architectural decisions made during the development of t
 | [ADR-019](019-service-delivered-gui-plugins.md) | Service-Delivered GUI Plugin Architecture | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-020](020-exchange-topology-design.md) | Exchange Topology Design | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-021](021-schema-driven-ui-builder.md) | Multi-Tier GUI Loading Architecture | Accepted | 2026-02-25 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-022](022-nomad-orchestrator-integration.md) | Nomad Orchestrator Integration | Proposed | 2026-03-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 
 ## Summary of Design Decisions
 
@@ -77,6 +78,7 @@ Local process management with graceful lifecycle control and multi-hub fleet coo
 | Local Hub Manager | ProcessHub lifecycle + config + status orchestration | ADR-010 |
 | Service Import | ZIP/folder import with `python -m` execution and AST validation | ADR-011 |
 | Fleet Orchestrator | Multi-hub coordination via RabbitMQ with health monitoring and remote process control | ADR-015 |
+| Nomad Integration | Nomad HTTP API adapter for multi-node job orchestration via `HubManagerPort` | ADR-022 |
 
 ### Operational Resilience (ADR-012, ADR-013, ADR-014)
 

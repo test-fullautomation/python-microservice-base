@@ -11,24 +11,3 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-# *******************************************************************************
-#
-# File: __init__.py
-#
-# Initially created by Nguyen Huynh Tri Cuong (MS/EMC51) / Nov 2023.
-#
-# Description:
-#
-#   Package init for the ports layer.
-#
-# History:
-#
-# 24.11.2023 / V 0.1 / Nguyen Huynh Tri Cuong
-# - Initialize
-#
-# *******************************************************************************
-
-from .transport import TransportPort
-from .registry import ServiceRegistryPort
-from .ui_bridge import UIBridgePort
-from .hub_manager import HubManagerPort
