@@ -38,6 +38,8 @@ def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
     if spec.gen_build_scripts:
         files["build_deploy.bat"] = _build_bat(spec)
         files["build_deploy.sh"] = _build_sh(spec)
+        # MinGW variant of the Windows deploy script (Ninja + g++).
+        files["build_deploy_mingw.bat"] = _build_mingw_bat(spec)
 
     if spec.gui_type == "qml":
         files.update(_qml_files(spec))
@@ -411,6 +413,14 @@ namespace {sn} {{
 # -----------------------------------------------------------------------
 
 def _set_env_bat(spec: "ScaffoldSpec") -> str:
+    qt_block = ""
+    if spec.gui_type in ("widget", "wasm"):
+        qt_block = '''
+:: Qt install prefix — needed by the Widgets/WASM GUI client (find_package(Qt6)).
+:: Point to the Qt kit that matches your MSVC toolchain.
+if not defined QT_DIR set "QT_DIR=C:\\Qt\\6.7.1\\msvc2019_64"
+'''
+
     wasm_block = ""
     if spec.gui_type == "wasm":
         wasm_block = '''
@@ -451,11 +461,19 @@ if not defined VSCMD_ARG_TGT_ARCH (
         call "%VS_DEV_CMD%" >nul
     )
 )
-{wasm_block}
+{qt_block}{wasm_block}
 '''
 
 
 def _set_env_sh(spec: "ScaffoldSpec") -> str:
+    qt_block = ""
+    if spec.gui_type in ("widget", "wasm"):
+        qt_block = '''
+# Qt install prefix — needed by the Widgets/WASM GUI client (find_package(Qt6)).
+: "${QT_DIR:=$HOME/Qt/6.7.1/gcc_64}"
+export QT_DIR
+'''
+
     wasm_block = ""
     if spec.gui_type == "wasm":
         wasm_block = '''
@@ -488,7 +506,7 @@ export VCPKG_ROOT
 : "${{CXX:=}}"
 [ -n "$CC" ]  && export CC
 [ -n "$CXX" ] && export CXX
-{wasm_block}
+{qt_block}{wasm_block}
 '''
 
 
@@ -498,12 +516,24 @@ export VCPKG_ROOT
 
 def _build_bat(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
-    gui_copy = ""
+    windeployqt_block = ""
     if spec.gui_type == "widget":
-        gui_copy = (
-            f'if exist "%CLIENT_BUILD%\\Release\\{sn}_gui.exe" '
-            f'copy /Y "%CLIENT_BUILD%\\Release\\{sn}_gui.exe" "%DIST%\\" >nul\n'
+        windeployqt_block = f'''
+:: ----- Deploy Qt runtime for the GUI (Qt6*.dll, platforms\\, styles\\, ...) -----
+if exist "%DIST%\\{sn}_gui.exe" (
+    if defined QT_DIR (
+        if exist "%QT_DIR%\\bin\\windeployqt.exe" (
+            echo Running windeployqt for {sn}_gui.exe ...
+            "%QT_DIR%\\bin\\windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw "%DIST%\\{sn}_gui.exe" >nul
+        ) else (
+            echo WARNING: windeployqt not found at %QT_DIR%\\bin\\windeployqt.exe
+            echo          Qt DLLs will not be deployed; {sn}_gui.exe may fail to start.
         )
+    ) else (
+        echo WARNING: QT_DIR is not set; skipping windeployqt.
+    )
+)
+'''
     return f'''@echo off
 setlocal
 set "SCRIPT_DIR=%~dp0"
@@ -526,23 +556,166 @@ if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
 popd
 
 :: ----- Build client -----
+:: Seed CMAKE_PREFIX_PATH with QT_DIR so the GUI target can locate Qt6
+:: without requiring edits to client\\CMakeLists.txt.
+set "QT_PREFIX_ARG="
+if defined QT_DIR set "QT_PREFIX_ARG=-DCMAKE_PREFIX_PATH=%QT_DIR%"
+
 set "CLIENT_BUILD=%SCRIPT_DIR%client\\build"
 if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
 pushd "%CLIENT_BUILD%"
-cmake -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" ..
+cmake -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" %QT_PREFIX_ARG% ..
 if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
 cmake --build . --config Release
 if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
 popd
 
-:: ----- Collect binaries into dist\\ -----
+:: ----- Collect binaries + runtime DLLs into dist\\ -----
+:: The vcpkg toolchain deploys required DLLs (grpc, protobuf, abseil,
+:: openssl, zlib, c-ares, re2, etc.) next to each .exe during the build.
+:: We mirror the whole Release folder so the binaries run standalone
+:: from dist\\ — Windows otherwise fails the loader silently.
 set "DIST=%SCRIPT_DIR%dist"
 if not exist "%DIST%" mkdir "%DIST%"
-copy /Y "%SERVICE_BUILD%\\Release\\{sn}.exe"       "%DIST%\\" >nul 2>&1
-copy /Y "%CLIENT_BUILD%\\Release\\{sn}_client.exe" "%DIST%\\" >nul 2>&1
-{gui_copy}
+xcopy /Y /Q "%SERVICE_BUILD%\\Release\\*.exe"  "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%SERVICE_BUILD%\\Release\\*.dll"  "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\Release\\*.exe"   "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\Release\\*.dll"   "%DIST%\\" >nul 2>&1
+{windeployqt_block}
 echo.
-echo Build complete.  Binaries collected in: %DIST%
+echo Build complete.  Binaries + runtime DLLs collected in: %DIST%
+endlocal
+'''
+
+
+def _build_mingw_bat(spec: "ScaffoldSpec") -> str:
+    """MinGW variant of build_deploy.bat.
+
+    Uses Ninja + g++ instead of MSBuild + cl.exe, with the
+    x64-mingw-dynamic vcpkg triplet and the MinGW Qt kit.
+    Produces its own build-mingw\\ / dist-mingw\\ folders so the two
+    toolchains don't collide.
+    """
+    sn = spec.snake_name
+
+    windeployqt_block = ""
+    if spec.gui_type == "widget":
+        windeployqt_block = f'''
+:: ----- Deploy Qt runtime for the GUI (Qt6*.dll, platforms\\, styles\\) -----
+if exist "%DIST%\\{sn}_gui.exe" (
+    if defined QT_DIR (
+        if exist "%QT_DIR%\\bin\\windeployqt.exe" (
+            echo Running windeployqt for {sn}_gui.exe ...
+            "%QT_DIR%\\bin\\windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime "%DIST%\\{sn}_gui.exe" >nul
+        ) else (
+            echo WARNING: windeployqt not found at %QT_DIR%\\bin\\windeployqt.exe
+        )
+    ) else (
+        echo WARNING: QT_DIR is not set; skipping windeployqt.
+    )
+)
+'''
+
+    return f'''@echo off
+:: MinGW variant of build_deploy.bat.
+::
+::   - Uses Ninja + MinGW g++ instead of MSBuild + cl.exe
+::   - Uses vcpkg triplet x64-mingw-dynamic
+::   - Points QT_DIR at the Qt MinGW kit (C:\\Qt\\6.x\\mingw_64)
+::
+:: Edit the three paths below to match your machine, or export them
+:: as global env vars.  Run from the project root:
+::
+::     build_deploy_mingw.bat
+::
+:: First-time vcpkg install for the mingw triplet can take 20-60 min
+:: (ports compile from source).  Pre-seed with:
+::     set VCPKG_DEFAULT_TRIPLET=x64-mingw-dynamic
+::     %VCPKG_ROOT%\\vcpkg install grpc:x64-mingw-dynamic ...
+setlocal
+
+set "SCRIPT_DIR=%~dp0"
+
+:: ---------------------------------------------------------------------------
+:: MinGW-specific environment.  Set BEFORE calling set_env.bat so the MSVC
+:: vcvars block inside set_env.bat is skipped (via VSCMD_ARG_TGT_ARCH) and
+:: MINGW_DIR / NINJA_DIR / QT_DIR defaults apply.
+:: ---------------------------------------------------------------------------
+if not defined MINGW_DIR     set "MINGW_DIR=C:\\Qt\\Tools\\mingw1120_64\\bin"
+if not defined NINJA_DIR     set "NINJA_DIR=C:\\Qt\\Tools\\Ninja"
+if not defined QT_DIR        set "QT_DIR=C:\\Qt\\6.7.1\\mingw_64"
+if not defined VCPKG_TRIPLET set "VCPKG_TRIPLET=x64-mingw-dynamic"
+
+:: Sentinel so set_env.bat skips the MSVC vcvars64.bat call.
+set "VSCMD_ARG_TGT_ARCH=SKIP_FOR_MINGW"
+
+call "%SCRIPT_DIR%set_env.bat"
+
+:: Put MinGW + Ninja on PATH (idempotent).
+if exist "%MINGW_DIR%\\g++.exe"   set "PATH=%MINGW_DIR%;%PATH%"
+if exist "%NINJA_DIR%\\ninja.exe" set "PATH=%NINJA_DIR%;%PATH%"
+
+where g++ >nul 2>&1
+if errorlevel 1 ( echo ERROR: g++ not found.  Check MINGW_DIR=%MINGW_DIR% & exit /b 1 )
+where ninja >nul 2>&1
+if errorlevel 1 ( echo ERROR: ninja not found.  Check NINJA_DIR=%NINJA_DIR% & exit /b 1 )
+
+:: ----- Generate proto stubs (idempotent) -----
+if not exist "%SCRIPT_DIR%proto\\{sn}.pb.h" (
+    call "%SCRIPT_DIR%proto\\generate_stubs.bat"
+    if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
+)
+
+:: ----- Build service (Ninja + MinGW) -----
+set "SERVICE_BUILD=%SCRIPT_DIR%build-mingw"
+if not exist "%SERVICE_BUILD%" mkdir "%SERVICE_BUILD%"
+pushd "%SERVICE_BUILD%"
+cmake -G Ninja ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ^
+      ..
+if errorlevel 1 ( echo Service configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Build client (Ninja + MinGW) -----
+set "QT_PREFIX_ARG="
+if defined QT_DIR set "QT_PREFIX_ARG=-DCMAKE_PREFIX_PATH=%QT_DIR%"
+
+set "CLIENT_BUILD=%SCRIPT_DIR%client\\build-mingw"
+if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
+pushd "%CLIENT_BUILD%"
+cmake -G Ninja ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ^
+      %QT_PREFIX_ARG% ^
+      ..
+if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Collect binaries + runtime DLLs into dist-mingw\\ -----
+:: With Ninja the exe/dll are directly in the build dir (no Release\\ subdir).
+set "DIST=%SCRIPT_DIR%dist-mingw"
+if not exist "%DIST%" mkdir "%DIST%"
+xcopy /Y /Q "%SERVICE_BUILD%\\*.exe" "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%SERVICE_BUILD%\\*.dll" "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\*.exe"  "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\*.dll"  "%DIST%\\" >nul 2>&1
+
+:: MinGW C++ runtime libs come from MINGW_DIR, not vcpkg.
+if defined MINGW_DIR (
+    for %%L in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll) do (
+        if exist "%MINGW_DIR%\\%%L" copy /Y "%MINGW_DIR%\\%%L" "%DIST%\\" >nul
+    )
+)
+{windeployqt_block}
+echo.
+echo MinGW build complete.  Binaries + runtime DLLs collected in: %DIST%
 endlocal
 '''
 
@@ -552,7 +725,7 @@ def _build_sh(spec: "ScaffoldSpec") -> str:
     gui_copy = ""
     if spec.gui_type == "widget":
         gui_copy = (
-            f'cp "$CLIENT_BUILD/{sn}_gui"       "$DIST/" 2>/dev/null || true\n'
+            f'cp "$CLIENT_BUILD/{sn}_gui" "$DIST/" 2>/dev/null || true\n'
         )
     return f'''#!/usr/bin/env bash
 set -e
@@ -573,21 +746,46 @@ cmake -S "$SCRIPT_DIR" -B "$SERVICE_BUILD" \\
 cmake --build "$SERVICE_BUILD" --parallel $(nproc)
 
 # ----- Build client -----
+# Seed CMAKE_PREFIX_PATH with QT_DIR so the GUI target can locate Qt6
+# without requiring edits to client/CMakeLists.txt.
+QT_PREFIX_ARG=()
+if [ -n "${{QT_DIR:-}}" ]; then QT_PREFIX_ARG=(-DCMAKE_PREFIX_PATH="$QT_DIR"); fi
+
 CLIENT_BUILD="$SCRIPT_DIR/client/build"
 mkdir -p "$CLIENT_BUILD"
 cmake -S "$SCRIPT_DIR/client" -B "$CLIENT_BUILD" \\
     -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \\
+    "${{QT_PREFIX_ARG[@]}}" \\
     -DCMAKE_BUILD_TYPE=Release
 cmake --build "$CLIENT_BUILD" --parallel $(nproc)
 
-# ----- Collect binaries into dist/ -----
+# ----- Collect binaries + shared libraries into dist/ -----
 DIST="$SCRIPT_DIR/dist"
 mkdir -p "$DIST"
-cp "$SERVICE_BUILD/{sn}"              "$DIST/" 2>/dev/null || true
-cp "$CLIENT_BUILD/{sn}_client"        "$DIST/" 2>/dev/null || true
+cp "$SERVICE_BUILD/{sn}"       "$DIST/" 2>/dev/null || true
+cp "$CLIENT_BUILD/{sn}_client" "$DIST/" 2>/dev/null || true
 {gui_copy}
+# Copy any *.so / *.so.* shared libraries next to the binaries. vcpkg
+# deploys dynamic libs under lib/, plus CMake may leave runtime libs in
+# the build trees themselves.
+for d in \\
+    "$VCPKG_ROOT/installed/x64-linux/lib" \\
+    "$SERVICE_BUILD" "$CLIENT_BUILD"; do
+    [ -d "$d" ] || continue
+    find "$d" -maxdepth 2 -name "*.so*" -type f -exec cp -f {{}} "$DIST/" \\; 2>/dev/null || true
+done
+
+# Deploy Qt plugins for the Widgets GUI on Linux.  Qt needs
+# platforms/libqxcb.so (or Wayland equivalents) next to the binary.
+if [ -f "$DIST/{sn}_gui" ] && [ -n "${{QT_DIR:-}}" ] && [ -d "$QT_DIR/plugins" ]; then
+    mkdir -p "$DIST/platforms"
+    cp -rf "$QT_DIR/plugins/platforms/"* "$DIST/platforms/" 2>/dev/null || true
+    [ -d "$QT_DIR/plugins/xcbglintegrations" ] && \\
+        cp -rf "$QT_DIR/plugins/xcbglintegrations" "$DIST/" 2>/dev/null || true
+fi
+
 echo ""
-echo "Build complete. Binaries collected in: $DIST"
+echo "Build complete. Binaries + libraries collected in: $DIST"
 '''
 
 
@@ -1306,6 +1504,16 @@ def _client_files(spec: "ScaffoldSpec") -> Dict[str, str]:
         gui_block = f'''
 
 # ----- Qt Widgets GUI client ({sn}_gui) ------------------------------
+# Qt 6 discovery: honour QT_DIR / Qt6_DIR env vars (set in set_env.bat/.sh).
+#   QT_DIR   = Qt install prefix, e.g. C:\\Qt\\6.7.1\\msvc2019_64
+#   Qt6_DIR  = directory containing Qt6Config.cmake (overrides QT_DIR)
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{{Qt6_DIR}})
+    set(Qt6_DIR "$ENV{{Qt6_DIR}}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{{QT_DIR}} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{{QT_DIR}}")
+endif()
+
 find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
 qt_standard_project_setup()
 set(CMAKE_AUTOMOC ON)

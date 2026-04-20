@@ -11,6 +11,7 @@
     --muted: #94a3b8;
     --accent: #38bdf8;
     --green: #10b981;
+    --amber: #fbbf24;
     --border: #334155;
   }
   * { box-sizing: border-box; }
@@ -81,7 +82,6 @@
     color: rgba(148,163,184,0.6);
   }
 
-  /* Push content right of the sidebar, fill remaining width */
   main {
     margin-left: 250px;
     padding: 30px 40px;
@@ -102,7 +102,8 @@
     padding-bottom: 10px;
     font-size: 1.4em;
   }
-  h3 { color: #fbbf24; margin-top: 20px; }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 16px; margin-bottom: 4px; font-size: 1.02em; }
 
   code {
     background: #0b1220;
@@ -141,6 +142,7 @@
     text-align: left;
     border-bottom: 1px solid var(--border);
     font-size: 0.9em;
+    vertical-align: top;
   }
   th { background: #0b1220; color: var(--accent); }
   tr:last-child td { border-bottom: none; }
@@ -166,6 +168,14 @@
     margin: 16px 0;
     font-size: 0.92em;
   }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
 
   .file-tree {
     font-family: "Cascadia Code", Consolas, monospace;
@@ -179,9 +189,7 @@
   .file-tree .folder { color: var(--accent); font-weight: 600; }
   .file-tree .comment { color: var(--muted); font-style: italic; }
 
-  .os-tabs {
-    display: flex; gap: 8px; margin-bottom: 8px;
-  }
+  .os-tabs { display: flex; gap: 8px; margin-bottom: 8px; }
   .os-tabs span {
     padding: 2px 10px;
     border-radius: 4px;
@@ -191,6 +199,85 @@
   .os-win { background: rgba(56,189,248,0.15); color: var(--accent); }
   .os-linux { background: rgba(16,185,129,0.15); color: var(--green); }
 
+  .diagram {
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 14px 0;
+    text-align: center;
+    overflow-x: auto;
+    cursor: zoom-in;
+    transition: box-shadow 0.2s, border-color 0.2s;
+    position: relative;
+  }
+  .diagram:hover {
+    box-shadow: 0 4px 16px rgba(56,189,248,0.35);
+    border-color: var(--accent);
+  }
+  .diagram::after {
+    content: "🔍 Click to zoom";
+    position: absolute;
+    top: 8px; right: 12px;
+    font-size: 0.72em;
+    color: var(--muted);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .diagram .mermaid { display: inline-block; min-width: 300px; }
+  .diagram-caption {
+    text-align: center;
+    font-size: 0.82em;
+    color: var(--muted);
+    margin-top: 4px;
+    font-style: italic;
+  }
+
+  /* ---- Zoom-in modal ---- */
+  .diagram-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 9999;
+    cursor: zoom-out;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .diagram-modal.open { display: flex; }
+  .diagram-modal-inner {
+    width: 92vw;
+    height: 90vh;
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    cursor: default;
+  }
+  .diagram-modal-inner svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .diagram-modal-close {
+    position: fixed;
+    top: 18px; right: 28px;
+    color: var(--text);
+    font-size: 2em;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.8;
+    z-index: 10000;
+  }
+  .diagram-modal-close:hover { opacity: 1; color: var(--accent); }
+
   footer {
     text-align: center;
     padding: 30px;
@@ -199,7 +286,6 @@
     font-size: 0.85em;
   }
 
-  /* Responsive: collapse sidebar on narrow screens */
   @media (max-width: 900px) {
     .sidebar-nav { display: none; }
     header  { padding-left: 20px; }
@@ -217,10 +303,17 @@
 
 <nav class="sidebar-nav" id="sidebarNav">
   <div class="nav-title">Guide</div>
+
+  <div class="nav-group">Overview</div>
+  <a href="#architecture">Architecture</a>
+  <a href="#class-diagram">Class Diagram</a>
+  <a href="#component-diagram">Component Diagram</a>
+  <a href="#sequence-diagram">Sequence Diagram</a>
   <a href="#prereqs">Prerequisites</a>
   <a href="#structure">Project Structure</a>
+  <a href="#set-env">Environment Setup</a>
 
-  <div class="nav-group">Implementation</div>
+  <div class="nav-group">Service</div>
   <a href="#proto">1. Define the Proto</a>
   <a href="#domain">2. Domain Logic</a>
   <a href="#adapter">3. gRPC Adapter</a>
@@ -228,11 +321,17 @@
   <a href="#main">5. Entry Point</a>
   <a href="#cmake">6. CMakeLists.txt</a>
 
-  <div class="nav-group">Build &amp; Run</div>
-  <a href="#build">7. Build</a>
-  <a href="#run">8. Run &amp; Verify</a>
-  <a href="#client">9. Client</a>
-  <a href="#nomad">10. Nomad Deploy</a>
+  <div class="nav-group">Stubs &amp; Client</div>
+  <a href="#stubs">7. Proto Stubs</a>
+  <a href="#client">8. Console Client</a>
+  <a href="#gui">9. Qt Widgets GUI</a>
+
+  <div class="nav-group">Build &amp; Deploy</div>
+  <a href="#build-deploy">10. build_deploy</a>
+  <a href="#mingw">10b. MinGW Variant</a>
+  <a href="#run">11. Run &amp; Verify</a>
+  <a href="#qtcreator">12. Qt Creator Setup</a>
+  <a href="#nomad">13. Nomad Deploy</a>
 
   <div class="nav-group">Reference</div>
   <a href="#api">Library API</a>
@@ -241,12 +340,280 @@
 
 <main>
 
-<!-- Prerequisites -->
+<!-- ===================================================================
+     Architecture Overview
+     =================================================================== -->
+<section id="architecture">
+<h2>Architecture Overview</h2>
+<p>
+  A MicroserviceBase service is a pure-C++ gRPC server built on top of a
+  small runtime library (<code>microservice_base::runtime</code>) that handles
+  the cross-cutting concerns: Consul registration, health checks, graceful
+  shutdown, and the gRPC boilerplate.  Your code only writes:
+</p>
+<ul>
+  <li>a <strong>.proto</strong> describing the API,</li>
+  <li>a <strong>domain class</strong> with the business logic (no gRPC, no Consul),</li>
+  <li>a <strong>gRPC adapter</strong> translating between the two.</li>
+</ul>
+<p>
+  Clients (console or Qt) build against the same <code>.proto</code> and use
+  <code>ServiceClient&lt;T&gt;</code> which resolves the service by name via
+  Consul and creates a gRPC channel.  Everything runs under Nomad in production.
+</p>
+
+<div class="highlight-box">
+  <strong>The three diagrams below</strong> show the static class structure
+  (what to inherit and call), the runtime component layout (who talks to
+  whom), and the end-to-end flow from a GUI button click to the service
+  and back.
+</div>
+</section>
+
+<!-- ===================================================================
+     Class Diagram
+     =================================================================== -->
+<section id="class-diagram">
+<h2>Class Diagram — Base Infrastructure &amp; How You Extend It</h2>
+<p>
+  Blue boxes are library classes shipped by MicroserviceBase; green boxes
+  are what <em>you</em> write.  Inherit <code>BaseServiceSettings</code>,
+  write a domain class and an adapter that extends the generated
+  <code>*Service::Service</code>, and hand the adapter to
+  <code>ServiceRunner</code>.
+</p>
+
+<div class="diagram">
+<div class="mermaid">
+classDiagram
+direction TB
+
+class BaseServiceSettings {
+  +string service_name
+  +string service_host
+  +int grpc_port
+  +string advertise_addr
+  +string consul_addr
+  +string consul_token
+  +string log_level
+  +loadBaseFromEnv(prefix)
+}
+
+class ConsulRegistration {
+  -string name
+  -string address
+  -int port
+  -string token
+  +registerService() bool
+  +deregisterService()
+}
+
+class ServiceRunner {
+  -BaseServiceSettings settings
+  -ConsulRegistration consul
+  +addService(svc, fullName)
+  +start() int
+  +serveForever()
+  +requestShutdown()
+  +boundPort() int
+}
+
+class ServiceClient~T~ {
+  -string serviceName
+  -string consulAddr
+  +stub() Stub
+  +target() string
+  +reconnect()
+  +isConnected() bool
+}
+
+class MySettings
+class MyService_Domain {
+  +doSomething(input) string
+}
+class MyGrpcAdapter {
+  -MyService_Domain domain
+  +DoSomething(ctx, req, resp) Status
+}
+class Generated_Service
+
+MySettings --|> BaseServiceSettings
+MyGrpcAdapter --|> Generated_Service
+MyGrpcAdapter --> MyService_Domain
+ServiceRunner --> BaseServiceSettings
+ServiceRunner --> ConsulRegistration
+ServiceRunner --> MyGrpcAdapter
+
+note for MyGrpcAdapter "YOU write this"
+note for MyService_Domain "YOU write this (no gRPC, no Consul)"
+note for MySettings "YOU write this (thin subclass)"
+note for Generated_Service "Generated by protoc --grpc_out"
+</div>
+</div>
+<p class="diagram-caption">
+  Static view: library vs. user-written classes and their relationships.
+</p>
+
+<h3>What to inherit, what to call</h3>
+<table>
+  <tr><th>You need to…</th><th>Do this</th></tr>
+  <tr>
+    <td>Declare your service's env-var defaults</td>
+    <td>
+      <code>struct MySettings : microservice_base::BaseServiceSettings</code><br>
+      set <code>service_name</code> and call <code>loadBaseFromEnv("MYSVC_")</code>
+    </td>
+  </tr>
+  <tr>
+    <td>Expose RPC endpoints</td>
+    <td>
+      Inherit the <code>*Service::Service</code> class produced by
+      <code>protoc --grpc_out</code> and override each <code>rpc</code>.
+      Delegate to a pure-C++ domain class.
+    </td>
+  </tr>
+  <tr>
+    <td>Start the server + register with Consul</td>
+    <td>
+      <code>ServiceRunner runner(settings, {"v1"});</code><br>
+      <code>runner.addService(&amp;adapter, "mypkg.v1.MyService");</code><br>
+      <code>runner.serveForever();</code>
+    </td>
+  </tr>
+  <tr>
+    <td>Call a service from C++</td>
+    <td>
+      <code>ServiceClient&lt;MyService&gt; client("my_service");</code><br>
+      <code>client.stub().DoSomething(&amp;ctx, req, &amp;resp);</code>
+    </td>
+  </tr>
+</table>
+</section>
+
+<!-- ===================================================================
+     Component Diagram
+     =================================================================== -->
+<section id="component-diagram">
+<h2>Component Diagram — Runtime Layout</h2>
+<p>
+  At runtime you have four moving parts: the <strong>service process</strong>,
+  the <strong>Consul agent</strong> (discovery + health), the
+  <strong>Nomad agent</strong> (optional orchestrator), and one or more
+  <strong>client processes</strong> (console or Qt GUI).
+</p>
+
+<div class="diagram">
+<div class="mermaid">
+flowchart LR
+    subgraph HOST1["Client Host"]
+        GUI["my_service_gui.exe<br/>(Qt Widgets)"]
+        CLI["my_service_client.exe<br/>(console)"]
+        SC["ServiceClient&lt;T&gt;"]
+        GUI --> SC
+        CLI --> SC
+    end
+
+    subgraph HOST2["Service Host"]
+        SVC["my_service.exe"]
+        SR["ServiceRunner"]
+        CR["ConsulRegistration"]
+        AD["MyGrpcAdapter"]
+        DO["MyService<br/>(domain)"]
+        SVC --> SR
+        SR --> CR
+        SR --> AD
+        AD --> DO
+    end
+
+    subgraph INFRA["Infrastructure"]
+        CON[("Consul agent<br/>:8500")]
+        NOM[("Nomad agent<br/>:4646")]
+    end
+
+    CR -->|"register + heartbeat"| CON
+    SC -->|"resolve name"| CON
+    SC ==>|"gRPC call"| SVC
+    NOM -->|"launches + monitors"| SVC
+
+    style GUI fill:#1e293b,stroke:#38bdf8,color:#e2e8f0
+    style CLI fill:#1e293b,stroke:#38bdf8,color:#e2e8f0
+    style SVC fill:#064e3b,stroke:#10b981,color:#e2e8f0
+    style CON fill:#1e1b4b,stroke:#818cf8,color:#e2e8f0
+    style NOM fill:#1e1b4b,stroke:#818cf8,color:#e2e8f0
+</div>
+</div>
+<p class="diagram-caption">
+  Runtime components.  Consul is the "phone book"; Nomad is the "watchdog";
+  <code>ServiceClient</code> and <code>ServiceRunner</code> are the library
+  wrappers on either side of the gRPC wire.
+</p>
+</section>
+
+<!-- ===================================================================
+     Sequence Diagram
+     =================================================================== -->
+<section id="sequence-diagram">
+<h2>Sequence Diagram — From Button Click to Response</h2>
+<p>
+  Trace of a single round-trip: the GUI starts up, resolves the service
+  through Consul, the user clicks <em>Send</em>, an RPC is executed, and
+  the response ends up in the output pane.
+</p>
+
+<div class="diagram">
+<div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant G as Qt GUI<br/>(MainWindow)
+    participant C as ServiceClient&lt;T&gt;
+    participant K as Consul<br/>:8500
+    participant S as Service<br/>(gRPC)
+
+    rect rgb(30,41,59)
+    note over G: Startup
+    U->>G: launch my_service_gui.exe
+    G->>G: ui->setupUi(this)
+    G->>G: buildMethodBindings()
+    G->>G: show() — window paints immediately
+    note over G,C: QTimer::singleShot(0) — deferred lookup
+    G->>C: new ServiceClient&lt;MyService&gt;("my_service")
+    C->>K: GET /v1/health/service/my_service?passing=true
+    K-->>C: { Address: "10.0.0.5", Port: 60408 }
+    C->>S: grpc::CreateChannel("10.0.0.5:60408")
+    C-->>G: target() = "10.0.0.5:60408"
+    G-->>U: log "Connected to 10.0.0.5:60408"
+    end
+
+    rect rgb(30,41,59)
+    note over U,S: User interaction
+    U->>G: select method from combo
+    G->>G: rebuildForm(idx) — populate QFormLayout
+    U->>G: enter inputs, click Send
+    G->>G: onSend() → binding.invoke(widgets)
+    G->>C: stub().Echo(&ctx, req, &resp)
+    C->>S: EchoRequest("hello")
+    S->>S: adapter → domain.echo("hello")
+    S-->>C: EchoResponse{ result: "echo: hello" }
+    C-->>G: Status::OK
+    G-->>U: append "echo: hello" to outputTextEdit
+    end
+</div>
+</div>
+<p class="diagram-caption">
+  End-to-end call flow.  The deferred <code>QTimer::singleShot</code>
+  is deliberate: it lets the window paint before the first network call,
+  so the GUI never looks frozen even if Consul is slow.
+</p>
+</section>
+
+<!-- ===================================================================
+     Prerequisites
+     =================================================================== -->
 <section id="prereqs">
 <h2>Prerequisites</h2>
 
 <h3>1. vcpkg (C++ package manager)</h3>
-<p>Choose a location for vcpkg (e.g. <code>~/vcpkg</code> on Linux or <code>C:\vcpkg</code> on Windows):</p>
 <div class="os-tabs"><span class="os-win">Windows</span></div>
 <pre><code>git clone https://github.com/microsoft/vcpkg.git
 cd vcpkg
@@ -261,8 +628,11 @@ cd vcpkg
 <pre><code>vcpkg install grpc:x64-windows protobuf:x64-windows curl:x64-windows</code></pre>
 <div class="os-tabs"><span class="os-linux">Linux</span></div>
 <pre><code>vcpkg install grpc:x64-linux protobuf:x64-linux curl:x64-linux</code></pre>
-<p><code>grpc</code> pulls in <code>protobuf</code> and <code>abseil</code> automatically.
-<code>curl</code> is used by <code>ConsulRegistration</code> to talk to the Consul HTTP API.</p>
+<p>
+  <code>grpc</code> pulls in <code>protobuf</code> and <code>abseil</code>
+  automatically.  <code>curl</code> is used by
+  <code>ConsulRegistration</code> to talk to the Consul HTTP API.
+</p>
 
 <h3>3. Build tools</h3>
 <div class="os-tabs"><span class="os-win">Windows</span></div>
@@ -270,17 +640,23 @@ cd vcpkg
   <tr><th>Tool</th><th>Purpose</th><th>Install</th></tr>
   <tr><td><code>CMake 3.16+</code></td><td>Build system</td><td><a href="https://cmake.org/download/">cmake.org/download</a> or bundled with Qt</td></tr>
   <tr><td><code>MSVC 2019+</code></td><td>Compiler</td><td><a href="https://visualstudio.microsoft.com/">visualstudio.microsoft.com</a> &mdash; "Desktop development with C++"</td></tr>
-  <tr><td><code>Ninja</code></td><td>Faster builds</td><td><a href="https://github.com/ninja-build/ninja/releases">github.com/ninja-build</a></td></tr>
+  <tr><td><code>Ninja</code></td><td>Faster builds</td><td><a href="https://github.com/ninja-build/ninja/releases">github.com/ninja-build</a> or <code>choco install ninja</code></td></tr>
 </table>
 <div class="os-tabs"><span class="os-linux">Linux</span></div>
 <pre><code># Debian / Ubuntu
-sudo apt-get update
 sudo apt-get install -y cmake g++ ninja-build pkg-config
 
 # Fedora / RHEL
 sudo dnf install cmake gcc-c++ ninja-build</code></pre>
 
-<h3>4. Consul</h3>
+<h3>4. Qt 6 (only if building the Widgets GUI)</h3>
+<p>
+  Install Qt 6.5+ with the MSVC / GCC kit matching your compiler.
+  Remember the install prefix — you'll set it as <code>QT_DIR</code> in
+  <code>set_env</code>.
+</p>
+
+<h3>5. Consul</h3>
 <div class="os-tabs"><span class="os-win">Windows</span></div>
 <pre><code>choco install consul</code></pre>
 <div class="os-tabs"><span class="os-linux">Linux</span></div>
@@ -291,41 +667,127 @@ echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
   https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
   | sudo tee /etc/apt/sources.list.d/hashicorp.list
 sudo apt-get update &amp;&amp; sudo apt-get install consul</code></pre>
-<p>Or download the binary from
-<a href="https://developer.hashicorp.com/consul/install">developer.hashicorp.com/consul/install</a>.</p>
 
-<h3>5. Clone MicroserviceBase</h3>
-<pre><code>git clone -b ugc1hc/feat/restructure_microservice_base \
+<h3>6. Clone MicroserviceBase</h3>
+<pre><code>git clone -b ugc1hc/feat/migrate_to_ta_architecture \
     https://github.com/test-fullautomation/python-microservice-base.git
 cd python-microservice-base</code></pre>
 </section>
 
-<!-- Structure -->
+<!-- ===================================================================
+     Project Structure
+     =================================================================== -->
 <section id="structure">
 <h2>Project Structure</h2>
+<p>
+  The scaffold generator emits one folder per service.  Service and client
+  are siblings that share the same <code>proto/</code> so stubs are built
+  once and reused.
+</p>
+
 <pre class="file-tree"><span class="folder">my_service/</span>
-├── CMakeLists.txt                  <span class="comment"># Build configuration</span>
+├── CMakeLists.txt                  <span class="comment"># Service build config</span>
+├── set_env.bat / set_env.sh        <span class="comment"># Central env vars (VCPKG_ROOT, QT_DIR, …)</span>
+├── build_deploy.bat / .sh          <span class="comment"># One command: build + package → dist/</span>
+├── my_service.nomad.hcl            <span class="comment"># Nomad job spec (optional)</span>
+├── service_config.json             <span class="comment"># Manager GUI metadata</span>
+│
 ├── <span class="folder">proto/</span>
-│   └── my_service.proto            <span class="comment"># gRPC service definition</span>
+│   ├── my_service.proto            <span class="comment"># gRPC service definition</span>
+│   ├── generate_stubs.bat / .sh    <span class="comment"># protoc runner (shared)</span>
+│   └── *.pb.h / *.pb.cc …          <span class="comment"># Generated stubs (pre-built or auto)</span>
+│
 ├── <span class="folder">src/</span>
 │   ├── main.cpp                    <span class="comment"># Entry point</span>
-│   ├── Settings.h                  <span class="comment"># Env var configuration</span>
+│   ├── Settings.h                  <span class="comment"># Inherits BaseServiceSettings</span>
 │   ├── <span class="folder">domain/</span>                     <span class="comment"># Pure business logic (NO gRPC)</span>
 │   │   ├── MyService.h
 │   │   └── MyService.cpp
 │   └── <span class="folder">adapters/api/</span>              <span class="comment"># gRPC &rarr; domain bridge</span>
 │       ├── MyGrpcAdapter.h
 │       └── MyGrpcAdapter.cpp
-└── <span class="folder">docs/</span></pre>
+│
+├── <span class="folder">client/</span>
+│   ├── CMakeLists.txt              <span class="comment"># Builds console + GUI clients</span>
+│   ├── <span class="folder">src/</span>
+│   │   └── client.cpp              <span class="comment"># Console client</span>
+│   └── <span class="folder">gui/</span>                        <span class="comment"># (only if gui_type=widget)</span>
+│       ├── main.cpp
+│       ├── MainWindow.h / .cpp
+│       └── MainWindow.ui
+│
+└── <span class="folder">dist/</span>                           <span class="comment"># Populated by build_deploy</span>
+    ├── my_service.exe
+    ├── my_service_client.exe
+    ├── my_service_gui.exe          <span class="comment"># Qt Widgets client + deployed Qt DLLs</span>
+    └── *.dll                       <span class="comment"># grpc, protobuf, abseil, Qt6*, platforms/…</span></pre>
 
 <div class="highlight-box">
-  <strong>Key principle:</strong> the <code>domain/</code> folder has zero dependencies on gRPC,
-  Consul, or any framework code.  It's pure C++ with standard library only.
-  The <code>adapters/</code> folder translates between gRPC and the domain.
+  <strong>Hexagonal discipline:</strong> <code>domain/</code> has zero
+  dependencies on gRPC, Qt, or Consul.  It is pure C++ — easy to unit-test
+  and reusable beyond this transport.
 </div>
 </section>
 
-<!-- Step 1 -->
+<!-- ===================================================================
+     Environment Setup
+     =================================================================== -->
+<section id="set-env">
+<h2>Environment Setup &mdash; <code>set_env</code></h2>
+<p>
+  Every scaffold ships with a central <code>set_env.bat</code>
+  (and <code>set_env.sh</code> on POSIX) at the project root.  It defines
+  all paths the build scripts need in one place, and is <code>call</code>-ed
+  (or <code>source</code>-d) by <code>build_deploy</code>,
+  <code>generate_stubs</code>, and <code>build_wasm</code>.
+</p>
+
+<h3>set_env.bat (Windows)</h3>
+<pre><code>@echo off
+:: Central environment variables.  Only set if not already defined,
+:: so CI or System Environment Variables win.
+
+if not defined VCPKG_ROOT set "VCPKG_ROOT=C:\vcpkg"
+
+:: CMake / Ninja — added to PATH if the exe exists.
+if not defined CMAKE_DIR set "CMAKE_DIR=C:\Program Files\CMake\bin"
+if not defined NINJA_DIR set "NINJA_DIR="
+if exist "%CMAKE_DIR%\cmake.exe" set "PATH=%CMAKE_DIR%;%PATH%"
+if defined NINJA_DIR if exist "%NINJA_DIR%\ninja.exe" set "PATH=%NINJA_DIR%;%PATH%"
+
+:: MSVC compiler — auto-initialise cl.exe + Windows SDK from a plain cmd.
+if not defined VS_DEV_CMD set "VS_DEV_CMD=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+if not defined VSCMD_ARG_TGT_ARCH (
+    if exist "%VS_DEV_CMD%" call "%VS_DEV_CMD%" >nul
+)
+
+:: Qt install prefix — needed by the Widgets GUI client.
+if not defined QT_DIR set "QT_DIR=C:\Qt\6.7.1\msvc2019_64"</code></pre>
+
+<h3>set_env.sh (Linux / macOS)</h3>
+<pre><code>: "${VCPKG_ROOT:=$HOME/vcpkg}"
+export VCPKG_ROOT
+
+: "${CMAKE_DIR:=}"
+[ -n "$CMAKE_DIR" ] &amp;&amp; [ -x "$CMAKE_DIR/cmake" ] &amp;&amp; export PATH="$CMAKE_DIR:$PATH"
+
+: "${CC:=}"  ; [ -n "$CC" ]  &amp;&amp; export CC
+: "${CXX:=}" ; [ -n "$CXX" ] &amp;&amp; export CXX
+
+: "${QT_DIR:=$HOME/Qt/6.7.1/gcc_64}"
+export QT_DIR</code></pre>
+
+<div class="highlight-box">
+  Edit <code>set_env</code> <strong>once</strong> for your machine.
+  All other scripts source it, so you never need to duplicate paths
+  across <code>build_deploy.bat</code>, <code>generate_stubs.bat</code>,
+  etc.
+</div>
+</section>
+
+<!-- ===================================================================
+     1. Proto
+     =================================================================== -->
 <section id="proto">
 <h2><span class="step-num">1</span> Define the Proto</h2>
 <p>Create <code>proto/my_service.proto</code>:</p>
@@ -334,53 +796,57 @@ cd python-microservice-base</code></pre>
 package myservice.v1;
 
 service MyService {
-  rpc DoSomething (DoSomethingRequest) returns (DoSomethingResponse);
-  rpc StreamEvents (StreamRequest) returns (stream Event);
+  rpc Echo   (EchoRequest)   returns (EchoResponse);
+  rpc Add    (AddRequest)    returns (AddResponse);
+  rpc Stream (StreamRequest) returns (stream Event);
 }
 
-message DoSomethingRequest {
-  string input = 1;
-}
+message EchoRequest   { string message = 1; }
+message EchoResponse  { string result  = 1; }
+message AddRequest    { int32  a = 1; int32 b = 2; }
+message AddResponse   { int32  result = 1; }
+message StreamRequest { int32  count = 1; }
+message Event         { int32  sequence = 1; string data = 2; }</code></pre>
 
-message DoSomethingResponse {
-  string output = 1;
-}
-
-message StreamRequest {
-  int32 count = 1;
-}
-
-message Event {
-  int32 sequence = 1;
-  string data    = 2;
-}</code></pre>
+<div class="highlight-box">
+  The scaffold generator always names the single response field
+  <code>result</code>.  If you author the proto by hand, keep that
+  convention so the generated GUI can display the response uniformly.
+</div>
 </section>
 
-<!-- Step 2 -->
+<!-- ===================================================================
+     2. Domain
+     =================================================================== -->
 <section id="domain">
 <h2><span class="step-num">2</span> Implement the Domain</h2>
 <p><code>src/domain/MyService.h</code>:</p>
 <pre><code>#pragma once
+#include &lt;cstdint&gt;
 #include &lt;string&gt;
 
 class MyService {
 public:
-    std::string doSomething(const std::string&amp; input) const;
+    std::string echo(const std::string&amp; message) const;
+    int32_t     add(int32_t a, int32_t b)           const;
 };</code></pre>
 
 <p><code>src/domain/MyService.cpp</code>:</p>
 <pre><code>#include "MyService.h"
 
-std::string MyService::doSomething(const std::string&amp; input) const {
-    return "Processed: " + input;
-}</code></pre>
+std::string MyService::echo(const std::string&amp; m) const { return "echo: " + m; }
+int32_t     MyService::add(int32_t a, int32_t b)  const { return a + b; }</code></pre>
 
 <div class="highlight-box">
-  No <code>#include &lt;grpcpp/grpcpp.h&gt;</code> anywhere in this folder &mdash; that's the rule.
+  No <code>#include &lt;grpcpp/grpcpp.h&gt;</code> here — that's the rule.
+  The domain class should also be usable by tests, CLIs, or any other
+  transport without touching gRPC.
 </div>
 </section>
 
-<!-- Step 3 -->
+<!-- ===================================================================
+     3. Adapter
+     =================================================================== -->
 <section id="adapter">
 <h2><span class="step-num">3</span> Implement the gRPC Adapter</h2>
 <p><code>src/adapters/api/MyGrpcAdapter.h</code>:</p>
@@ -393,56 +859,44 @@ class MyGrpcAdapter final : public myservice::v1::MyService::Service {
 public:
     explicit MyGrpcAdapter(::MyService&amp; domain) : m_domain(domain) {}
 
-    grpc::Status DoSomething(grpc::ServerContext*,
-                             const myservice::v1::DoSomethingRequest*,
-                             myservice::v1::DoSomethingResponse*) override;
+    grpc::Status Echo(grpc::ServerContext*,
+        const myservice::v1::EchoRequest*,  myservice::v1::EchoResponse*) override;
+    grpc::Status Add(grpc::ServerContext*,
+        const myservice::v1::AddRequest*,   myservice::v1::AddResponse*)  override;
 
-    grpc::Status StreamEvents(grpc::ServerContext*,
-                              const myservice::v1::StreamRequest*,
-                              grpc::ServerWriter&lt;myservice::v1::Event&gt;*) override;
 private:
     ::MyService&amp; m_domain;
 };</code></pre>
 
 <p><code>src/adapters/api/MyGrpcAdapter.cpp</code>:</p>
 <pre><code>#include "MyGrpcAdapter.h"
-#include &lt;thread&gt;
-#include &lt;chrono&gt;
 
-grpc::Status MyGrpcAdapter::DoSomething(
-    grpc::ServerContext*,
-    const myservice::v1::DoSomethingRequest* req,
-    myservice::v1::DoSomethingResponse* resp) {
-    resp-&gt;set_output(m_domain.doSomething(req-&gt;input()));
+grpc::Status MyGrpcAdapter::Echo(grpc::ServerContext*,
+    const myservice::v1::EchoRequest* req, myservice::v1::EchoResponse* resp) {
+    resp-&gt;set_result(m_domain.echo(req-&gt;message()));
     return grpc::Status::OK;
 }
 
-grpc::Status MyGrpcAdapter::StreamEvents(
-    grpc::ServerContext* ctx,
-    const myservice::v1::StreamRequest* req,
-    grpc::ServerWriter&lt;myservice::v1::Event&gt;* writer) {
-    for (int i = 0; i &lt; req-&gt;count() &amp;&amp; !ctx-&gt;IsCancelled(); ++i) {
-        myservice::v1::Event ev;
-        ev.set_sequence(i);
-        ev.set_data("event #" + std::to_string(i));
-        if (!writer-&gt;Write(ev)) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
+grpc::Status MyGrpcAdapter::Add(grpc::ServerContext*,
+    const myservice::v1::AddRequest* req, myservice::v1::AddResponse* resp) {
+    resp-&gt;set_result(m_domain.add(req-&gt;a(), req-&gt;b()));
     return grpc::Status::OK;
 }</code></pre>
 </section>
 
-<!-- Step 4 -->
+<!-- ===================================================================
+     4. Settings
+     =================================================================== -->
 <section id="settings">
 <h2><span class="step-num">4</span> Service Settings</h2>
 <p><code>src/Settings.h</code>:</p>
 <pre><code>#pragma once
 #include "MicroserviceBase/Settings.h"
 
-struct MySettings : public microservice_base::BaseServiceSettings {
-    MySettings() {
+struct Settings : public microservice_base::BaseServiceSettings {
+    Settings() {
         service_name = "my_service";
-        loadBaseFromEnv("MYSERVICE_");
+        loadBaseFromEnv("MY_SERVICE_");
     }
 };</code></pre>
 
@@ -451,14 +905,16 @@ struct MySettings : public microservice_base::BaseServiceSettings {
   <tr><th>Env Var</th><th>Field</th><th>Default</th><th>Description</th></tr>
   <tr><td><code>*_GRPC_PORT</code></td><td><code>grpc_port</code></td><td><code>0</code> (dynamic)</td><td>TCP port for gRPC server</td></tr>
   <tr><td><code>*_SERVICE_HOST</code></td><td><code>service_host</code></td><td><code>0.0.0.0</code></td><td>Bind address</td></tr>
-  <tr><td><code>*_ADVERTISE_ADDR</code></td><td><code>advertise_addr</code></td><td>(auto)</td><td>Address announced to Consul</td></tr>
+  <tr><td><code>*_ADVERTISE_ADDR</code></td><td><code>advertise_addr</code></td><td>(auto, IPv4)</td><td>Address announced to Consul</td></tr>
   <tr><td><code>*_CONSUL_ADDR</code></td><td><code>consul_addr</code></td><td><code>http://localhost:8500</code></td><td>Consul HTTP API</td></tr>
   <tr><td><code>*_CONSUL_TOKEN</code></td><td><code>consul_token</code></td><td>(empty)</td><td>Optional ACL token</td></tr>
   <tr><td><code>*_LOG_LEVEL</code></td><td><code>log_level</code></td><td><code>INFO</code></td><td>Log level</td></tr>
 </table>
 </section>
 
-<!-- Step 5 -->
+<!-- ===================================================================
+     5. Entry Point
+     =================================================================== -->
 <section id="main">
 <h2><span class="step-num">5</span> Entry Point</h2>
 <p><code>src/main.cpp</code>:</p>
@@ -470,7 +926,7 @@ struct MySettings : public microservice_base::BaseServiceSettings {
 
 int main() {
     try {
-        MySettings settings;
+        Settings settings;
         MyService domain;
         MyGrpcAdapter adapter(domain);
 
@@ -485,69 +941,82 @@ int main() {
 }</code></pre>
 
 <div class="highlight-box">
-  <strong>What <code>ServiceRunner</code> does automatically:</strong><br>
+  <strong>What <code>ServiceRunner::serveForever()</code> does:</strong><br>
   1. Starts the gRPC server (dynamic port if <code>grpc_port=0</code>)<br>
-  2. Enables gRPC health check protocol (for Consul)<br>
-  3. Enables gRPC reflection (for the GUI + <code>grpcurl</code>)<br>
-  4. Registers with Consul (including a health check)<br>
+  2. Enables the gRPC health-check protocol (used by Consul)<br>
+  3. Enables gRPC reflection (used by the Manager GUI + <code>grpcurl</code>)<br>
+  4. Registers with Consul &mdash; including a gRPC health check<br>
   5. Installs signal handlers (SIGINT / SIGTERM; SIGBREAK on Windows)<br>
-  6. Blocks until shutdown signal<br>
-  7. Deregisters from Consul<br>
-  8. Stops the gRPC server gracefully
+  6. Blocks until a shutdown signal arrives<br>
+  7. Deregisters from Consul and stops the gRPC server gracefully
 </div>
 </section>
 
-<!-- Step 6 -->
+<!-- ===================================================================
+     6. CMakeLists
+     =================================================================== -->
 <section id="cmake">
 <h2><span class="step-num">6</span> CMakeLists.txt</h2>
+<p>
+  The generated <code>CMakeLists.txt</code> prefers <strong>pre-generated</strong>
+  proto stubs (from <code>proto/</code>) and falls back to auto-generating at
+  build time if they aren't there yet.  It also auto-detects vcpkg from
+  <code>VCPKG_ROOT</code> so you can open the project in Qt Creator without
+  passing <code>-DCMAKE_TOOLCHAIN_FILE</code>.
+</p>
+
 <pre><code>cmake_minimum_required(VERSION 3.16)
 project(my_service VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# --- Auto-detect vcpkg from VCPKG_ROOT ---
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected)")
+endif()
+
 find_package(gRPC     CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(CURL     CONFIG REQUIRED)
 
 # MicroserviceBase C++ runtime
-# Adjust the relative path if your project lives elsewhere.
 add_subdirectory(
     "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/runtime_cpp"
-    "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime"
-)
+    "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime")
 
-# Proto generation
+# --- Proto stubs: pre-gen preferred, auto-gen fallback ---
 set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto")
-set(GEN_DIR   "${CMAKE_CURRENT_BINARY_DIR}/gen")
-file(MAKE_DIRECTORY "${GEN_DIR}")
-
-get_target_property(_protoc   protobuf::protoc       LOCATION)
-get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin  LOCATION)
-
-add_custom_command(
-    OUTPUT
-      "${GEN_DIR}/my_service.pb.cc"       "${GEN_DIR}/my_service.pb.h"
-      "${GEN_DIR}/my_service.grpc.pb.cc"  "${GEN_DIR}/my_service.grpc.pb.h"
-    COMMAND ${_protoc}
-      --proto_path="${PROTO_DIR}"
-      --cpp_out="${GEN_DIR}"
-      --grpc_out="${GEN_DIR}"
-      --plugin=protoc-gen-grpc="${_grpc_cpp}"
-      "${PROTO_DIR}/my_service.proto"
-    DEPENDS "${PROTO_DIR}/my_service.proto"
-)
+if(EXISTS "${PROTO_DIR}/my_service.pb.h")
+    set(MY_SERVICE_SRCS "${PROTO_DIR}/my_service.pb.cc" "${PROTO_DIR}/my_service.grpc.pb.cc")
+    set(MY_SERVICE_INC  "${PROTO_DIR}")
+else()
+    set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/gen")
+    file(MAKE_DIRECTORY "${GEN_DIR}")
+    get_target_property(_protoc   protobuf::protoc       LOCATION)
+    get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin  LOCATION)
+    add_custom_command(
+        OUTPUT
+          "${GEN_DIR}/my_service.pb.cc"      "${GEN_DIR}/my_service.pb.h"
+          "${GEN_DIR}/my_service.grpc.pb.cc" "${GEN_DIR}/my_service.grpc.pb.h"
+        COMMAND ${_protoc}
+          --proto_path="${PROTO_DIR}"
+          --cpp_out="${GEN_DIR}" --grpc_out="${GEN_DIR}"
+          --plugin=protoc-gen-grpc="${_grpc_cpp}"
+          "${PROTO_DIR}/my_service.proto"
+        DEPENDS "${PROTO_DIR}/my_service.proto")
+    set(MY_SERVICE_SRCS "${GEN_DIR}/my_service.pb.cc" "${GEN_DIR}/my_service.grpc.pb.cc")
+    set(MY_SERVICE_INC  "${GEN_DIR}")
+endif()
 
 add_executable(my_service
     src/main.cpp
     src/domain/MyService.cpp
     src/adapters/api/MyGrpcAdapter.cpp
-    "${GEN_DIR}/my_service.pb.cc"
-    "${GEN_DIR}/my_service.grpc.pb.cc"
-)
+    ${MY_SERVICE_SRCS})
 
-target_include_directories(my_service PRIVATE
-    src "${GEN_DIR}")
+target_include_directories(my_service PRIVATE src ${MY_SERVICE_INC})
 
 target_link_libraries(my_service PRIVATE
     microservice_base::runtime
@@ -555,114 +1024,415 @@ target_link_libraries(my_service PRIVATE
     protobuf::libprotobuf)</code></pre>
 </section>
 
-<!-- Step 7 -->
-<section id="build">
-<h2><span class="step-num">7</span> Build</h2>
+<!-- ===================================================================
+     7. Stubs
+     =================================================================== -->
+<section id="stubs">
+<h2><span class="step-num">7</span> Proto Stubs &mdash; Generate Once, Share with the Client</h2>
+<p>
+  The <code>generate_stubs</code> script lives in <code>proto/</code>, not in
+  <code>client/</code>, because both the service and the client consume
+  the same stubs.  Running it once produces:
+</p>
+<pre class="file-tree"><span class="folder">proto/</span>
+├── my_service.proto
+├── my_service.pb.h / .pb.cc         <span class="comment"># protobuf message classes</span>
+└── my_service.grpc.pb.h / .grpc.pb.cc <span class="comment"># gRPC Stub + Service base</span></pre>
+
 <div class="os-tabs"><span class="os-win">Windows</span></div>
-<pre><code>cd my_service
-mkdir build &amp;&amp; cd build
-
-cmake -DCMAKE_TOOLCHAIN_FILE=&lt;path-to-vcpkg&gt;/scripts/buildsystems/vcpkg.cmake ..
-cmake --build . --config Release</code></pre>
-<p>Output: <code>Release\my_service.exe</code></p>
-
+<pre><code>cd my_service\proto
+generate_stubs.bat</code></pre>
 <div class="os-tabs"><span class="os-linux">Linux</span></div>
-<pre><code>cd my_service
-mkdir -p build &amp;&amp; cd build
+<pre><code>cd my_service/proto
+./generate_stubs.sh</code></pre>
 
-cmake \
-    -DCMAKE_TOOLCHAIN_FILE=&lt;path-to-vcpkg&gt;/scripts/buildsystems/vcpkg.cmake \
-    -DCMAKE_BUILD_TYPE=Release \
-    ..
-cmake --build . --parallel $(nproc)</code></pre>
-<p>Output: <code>./my_service</code></p>
+<h3>What the two <code>.h</code> files give you</h3>
+<table>
+  <tr><th>File</th><th>Contents</th><th>Who uses it</th></tr>
+  <tr>
+    <td><code>my_service.pb.h</code></td>
+    <td>
+      Protobuf message classes (<code>EchoRequest</code>,
+      <code>EchoResponse</code>, …) with setters, getters, and
+      serialization.  No networking.
+    </td>
+    <td>Both service and client</td>
+  </tr>
+  <tr>
+    <td><code>my_service.grpc.pb.h</code></td>
+    <td>
+      <code>MyService::Service</code> (abstract base you inherit in the
+      server adapter) and <code>MyService::Stub</code> (concrete client
+      handle).  gRPC channel handling.
+    </td>
+    <td>Service adapter &amp; client</td>
+  </tr>
+</table>
 
 <div class="highlight-box">
-  Replace <code>&lt;path-to-vcpkg&gt;</code> with the absolute path to where you cloned
-  vcpkg (e.g. <code>~/vcpkg</code> or <code>C:\vcpkg</code>).
+  The stubs pulled from <code>proto/</code> are <strong>the same binary
+  compatible set</strong> used by both the service and the client — this
+  avoids subtle ABI mismatches if you regenerate one side and not the
+  other.
 </div>
 </section>
 
-<!-- Step 8 -->
+<!-- ===================================================================
+     8. Console Client
+     =================================================================== -->
+<section id="client">
+<h2><span class="step-num">8</span> Console Client &mdash; <code>ServiceClient&lt;T&gt;</code></h2>
+<p>
+  The client subproject at <code>client/</code> builds a console binary
+  <code>my_service_client.exe</code> that uses the runtime's
+  <code>ServiceClient&lt;T&gt;</code> template.  It resolves the service
+  by name through Consul and creates a gRPC channel for you.
+</p>
+
+<pre><code>#include &lt;iostream&gt;
+#include &lt;grpcpp/grpcpp.h&gt;
+#include "my_service.grpc.pb.h"
+#include "MicroserviceBase/ServiceClient.h"
+
+int main(int argc, char* argv[]) {
+    // Consul lookup (recommended):
+    //   my_service_client my_service
+    microservice_base::ServiceClient&lt;myservice::v1::MyService&gt;
+        client("my_service");
+    std::cout &lt;&lt; "Connected to " &lt;&lt; client.target() &lt;&lt; std::endl;
+
+    grpc::ClientContext ctx;
+    myservice::v1::EchoRequest  req;
+    req.set_message("hello");
+    myservice::v1::EchoResponse resp;
+    auto status = client.stub().Echo(&amp;ctx, req, &amp;resp);
+
+    if (status.ok()) std::cout &lt;&lt; "Reply: " &lt;&lt; resp.result() &lt;&lt; std::endl;
+    else std::cerr &lt;&lt; "Error: " &lt;&lt; status.error_message() &lt;&lt; std::endl;
+    return 0;
+}</code></pre>
+
+<p>
+  Both a Consul-based constructor and a direct one are available:
+</p>
+<pre><code>// Consul-based (uses CONSUL_ADDR env var or http://127.0.0.1:8500)
+ServiceClient&lt;MyService&gt; c1("my_service");
+
+// Direct host:port (bypass Consul — useful for debugging)
+ServiceClient&lt;MyService&gt; c2("my_service", "127.0.0.1:50051", true);</code></pre>
+</section>
+
+<!-- ===================================================================
+     9. Qt Widgets GUI
+     =================================================================== -->
+<section id="gui">
+<h2><span class="step-num">9</span> Qt Widgets GUI &mdash; Dynamic Multi-Method Form</h2>
+<p>
+  When the scaffold is generated with <code>gui_type = widget</code>, a
+  second target <code>my_service_gui</code> is added to
+  <code>client/CMakeLists.txt</code>.  It is a single-window Qt application
+  with a combo-box method picker, a <code>QFormLayout</code> that rebuilds
+  its rows per method, a shared Send button, and a read-only log.
+</p>
+
+<h3>Widget layout &mdash; <code>client/gui/MainWindow.ui</code></h3>
+<table>
+  <tr><th>Widget</th><th>Object name</th><th>Purpose</th></tr>
+  <tr><td><code>QComboBox</code></td><td><code>methodCombo</code></td><td>Pick which RPC to call</td></tr>
+  <tr><td><code>QWidget</code> (container)</td><td><code>formContainer</code></td><td>Hosts a <code>QFormLayout</code> rebuilt per method</td></tr>
+  <tr><td><code>QPushButton</code></td><td><code>sendButton</code></td><td>Dispatches to the current method's lambda</td></tr>
+  <tr><td><code>QTextEdit</code></td><td><code>outputTextEdit</code></td><td>Shared response log (append-only)</td></tr>
+</table>
+
+<h3>Per-param input widget</h3>
+<table>
+  <tr><th>Proto type</th><th>Widget</th><th>Value extraction</th></tr>
+  <tr><td><code>string</code>, <code>bytes</code></td><td><code>QLineEdit</code></td><td><code>w-&gt;text().toStdString()</code></td></tr>
+  <tr><td><code>int32</code>, <code>int64</code>, …</td><td><code>QSpinBox</code></td><td><code>w-&gt;value()</code></td></tr>
+  <tr><td><code>float</code>, <code>double</code></td><td><code>QDoubleSpinBox</code></td><td><code>w-&gt;value()</code></td></tr>
+  <tr><td><code>bool</code></td><td><code>QCheckBox</code></td><td><code>w-&gt;isChecked()</code></td></tr>
+</table>
+
+<h3>The MethodBinding pattern</h3>
+<p>
+  Each method is represented by a struct captured in a
+  <code>std::vector</code>.  <code>rebuildForm(idx)</code> reads the
+  binding's <code>params</code> to lay out widgets;
+  <code>onSend()</code> calls the binding's <code>invoke</code> lambda,
+  which casts the widgets back and runs the correct RPC.
+</p>
+
+<pre><code>struct ParamSpec { QString name; QString type; };
+struct MethodBinding {
+    QString name;
+    std::vector&lt;ParamSpec&gt; params;
+    std::function&lt;QString(const std::vector&lt;QWidget*&gt;&amp;)&gt; invoke;
+};
+
+// Example binding generated for Add(int32 a, int32 b) → int32
+MethodBinding b;
+b.name = "Add";
+b.params = { {"a", "int32"}, {"b", "int32"} };
+b.invoke = [this](const std::vector&lt;QWidget*&gt;&amp; ws) -&gt; QString {
+    grpc::ClientContext ctx;
+    myservice::v1::AddRequest req;
+    req.set_a(qobject_cast&lt;QSpinBox*&gt;(ws[0])-&gt;value());
+    req.set_b(qobject_cast&lt;QSpinBox*&gt;(ws[1])-&gt;value());
+    myservice::v1::AddResponse resp;
+    auto st = m_client-&gt;stub().Add(&amp;ctx, req, &amp;resp);
+    if (!st.ok()) return "[error] " + QString::fromStdString(st.error_message());
+    return QString::number(resp.result());
+};
+m_methods.push_back(std::move(b));</code></pre>
+
+<div class="highlight-box">
+  <strong>Why defer the Consul lookup with <code>QTimer::singleShot(0, …)</code>?</strong><br>
+  Calling <code>ServiceClient</code> in the constructor blocks on a network
+  round-trip.  Deferring it until after <code>app.exec()</code> starts
+  lets the window paint first — so even with a slow or unreachable
+  Consul the GUI never looks frozen.
+</div>
+
+<h3>Adding Qt to the client CMakeLists</h3>
+<pre><code># Discovery: honour QT_DIR (set in set_env) so vanilla cmd works
+if(DEFINED ENV{QT_DIR} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+endif()
+find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+
+qt_add_executable(my_service_gui
+    gui/main.cpp gui/MainWindow.cpp gui/MainWindow.h gui/MainWindow.ui
+    ${STUB_SRCS})
+
+target_link_libraries(my_service_gui PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++ protobuf::libprotobuf
+    Qt6::Widgets)</code></pre>
+</section>
+
+<!-- ===================================================================
+     10. build_deploy
+     =================================================================== -->
+<section id="build-deploy">
+<h2><span class="step-num">10</span> <code>build_deploy</code> &mdash; One Command to Rule Them All</h2>
+<p>
+  <code>build_deploy.bat</code> / <code>.sh</code> is the recommended build
+  entry point.  It runs every step end-to-end:
+</p>
+<ol>
+  <li>Source <code>set_env</code> (vcpkg, CMake, MSVC, Qt paths)</li>
+  <li>If <code>proto/</code> has no <code>.pb.h</code>, call
+      <code>generate_stubs</code></li>
+  <li>Configure + build the <strong>service</strong> (<code>build/</code>)</li>
+  <li>Configure + build the <strong>client + GUI</strong> (<code>client/build/</code>)</li>
+  <li>Copy all <code>*.exe</code> and <code>*.dll</code> from both build
+      trees into <code>dist/</code></li>
+  <li>Run <code>windeployqt</code> on the GUI binary so Qt DLLs +
+      <code>platforms/qwindows.dll</code> land in <code>dist/</code></li>
+</ol>
+
+<h3>Usage</h3>
+<div class="os-tabs"><span class="os-win">Windows</span></div>
+<pre><code>cd my_service
+build_deploy.bat
+
+:: Output — a ready-to-ship folder:
+:: dist\my_service.exe
+:: dist\my_service_client.exe
+:: dist\my_service_gui.exe       (+ Qt6*.dll, platforms\, styles\, …)
+:: dist\*.dll                     (grpc, protobuf, abseil, openssl, …)</code></pre>
+<div class="os-tabs"><span class="os-linux">Linux</span></div>
+<pre><code>cd my_service
+./build_deploy.sh</code></pre>
+
+<div class="warn-box">
+  <strong>Windows quirk:</strong> copying just the <code>.exe</code> into
+  another folder typically fails silently — the loader can't find
+  <code>abseil_dll.dll</code>, <code>libprotobuf.dll</code>, etc. that
+  vcpkg deployed next to <code>build\Release\</code>.
+  <code>build_deploy.bat</code> mirrors the whole set into
+  <code>dist/</code> so the binaries are self-contained.
+</div>
+</section>
+
+<!-- ===================================================================
+     10b. MinGW Variant
+     =================================================================== -->
+<section id="mingw">
+<h2><span class="step-num">10b</span> MinGW Variant &mdash; <code>build_deploy_mingw.bat</code></h2>
+<p>
+  Every C++ scaffold now ships a second Windows deploy script,
+  <code>build_deploy_mingw.bat</code>, for users who prefer MinGW (g++ +
+  Ninja) over MSVC (cl.exe + MSBuild).  It builds into
+  <code>build-mingw\</code> / <code>client\build-mingw\</code> and deploys
+  into <code>dist-mingw\</code> &mdash; so you can keep an MSVC and a
+  MinGW build side-by-side without them colliding.
+</p>
+
+<h3>What it changes</h3>
+<table>
+  <tr><th>Aspect</th><th>MSVC (<code>build_deploy.bat</code>)</th><th>MinGW (<code>build_deploy_mingw.bat</code>)</th></tr>
+  <tr><td>Compiler</td><td><code>cl.exe</code> via <code>vcvars64.bat</code></td><td><code>g++</code> from <code>C:\Qt\Tools\mingw1120_64\bin</code></td></tr>
+  <tr><td>Generator</td><td>MSBuild (Visual Studio)</td><td>Ninja</td></tr>
+  <tr><td>vcpkg triplet</td><td><code>x64-windows</code></td><td><code>x64-mingw-dynamic</code></td></tr>
+  <tr><td>Qt kit</td><td><code>C:\Qt\6.x\msvc2019_64</code></td><td><code>C:\Qt\6.x\mingw_64</code></td></tr>
+  <tr><td>Build dir</td><td><code>build\Release\</code></td><td><code>build-mingw\</code> (no Release subdir)</td></tr>
+  <tr><td>Dist dir</td><td><code>dist\</code></td><td><code>dist-mingw\</code></td></tr>
+  <tr><td>Extra runtime DLLs</td><td>vcpkg-deployed</td><td>+ <code>libstdc++-6.dll</code>, <code>libgcc_s_seh-1.dll</code>, <code>libwinpthread-1.dll</code></td></tr>
+  <tr><td><code>windeployqt</code> flag</td><td>default</td><td>adds <code>--compiler-runtime</code></td></tr>
+</table>
+
+<h3>Prerequisites for the MinGW path</h3>
+<ol>
+  <li>Install the Qt <strong>MinGW 11.2.0 64-bit</strong> kit via Qt Maintenance Tool
+      (Tools &rarr; <em>MinGW 11.2.0 64-bit</em>, plus the matching Qt 6.x MinGW kit).</li>
+  <li>Install Ninja (bundled: <code>C:\Qt\Tools\Ninja</code>).</li>
+  <li>Tell vcpkg to build MinGW-compatible binaries:
+<pre><code>set VCPKG_DEFAULT_TRIPLET=x64-mingw-dynamic
+%VCPKG_ROOT%\vcpkg install grpc:x64-mingw-dynamic ^
+                           protobuf:x64-mingw-dynamic ^
+                           curl:x64-mingw-dynamic</code></pre>
+      <em>First-time compile of these ports takes 20&ndash;60 min.</em></li>
+</ol>
+
+<h3>Edit the three paths at the top if yours differ</h3>
+<pre><code>if not defined MINGW_DIR     set "MINGW_DIR=C:\Qt\Tools\mingw1120_64\bin"
+if not defined NINJA_DIR     set "NINJA_DIR=C:\Qt\Tools\Ninja"
+if not defined QT_DIR        set "QT_DIR=C:\Qt\6.7.1\mingw_64"
+if not defined VCPKG_TRIPLET set "VCPKG_TRIPLET=x64-mingw-dynamic"</code></pre>
+
+<h3>Run</h3>
+<pre><code>cd my_service
+build_deploy_mingw.bat
+
+:: Output:
+:: dist-mingw\my_service.exe
+:: dist-mingw\my_service_client.exe
+:: dist-mingw\my_service_gui.exe    (+ Qt6*.dll, platforms\, styles\)
+:: dist-mingw\libstdc++-6.dll        (MinGW C++ runtime)
+:: dist-mingw\libgcc_s_seh-1.dll
+:: dist-mingw\libwinpthread-1.dll
+:: dist-mingw\libprotobuf.dll, libgrpc*.dll, …</code></pre>
+
+<div class="warn-box">
+  <strong>ABI reminder:</strong> MinGW binaries cannot link against
+  MSVC-built DLLs (including a <code>vcpkg</code> tree configured for
+  <code>x64-windows</code>).  If you switch toolchains, either keep
+  separate vcpkg trees per triplet or rely on vcpkg's automatic
+  per-triplet <code>installed/</code> subfolders (which is what this
+  script uses via <code>-DVCPKG_TARGET_TRIPLET</code>).
+</div>
+
+<div class="highlight-box">
+  <strong>When to pick MinGW:</strong> no Visual Studio install, or you
+  already have a MinGW toolchain you trust.
+  <br>
+  <strong>When to stay on MSVC:</strong> you're consuming prebuilt
+  third-party MSVC libraries, faster first-time vcpkg install (most
+  ports ship binaries for <code>x64-windows</code>), or you want to
+  debug with Visual Studio.
+</div>
+</section>
+
+<!-- ===================================================================
+     11. Run & Verify
+     =================================================================== -->
 <section id="run">
-<h2><span class="step-num">8</span> Run &amp; Verify</h2>
+<h2><span class="step-num">11</span> Run &amp; Verify</h2>
 
 <h3>Start Consul</h3>
 <pre><code>consul agent -dev</code></pre>
 
 <h3>Start the service</h3>
 <div class="os-tabs"><span class="os-win">Windows</span></div>
-<pre><code>set MYSERVICE_GRPC_PORT=0
-set MYSERVICE_CONSUL_ADDR=http://127.0.0.1:8500
-.\Release\my_service.exe</code></pre>
-
+<pre><code>cd dist
+set MY_SERVICE_GRPC_PORT=0
+set MY_SERVICE_CONSUL_ADDR=http://127.0.0.1:8500
+my_service.exe</code></pre>
 <div class="os-tabs"><span class="os-linux">Linux</span></div>
-<pre><code>export MYSERVICE_GRPC_PORT=0
-export MYSERVICE_CONSUL_ADDR=http://127.0.0.1:8500
+<pre><code>cd dist
+export MY_SERVICE_GRPC_PORT=0
+export MY_SERVICE_CONSUL_ADDR=http://127.0.0.1:8500
 ./my_service</code></pre>
 
 <p>Expected output:</p>
 <pre><code>[ServiceRunner] gRPC server listening on 0.0.0.0:&lt;port&gt;
-[ConsulRegistration] Registering service my_service (id=my_service-xxxxxxxx) at 127.0.0.1:&lt;port&gt;
+[ConsulRegistration] Registering service my_service (id=my_service-xxxxxxxx)
 [ServiceRunner] Service my_service ready.</code></pre>
 
-<h3>Verify with grpcurl</h3>
-<pre><code># List services exposed by the server
-grpcurl -plaintext 127.0.0.1:&lt;port&gt; list
+<h3>Call it from the console client</h3>
+<pre><code>my_service_client my_service          # via Consul
+my_service_client --direct 127.0.0.1:&lt;port&gt;</code></pre>
 
-# Call a method
-grpcurl -plaintext -d '{"input": "test"}' \
-    127.0.0.1:&lt;port&gt; myservice.v1.MyService/DoSomething</code></pre>
-
-<h3>Verify in the GUI</h3>
+<h3>Call it from the GUI</h3>
 <ol>
-  <li>Open MicroserviceManagerGUI</li>
-  <li>Click <strong>Connect</strong> &rarr; confirm Consul URL &rarr; Connect</li>
-  <li><code>my_service</code> appears in the sidebar with a green dot</li>
-  <li>Click it &rarr; methods expand &rarr; type JSON &rarr; <strong>Call</strong></li>
+  <li>Launch <code>dist\my_service_gui.exe</code>.</li>
+  <li>Wait for "Connected to host:port" to appear in the output pane.</li>
+  <li>Pick a method from the combo &mdash; the form rebuilds.</li>
+  <li>Fill the fields, click <strong>Send</strong>, read the reply.</li>
 </ol>
+
+<h3>Or <code>grpcurl</code></h3>
+<pre><code>grpcurl -plaintext 127.0.0.1:&lt;port&gt; list
+grpcurl -plaintext -d '{"message": "test"}' \
+    127.0.0.1:&lt;port&gt; myservice.v1.MyService/Echo</code></pre>
 </section>
 
-<!-- Step 9 -->
-<section id="client">
-<h2><span class="step-num">9</span> Build a Client (Optional)</h2>
-<pre><code>#include &lt;iostream&gt;
-#include &lt;grpcpp/grpcpp.h&gt;
-#include "my_service.grpc.pb.h"
+<!-- ===================================================================
+     12. Qt Creator Setup
+     =================================================================== -->
+<section id="qtcreator">
+<h2><span class="step-num">12</span> Qt Creator Setup</h2>
+<p>
+  Qt Creator does <em>not</em> run <code>set_env.bat</code>, so the vcpkg
+  toolchain isn't picked up by default.  Pick one of the three fixes
+  below — the second is the least intrusive.
+</p>
 
-int main() {
-    // Connect to the service (use Consul lookup or direct address)
-    auto channel = grpc::CreateChannel(
-        "127.0.0.1:50051", grpc::InsecureChannelCredentials());
-    auto stub = myservice::v1::MyService::NewStub(channel);
+<h3>A. Permanent: set VCPKG_ROOT as a System Environment Variable</h3>
+<ol>
+  <li>Open <strong>Windows &rarr; "Edit environment variables for your account"</strong>.</li>
+  <li>Add <code>VCPKG_ROOT = C:\vcpkg</code> (or wherever you cloned it).</li>
+  <li>Restart Qt Creator — the scaffold's CMakeLists auto-detects it.</li>
+</ol>
 
-    myservice::v1::DoSomethingRequest req;
-    req.set_input("hello from client");
+<h3>B. Per-project: tell Qt Creator the toolchain file</h3>
+<ol>
+  <li>Open the project in Qt Creator.</li>
+  <li><strong>Projects</strong> (left pane) &rarr; <strong>Build</strong>
+      &rarr; <strong>Initial Configuration</strong> &rarr; <strong>Add</strong>.</li>
+  <li>Key: <code>CMAKE_TOOLCHAIN_FILE</code>, Value:
+      <code>C:/vcpkg/scripts/buildsystems/vcpkg.cmake</code>.</li>
+  <li>Click <strong>Run CMake</strong>.</li>
+</ol>
 
-    myservice::v1::DoSomethingResponse resp;
-    grpc::ClientContext ctx;
+<h3>C. For Qt Widgets GUI — also set QT_DIR</h3>
+<p>
+  When the GUI client references <code>find_package(Qt6)</code>, Qt Creator
+  already passes its own Qt via <code>CMAKE_PREFIX_PATH</code>.  If you
+  build from the command line instead, make sure <code>QT_DIR</code> in
+  <code>set_env.bat</code> points at the right kit
+  (e.g. <code>C:\Qt\6.7.1\msvc2019_64</code>).
+</p>
 
-    grpc::Status status = stub-&gt;DoSomething(&amp;ctx, req, &amp;resp);
-    if (status.ok())
-        std::cout &lt;&lt; "Response: " &lt;&lt; resp.output() &lt;&lt; std::endl;
-    else
-        std::cerr &lt;&lt; "Error: " &lt;&lt; status.error_message() &lt;&lt; std::endl;
-
-    return 0;
-}</code></pre>
-<p>See the separate <code>examples/cpp_hello_client/</code> project for a full example with:</p>
-<ul>
-  <li><code>ServiceClient&lt;T&gt;</code> from the MicroserviceBase runtime library</li>
-  <li>Consul service discovery (auto-resolves <code>host:port</code> from service name)</li>
-  <li>All three RPC types (unary, echo, server-streaming)</li>
-  <li>Standalone <code>generate_stubs</code> scripts for one-time proto compilation</li>
-  <li>Both direct (<code>--direct host:port</code>) and Consul-based (<code>hello greet Cuong</code>) modes</li>
-</ul>
+<div class="warn-box">
+  <strong>AUTOUIC / "ui_MainWindow.h not found"</strong> errors in Qt
+  Creator's editor are normal <em>before the first build</em>.  The
+  file is generated by CMake into the build tree and only picked up by
+  the code model after you hit <strong>Build</strong> once.  After
+  that, <strong>Tools &rarr; C++ &rarr; Reset Code Model</strong>
+  clears the squiggles.
+</div>
 </section>
 
-<!-- Step 10 -->
+<!-- ===================================================================
+     13. Nomad
+     =================================================================== -->
 <section id="nomad">
-<h2><span class="step-num">10</span> Deploy with Nomad (Optional)</h2>
+<h2><span class="step-num">13</span> Deploy with Nomad (Optional)</h2>
 <pre><code>job "my_service" {
   datacenters = ["dc1"]
   type        = "service"
@@ -675,30 +1445,27 @@ int main() {
       driver = "raw_exec"
 
       config {
-        # Use the full path to the built executable.
         command = "/path/to/my_service"          # Linux
         # command = "C:/path/to/my_service.exe"  # Windows
       }
 
       env {
-        MYSERVICE_GRPC_PORT      = "${NOMAD_PORT_grpc}"
-        MYSERVICE_ADVERTISE_ADDR = "127.0.0.1"
-        MYSERVICE_CONSUL_ADDR    = "http://127.0.0.1:8500"
+        MY_SERVICE_GRPC_PORT      = "${NOMAD_PORT_grpc}"
+        MY_SERVICE_ADVERTISE_ADDR = "127.0.0.1"
+        MY_SERVICE_CONSUL_ADDR    = "http://127.0.0.1:8500"
       }
 
-      resources {
-        cpu    = 100
-        memory = 128
-      }
+      resources { cpu = 100 ; memory = 128 }
     }
   }
 }</code></pre>
-<p>Submit from the GUI: <strong>Service Network &rarr; Nomad &rarr; Submit Job &rarr; Load from file &rarr; Submit</strong></p>
-<p>Or from the command line:</p>
-<pre><code>nomad job run my_service.nomad.hcl</code></pre>
+<p>Submit via the Manager GUI: <strong>Service Network &rarr; Nomad &rarr; Submit Job</strong>,
+or from the CLI: <code>nomad job run my_service.nomad.hcl</code>.</p>
 </section>
 
-<!-- API Reference -->
+<!-- ===================================================================
+     Library API
+     =================================================================== -->
 <section id="api">
 <h2>Library Reference</h2>
 
@@ -714,7 +1481,7 @@ void addService(grpc::Service* service,
 int  start();             // Start gRPC server, return bound port
 void serveForever();      // start() + Consul register + block until signal
 void requestShutdown();   // Trigger graceful shutdown from any thread
-int  boundPort() const;   // Port after start()</code></pre>
+int  boundPort() const;   // Port bound by start()</code></pre>
 
 <h3><code>microservice_base::BaseServiceSettings</code></h3>
 <pre><code>#include "MicroserviceBase/Settings.h"
@@ -733,6 +1500,23 @@ struct BaseServiceSettings {
     static void readEnv(const std::string&amp; key, int&amp; out);
 };</code></pre>
 
+<h3><code>microservice_base::ServiceClient&lt;T&gt;</code></h3>
+<pre><code>#include "MicroserviceBase/ServiceClient.h"
+
+// Consul-based
+ServiceClient(const std::string&amp; serviceName,
+              const std::string&amp; consulAddr = "");
+
+// Direct host:port (no Consul)
+ServiceClient(const std::string&amp; serviceName,
+              const std::string&amp; target,
+              bool /*direct_tag*/);
+
+typename T::Stub&amp; stub();      // Cached gRPC stub
+std::string       target();    // host:port currently in use
+void              reconnect(); // Force re-resolve + re-channel
+bool              isConnected() const;</code></pre>
+
 <h3><code>microservice_base::ConsulRegistration</code></h3>
 <pre><code>#include "MicroserviceBase/ConsulRegistration.h"
 
@@ -746,30 +1530,122 @@ void deregisterService();</code></pre>
 <p>You normally don't use this directly &mdash; <code>ServiceRunner</code> handles it.</p>
 </section>
 
-<!-- Troubleshooting -->
+<!-- ===================================================================
+     Troubleshooting
+     =================================================================== -->
 <section id="troubleshooting">
 <h2>Troubleshooting</h2>
 <table>
   <tr><th>Problem</th><th>Fix</th></tr>
-  <tr><td><code>cmake: command not found</code></td><td>Install CMake or add it to PATH</td></tr>
-  <tr><td><code>gRPC::grpc++ not found</code></td><td>Pass <code>-DCMAKE_TOOLCHAIN_FILE=&lt;vcpkg&gt;/scripts/buildsystems/vcpkg.cmake</code></td></tr>
-  <tr><td><code>protoc not found</code></td><td><code>vcpkg install protobuf</code> (with your triplet)</td></tr>
-  <tr><td><code>CURL not found</code></td><td><code>vcpkg install curl</code> (with your triplet)</td></tr>
-  <tr><td><code>LNK2019</code> unresolved external (Win)</td><td>Check <code>target_link_libraries</code> includes all deps</td></tr>
-  <tr><td><code>undefined reference</code> (Linux)</td><td>Same &mdash; also ensure <code>-lpthread</code> if needed</td></tr>
-  <tr><td>Service starts but not in Consul</td><td>Check <code>ADVERTISE_ADDR</code> is <code>127.0.0.1</code> (not <code>::1</code>)</td></tr>
-  <tr><td>Health check fails in Consul</td><td>Make sure gRPC port matches the Consul check target</td></tr>
-  <tr><td>gRPC <code>UNAVAILABLE</code></td><td>Wrong host:port &mdash; check Consul or service log for real port</td></tr>
-  <tr><td><code>WSA Error</code> on client (Win)</td><td>Nothing listening &mdash; <code>netstat -ano | findstr :&lt;port&gt;</code></td></tr>
-  <tr><td><code>Connection refused</code> (Linux)</td><td>Same &mdash; <code>ss -tlnp | grep &lt;port&gt;</code></td></tr>
+  <tr><td><code>cmake: command not found</code></td><td>Set <code>CMAKE_DIR</code> in <code>set_env.bat</code> or install CMake</td></tr>
+  <tr><td><code>gRPC::grpc++ not found</code></td><td>Set <code>VCPKG_ROOT</code> or pass <code>-DCMAKE_TOOLCHAIN_FILE</code></td></tr>
+  <tr><td><code>Qt6Config.cmake not found</code> in Qt Creator</td><td>Set <code>QT_DIR</code> in <code>set_env</code>, or use the Initial Configuration trick (§12-B)</td></tr>
+  <tr><td><code>ui_MainWindow.h file not found</code> (editor)</td><td>Build once — AUTOUIC generates it. Then <strong>Tools &rarr; C++ &rarr; Reset Code Model</strong></td></tr>
+  <tr><td><code>Use of undeclared identifier 'QPushButton'</code></td><td>Add <code>#include &lt;QPushButton&gt;</code> (already in generated code since v2)</td></tr>
+  <tr><td><code>test_service_gui.exe</code> exits silently (no window)</td><td>Missing Qt DLLs in <code>dist/</code> &mdash; run <code>build_deploy.bat</code> (invokes <code>windeployqt</code>)</td></tr>
+  <tr><td>GUI runs in background, window never appears</td><td><code>ServiceClient</code> ctor blocking on Consul &mdash; generated code already wraps it in <code>QTimer::singleShot(0, …)</code></td></tr>
+  <tr><td>Service starts but not in Consul</td><td>Check <code>ADVERTISE_ADDR</code> is IPv4 (<code>127.0.0.1</code>, not <code>::1</code>)</td></tr>
+  <tr><td>gRPC <code>UNAVAILABLE</code></td><td>Wrong host:port &mdash; check Consul or service log for the real dynamic port</td></tr>
+  <tr><td>"(no RPC method defined)" in GUI</td><td>Proto has no <code>rpc</code> &mdash; add one and re-run <code>proto\generate_stubs.bat</code></td></tr>
+  <tr><td>ScaffoldWizard generated service with 0 methods</td><td>Fixed in v2 &mdash; wizard inputs now bind live to state.  Hard-reload the GUI (Ctrl+F5) and regenerate</td></tr>
 </table>
 </section>
 
 </main>
 
+<!-- Zoom modal for diagrams -->
+<div class="diagram-modal" id="diagramModal">
+  <span class="diagram-modal-close" id="diagramModalClose" title="Close (Esc)">&times;</span>
+  <div class="diagram-modal-inner" id="diagramModalInner"></div>
+</div>
+
 <footer>
   MicroserviceBase C++ Guide &mdash; open this file in any browser to view
 </footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#0b1220',
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#38bdf8',
+      lineColor: '#94a3b8',
+      secondaryColor: '#334155',
+      tertiaryColor: '#0f172a'
+    },
+    sequence: { actorMargin: 50, boxMargin: 10 },
+    flowchart: { curve: 'basis' }
+  });
+</script>
+
+<script>
+// ---- Click-to-zoom for diagrams ----
+(function () {
+  var modal = document.getElementById('diagramModal');
+  var inner = document.getElementById('diagramModalInner');
+  var closeBtn = document.getElementById('diagramModalClose');
+
+  function openFor(diagram) {
+    inner.innerHTML = '';
+    var svg = diagram.querySelector('svg');
+    if (!svg) {
+      // Mermaid hasn't rendered (or threw a syntax error). Show a hint
+      // with whatever Mermaid put in the container.
+      var fallback = document.createElement('div');
+      fallback.style.cssText =
+        'color:#fbbf24;padding:24px;font-family:monospace;white-space:pre-wrap;max-width:80vw';
+      fallback.textContent =
+        '[no rendered diagram]\n\n' +
+        'Mermaid either failed to parse this diagram or is still loading.\n' +
+        'Container HTML:\n\n' + diagram.innerHTML.slice(0, 800);
+      inner.appendChild(fallback);
+      modal.classList.add('open');
+      return;
+    }
+    var clone = svg.cloneNode(true);
+    // Strip Mermaid's inline sizing / style so the container's CSS
+    // (width:92vw, height:90vh) controls the enlarged size. The SVG's
+    // viewBox does the actual scaling.
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    clone.removeAttribute('style');
+    if (!clone.getAttribute('preserveAspectRatio')) {
+      clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    }
+    inner.appendChild(clone);
+    modal.classList.add('open');
+  }
+  function close() { modal.classList.remove('open'); inner.innerHTML = ''; }
+
+  // Wire each diagram. Delay slightly so mermaid has time to render.
+  function wireDiagrams() {
+    document.querySelectorAll('.diagram').forEach(function (d) {
+      if (d.dataset.wired) return;
+      d.dataset.wired = '1';
+      d.addEventListener('click', function () { openFor(d); });
+    });
+  }
+  window.addEventListener('load', function () {
+    wireDiagrams();
+    // Mermaid may append SVGs slightly after load; re-wire once more.
+    setTimeout(wireDiagrams, 600);
+  });
+
+  modal.addEventListener('click', function (e) {
+    // Clicking the backdrop (not the inner SVG) closes.
+    if (e.target === modal || e.target === closeBtn) close();
+  });
+  closeBtn.addEventListener('click', close);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.classList.contains('open')) close();
+  });
+})();
+</script>
 
 <script>
 // Scroll-spy: highlight the current section in the sidebar as the user scrolls.
@@ -787,14 +1663,12 @@ void deregisterService();</code></pre>
   function update() {
     var scrollTop = window.scrollY || document.documentElement.scrollTop;
     var current = null;
-
     for (var i = sections.length - 1; i >= 0; i--) {
       if (sections[i].el.offsetTop - 80 <= scrollTop) {
         current = sections[i];
         break;
       }
     }
-
     links.forEach(function (a) { a.classList.remove('active'); });
     if (current) current.link.classList.add('active');
   }
@@ -802,7 +1676,6 @@ void deregisterService();</code></pre>
   window.addEventListener('scroll', update, { passive: true });
   update();
 
-  // Smooth scroll on nav click.
   links.forEach(function (a) {
     a.addEventListener('click', function (e) {
       var id = a.getAttribute('href').replace('#', '');
