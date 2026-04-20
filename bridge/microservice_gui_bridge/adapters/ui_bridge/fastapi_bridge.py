@@ -682,6 +682,79 @@ Forward a request to the FleetWebAPI.
          nomad_path: str = "nomad"      # path to nomad binary
          extra_args: list = []
 
+      # ---- Agent PID file management (survives bridge restarts) ----
+      #
+      # Same pattern as Electron's bridge PID file: write a PID when we
+      # spawn an agent, read it back to detect still-running agents
+      # after a bridge restart, kill by PID when stopping.
+
+      def _agent_pid_path(name: str) -> str:
+         """Return the path to the PID file for a managed agent."""
+         import tempfile
+         return os.path.join(tempfile.gettempdir(), f'msbase_{name}_agent.pid')
+
+      def _save_agent_pid(name: str, pid: int, url: str = ''):
+         """Write PID + URL to a file so we can find the agent after restart."""
+         try:
+            with open(_agent_pid_path(name), 'w') as f:
+               f.write(f'{pid}\n{url}\n')
+         except Exception:
+            pass
+
+      def _load_agent_pid(name: str):
+         """Read saved PID + URL.  Returns (pid, url) or (None, None)."""
+         try:
+            with open(_agent_pid_path(name), 'r') as f:
+               lines = f.read().strip().split('\n')
+               pid = int(lines[0]) if lines else None
+               url = lines[1].strip() if len(lines) > 1 else ''
+               return pid, url
+         except Exception:
+            return None, None
+
+      def _remove_agent_pid(name: str):
+         try:
+            os.remove(_agent_pid_path(name))
+         except Exception:
+            pass
+
+      def _is_pid_alive(pid: int) -> bool:
+         """Check if a process with the given PID is still running."""
+         if pid is None:
+            return False
+         try:
+            import psutil
+            return psutil.pid_exists(pid)
+         except ImportError:
+            # Fallback without psutil
+            try:
+               os.kill(pid, 0)
+               return True
+            except (OSError, ProcessLookupError):
+               return False
+
+      def _kill_pid(pid: int) -> bool:
+         """Kill a process by PID.  Returns True if successfully killed."""
+         if pid is None:
+            return False
+         try:
+            import psutil
+            proc = psutil.Process(pid)
+            proc.terminate()
+            try:
+               proc.wait(timeout=10)
+            except psutil.TimeoutExpired:
+               proc.kill()
+            return True
+         except Exception:
+            # Fallback
+            try:
+               import signal
+               os.kill(pid, signal.SIGTERM)
+               return True
+            except Exception:
+               return False
+
       def _get_nomad_agent():
          """Get the managed Nomad agent subprocess info."""
          if not hasattr(bridge, '_nomad_agent_proc'):
@@ -691,7 +764,7 @@ Forward a request to the FleetWebAPI.
 
       @app.post("/api/nomad/agent/start")
       def nomad_agent_start(body: NomadAgentStartBody):
-         import subprocess, shutil, threading
+         import subprocess, shutil, threading, socket
 
          # Check if already running
          proc = _get_nomad_agent()
@@ -699,6 +772,26 @@ Forward a request to the FleetWebAPI.
             return {"success": False,
                     "message": "Nomad agent already running (PID %d)" % proc.pid,
                     "pid": proc.pid}
+
+         # Pre-check: is the HTTP port already taken?
+         def _probe(host: str, port: int) -> bool:
+            probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.3)
+            try:
+               return s.connect_ex((probe_host, port)) == 0
+            except Exception:
+               return False
+            finally:
+               s.close()
+
+         if _probe("127.0.0.1", body.http_port):
+            return {"success": False,
+                    "message": (
+                        "Port %d is already in use. "
+                        "Either stop the process currently using it, or "
+                        "choose a different HTTP port in the Advanced section."
+                    ) % body.http_port}
 
          # Find nomad binary
          nomad_bin = body.nomad_path or 'nomad'
@@ -749,6 +842,8 @@ Forward a request to the FleetWebAPI.
             return {"success": False, "message": "Failed to start: %s" % e}
 
          bridge._nomad_agent_proc = proc
+         nomad_url = 'http://127.0.0.1:%d' % body.http_port
+         _save_agent_pid('nomad', proc.pid, nomad_url)
 
          # Background thread to capture log output
          def _read_output():
@@ -783,34 +878,67 @@ Forward a request to the FleetWebAPI.
       @app.post("/api/nomad/agent/stop")
       def nomad_agent_stop():
          proc = _get_nomad_agent()
-         if not proc or proc.poll() is not None:
-            bridge._nomad_agent_proc = None
-            return {"success": True, "message": "Nomad agent not running"}
 
-         pid = proc.pid
-         logger.info('Stopping Nomad agent (PID %d)', pid)
-         try:
-            proc.terminate()
+         # Try subprocess handle first (same-session agent).
+         if proc and proc.poll() is None:
+            pid = proc.pid
+            logger.info('Stopping Nomad agent via handle (PID %d)', pid)
             try:
-               proc.wait(timeout=10)
-            except Exception:
-               proc.kill()
-         except Exception as e:
-            return {"success": False,
-                    "message": "Failed to stop PID %d: %s" % (pid, e)}
+               proc.terminate()
+               try:
+                  proc.wait(timeout=10)
+               except Exception:
+                  proc.kill()
+            except Exception as e:
+               return {"success": False,
+                       "message": "Failed to stop PID %d: %s" % (pid, e)}
+            bridge._nomad_agent_proc = None
+            _remove_agent_pid('nomad')
+            return {"success": True,
+                    "message": "Nomad agent stopped (PID %d)" % pid}
 
          bridge._nomad_agent_proc = None
-         return {"success": True,
-                 "message": "Nomad agent stopped (PID %d)" % pid}
+
+         # Handle lost (bridge restarted) — try saved PID file.
+         saved_pid, _ = _load_agent_pid('nomad')
+         if saved_pid and _is_pid_alive(saved_pid):
+            logger.info('Stopping Nomad agent via saved PID %d', saved_pid)
+            if _kill_pid(saved_pid):
+               _remove_agent_pid('nomad')
+               return {"success": True,
+                       "message": "Nomad agent stopped (PID %d)" % saved_pid}
+            else:
+               return {"success": False,
+                       "message": "Failed to kill PID %d" % saved_pid}
+
+         _remove_agent_pid('nomad')
+         return {"success": True, "message": "Nomad agent not running"}
 
       @app.get("/api/nomad/agent/status")
       def nomad_agent_status():
          proc = _get_nomad_agent()
          running = proc is not None and proc.poll() is None
+         pid = proc.pid if running else None
+         nomad_url = getattr(bridge, '_nomad_url', None)
+
+         # After a bridge restart the subprocess handle is lost.
+         # Check the saved PID file to find the still-running agent.
+         if not running:
+            saved_pid, saved_url = _load_agent_pid('nomad')
+            if saved_pid and _is_pid_alive(saved_pid):
+               running = True
+               pid = saved_pid
+               if saved_url:
+                  nomad_url = saved_url
+                  bridge._nomad_url = saved_url
+            else:
+               # PID file is stale — clean it up.
+               _remove_agent_pid('nomad')
+
          return {
             "running": running,
-            "pid": proc.pid if running else None,
-            "nomad_url": getattr(bridge, '_nomad_url', None),
+            "pid": pid,
+            "nomad_url": nomad_url,
          }
 
       @app.get("/api/nomad/agent/log")
@@ -850,20 +978,129 @@ Forward a request to the FleetWebAPI.
 
       @app.get("/api/nomad/health")
       def nomad_health():
+         """Return ``{ok, ...}`` to match the shape of /api/consul/health.
+
+         The infra status pills in the GUI check ``data.ok``; returning
+         ``status`` alone (as an older version did) caused the LED to
+         always show red even when Nomad was healthy.
+         """
          nc = _get_nomad_client()
          if not nc:
-            # Auto-configure from env or default
+            # Auto-configure from env or default so the first GUI load
+            # after a fresh bridge start can still detect a running agent.
             url = os.environ.get('NOMAD_ADDR', 'http://127.0.0.1:4646')
             nc = _ensure_nomad(url)
          if not nc:
-            return {"status": "not configured"}
+            return {"ok": False, "error": "not configured",
+                    "nomad_url": getattr(bridge, '_nomad_url', None)}
          try:
             info = nc.agent_self()
-            member = info.get('member', {})
-            return {"status": "ok", "server": member.get('Name', ''),
-                    "address": bridge._nomad_url}
+            member = info.get('member', {}) or {}
+            config = info.get('config', {}) or {}
+            return {
+               "ok": True,
+               "server": member.get('Name', ''),
+               "version": config.get('Version', '') or
+                          (info.get('stats', {}) or {}).get('client', {}).get('node_id', ''),
+               "nomad_url": getattr(bridge, '_nomad_url', None),
+            }
          except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {"ok": False, "error": str(e),
+                    "nomad_url": getattr(bridge, '_nomad_url', None)}
+
+      @app.get("/api/nomad/discover")
+      def nomad_discover():
+         """Find running Nomad agents by enumerating local processes.
+
+         Uses :mod:`psutil` to list processes whose name starts with
+         ``nomad`` and their listening TCP sockets.  A Nomad agent opens
+         three ports (HTTP 4646, RPC 4647, Serf 4648 by default), but only
+         the HTTP one responds to ``/v1/agent/self`` — we probe each
+         candidate listening port and report the ones that do.
+
+         Returns:
+            {"instances": [
+                {"url": "...", "host": "...", "port": N, "pid": N,
+                 "name": "...", "version": "...", "datacenter": "...",
+                 "server": bool, "exe": "..."}, ...
+             ]}
+         """
+         import urllib.request, urllib.error
+         try:
+            import psutil
+         except ImportError:
+            return {"instances": [],
+                    "error": "psutil not installed on the bridge Python"}
+
+         found: list = []
+         seen: set = set()
+
+         for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
+            try:
+               pname = (proc.info.get('name') or '').lower()
+               # Match ``nomad`` or ``nomad.exe`` but not ``nomad-client``
+               # that's some unrelated binary.  Nomad's own binary is
+               # always exactly ``nomad`` / ``nomad.exe``.
+               base = pname.rsplit('.', 1)[0]
+               if base != 'nomad':
+                  continue
+
+               try:
+                  conns = proc.net_connections(kind='tcp')
+               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  continue
+
+               for c in conns:
+                  if c.status != psutil.CONN_LISTEN:
+                     continue
+                  if not c.laddr:
+                     continue
+                  ip = c.laddr.ip or '127.0.0.1'
+                  port = c.laddr.port
+                  # Reach ``0.0.0.0``/``::`` via 127.0.0.1 locally.
+                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+                  key = (probe_host, port)
+                  if key in seen:
+                     continue
+                  seen.add(key)
+
+                  # Only the HTTP port answers /v1/agent/self; RPC and
+                  # Serf will fast-reject.  Use a short timeout.
+                  url = "http://%s:%d" % (probe_host, port)
+                  try:
+                     req = urllib.request.Request(url + '/v1/agent/self')
+                     with urllib.request.urlopen(req, timeout=1.5) as resp:
+                        info = json.loads(resp.read().decode('utf-8'))
+                  except Exception:
+                     continue
+
+                  member = info.get('member', {}) or {}
+                  config = info.get('config', {}) or {}
+                  stats  = info.get('stats',  {}) or {}
+                  is_server = bool((config.get('Server') or {}).get('Enabled')) \
+                              or ('runtime' in stats and 'nomad' in stats)
+
+                  found.append({
+                     "url":        url,
+                     "host":       probe_host,
+                     "port":       port,
+                     "pid":        proc.pid,
+                     "exe":        proc.info.get('exe') or '',
+                     "name":       member.get('Name', ''),
+                     "version":    config.get('Version', '') or
+                                   member.get('Tags', {}).get('build', ''),
+                     "datacenter": (config.get('Datacenter') or
+                                    member.get('Tags', {}).get('dc') or ''),
+                     "server":     is_server,
+                  })
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+               continue
+            except Exception:
+               # Don't let one bad process break the whole scan.
+               continue
+
+         return {"instances": found}
 
       @app.get("/api/nomad/jobs")
       def nomad_list_jobs():
@@ -918,6 +1155,66 @@ Forward a request to the FleetWebAPI.
          except Exception as e:
             return {"success": False, "message": str(e)}
 
+      class NomadSubmitJobBody(BaseModel):
+         """Payload for POST /api/nomad/jobs/submit.
+
+         The user pastes either raw HCL or a full job JSON (what Nomad's
+         /v1/jobs expects, with the top-level ``{"Job": {...}}`` wrapper OR
+         just the inner job dict).  Format is selected by ``content_type``.
+         """
+         content: str = ""
+         content_type: str = "hcl"   # "hcl" or "json"
+         canonicalize: bool = True
+
+      @app.post("/api/nomad/jobs/submit")
+      def nomad_submit_job(body: NomadSubmitJobBody):
+         """Parse + register a Nomad job from HCL or JSON.
+
+         On success returns the EvalID (same as ``nomad job run``).  On
+         failure returns ``{success: false, stage: "parse"|"register",
+         message: "..."}``.
+         """
+         nc = _get_nomad_client()
+         if not nc:
+            return {"success": False, "stage": "client",
+                    "message": "Nomad not configured. Start an agent first."}
+
+         if not body.content.strip():
+            return {"success": False, "stage": "input",
+                    "message": "Empty job content."}
+
+         # -- Step 1: obtain a job dict -------------------------------------
+         job_spec = None
+         try:
+            if body.content_type.lower() == "hcl":
+               job_spec = nc.parse_hcl(body.content,
+                                       canonicalize=body.canonicalize)
+            else:
+               parsed = json.loads(body.content)
+               # Accept both {"Job": {...}} and the bare job dict.
+               if isinstance(parsed, dict) and "Job" in parsed:
+                  job_spec = parsed["Job"]
+               else:
+                  job_spec = parsed
+         except Exception as e:
+            return {"success": False, "stage": "parse",
+                    "message": f"Failed to parse job: {e}"}
+
+         if not isinstance(job_spec, dict):
+            return {"success": False, "stage": "parse",
+                    "message": "Parsed job is not an object."}
+
+         # -- Step 2: register ----------------------------------------------
+         try:
+            result = nc.register_job(job_spec)
+            return {"success": True,
+                    "job_id": job_spec.get("ID") or job_spec.get("Name") or "",
+                    "eval_id": result.get("EvalID", ""),
+                    "warnings": result.get("Warnings", "")}
+         except Exception as e:
+            return {"success": False, "stage": "register",
+                    "message": f"Failed to register job: {e}"}
+
       @app.get("/api/nomad/jobs/{job_id}/logs")
       def nomad_get_logs(job_id: str, type: str = "stdout"):
          nc = _get_nomad_client()
@@ -940,6 +1237,524 @@ Forward a request to the FleetWebAPI.
                     "alloc_id": alloc_id, "task": task_name}
          except Exception as e:
             return {"name": job_id, "log": f"(error: {e})"}
+
+      # =====================================================================
+      # Consul agent management & service discovery
+      # =====================================================================
+      #
+      # Mirror of the Nomad agent endpoints above.  Consul is the service
+      # registry used by the new gRPC-based runtime; services register
+      # themselves on startup and the GUI discovers them via these endpoints.
+
+      class ConsulAgentStartBody(BaseModel):
+         mode: str = "dev"               # "dev" or "config"
+         bind_addr: str = "0.0.0.0"
+         http_port: int = 8500
+         datacenter: str = "dc1"
+         node_name: str = ""
+         config_dir: str = ""            # path to config directory (.hcl/.json)
+         data_dir: str = ""              # data directory
+         consul_path: str = "consul"     # path to consul binary
+         extra_args: list = []
+
+      def _get_consul_agent():
+         """Get the managed Consul agent subprocess info."""
+         if not hasattr(bridge, '_consul_agent_proc'):
+            bridge._consul_agent_proc = None
+            bridge._consul_agent_log = []
+         return bridge._consul_agent_proc
+
+      def _port_in_use(host: str, port: int) -> bool:
+         """Return True if TCP ``port`` on ``host`` is already listening.
+
+         Used to pre-check Consul/Nomad HTTP ports so we can return a clear
+         error message instead of spawning an agent that dies immediately.
+         """
+         import socket
+         probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+         s.settimeout(0.3)
+         try:
+            result = s.connect_ex((probe_host, port))
+            return result == 0  # 0 => port accepted the connection
+         except Exception:
+            return False
+         finally:
+            s.close()
+
+      @app.post("/api/consul/agent/start")
+      def consul_agent_start(body: ConsulAgentStartBody):
+         import subprocess, shutil, threading, time
+
+         proc = _get_consul_agent()
+         if proc and proc.poll() is None:
+            return {"success": False,
+                    "message": "Consul agent already running (PID %d)" % proc.pid,
+                    "pid": proc.pid}
+
+         # Pre-check: is the HTTP port already taken by *something*?
+         if _port_in_use("127.0.0.1", body.http_port):
+            return {"success": False,
+                    "message": (
+                        "Port %d is already in use. "
+                        "Either stop the process currently using it, or "
+                        "choose a different HTTP port in the Advanced section."
+                    ) % body.http_port}
+
+         consul_bin = body.consul_path or 'consul'
+         resolved = shutil.which(consul_bin)
+         if not resolved:
+            return {"success": False,
+                    "message": "Consul binary not found: '%s'. "
+                               "Install from https://developer.hashicorp.com/consul/install" % consul_bin}
+
+         args = [resolved, 'agent']
+         if body.mode == 'dev':
+            args.append('-dev')
+            if body.bind_addr and body.bind_addr != '127.0.0.1':
+               args.extend(['-bind', body.bind_addr])
+            if body.node_name:
+               args.extend(['-node', body.node_name])
+            if body.datacenter != 'dc1':
+               args.extend(['-datacenter', body.datacenter])
+            if body.http_port != 8500:
+               args.extend(['-http-port', str(body.http_port)])
+         else:
+            # Config mode — expects a directory containing .hcl/.json files.
+            if body.config_dir:
+               args.extend(['-config-dir', body.config_dir])
+            if body.data_dir:
+               args.extend(['-data-dir', body.data_dir])
+            if body.bind_addr:
+               args.extend(['-bind', body.bind_addr])
+            if body.node_name:
+               args.extend(['-node', body.node_name])
+            if body.datacenter != 'dc1':
+               args.extend(['-datacenter', body.datacenter])
+            if body.http_port != 8500:
+               args.extend(['-http-port', str(body.http_port)])
+
+         for arg in (body.extra_args or []):
+            args.append(str(arg))
+
+         logger.info('Starting Consul agent: %s', ' '.join(args))
+         bridge._consul_agent_log = []
+
+         try:
+            proc = subprocess.Popen(
+               args,
+               stdout=subprocess.PIPE,
+               stderr=subprocess.STDOUT,
+               text=True,
+               bufsize=1,
+            )
+         except Exception as e:
+            return {"success": False, "message": "Failed to start: %s" % e}
+
+         bridge._consul_agent_proc = proc
+         consul_url_val = 'http://127.0.0.1:%d' % body.http_port
+         _save_agent_pid('consul', proc.pid, consul_url_val)
+
+         def _read_output():
+            max_lines = 500
+            try:
+               for line in proc.stdout:
+                  line = line.rstrip('\n')
+                  bridge._consul_agent_log.append(line)
+                  if len(bridge._consul_agent_log) > max_lines:
+                     bridge._consul_agent_log = bridge._consul_agent_log[-max_lines:]
+            except Exception:
+               pass
+
+         threading.Thread(target=_read_output, daemon=True,
+                          name='consul-agent-log').start()
+
+         # Give the agent a moment to either bind the port or fail.  If it
+         # already exited, surface the captured log tail as the error — much
+         # friendlier than letting the GUI retry for 12 seconds.
+         time.sleep(1.0)
+         if proc.poll() is not None:
+            bridge._consul_agent_proc = None
+            log_tail = '\n'.join(bridge._consul_agent_log[-15:])
+            return {"success": False,
+                    "message": (
+                        "Consul agent exited immediately (code %d). "
+                        "Last log lines:\n%s"
+                    ) % (proc.returncode, log_tail or "(no output)"),
+                    "log": log_tail}
+
+         consul_url = 'http://127.0.0.1:%d' % body.http_port
+         bridge._consul_url = consul_url
+
+         return {"success": True, "pid": proc.pid,
+                 "message": "Consul agent started (PID %d)" % proc.pid,
+                 "consul_url": consul_url}
+
+      @app.post("/api/consul/agent/stop")
+      def consul_agent_stop():
+         proc = _get_consul_agent()
+
+         if proc and proc.poll() is None:
+            pid = proc.pid
+            logger.info('Stopping Consul agent via handle (PID %d)', pid)
+            try:
+               proc.terminate()
+               try:
+                  proc.wait(timeout=10)
+               except Exception:
+                  proc.kill()
+            except Exception as e:
+               return {"success": False,
+                       "message": "Failed to stop PID %d: %s" % (pid, e)}
+            bridge._consul_agent_proc = None
+            _remove_agent_pid('consul')
+            return {"success": True,
+                    "message": "Consul agent stopped (PID %d)" % pid}
+
+         bridge._consul_agent_proc = None
+
+         saved_pid, _ = _load_agent_pid('consul')
+         if saved_pid and _is_pid_alive(saved_pid):
+            logger.info('Stopping Consul agent via saved PID %d', saved_pid)
+            if _kill_pid(saved_pid):
+               _remove_agent_pid('consul')
+               return {"success": True,
+                       "message": "Consul agent stopped (PID %d)" % saved_pid}
+            else:
+               return {"success": False,
+                       "message": "Failed to kill PID %d" % saved_pid}
+
+         _remove_agent_pid('consul')
+         return {"success": True, "message": "Consul agent not running"}
+
+      @app.get("/api/consul/agent/status")
+      def consul_agent_status():
+         proc = _get_consul_agent()
+         running = proc is not None and proc.poll() is None
+         pid = proc.pid if running else None
+         consul_url = getattr(bridge, '_consul_url', None)
+
+         if not running:
+            saved_pid, saved_url = _load_agent_pid('consul')
+            if saved_pid and _is_pid_alive(saved_pid):
+               running = True
+               pid = saved_pid
+               if saved_url:
+                  consul_url = saved_url
+                  bridge._consul_url = saved_url
+            else:
+               _remove_agent_pid('consul')
+
+         return {
+            "running": running,
+            "pid": pid,
+            "consul_url": consul_url,
+         }
+
+      @app.get("/api/consul/agent/log")
+      def consul_agent_log(tail: int = 100):
+         logs = getattr(bridge, '_consul_agent_log', [])
+         lines = logs[-tail:] if len(logs) > tail else logs
+         return {"log": '\n'.join(lines)}
+
+      # ---- Consul HTTP API proxy ----
+      #
+      # Simple pass-through so the browser does not need CORS handling.
+      # Uses urllib (stdlib) to avoid a new dependency.
+
+      def _consul_url():
+         return getattr(bridge, '_consul_url', None) or 'http://127.0.0.1:8500'
+
+      class ConsulConfigBody(BaseModel):
+         consul_url: str = ""
+
+      @app.post("/api/consul/config")
+      def consul_config(body: ConsulConfigBody):
+         """Set the bridge-side Consul HTTP URL.
+
+         Used by the GUI to restore its configured Consul endpoint after a
+         bridge restart (the URL is kept in memory only, so it's lost on
+         kill).  Passing an empty string resets to the default.
+         """
+         if body.consul_url:
+            bridge._consul_url = body.consul_url.rstrip('/')
+         else:
+            if hasattr(bridge, '_consul_url'):
+               delattr(bridge, '_consul_url')
+         return {"ok": True, "consul_url": _consul_url()}
+
+      def _resolve_consul_url(override: str = "") -> str:
+         """Return the Consul base URL to use.
+
+         If *override* is provided (from a ``?consul=...`` query param) it
+         wins.  Otherwise fall back to the bridge's in-memory default.
+         """
+         if override:
+            return override.rstrip('/')
+         return _consul_url().rstrip('/')
+
+      def _consul_get(path: str, consul: str = ""):
+         """Proxy GET to a Consul HTTP API path.
+
+         Every /api/consul/* endpoint accepts an optional ``consul`` query
+         param so the GUI can talk to multiple Consul clusters at once
+         without the bridge holding state for each one.
+         """
+         import urllib.request, urllib.error
+         url = _resolve_consul_url(consul) + path
+         try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+               body = resp.read().decode('utf-8')
+               return json.loads(body) if body else None
+         except urllib.error.URLError as e:
+            return {"_error": str(e)}
+         except Exception as e:
+            return {"_error": str(e)}
+
+      @app.get("/api/consul/health")
+      def consul_health(consul: str = ""):
+         """Probe Consul by calling /v1/status/leader."""
+         import urllib.request, urllib.error
+         base = _resolve_consul_url(consul)
+         url = base + '/v1/status/leader'
+         try:
+            with urllib.request.urlopen(url, timeout=3) as resp:
+               leader = resp.read().decode('utf-8').strip('"')
+               return {"ok": True, "leader": leader, "consul_url": base}
+         except Exception as e:
+            return {"ok": False, "error": str(e), "consul_url": base}
+
+      @app.get("/api/consul/services")
+      def consul_services(consul: str = ""):
+         """List all services registered in Consul.  Returns the raw
+         {service_name: [tags...]} map from /v1/catalog/services."""
+         data = _consul_get('/v1/catalog/services', consul=consul)
+         return data or {}
+
+      @app.get("/api/consul/services/{name}")
+      def consul_service_detail(name: str, consul: str = "", passing: bool = False):
+         """Return instances of a service.
+
+         When ``passing=true`` is passed, Consul filters to only healthy
+         instances.  Default is now ``false`` so the GUI can read the
+         Checks array and compute a per-service status (green/yellow/red)
+         for the sidebar indicator.
+         """
+         path = '/v1/health/service/%s' % name
+         if passing:
+            path += '?passing=true'
+         data = _consul_get(path, consul=consul)
+         return data or []
+
+      @app.get("/api/consul/nodes")
+      def consul_nodes(consul: str = ""):
+         data = _consul_get('/v1/catalog/nodes', consul=consul)
+         return data or []
+
+      @app.get("/api/consul/discover")
+      def consul_discover():
+         """Find running Consul agents by enumerating local processes.
+
+         Uses :mod:`psutil` to find processes whose name is exactly
+         ``consul`` and probes each of their listening TCP ports with
+         ``GET /v1/status/leader`` — only the HTTP API port answers,
+         the Serf/RPC/DNS ports fast-reject.
+
+         Returns:
+            {"instances": [
+                {"url": "...", "host": "...", "port": N, "pid": N,
+                 "leader": "...", "datacenter": "...", "server": bool,
+                 "version": "...", "node_name": "..."}, ...
+             ]}
+         """
+         import urllib.request, urllib.error
+         try:
+            import psutil
+         except ImportError:
+            return {"instances": [],
+                    "error": "psutil not installed on the bridge Python"}
+
+         found: list = []
+         seen: set = set()
+
+         for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
+            try:
+               pname = (proc.info.get('name') or '').lower()
+               base = pname.rsplit('.', 1)[0]
+               if base != 'consul':
+                  continue
+
+               try:
+                  conns = proc.net_connections(kind='tcp')
+               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  continue
+
+               for c in conns:
+                  if c.status != psutil.CONN_LISTEN:
+                     continue
+                  if not c.laddr:
+                     continue
+                  ip = c.laddr.ip or '127.0.0.1'
+                  port = c.laddr.port
+                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+                  key = (probe_host, port)
+                  if key in seen:
+                     continue
+                  seen.add(key)
+
+                  url = "http://%s:%d" % (probe_host, port)
+                  leader = None
+                  try:
+                     req = urllib.request.Request(url + '/v1/status/leader')
+                     with urllib.request.urlopen(req, timeout=1.0) as resp:
+                        leader = resp.read().decode('utf-8').strip('"')
+                  except Exception:
+                     continue
+
+                  # Supplementary agent info (version, datacenter, node,
+                  # server mode) — if /v1/agent/self fails we still keep
+                  # the instance because /v1/status/leader already proved
+                  # it's Consul HTTP.
+                  meta = {}
+                  try:
+                     req2 = urllib.request.Request(url + '/v1/agent/self')
+                     with urllib.request.urlopen(req2, timeout=1.5) as resp2:
+                        info = json.loads(resp2.read().decode('utf-8'))
+                     cfg = info.get('Config') or info.get('config') or {}
+                     meta = {
+                        "version":    cfg.get('Version') or cfg.get('version') or '',
+                        "datacenter": cfg.get('Datacenter') or cfg.get('datacenter') or '',
+                        "node_name":  cfg.get('NodeName') or cfg.get('nodeName') or '',
+                        "server":     bool(cfg.get('Server') or cfg.get('server') or False),
+                     }
+                  except Exception:
+                     meta = {"version": "", "datacenter": "",
+                             "node_name": "", "server": False}
+
+                  found.append({
+                     "url":        url,
+                     "host":       probe_host,
+                     "port":       port,
+                     "pid":        proc.pid,
+                     "exe":        proc.info.get('exe') or '',
+                     "leader":     leader or '',
+                     **meta,
+                  })
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+               continue
+            except Exception:
+               continue
+
+         return {"instances": found}
+
+      # =====================================================================
+      # Dynamic gRPC method discovery and invocation
+      # =====================================================================
+      #
+      # The GUI needs to list the methods of any gRPC service registered in
+      # Consul and call them, without knowing the proto ahead of time.  We
+      # do this via the gRPC server-reflection protocol, which
+      # ServiceRunner enables automatically for every MicroserviceBase
+      # service.
+
+      def _find_service_target(consul_name: str, consul: str = ""):
+         """Look up a service in Consul and return its (host, port, meta) or None."""
+         data = _consul_get('/v1/health/service/%s?passing=true' % consul_name,
+                            consul=consul)
+         if not data or not isinstance(data, list) or len(data) == 0:
+            return None
+         svc = (data[0] or {}).get('Service', {}) or {}
+         host = svc.get('Address') or '127.0.0.1'
+         port = svc.get('Port') or 0
+         meta = svc.get('Meta') or {}
+         return host, port, meta
+
+      @app.get("/api/grpc/services/{consul_name}")
+      def grpc_list_methods(consul_name: str, consul: str = ""):
+         """Enumerate gRPC services/methods for a Consul-registered service.
+
+         Returns:
+            {
+              "target": "host:port",
+              "grpc_services": [
+                {
+                  "name": "hello.v1.HelloService",
+                  "methods": [
+                    {"name": "Greet", "input_type": "...", "output_type": "...",
+                     "input_fields": [...], "input_skeleton": {...},
+                     "client_streaming": false, "server_streaming": false},
+                    ...
+                  ]
+                }
+              ]
+            }
+         """
+         from ..grpc_bridge import GrpcReflectClient, GrpcReflectError
+
+         target_info = _find_service_target(consul_name, consul=consul)
+         if target_info is None:
+            return {"error": "Service '%s' not found in Consul" % consul_name}
+
+         host, port, meta = target_info
+         target = "%s:%d" % (host, port)
+
+         # Prefer the explicit grpc_services metadata that ServiceRunner
+         # writes on registration.  Fall back to reflection's ListServices
+         # if metadata is missing.
+         advertised = [s.strip() for s in
+                        (meta.get('grpc_services') or '').split(',')
+                        if s.strip()]
+
+         with GrpcReflectClient(target) as client:
+            try:
+               service_names = advertised or client.list_services()
+            except GrpcReflectError as e:
+               return {"target": target, "error": str(e)}
+
+            out = []
+            for name in service_names:
+               try:
+                  methods = client.list_methods(name)
+                  out.append({"name": name, "methods": methods})
+               except GrpcReflectError as e:
+                  out.append({"name": name, "error": str(e)})
+
+         return {"target": target, "grpc_services": out}
+
+      class GrpcCallBody(BaseModel):
+         consul_name: str
+         grpc_service: str
+         method: str
+         args_json: str = "{}"
+         consul: str = ""
+
+      @app.post("/api/grpc/call")
+      def grpc_call(body: GrpcCallBody):
+         """Invoke a unary gRPC method and return the JSON response."""
+         from ..grpc_bridge import GrpcReflectClient, GrpcReflectError
+
+         target_info = _find_service_target(body.consul_name, consul=body.consul)
+         if target_info is None:
+            return {"ok": False,
+                    "error": "Service '%s' not found in Consul" % body.consul_name}
+         host, port, _ = target_info
+         target = "%s:%d" % (host, port)
+
+         try:
+            with GrpcReflectClient(target) as client:
+               envelope = client.call_method(
+                   body.grpc_service, body.method, body.args_json or "{}"
+               )
+            # call_method returns either:
+            #   {"streaming": False, "result": <dict>}
+            #   {"streaming": True,  "events": [...], "truncated": bool, "error"?: str}
+            return {"ok": True, "target": target, **envelope}
+         except GrpcReflectError as e:
+            return {"ok": False, "target": target, "error": str(e)}
+         except Exception as e:
+            return {"ok": False, "target": target, "error": "%s: %s" %
+                    (type(e).__name__, e)}
 
       # ---- Service Scaffolding endpoint ----
 
@@ -1327,6 +2142,136 @@ Generate scaffolding for a new microservice project.
                "filename": folder_name + ".zip"
             }
 
+      # ---- New scaffold generator (v2 — multi-language, multi-GUI) ----
+
+      class ScaffoldV2MethodParam(BaseModel):
+         name: str = ""
+         type: str = "string"
+         required: bool = True
+         description: str = ""
+
+      class ScaffoldV2Method(BaseModel):
+         name: str = ""
+         params: List[ScaffoldV2MethodParam] = []
+         return_type: str = "string"
+         description: str = ""
+         server_streaming: bool = False
+
+      class ScaffoldV2Request(BaseModel):
+         service_name: str
+         version: str = "1.0.0"
+         description: str = ""
+         short_desc: str = ""
+         group: str = ""
+         tag: str = ""
+         language: str = "python"       # "python" | "cpp"
+         gui_type: str = "none"         # "none" | "html" | "qml" | "wasm" | "widget"
+         gen_nomad: bool = True
+         gen_build_scripts: bool = True
+         gen_readme: bool = True
+         gen_stubs: bool = True
+         vcpkg_root: str = ""
+         protoc_path: str = ""
+         grpc_plugin_path: str = ""
+         nomad_dc: str = "dc1"
+         nomad_driver: str = "raw_exec"
+         nomad_command: str = ""
+         nomad_cpu: int = 100
+         nomad_mem: int = 128
+         nomad_consul_addr: str = "http://127.0.0.1:8500"
+         methods: List[ScaffoldV2Method] = []
+         output_path: str = ""
+
+      @app.post("/api/scaffold/generate-v2")
+      def scaffold_generate_v2(body: ScaffoldV2Request):
+         """Generate scaffolding for a new microservice (v2 — Python/C++, multi-GUI)."""
+         from ..scaffold import generate_scaffold, ScaffoldSpec
+         from ..scaffold.generator import MethodSpec, MethodParam
+
+         try:
+            _validate_safe_name(body.service_name)
+         except ValueError as exc:
+            return {"status": "error", "error": str(exc)}
+
+         spec = ScaffoldSpec(
+            service_name=body.service_name,
+            version=body.version,
+            description=body.description,
+            short_desc=body.short_desc,
+            group=body.group,
+            tag=body.tag,
+            language=body.language,
+            gui_type=body.gui_type,
+            gen_nomad=body.gen_nomad,
+            gen_build_scripts=body.gen_build_scripts,
+            gen_readme=body.gen_readme,
+            gen_stubs=body.gen_stubs,
+            vcpkg_root=body.vcpkg_root,
+            protoc_path=body.protoc_path,
+            grpc_plugin_path=body.grpc_plugin_path,
+            nomad_dc=body.nomad_dc,
+            nomad_driver=body.nomad_driver,
+            nomad_command=body.nomad_command,
+            nomad_cpu=body.nomad_cpu,
+            nomad_mem=body.nomad_mem,
+            nomad_consul_addr=body.nomad_consul_addr,
+            methods=[
+               MethodSpec(
+                  name=m.name,
+                  params=[MethodParam(name=p.name, type=p.type,
+                                      required=p.required, description=p.description)
+                          for p in m.params],
+                  return_type=m.return_type,
+                  description=m.description,
+                  server_streaming=m.server_streaming,
+               )
+               for m in body.methods
+            ],
+         )
+
+         try:
+            file_map = generate_scaffold(spec)
+         except Exception as exc:
+            logger.error("Scaffold generation error: %s", exc, exc_info=True)
+            return {"status": "error", "error": str(exc)}
+
+         folder_name = body.service_name
+
+         if body.output_path:
+            target_dir = os.path.join(body.output_path, folder_name)
+            real_target = os.path.realpath(target_dir)
+            try:
+               for rel_path, content in file_map.items():
+                  full_path = os.path.join(target_dir, rel_path)
+                  real_full = os.path.realpath(full_path)
+                  if not real_full.startswith(real_target + os.sep) and real_full != real_target:
+                     return {"status": "error", "error": f"Unsafe path: {rel_path!r}"}
+                  os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                  with open(full_path, 'w', encoding='utf-8') as f:
+                     f.write(content)
+               logger.info("Scaffold v2 written to %s (%d files)",
+                           target_dir, len(file_map))
+               return {"status": "ok", "path": target_dir,
+                       "file_count": len(file_map),
+                       "files": sorted(file_map.keys())}
+            except Exception as exc:
+               logger.error("Scaffold v2 write error: %s", exc, exc_info=True)
+               return {"status": "error", "error": str(exc)}
+         else:
+            import io
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+               for rel_path, content in file_map.items():
+                  zf.writestr(folder_name + '/' + rel_path, content)
+            zip_data = base64.b64encode(buf.getvalue()).decode('ascii')
+            return {
+               "status": "ok",
+               "zip_data": zip_data,
+               "filename": folder_name + ".zip",
+               "file_count": len(file_map),
+               "files": sorted(file_map.keys()),
+            }
+
       # Mount static files for the GUI web application
       gui_path = os.path.join(
          os.path.dirname(__file__), '..', '..',
@@ -1381,10 +2326,26 @@ Start the FastAPI server in a background thread.
 Run uvicorn in its own thread with a dedicated event loop.
       """
       import uvicorn
+      import logging
 
       loop = asyncio.new_event_loop()
       asyncio.set_event_loop(loop)
       self._server_loop = loop
+
+      # Silence the uvicorn access log for the high-frequency background
+      # polls from the GUI (BridgeControl every 3s, InfraStatus every 5s).
+      # They're all 200 OK and would otherwise flood launcher.log.
+      class _NoisyPollFilter(logging.Filter):
+         _QUIET = (
+            'GET /api/version',
+            'GET /api/consul/health',
+            'GET /api/nomad/health',
+         )
+         def filter(self, record):
+            msg = record.getMessage()
+            return not any(p in msg for p in self._QUIET)
+
+      logging.getLogger('uvicorn.access').addFilter(_NoisyPollFilter())
 
       config = uvicorn.Config(
          self._app,

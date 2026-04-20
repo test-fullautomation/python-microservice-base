@@ -743,6 +743,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * Read the tail of the launcher.log file.  Used by the bridge control to
+   * surface spawn failures to the user instead of silently showing a red LED.
+   * @param {number} [maxLines=50] - How many lines from the end to return.
+   * @returns {Promise<{ log: string, path: string }>} Log tail (empty on error).
+   */
+  getBridgeLog: (maxLines) => {
+    return new Promise((resolve) => {
+      const logPath = path.join(_pythonDataPath, 'launcher.log');
+      const limit = (typeof maxLines === 'number' && maxLines > 0) ? maxLines : 50;
+      fs.readFile(logPath, 'utf8', (err, data) => {
+        if (err) {
+          resolve({ log: '', path: logPath });
+          return;
+        }
+        const lines = data.split(/\r?\n/);
+        const tail = lines.slice(Math.max(0, lines.length - limit)).join('\n');
+        resolve({ log: tail, path: logPath });
+      });
+    });
+  },
+
+  /**
    * Get the installed version of a Python package.
    * @param {string} [pythonPath='python'] - Path to the Python interpreter.
    * @param {string} [packageName='MicroserviceBase'] - Package name to query.

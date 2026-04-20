@@ -13,10 +13,35 @@
 
   var STEPS = [
     { label: 'Basic Info' },
+    { label: 'Technology' },
     { label: 'API Methods' },
-    { label: 'GUI Support' },
+    { label: 'GUI Support' },      // skipped for C++ or guiType=='none'
     { label: 'Review & Generate' }
   ];
+
+  // Step 3 (GUI Support) is only relevant for Python + HTML/JS GUI.
+  // For C++ (QML/WASM/Widget), the GUI is defined by Technology choice.
+  function _isStepSkipped(n) {
+    if (n === 3) {
+      // Skip GUI Support for C++ or no-GUI
+      return _formData.language === 'cpp' || _formData.guiType === 'none';
+    }
+    return false;
+  }
+
+  function _nextVisibleStep(from) {
+    for (var i = from + 1; i < STEPS.length; i++) {
+      if (!_isStepSkipped(i)) return i;
+    }
+    return from;
+  }
+
+  function _prevVisibleStep(from) {
+    for (var i = from - 1; i >= 0; i--) {
+      if (!_isStepSkipped(i)) return i;
+    }
+    return from;
+  }
 
   var _currentStep = 0;
   var _formData = _defaultFormData();
@@ -33,9 +58,21 @@
       tag: '',
       routingKey: '',
       transport: 'rabbitmq',
+      // Technology (step 2 — new)
+      language: 'python',        // 'python' | 'cpp'
+      guiType: 'none',           // 'none' | 'html' | 'qml' | 'wasm' | 'widget'
+      genNomad: true,
+      genBuildScripts: true,
+      genReadme: true,
+      genStubs: true,
+      vcpkgRoot: '',
+      protocPath: '',
+      grpcPluginPath: '',
+      nomadConsulAddr: 'http://127.0.0.1:8500',
+      // Legacy (kept for old v1 flow)
       guiSupport: false,
-      guiMode: 'schema',       // 'schema' | 'custom'
-      guiSchema: null,         // gui_schema.json object (when mode is 'schema')
+      guiMode: 'schema',        // 'schema' | 'custom'
+      guiSchema: null,
       methods: [],
       outputPath: '',
       customGuiHtml: null,
@@ -79,6 +116,8 @@
 
     var html = '<div class="creator-sidebar-title">Service Creator</div>';
     STEPS.forEach(function (step, i) {
+      if (_isStepSkipped(i)) return;  // hide skipped steps from sidebar
+
       var cls = 'creator-step';
       if (i === _currentStep) cls += ' active';
       else if (i < _currentStep) cls += ' completed';
@@ -124,9 +163,10 @@
 
     switch (n) {
       case 0: _renderStep1(content); break;
-      case 1: _renderStep2(content); break;
-      case 2: _renderStep3(content); break;
-      case 3: _renderStep4(content); break;
+      case 1: _renderStepTechnology(content); break;
+      case 2: _renderStep2(content); break;
+      case 3: _renderStep3(content); break;
+      case 4: _renderStep4(content); break;
     }
   }
 
@@ -209,30 +249,271 @@
     _wireNavButtons();
   }
 
-  // Step 2: API Methods
+  // Step 2: Technology
+  function _renderStepTechnology(container) {
+    var f = _formData;
+
+    // Determine which GUI options are valid for the selected language
+    var pythonGuis = [
+      { value: 'none', label: 'None', desc: 'Service only, no GUI' },
+      { value: 'html', label: 'HTML / JS', desc: 'Browser-based UI loaded by MicroserviceManagerGUI' },
+    ];
+    var cppGuis = [
+      { value: 'none', label: 'None', desc: 'Service only, no GUI' },
+      { value: 'qml', label: 'QML (Qt Quick)', desc: 'Qt Quick UI with preview app + WASM-ready' },
+      { value: 'wasm', label: 'WASM (Qt Widgets)', desc: 'Qt Widgets compiled to WebAssembly for in-browser rendering' },
+      { value: 'widget', label: 'Widget (Qt Widgets)', desc: 'Native Qt Widgets desktop window' },
+    ];
+
+    var guiOptions = (f.language === 'cpp') ? cppGuis : pythonGuis;
+    var validTypes = guiOptions.map(function (o) { return o.value; });
+    if (validTypes.indexOf(f.guiType) < 0) f.guiType = 'none';
+
+    var guiRadios = guiOptions.map(function (o) {
+      var checked = (f.guiType === o.value) ? ' checked' : '';
+      return (
+        '<div class="form-check mb-2">' +
+        '  <input class="form-check-input" type="radio" name="scGuiType" ' +
+        '         id="scGui_' + o.value + '" value="' + o.value + '"' + checked + '>' +
+        '  <label class="form-check-label" for="scGui_' + o.value + '">' +
+        '    <strong>' + _escapeHtml(o.label) + '</strong>' +
+        '    <span class="text-muted ms-1">&mdash; ' + _escapeHtml(o.desc) + '</span>' +
+        '  </label>' +
+        '</div>'
+      );
+    }).join('');
+
+    container.innerHTML =
+      '<h4><i class="bi bi-cpu me-2"></i>Technology</h4>' +
+      '<p class="text-muted small">Choose the implementation language, GUI type, and infrastructure files.</p>' +
+
+      '<div class="row">' +
+      '<div class="col-md-6">' +
+
+      // Language
+      '<div class="mb-4">' +
+      '  <label class="form-label fw-bold">Language</label>' +
+      '  <div class="btn-group w-100" role="group">' +
+      '    <input type="radio" class="btn-check" name="scLanguage" id="scLangPython" value="python"' +
+             (f.language === 'python' ? ' checked' : '') + '>' +
+      '    <label class="btn btn-outline-primary" for="scLangPython">' +
+      '      <i class="bi bi-filetype-py me-1"></i>Python</label>' +
+      '    <input type="radio" class="btn-check" name="scLanguage" id="scLangCpp" value="cpp"' +
+             (f.language === 'cpp' ? ' checked' : '') + '>' +
+      '    <label class="btn btn-outline-primary" for="scLangCpp">' +
+      '      <i class="bi bi-filetype-cpp me-1"></i>C++</label>' +
+      '  </div>' +
+      '</div>' +
+
+      // GUI type
+      '<div class="mb-4">' +
+      '  <label class="form-label fw-bold">GUI Type</label>' +
+      '  <div id="scGuiTypeRadios">' + guiRadios + '</div>' +
+      '</div>' +
+
+      '</div>' +  // end col-md-6
+
+      '<div class="col-md-6">' +
+
+      // Infrastructure checkboxes
+      '<div class="mb-4">' +
+      '  <label class="form-label fw-bold">Infrastructure Files</label>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="scGenNomad"' +
+             (f.genNomad ? ' checked' : '') + '>' +
+      '    <label class="form-check-label" for="scGenNomad">' +
+      '      <strong>Nomad job file</strong> <span class="text-muted">(.nomad.hcl)</span>' +
+      '      <div class="form-text">Job spec for deploying with HashiCorp Nomad. ' +
+      '      Includes dynamic port allocation and Consul registration env vars.</div>' +
+      '    </label>' +
+      '  </div>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="scGenBuild"' +
+             (f.genBuildScripts ? ' checked' : '') + '>' +
+      '    <label class="form-check-label" for="scGenBuild">' +
+      '      <strong>Build scripts</strong> <span class="text-muted">(build.bat / build.sh)</span>' +
+      '      <div class="form-text">Cross-platform build scripts that configure CMake with vcpkg ' +
+      '      and compile the service.</div>' +
+      '    </label>' +
+      '  </div>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="scGenReadme"' +
+             (f.genReadme ? ' checked' : '') + '>' +
+      '    <label class="form-check-label" for="scGenReadme">' +
+      '      <strong>README.md</strong>' +
+      '      <div class="form-text">Auto-generated documentation with build instructions, ' +
+      '      method list, and verify commands.</div>' +
+      '    </label>' +
+      '  </div>' +
+      '</div>' +
+
+      '</div>' +  // end col-md-6
+      '</div>' +  // end row
+
+      _navButtons(1);
+
+    // Wire language toggle → re-render GUI options
+    container.querySelectorAll('input[name="scLanguage"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.language = this.value;
+        _renderStepTechnology(container);
+      });
+    });
+
+    // Wire GUI type
+    container.querySelectorAll('input[name="scGuiType"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.guiType = this.value;
+        f.guiSupport = (this.value !== 'none');
+      });
+    });
+
+    // Wire infrastructure
+    var nomadCb = document.getElementById('scGenNomad');
+    var buildCb = document.getElementById('scGenBuild');
+    var readmeCb = document.getElementById('scGenReadme');
+    if (nomadCb) nomadCb.addEventListener('change', function () { f.genNomad = this.checked; });
+    if (buildCb) buildCb.addEventListener('change', function () { f.genBuildScripts = this.checked; });
+    if (readmeCb) readmeCb.addEventListener('change', function () { f.genReadme = this.checked; });
+
+    _wireNavButtons();
+  }
+
+  // Step 3: API Methods (gRPC-style — defines the .proto service)
   function _renderStep2(container) {
     container.innerHTML =
       '<div class="creator-content">' +
         '<div class="creator-header">' +
-          '<h4><i class="bi bi-2-circle me-2"></i>API Methods</h4>' +
-          '<p>Define the methods your service will expose. Each method name will be prefixed with <code>svc_api_</code>.</p>' +
+          '<h4><i class="bi bi-diagram-3 me-2"></i>gRPC Methods</h4>' +
+          '<p class="text-muted">Define the RPC methods your service exposes. ' +
+          'These become the <code>service</code> block in the generated <code>.proto</code> file. ' +
+          'Use <strong>PascalCase</strong> for method names (e.g. <code>GetStatus</code>, not <code>get_status</code>).</p>' +
         '</div>' +
         '<div id="creatorMethodList"></div>' +
-        '<button class="btn btn-outline-primary btn-sm" id="btnAddMethod">' +
+        '<button class="btn btn-outline-primary btn-sm mb-3" id="btnAddMethod">' +
           '<i class="bi bi-plus-lg me-1"></i>Add Method' +
         '</button>' +
-        _navButtons(1) +
+
+        '<div class="card mb-3">' +
+          '<div class="card-body py-2">' +
+            '<div class="form-check mb-2">' +
+              '<input class="form-check-input" type="checkbox" id="scGenStubs"' +
+                (_formData.genStubs ? ' checked' : '') + '>' +
+              '<label class="form-check-label" for="scGenStubs">' +
+                '<strong>Pre-generate proto stubs</strong>' +
+              '</label>' +
+            '</div>' +
+            '<div id="scStubsPanel"></div>' +
+          '</div>' +
+        '</div>' +
+
+        _navButtons(2) +
       '</div>';
+
+    // Render the stubs configuration panel based on language
+    var stubsPanel = document.getElementById('scStubsPanel');
+    var stubsCb = document.getElementById('scGenStubs');
+
+    function _updateStubsPanel() {
+      if (!stubsPanel) return;
+      var checked = stubsCb && stubsCb.checked;
+
+      if (!checked) {
+        stubsPanel.innerHTML =
+          '<div class="form-text text-muted">' +
+          '  Stubs will not be pre-generated. You\'ll need to run the generation ' +
+          '  script manually before building.' +
+          '</div>';
+        return;
+      }
+
+      if (_formData.language === 'python') {
+        stubsPanel.innerHTML =
+          '<div class="alert alert-success py-2 small mb-0">' +
+          '  <i class="bi bi-check-circle me-1"></i>' +
+          '  <strong>Python stubs will be generated automatically</strong> by the bridge server ' +
+          '  using <code>grpc_tools.protoc</code>. No additional tools required.' +
+          '  <div class="mt-1 text-muted">Output: <code>proto/*_pb2.py</code> + <code>proto/*_pb2_grpc.py</code></div>' +
+          '</div>';
+      } else {
+        stubsPanel.innerHTML =
+          '<div class="alert alert-warning py-2 small mb-2">' +
+          '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+          '  <strong>C++ stubs require <code>protoc</code> and <code>grpc_cpp_plugin</code>.</strong>' +
+          '  <div class="mt-1">CMake generates stubs at build time, but for pre-generation or ' +
+          '  client projects you need the tools installed.</div>' +
+          '</div>' +
+          '<div class="mb-2">' +
+          '  <label class="form-label form-label-sm">' +
+          '    <code>VCPKG_ROOT</code>' +
+          '    <span class="text-muted ms-1">— vcpkg installation path (tools are auto-detected from here)</span>' +
+          '  </label>' +
+          '  <input class="form-control form-control-sm" id="scVcpkgRoot" ' +
+          '    placeholder="e.g. ~/vcpkg or C:\\vcpkg" ' +
+          '    value="' + _escapeHtml(_formData.vcpkgRoot || '') + '">' +
+          '</div>' +
+          '<div class="mb-2">' +
+          '  <label class="form-label form-label-sm">' +
+          '    <code>protoc</code> path' +
+          '    <span class="text-muted ms-1">— leave empty to auto-detect from VCPKG_ROOT or PATH</span>' +
+          '  </label>' +
+          '  <input class="form-control form-control-sm" id="scProtocPath" ' +
+          '    placeholder="(auto-detect)" ' +
+          '    value="' + _escapeHtml(_formData.protocPath || '') + '">' +
+          '</div>' +
+          '<div class="mb-2">' +
+          '  <label class="form-label form-label-sm">' +
+          '    <code>grpc_cpp_plugin</code> path' +
+          '    <span class="text-muted ms-1">— leave empty to auto-detect</span>' +
+          '  </label>' +
+          '  <input class="form-control form-control-sm" id="scGrpcPlugin" ' +
+          '    placeholder="(auto-detect)" ' +
+          '    value="' + _escapeHtml(_formData.grpcPluginPath || '') + '">' +
+          '</div>' +
+          '<div class="form-text small">' +
+          '  <strong>Install tools:</strong> <code>vcpkg install grpc:x64-windows protobuf:x64-windows</code> (Windows) ' +
+          '  or <code>vcpkg install grpc:x64-linux protobuf:x64-linux</code> (Linux)' +
+          '</div>';
+
+        // Wire C++ tool path inputs
+        var vcpkgInput = document.getElementById('scVcpkgRoot');
+        var protocInput = document.getElementById('scProtocPath');
+        var pluginInput = document.getElementById('scGrpcPlugin');
+        if (vcpkgInput) vcpkgInput.addEventListener('change', function () {
+          _formData.vcpkgRoot = this.value.trim();
+        });
+        if (protocInput) protocInput.addEventListener('change', function () {
+          _formData.protocPath = this.value.trim();
+        });
+        if (pluginInput) pluginInput.addEventListener('change', function () {
+          _formData.grpcPluginPath = this.value.trim();
+        });
+      }
+    }
+
+    if (stubsCb) {
+      stubsCb.addEventListener('change', function () {
+        _formData.genStubs = this.checked;
+        _updateStubsPanel();
+      });
+    }
+    _updateStubsPanel();
 
     var methodList = document.getElementById('creatorMethodList');
 
-    // Render existing methods
     _formData.methods.forEach(function (method) {
       _appendMethodCard(methodList, method);
     });
 
     document.getElementById('btnAddMethod').addEventListener('click', function () {
-      var method = { id: ++_methodIdCounter, name: '', params: [], returnType: '', description: '' };
+      var method = {
+        id: ++_methodIdCounter,
+        name: '',
+        params: [],
+        returnType: 'string',
+        description: '',
+        serverStreaming: false
+      };
       _formData.methods.push(method);
       _appendMethodCard(methodList, method);
     });
@@ -247,27 +528,62 @@
 
     card.innerHTML =
       '<div class="method-header">' +
-        '<h6><code>svc_api_</code><input type="text" class="form-control form-control-sm d-inline-block" ' +
-          'style="width:200px" placeholder="method_name" value="' + _escapeHtml(method.name) + '" data-field="name"></h6>' +
+        '<h6>' +
+          '<code>rpc </code>' +
+          '<input type="text" class="form-control form-control-sm d-inline-block" ' +
+            'style="width:200px" placeholder="MethodName (PascalCase)" ' +
+            'value="' + _escapeHtml(method.name) + '" data-field="name">' +
+        '</h6>' +
         '<button class="btn-remove-method" title="Remove method"><i class="bi bi-trash"></i></button>' +
       '</div>' +
       '<div class="row mb-2">' +
-        '<div class="col-md-4">' +
-          '<label class="form-label form-label-sm">Return Type</label>' +
-          '<input type="text" class="form-control form-control-sm" placeholder="e.g. str, int, dict" ' +
-            'value="' + _escapeHtml(method.returnType) + '" data-field="returnType">' +
+        '<div class="col-md-3">' +
+          '<label class="form-label form-label-sm">Response type</label>' +
+          '<select class="form-select form-select-sm" data-field="returnType">' +
+            _protoTypeOptions(method.returnType) +
+          '</select>' +
         '</div>' +
-        '<div class="col-md-8">' +
+        '<div class="col-md-5">' +
           '<label class="form-label form-label-sm">Description</label>' +
           '<input type="text" class="form-control form-control-sm" placeholder="What does this method do?" ' +
             'value="' + _escapeHtml(method.description) + '" data-field="description">' +
         '</div>' +
+        '<div class="col-md-4">' +
+          '<label class="form-label form-label-sm">Streaming</label>' +
+          '<div class="form-check form-switch mt-1">' +
+            '<input class="form-check-input" type="checkbox" data-field="serverStreaming"' +
+              (method.serverStreaming ? ' checked' : '') + '>' +
+            '<label class="form-check-label small">Server streaming</label>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<label class="form-label form-label-sm fw-semibold">Parameters</label>' +
+      '<label class="form-label form-label-sm fw-semibold">Request fields</label>' +
+      '<div class="form-text mb-1">Each field becomes a field in the <code>' +
+        _escapeHtml(method.name || 'Method') + 'Request</code> proto message.</div>' +
       '<div class="method-params"></div>' +
       '<button class="btn btn-outline-secondary btn-sm mt-1 btn-add-param">' +
-        '<i class="bi bi-plus me-1"></i>Add Parameter' +
+        '<i class="bi bi-plus me-1"></i>Add Field' +
       '</button>';
+
+    // Live-bind method fields to the backing object so state stays
+    // in sync even if the user navigates away via the stepper (which
+    // would otherwise skip _collectFormData on this card's DOM).
+    var nameInput = card.querySelector('[data-field="name"]');
+    if (nameInput) nameInput.addEventListener('input', function () {
+      method.name = this.value;
+    });
+    var retSel = card.querySelector('[data-field="returnType"]');
+    if (retSel) retSel.addEventListener('change', function () {
+      method.returnType = this.value;
+    });
+    var descIn = card.querySelector('[data-field="description"]');
+    if (descIn) descIn.addEventListener('input', function () {
+      method.description = this.value;
+    });
+    var streamIn = card.querySelector('[data-field="serverStreaming"]');
+    if (streamIn) streamIn.addEventListener('change', function () {
+      method.serverStreaming = this.checked;
+    });
 
     // Wire remove method
     card.querySelector('.btn-remove-method').addEventListener('click', function () {
@@ -275,38 +591,53 @@
       card.remove();
     });
 
-    // Render existing params
+    // Ensure params array exists, then render existing rows.
+    if (!method.params) method.params = [];
     var paramsContainer = card.querySelector('.method-params');
-    (method.params || []).forEach(function (param) {
-      _appendParamRow(paramsContainer, param);
+    method.params.forEach(function (param) {
+      _appendParamRow(paramsContainer, param, method.params);
     });
 
-    // Wire add param
+    // Wire add param — IMPORTANT: push into method.params so state
+    // reflects reality even before _collectFormData runs.
     card.querySelector('.btn-add-param').addEventListener('click', function () {
-      var param = { name: '', type: 'str', required: true };
-      _appendParamRow(paramsContainer, param);
+      var param = { name: '', type: 'string', required: true };
+      method.params.push(param);
+      _appendParamRow(paramsContainer, param, method.params);
     });
 
     container.appendChild(card);
   }
 
-  function _appendParamRow(container, param) {
+  var _PROTO_TYPES = [
+    { value: 'string',  label: 'string' },
+    { value: 'int32',   label: 'int32' },
+    { value: 'int64',   label: 'int64' },
+    { value: 'float',   label: 'float' },
+    { value: 'double',  label: 'double' },
+    { value: 'bool',    label: 'bool' },
+    { value: 'bytes',   label: 'bytes' },
+  ];
+
+  function _protoTypeOptions(selected) {
+    return _PROTO_TYPES.map(function (t) {
+      var sel = (t.value === selected || (!selected && t.value === 'string')) ? ' selected' : '';
+      return '<option value="' + t.value + '"' + sel + '>' + t.label + '</option>';
+    }).join('');
+  }
+
+  function _appendParamRow(container, param, paramsArray) {
     var row = document.createElement('div');
     row.className = 'creator-param-row';
 
     row.innerHTML =
       '<div style="flex:2">' +
-        '<input type="text" class="form-control form-control-sm" placeholder="param_name" ' +
+        '<input type="text" class="form-control form-control-sm" placeholder="field_name (snake_case)" ' +
           'value="' + _escapeHtml(param.name) + '" data-pfield="name">' +
       '</div>' +
       '<div style="flex:1">' +
         '<select class="form-select form-select-sm" data-pfield="type">' +
-          '<option value="str"' + (param.type === 'str' ? ' selected' : '') + '>str</option>' +
-          '<option value="int"' + (param.type === 'int' ? ' selected' : '') + '>int</option>' +
-          '<option value="float"' + (param.type === 'float' ? ' selected' : '') + '>float</option>' +
-          '<option value="bool"' + (param.type === 'bool' ? ' selected' : '') + '>bool</option>' +
-          '<option value="list"' + (param.type === 'list' ? ' selected' : '') + '>list</option>' +
-          '<option value="dict"' + (param.type === 'dict' ? ' selected' : '') + '>dict</option>' +
+          _protoTypeOptions(param.type) +
         '</select>' +
       '</div>' +
       '<div style="flex:1">' +
@@ -315,9 +646,27 @@
           '<option value="false"' + (param.required === false ? ' selected' : '') + '>optional</option>' +
         '</select>' +
       '</div>' +
-      '<button class="btn-remove-param" title="Remove parameter"><i class="bi bi-x-lg"></i></button>';
+      '<button class="btn-remove-param" title="Remove field"><i class="bi bi-x-lg"></i></button>';
+
+    // Live-bind row fields to the backing param object.
+    var pName = row.querySelector('[data-pfield="name"]');
+    if (pName) pName.addEventListener('input', function () {
+      param.name = this.value;
+    });
+    var pType = row.querySelector('[data-pfield="type"]');
+    if (pType) pType.addEventListener('change', function () {
+      param.type = this.value;
+    });
+    var pReq = row.querySelector('[data-pfield="required"]');
+    if (pReq) pReq.addEventListener('change', function () {
+      param.required = this.value !== 'false';
+    });
 
     row.querySelector('.btn-remove-param').addEventListener('click', function () {
+      if (paramsArray) {
+        var idx = paramsArray.indexOf(param);
+        if (idx >= 0) paramsArray.splice(idx, 1);
+      }
       row.remove();
     });
 
@@ -422,7 +771,7 @@
             '</div>' +
           '</div>' +
         '</div>' +
-        _navButtons(2) +
+        _navButtons(3) +
       '</div>';
 
     // ---- Wire events ----
@@ -1069,47 +1418,47 @@
   function _renderStep4(container) {
     _collectFormData();
     var d = _formData;
-    var snakeName = _toSnakeCase(d.serviceName);
+    var sn = _toSnakeCase(d.serviceName);
+    var langLabel = d.language === 'cpp' ? 'C++' : 'Python';
+    var guiLabels = { none: 'None', html: 'HTML/JS', qml: 'QML', wasm: 'WASM', widget: 'Widget' };
+    var guiLabel = guiLabels[d.guiType] || d.guiType;
 
-    // Build file tree
-    var tree = d.serviceName + '/\n';
-    tree += '\u251c\u2500\u2500 ' + snakeName + '.py\n';
-    tree += '\u251c\u2500\u2500 main.py\n';
-    if (d.transport === 'eventbus') {
-      tree += '\u251c\u2500\u2500 config.jsonp\n';
-    }
-    if (d.guiSupport) {
-      tree += '\u2514\u2500\u2500 GUIs/\n';
-      if (d.guiMode === 'schema') {
-        tree += '    \u2514\u2500\u2500 gui_schema.json\n';
-      } else {
-        tree += '    \u251c\u2500\u2500 service.html' + (d.customGuiHtml ? ' (custom)' : '') + '\n';
-        tree += '    \u2514\u2500\u2500 service.js' + (d.customGuiJs ? ' (custom)' : '') + '\n';
-      }
-    }
-
-    // Build methods summary
+    // Build methods summary (proto-style, not svc_api_)
     var methodsHtml = '';
     if (d.methods.length === 0) {
       methodsHtml = '<div class="text-muted fst-italic">No methods defined</div>';
     } else {
       d.methods.forEach(function (m) {
-        var paramStr = (m.params || []).map(function (p) { return p.name; }).join(', ');
+        var paramStr = (m.params || []).map(function (p) {
+          return p.name + ':' + (p.type || 'string');
+        }).join(', ');
+        var streaming = m.serverStreaming ? ' <span class="badge bg-warning text-dark">stream</span>' : '';
         methodsHtml +=
           '<div class="creator-summary-method">' +
-            '<code>svc_api_' + _escapeHtml(m.name) + '(' + _escapeHtml(paramStr) + ')</code>' +
+            '<code>rpc ' + _escapeHtml(m.name) + '(' + _escapeHtml(paramStr) + ')</code>' +
             (m.returnType ? ' &rarr; <code>' + _escapeHtml(m.returnType) + '</code>' : '') +
-            (m.description ? '<div class="text-muted">' + _escapeHtml(m.description) + '</div>' : '') +
+            streaming +
+            (m.description ? '<div class="text-muted small">' + _escapeHtml(m.description) + '</div>' : '') +
           '</div>';
       });
     }
 
+    // Infra badges
+    var infraHtml =
+      (d.genNomad ? '<span class="badge bg-success me-1">Nomad HCL</span>' : '') +
+      (d.genBuildScripts ? '<span class="badge bg-success me-1">Build scripts</span>' : '') +
+      (d.genReadme ? '<span class="badge bg-success me-1">README</span>' : '') +
+      (d.genStubs ? '<span class="badge bg-success me-1">Proto stubs</span>' : '');
+
     container.innerHTML =
       '<div class="creator-content">' +
         '<div class="creator-header">' +
-          '<h4><i class="bi bi-4-circle me-2"></i>Review & Generate</h4>' +
+          '<h4><i class="bi bi-check-circle me-2"></i>Review & Generate</h4>' +
           '<p>Verify your service configuration and generate the project files.</p>' +
         '</div>' +
+
+        '<div class="row">' +
+        '<div class="col-md-6">' +
 
         // Summary card
         '<div class="creator-summary">' +
@@ -1117,46 +1466,104 @@
             '<i class="bi bi-box-seam me-2"></i>' + _escapeHtml(d.serviceName) + ' v' + _escapeHtml(d.version) +
           '</div>' +
           '<div class="creator-summary-body">' +
+            _summaryRow('Language', '<span class="badge bg-primary">' + langLabel + '</span>') +
+            _summaryRow('GUI', '<span class="badge ' +
+              (d.guiType !== 'none' ? 'bg-info' : 'bg-secondary') + '">' + guiLabel + '</span>') +
             _summaryRow('Description', d.description ? _escapeHtml(d.description) : '<em class="text-muted">none</em>') +
-            _summaryRow('Short Desc', d.shortDescription ? _escapeHtml(d.shortDescription) : '<em class="text-muted">none</em>') +
             _summaryRow('Group', d.group ? _escapeHtml(d.group) : '<em class="text-muted">none</em>') +
-            _summaryRow('Tag', d.tag ? _escapeHtml(d.tag) : '<em class="text-muted">none</em>') +
-            _summaryRow('Routing Key', '<code>' + _escapeHtml(d.routingKey) + '</code>') +
-            _summaryRow('Transport', d.transport) +
-            _summaryRow('GUI Support', d.guiSupport
-              ? '<span class="badge bg-success">Yes</span>' +
-                (d.guiMode === 'schema' ? ' <span class="badge bg-primary">Schema-driven</span>' : '') +
-                (d.guiMode === 'custom' && d.customGuiHtml ? ' <span class="badge bg-info">custom HTML</span>' : '') +
-                (d.guiMode === 'custom' && d.customGuiJs ? ' <span class="badge bg-info">custom JS</span>' : '')
-              : '<span class="badge bg-secondary">No</span>') +
+            _summaryRow('Infrastructure', infraHtml || '<em class="text-muted">none</em>') +
             '<div class="creator-summary-methods">' +
-              '<div class="fw-semibold mb-2" style="font-size:0.85rem">API Methods (' + d.methods.length + ')</div>' +
+              '<div class="fw-semibold mb-2" style="font-size:0.85rem">gRPC Methods (' + d.methods.length + ')</div>' +
               methodsHtml +
             '</div>' +
           '</div>' +
         '</div>' +
 
-        // File tree preview
-        '<label class="form-label fw-semibold">Generated File Structure</label>' +
-        '<div class="creator-preview">' + _escapeHtml(tree) + '</div>' +
+        '</div>' +  // end col-md-6
+        '<div class="col-md-6">' +
+
+        // Nomad HCL configuration (only if genNomad is checked)
+        (d.genNomad
+          ? '<div class="card mb-3">' +
+              '<div class="card-header py-2"><i class="bi bi-hdd-rack me-1"></i>Nomad Job Configuration</div>' +
+              '<div class="card-body">' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Datacenter' +
+                    '<span class="text-muted ms-1">— Nomad datacenter name</span></label>' +
+                  '<input class="form-control form-control-sm" id="scNomadDc" value="dc1">' +
+                '</div>' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Driver' +
+                    '<span class="text-muted ms-1">— Nomad task driver</span></label>' +
+                  '<select class="form-select form-select-sm" id="scNomadDriver">' +
+                    '<option value="raw_exec" selected>raw_exec (direct process, no isolation)</option>' +
+                    '<option value="exec">exec (chroot isolation, Linux only)</option>' +
+                    '<option value="docker">docker (container)</option>' +
+                  '</select>' +
+                '</div>' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Command path' +
+                    '<span class="text-muted ms-1">— absolute path to the service executable/script</span></label>' +
+                  '<input class="form-control form-control-sm" id="scNomadCommand" ' +
+                    'placeholder="/path/to/' + _escapeHtml(sn) + (d.language === 'cpp' ? '' : '/main.py') + '">' +
+                '</div>' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Consul address' +
+                    '<span class="text-muted ms-1">— where the service registers itself</span></label>' +
+                  '<input class="form-control form-control-sm" id="scNomadConsulAddr" ' +
+                    'value="http://127.0.0.1:8500" placeholder="http://127.0.0.1:8500">' +
+                '</div>' +
+                '<div class="row">' +
+                  '<div class="col-6 mb-2">' +
+                    '<label class="form-label form-label-sm">CPU (MHz)' +
+                      '<span class="text-muted ms-1">— resource limit</span></label>' +
+                    '<input class="form-control form-control-sm" type="number" id="scNomadCpu" value="100">' +
+                  '</div>' +
+                  '<div class="col-6 mb-2">' +
+                    '<label class="form-label form-label-sm">Memory (MB)' +
+                      '<span class="text-muted ms-1">— resource limit</span></label>' +
+                    '<input class="form-control form-control-sm" type="number" id="scNomadMem" value="128">' +
+                  '</div>' +
+                '</div>' +
+                '<div class="form-text small mt-0">' +
+                  '<code>' + _escapeHtml(sn.toUpperCase() + '_') +
+                  'GRPC_PORT</code> and <code>ADVERTISE_ADDR</code> are populated automatically ' +
+                  'from Nomad\'s dynamic port allocation. ' +
+                  '<code>CONSUL_ADDR</code> uses the address configured above.' +
+                '</div>' +
+              '</div>' +
+            '</div>'
+          : '') +
+
+        '</div>' +  // end col-md-6
+        '</div>' +  // end row
 
         // Output actions
         '<div class="creator-output-actions">' +
           '<div class="output-path-group">' +
-            '<label class="form-label fw-semibold">Output Path (optional)</label>' +
-            '<input type="text" class="form-control" id="cfOutputPath" ' +
-              'placeholder="C:\\Projects\\MyService or leave empty for ZIP download" ' +
-              'value="' + _escapeHtml(d.outputPath) + '">' +
+            '<label class="form-label fw-semibold">Output Path</label>' +
+            '<div class="input-group">' +
+              '<input type="text" class="form-control" id="cfOutputPath" ' +
+                'placeholder="Leave empty for ZIP download" ' +
+                'value="' + _escapeHtml(d.outputPath) + '">' +
+              (typeof window.electronAPI === 'object'
+                ? '<button class="btn btn-outline-secondary" type="button" id="btnBrowsePath">' +
+                    '<i class="bi bi-folder2 me-1"></i>Browse...' +
+                  '</button>'
+                : '') +
+            '</div>' +
           '</div>' +
-          '<button class="btn btn-primary" id="btnDownloadZip">' +
-            '<i class="bi bi-file-earmark-zip me-1"></i>Download ZIP' +
-          '</button>' +
-          '<button class="btn btn-outline-primary" id="btnSavePath" disabled>' +
-            '<i class="bi bi-folder2-open me-1"></i>Save to Path' +
-          '</button>' +
+          '<div class="d-flex gap-2 mt-2">' +
+            '<button class="btn btn-primary" id="btnDownloadZip">' +
+              '<i class="bi bi-file-earmark-zip me-1"></i>Download ZIP' +
+            '</button>' +
+            '<button class="btn btn-outline-primary" id="btnSavePath" disabled>' +
+              '<i class="bi bi-folder2-open me-1"></i>Save to Path' +
+            '</button>' +
+          '</div>' +
         '</div>' +
 
-        _navButtons(3) +
+        _navButtons(4) +
       '</div>';
 
     // Wire output path → enable Save to Path
@@ -1167,16 +1574,52 @@
     });
     if (pathInput.value.trim()) saveBtn.disabled = false;
 
+    // Wire Browse button (Electron only)
+    var browseBtn = document.getElementById('btnBrowsePath');
+    if (browseBtn && window.electronAPI && window.electronAPI.showOpenDialog) {
+      browseBtn.addEventListener('click', function () {
+        window.electronAPI.showOpenDialog({
+          properties: ['openDirectory', 'createDirectory'],
+          title: 'Select output folder for ' + d.serviceName
+        }).then(function (result) {
+          if (result && result.filePaths && result.filePaths.length > 0) {
+            pathInput.value = result.filePaths[0];
+            saveBtn.disabled = false;
+          }
+        });
+      });
+    }
+
     // Wire generate buttons
     document.getElementById('btnDownloadZip').addEventListener('click', function () {
       _submitGenerate('zip');
     });
     saveBtn.addEventListener('click', function () {
       _formData.outputPath = pathInput.value.trim();
+      // Collect Nomad config overrides if present
+      _collectNomadConfig();
       _submitGenerate('path');
     });
 
     _wireNavButtons();
+  }
+
+  function _collectNomadConfig() {
+    // Read Nomad HCL fields into formData so the backend can use them.
+    // If these fields don't exist in the DOM (genNomad is false), skip.
+    var el;
+    el = document.getElementById('scNomadDc');
+    if (el) _formData.nomadDc = el.value.trim() || 'dc1';
+    el = document.getElementById('scNomadDriver');
+    if (el) _formData.nomadDriver = el.value || 'raw_exec';
+    el = document.getElementById('scNomadCommand');
+    if (el) _formData.nomadCommand = el.value.trim();
+    el = document.getElementById('scNomadCpu');
+    if (el) _formData.nomadCpu = parseInt(el.value, 10) || 100;
+    el = document.getElementById('scNomadMem');
+    if (el) _formData.nomadMem = parseInt(el.value, 10) || 128;
+    el = document.getElementById('scNomadConsulAddr');
+    if (el) _formData.nomadConsulAddr = el.value.trim() || 'http://127.0.0.1:8500';
   }
 
   function _summaryRow(label, valueHtml) {
@@ -1213,7 +1656,7 @@
     if (prevBtn) {
       prevBtn.addEventListener('click', function () {
         _collectFormData();
-        _currentStep--;
+        _currentStep = _prevVisibleStep(_currentStep);
         _renderStepList();
         _renderStep(_currentStep);
       });
@@ -1222,7 +1665,7 @@
       nextBtn.addEventListener('click', function () {
         if (_validateStep(_currentStep)) {
           _collectFormData();
-          _currentStep++;
+          _currentStep = _nextVisibleStep(_currentStep);
           _renderStepList();
           _renderStep(_currentStep);
         }
@@ -1252,24 +1695,26 @@
     el = document.getElementById('cfTransport');
     if (el) _formData.transport = el.value;
 
-    // Step 2: collect methods from DOM
+    // Step 3 (was 2): collect methods from DOM
     var methodCards = document.querySelectorAll('.creator-method-card');
     if (methodCards.length > 0) {
       _formData.methods = [];
       methodCards.forEach(function (card) {
         var methodId = parseInt(card.getAttribute('data-method-id'), 10);
+        var streamingEl = card.querySelector('[data-field="serverStreaming"]');
         var method = {
           id: methodId,
           name: (card.querySelector('[data-field="name"]') || {}).value || '',
-          returnType: (card.querySelector('[data-field="returnType"]') || {}).value || '',
+          returnType: (card.querySelector('[data-field="returnType"]') || {}).value || 'string',
           description: (card.querySelector('[data-field="description"]') || {}).value || '',
+          serverStreaming: streamingEl ? streamingEl.checked : false,
           params: []
         };
 
         card.querySelectorAll('.creator-param-row').forEach(function (row) {
           method.params.push({
             name: (row.querySelector('[data-pfield="name"]') || {}).value || '',
-            type: (row.querySelector('[data-pfield="type"]') || {}).value || 'str',
+            type: (row.querySelector('[data-pfield="type"]') || {}).value || 'string',
             required: (row.querySelector('[data-pfield="required"]') || {}).value !== 'false'
           });
         });
@@ -1311,7 +1756,9 @@
         return false;
       }
     }
-    if (n === 1) {
+    // Step 1 (Technology) — no required fields, always valid.
+
+    if (n === 2) {
       _collectFormData();
       for (var i = 0; i < _formData.methods.length; i++) {
         var m = _formData.methods[i];
@@ -1673,43 +2120,53 @@
       return;
     }
 
-    // "Save to Path" mode — requires FastAPI backend
+    // "Save to Path" mode — calls the v2 scaffold endpoint which supports
+    // Python/C++ with multiple GUI types and infrastructure files.
     var payload = {
       service_name: d.serviceName,
       version: d.version,
       description: d.description,
-      short_description: d.shortDescription,
+      short_desc: d.shortDescription,
       group: d.group,
       tag: d.tag,
-      routing_key: d.routingKey || 'service.' + _toSnakeCase(d.serviceName),
-      transport: d.transport,
-      gui_support: d.guiSupport,
+      language: d.language || 'python',
+      gui_type: d.guiType || 'none',
+      gen_nomad: d.genNomad !== false,
+      gen_build_scripts: d.genBuildScripts !== false,
+      gen_readme: d.genReadme !== false,
+      gen_stubs: d.genStubs !== false,
+      vcpkg_root: d.vcpkgRoot || '',
+      protoc_path: d.protocPath || '',
+      grpc_plugin_path: d.grpcPluginPath || '',
+      nomad_dc: d.nomadDc || 'dc1',
+      nomad_driver: d.nomadDriver || 'raw_exec',
+      nomad_command: d.nomadCommand || '',
+      nomad_cpu: d.nomadCpu || 100,
+      nomad_mem: d.nomadMem || 128,
+      nomad_consul_addr: d.nomadConsulAddr || 'http://127.0.0.1:8500',
       methods: d.methods.map(function (m) {
         return {
           name: m.name,
           params: (m.params || []).map(function (p) {
-            return { name: p.name, type: p.type, required: p.required };
+            return { name: p.name, type: p.type || 'string',
+                     required: p.required !== false, description: p.description || '' };
           }),
-          return_type: m.returnType,
-          description: m.description
+          return_type: m.returnType || 'string',
+          description: m.description || '',
+          server_streaming: !!m.serverStreaming
         };
       }),
-      output_path: d.outputPath,
-      gui_mode: d.guiMode || 'schema',
-      gui_schema: d.guiSchema || null,
-      custom_gui_html: d.customGuiHtml || '',
-      custom_gui_js: d.customGuiJs || ''
+      output_path: d.outputPath
     };
 
     var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
     if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
-      // Electron mode: derive bridge URL from settings
       var settings = MM.getSettings ? MM.getSettings() : {};
       var bridgePort = settings.bridgePort || 1112;
       apiUrl = 'http://localhost:' + bridgePort;
     }
 
-    fetch(apiUrl + '/api/scaffold/generate', {
+    fetch(apiUrl + '/api/scaffold/generate-v2', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1720,7 +2177,10 @@
       })
       .then(function (data) {
         if (data.status === 'ok') {
-          MM.showToast('Success', 'Files saved to ' + data.path, 'success');
+          var msg = data.file_count
+            ? data.file_count + ' files saved to ' + data.path
+            : 'Files saved to ' + data.path;
+          MM.showToast('Success', msg, 'success');
         } else {
           MM.showToast('Error', data.error || 'Generation failed.', 'danger');
         }
