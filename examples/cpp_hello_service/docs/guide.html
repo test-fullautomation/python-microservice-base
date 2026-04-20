@@ -253,18 +253,19 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     overflow: auto;
     cursor: default;
+    position: relative;
   }
-  .diagram-modal-inner svg {
+  .diagram-modal-svg-wrap {
+    transform-origin: top left;
+    display: inline-block;
+    min-width: 100%;
+  }
+  .diagram-modal-svg-wrap svg {
     display: block;
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
+    width: auto;
+    height: auto;
   }
   .diagram-modal-close {
     position: fixed;
@@ -277,6 +278,51 @@
     z-index: 10000;
   }
   .diagram-modal-close:hover { opacity: 1; color: var(--accent); }
+
+  /* ---- Zoom controls in the modal ---- */
+  .diagram-modal-controls {
+    position: fixed;
+    top: 18px; left: 28px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    z-index: 10000;
+    user-select: none;
+  }
+  .diagram-modal-controls button {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 1em;
+    font-family: inherit;
+    line-height: 1;
+    min-width: 30px;
+  }
+  .diagram-modal-controls button:hover {
+    background: var(--accent);
+    color: #0f172a;
+    border-color: var(--accent);
+  }
+  .diagram-modal-controls .zoom-label {
+    color: var(--muted);
+    font-size: 0.85em;
+    min-width: 52px;
+    text-align: center;
+    font-family: monospace;
+  }
+  .diagram-modal-controls .hint {
+    color: var(--muted);
+    font-size: 0.75em;
+    margin-left: 8px;
+    font-style: italic;
+  }
 
   footer {
     text-align: center;
@@ -309,6 +355,7 @@
   <a href="#class-diagram">Class Diagram</a>
   <a href="#component-diagram">Component Diagram</a>
   <a href="#sequence-diagram">Sequence Diagram</a>
+  <a href="#lifecycle-diagram">Service Lifecycle</a>
   <a href="#prereqs">Prerequisites</a>
   <a href="#structure">Project Structure</a>
   <a href="#set-env">Environment Setup</a>
@@ -605,6 +652,122 @@ sequenceDiagram
   is deliberate: it lets the window paint before the first network call,
   so the GUI never looks frozen even if Consul is slow.
 </p>
+</section>
+
+<!-- ===================================================================
+     Service Lifecycle Diagram
+     =================================================================== -->
+<section id="lifecycle-diagram">
+<h2>Service Lifecycle &mdash; Initialization → Runtime → Shutdown</h2>
+<p>
+  Full lifespan of a single service process, showing how the user-written
+  classes (<code>Settings</code>, <code>Domain</code>, <code>GrpcAdapter</code>)
+  hand off to the library infrastructure (<code>ServiceRunner</code>,
+  <code>ConsulRegistration</code>, <code>grpc::Server</code>), and how
+  external components (OS signals, Consul agent, clients) interact
+  throughout.
+</p>
+
+<div class="diagram">
+<div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor OS as OS / operator
+    participant M as main()
+    participant ST as Settings
+    participant D as Domain
+    participant A as GrpcAdapter
+    participant R as ServiceRunner
+    participant G as grpc::Server
+    participant CR as ConsulRegistration
+    participant K as Consul :8500
+    participant CLI as Client
+
+    rect rgb(30,41,59)
+    Note over OS,K: 1. Initialization (main)
+    OS->>M: exec my_service.exe
+    M->>ST: Settings()
+    ST->>ST: loadBaseFromEnv("MY_")
+    ST-->>M: grpc_port, consul_addr, ...
+    M->>D: Domain()
+    M->>A: GrpcAdapter(domain)
+    M->>R: ServiceRunner(settings, {"v1"})
+    M->>R: addService(adapter, "pkg.MyService")
+    M->>R: serveForever()
+    end
+
+    rect rgb(30,41,59)
+    Note over R,K: 2. Startup (inside serveForever)
+    R->>G: BuildAndStart() - bind dynamic port
+    G-->>R: bound_port
+    R->>G: enable HealthCheck + Reflection
+    R->>CR: new ConsulRegistration(name, addr, port, tags)
+    R->>CR: registerService()
+    CR->>K: PUT /v1/agent/service/register
+    K-->>CR: 200 OK
+    CR-->>R: true
+    R->>R: install SIGINT/SIGTERM handlers
+    R->>R: wait on shutdown condition var
+    end
+
+    rect rgb(30,41,59)
+    Note over K,D: 3. Runtime - health checks and RPC calls
+    loop every 10s
+        K->>G: gRPC health/Check
+        G-->>K: SERVING
+    end
+    CLI->>G: EchoRequest("hello")
+    G->>A: Echo(ctx, req, resp)
+    A->>D: echo("hello")
+    D-->>A: "echo: hello"
+    A->>A: resp.set_result(...)
+    A-->>G: Status OK
+    G-->>CLI: EchoResponse
+    end
+
+    rect rgb(30,41,59)
+    Note over OS,K: 4. Shutdown (SIGINT / SIGTERM)
+    OS->>R: SIGINT
+    R->>R: signal handler - requestShutdown()
+    R->>R: shutdown cv notified
+    R->>CR: deregisterService()
+    CR->>K: PUT /v1/agent/service/deregister/{id}
+    K-->>CR: 200 OK
+    R->>G: Shutdown(deadline) - drain in-flight RPCs
+    G-->>R: stopped
+    R-->>M: return from serveForever()
+    M-->>OS: exit 0
+    end
+</div>
+</div>
+<p class="diagram-caption">
+  Four phases.  Only (1) is your code; (2)-(4) are handled by
+  <code>ServiceRunner</code>.  The only thing you must not skip in main
+  is calling <code>runner.addService(...)</code> before
+  <code>serveForever()</code>.
+</p>
+
+<h3>Class-to-phase responsibility matrix</h3>
+<table>
+  <tr><th>Class</th><th>Init</th><th>Startup</th><th>Runtime</th><th>Shutdown</th></tr>
+  <tr><td><code>Settings</code></td><td>read env vars</td><td>—</td><td>—</td><td>—</td></tr>
+  <tr><td><code>Domain</code></td><td>construct</td><td>—</td><td>handle business logic calls</td><td>destruct</td></tr>
+  <tr><td><code>GrpcAdapter</code></td><td>construct, bind to domain</td><td>registered with grpc::Server</td><td>translate gRPC ↔ domain</td><td>destruct</td></tr>
+  <tr><td><code>ServiceRunner</code></td><td>construct</td><td>orchestrate: server + Consul + signals</td><td>block on cv</td><td>deregister, stop server</td></tr>
+  <tr><td><code>ConsulRegistration</code></td><td>—</td><td>PUT /register</td><td>respond to health checks (via grpc::Server)</td><td>PUT /deregister</td></tr>
+  <tr><td><code>grpc::Server</code></td><td>—</td><td>bind, listen, start worker threads</td><td>dispatch RPCs to adapter</td><td>drain, stop threads</td></tr>
+</table>
+
+<div class="highlight-box">
+  <strong>Why deregister on shutdown matters:</strong> if the service
+  exits without calling <code>deregisterService()</code>, Consul keeps
+  the stale entry until its health check fails (default: 3 consecutive
+  failures at 10s each = ~30s).  During that window,
+  <code>ServiceClient</code> may still resolve to the dead host.  The
+  SIGBREAK handling on Windows (converted to
+  <code>signal.default_int_handler</code> internally) is what makes the
+  deregister call happen during a clean Ctrl+C shutdown.
+</div>
 </section>
 
 <!-- ===================================================================
@@ -1548,6 +1711,67 @@ void deregisterService();</code></pre>
   <tr><td>gRPC <code>UNAVAILABLE</code></td><td>Wrong host:port &mdash; check Consul or service log for the real dynamic port</td></tr>
   <tr><td>"(no RPC method defined)" in GUI</td><td>Proto has no <code>rpc</code> &mdash; add one and re-run <code>proto\generate_stubs.bat</code></td></tr>
   <tr><td>ScaffoldWizard generated service with 0 methods</td><td>Fixed in v2 &mdash; wizard inputs now bind live to state.  Hard-reload the GUI (Ctrl+F5) and regenerate</td></tr>
+
+  <tr><th colspan="2" style="background:#0b1220;color:var(--amber)">MinGW / vcpkg issues</th></tr>
+  <tr>
+    <td>MinGW link fails with <code>c++.exe: error: unrecognized command-line option '-ignore:4221'</code></td>
+    <td>
+      vcpkg silently linked the MSVC (<code>x64-windows</code>) prefix because the
+      <code>x64-mingw-dynamic</code> triplet isn't installed. Install it:
+<pre><code>D:\vcpkg\vcpkg install grpc:x64-mingw-dynamic ^
+                       protobuf:x64-mingw-dynamic ^
+                       curl:x64-mingw-dynamic</code></pre>
+      Then <code>rmdir /s /q build-mingw client\build-mingw</code> and rerun.
+      The generated <code>build_deploy_mingw.bat</code> has a fail-fast check for
+      this, pointing at the exact install command.
+    </td>
+  </tr>
+  <tr>
+    <td><code>error: Invalid triplet: %vcpkg_triplet%</code> (on every vcpkg command)</td>
+    <td>
+      A persistent <code>VCPKG_DEFAULT_TRIPLET</code> env var holds the literal
+      string <code>%VCPKG_TRIPLET%</code> — it got stored when someone ran
+      <code>set VCPKG_DEFAULT_TRIPLET=%VCPKG_TRIPLET%</code> in a shell where
+      <code>VCPKG_TRIPLET</code> wasn't defined.  Clear it:
+<pre><code>set VCPKG_DEFAULT_TRIPLET=
+:: if it was set permanently:
+setx VCPKG_DEFAULT_TRIPLET ""
+:: then close and reopen cmd</code></pre>
+    </td>
+  </tr>
+  <tr>
+    <td><code>Failed to download ... msys2 make-4.4.1-1-x86_64.pkg.tar.zst</code> (HTTP 404 from every mirror)</td>
+    <td>
+      MSYS2 rotates old package versions off its mirrors; an older vcpkg port
+      still references the exact missing file.  Update vcpkg itself:
+<pre><code>cd D:\vcpkg
+git pull
+.\bootstrap-vcpkg.bat</code></pre>
+      If pulling doesn't help, switch to the static triplet
+      (<code>x64-mingw-static</code>) or fall back to the MSVC build
+      (<code>build_deploy.bat</code>) &mdash; MinGW support in vcpkg is
+      community-tier and hits port churn like this periodically.
+    </td>
+  </tr>
+  <tr>
+    <td>Want to cancel a half-finished vcpkg MinGW install and start over</td>
+    <td>
+      <code>vcpkg remove openssl:x64-mingw-dynamic grpc:x64-mingw-dynamic
+      protobuf:x64-mingw-dynamic curl:x64-mingw-dynamic --recurse</code>,
+      then delete <code>%VCPKG_ROOT%\buildtrees\openssl</code> and retry.
+    </td>
+  </tr>
+  <tr>
+    <td><code>set_env</code> printed the wrong path but I can't fix it</td>
+    <td>
+      Since v2 <code>set_env.bat</code>/<code>.sh</code> always overwrite
+      parent-shell values (no more <code>if not defined</code>).  Edit the
+      <strong>file</strong> itself — the next run wins.  If your edit still
+      isn't applied, check you're running the right variant
+      (<code>set_env.bat</code> for MSVC, <code>set_env_mingw.bat</code>
+      for MinGW).
+    </td>
+  </tr>
 </table>
 </section>
 
@@ -1555,8 +1779,18 @@ void deregisterService();</code></pre>
 
 <!-- Zoom modal for diagrams -->
 <div class="diagram-modal" id="diagramModal">
+  <div class="diagram-modal-controls" id="diagramModalControls">
+    <button id="zoomOutBtn" title="Zoom out (-)">−</button>
+    <span class="zoom-label" id="zoomLabel">100%</span>
+    <button id="zoomInBtn"  title="Zoom in (+)">+</button>
+    <button id="zoomResetBtn" title="Reset (0)">Reset</button>
+    <button id="zoomFitBtn"   title="Fit to window (F)">Fit</button>
+    <span class="hint">+ / − / 0 / F &nbsp;•&nbsp; Ctrl+wheel</span>
+  </div>
   <span class="diagram-modal-close" id="diagramModalClose" title="Close (Esc)">&times;</span>
-  <div class="diagram-modal-inner" id="diagramModalInner"></div>
+  <div class="diagram-modal-inner" id="diagramModalInner">
+    <div class="diagram-modal-svg-wrap" id="diagramModalSvgWrap"></div>
+  </div>
 </div>
 
 <footer>
@@ -1584,18 +1818,49 @@ void deregisterService();</code></pre>
 </script>
 
 <script>
-// ---- Click-to-zoom for diagrams ----
+// ---- Click-to-zoom for diagrams (with +/- zoom controls) ----
 (function () {
-  var modal = document.getElementById('diagramModal');
-  var inner = document.getElementById('diagramModalInner');
-  var closeBtn = document.getElementById('diagramModalClose');
+  var modal     = document.getElementById('diagramModal');
+  var inner     = document.getElementById('diagramModalInner');
+  var wrap      = document.getElementById('diagramModalSvgWrap');
+  var closeBtn  = document.getElementById('diagramModalClose');
+  var zoomIn    = document.getElementById('zoomInBtn');
+  var zoomOut   = document.getElementById('zoomOutBtn');
+  var zoomReset = document.getElementById('zoomResetBtn');
+  var zoomFit   = document.getElementById('zoomFitBtn');
+  var zoomLabel = document.getElementById('zoomLabel');
+
+  var zoom = 1.0;          // current scale factor
+  var natural = null;      // {w,h} of the SVG at scale 1 (viewBox or intrinsic)
+  var MIN = 0.25, MAX = 8;
+
+  function applyZoom() {
+    if (!natural) return;
+    wrap.style.width  = (natural.w * zoom) + 'px';
+    wrap.style.height = (natural.h * zoom) + 'px';
+    wrap.style.transform = 'scale(' + zoom + ')';
+    var svg = wrap.querySelector('svg');
+    if (svg) {
+      svg.setAttribute('width',  natural.w);
+      svg.setAttribute('height', natural.h);
+    }
+    zoomLabel.textContent = Math.round(zoom * 100) + '%';
+  }
+  function setZoom(newZoom) {
+    zoom = Math.max(MIN, Math.min(MAX, newZoom));
+    applyZoom();
+  }
+  function fitToWindow() {
+    if (!natural) return;
+    var availW = inner.clientWidth  - 8;
+    var availH = inner.clientHeight - 8;
+    setZoom(Math.min(availW / natural.w, availH / natural.h));
+  }
 
   function openFor(diagram) {
-    inner.innerHTML = '';
+    wrap.innerHTML = '';
     var svg = diagram.querySelector('svg');
     if (!svg) {
-      // Mermaid hasn't rendered (or threw a syntax error). Show a hint
-      // with whatever Mermaid put in the container.
       var fallback = document.createElement('div');
       fallback.style.cssText =
         'color:#fbbf24;padding:24px;font-family:monospace;white-space:pre-wrap;max-width:80vw';
@@ -1603,26 +1868,45 @@ void deregisterService();</code></pre>
         '[no rendered diagram]\n\n' +
         'Mermaid either failed to parse this diagram or is still loading.\n' +
         'Container HTML:\n\n' + diagram.innerHTML.slice(0, 800);
-      inner.appendChild(fallback);
+      wrap.appendChild(fallback);
+      natural = null;
       modal.classList.add('open');
       return;
     }
-    var clone = svg.cloneNode(true);
-    // Strip Mermaid's inline sizing / style so the container's CSS
-    // (width:92vw, height:90vh) controls the enlarged size. The SVG's
-    // viewBox does the actual scaling.
-    clone.removeAttribute('width');
-    clone.removeAttribute('height');
-    clone.removeAttribute('style');
-    if (!clone.getAttribute('preserveAspectRatio')) {
-      clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    }
-    inner.appendChild(clone);
-    modal.classList.add('open');
-  }
-  function close() { modal.classList.remove('open'); inner.innerHTML = ''; }
 
-  // Wire each diagram. Delay slightly so mermaid has time to render.
+    var clone = svg.cloneNode(true);
+    clone.removeAttribute('style');
+    clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    // Derive natural size: viewBox > width/height > bbox fallback.
+    var vb = clone.getAttribute('viewBox');
+    if (vb) {
+      var parts = vb.split(/\s+/).map(parseFloat);
+      natural = { w: parts[2], h: parts[3] };
+    } else {
+      natural = {
+        w: parseFloat(clone.getAttribute('width'))  || svg.getBBox().width,
+        h: parseFloat(clone.getAttribute('height')) || svg.getBBox().height
+      };
+    }
+    wrap.appendChild(clone);
+    modal.classList.add('open');
+
+    // Wait a tick for layout, then fit to window.
+    requestAnimationFrame(function () {
+      fitToWindow();
+      // Start a touch larger than pure-fit so text is comfortably readable.
+      setZoom(zoom * 1.25);
+    });
+  }
+  function closeModal() {
+    modal.classList.remove('open');
+    wrap.innerHTML = '';
+    natural = null;
+    zoom = 1.0;
+  }
+
+  // Wire each diagram container.
   function wireDiagrams() {
     document.querySelectorAll('.diagram').forEach(function (d) {
       if (d.dataset.wired) return;
@@ -1632,18 +1916,39 @@ void deregisterService();</code></pre>
   }
   window.addEventListener('load', function () {
     wireDiagrams();
-    // Mermaid may append SVGs slightly after load; re-wire once more.
     setTimeout(wireDiagrams, 600);
   });
 
+  // Control wiring.  stopPropagation so clicks don't bubble to backdrop.
+  function stop(e) { e.stopPropagation(); }
+  zoomIn.addEventListener('click',    function (e) { stop(e); setZoom(zoom * 1.25); });
+  zoomOut.addEventListener('click',   function (e) { stop(e); setZoom(zoom / 1.25); });
+  zoomReset.addEventListener('click', function (e) { stop(e); setZoom(1.0); });
+  zoomFit.addEventListener('click',   function (e) { stop(e); fitToWindow(); });
+  closeBtn.addEventListener('click',  function (e) { stop(e); closeModal(); });
+
+  // Click on backdrop closes; click on inner / controls stays open.
   modal.addEventListener('click', function (e) {
-    // Clicking the backdrop (not the inner SVG) closes.
-    if (e.target === modal || e.target === closeBtn) close();
+    if (e.target === modal) closeModal();
   });
-  closeBtn.addEventListener('click', close);
+  inner.addEventListener('click', stop);
+
+  // Keyboard shortcuts while modal is open.
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && modal.classList.contains('open')) close();
+    if (!modal.classList.contains('open')) return;
+    if (e.key === 'Escape') closeModal();
+    else if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom(zoom * 1.25); }
+    else if (e.key === '-' || e.key === '_') { e.preventDefault(); setZoom(zoom / 1.25); }
+    else if (e.key === '0')                  { e.preventDefault(); setZoom(1.0); }
+    else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); fitToWindow(); }
   });
+
+  // Ctrl / Cmd + mouse wheel zooms.
+  inner.addEventListener('wheel', function (e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+  }, { passive: false });
 })();
 </script>
 

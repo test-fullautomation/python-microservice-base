@@ -30,6 +30,9 @@ def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
     # only has to configure paths in one place.
     files["set_env.bat"] = _set_env_bat(spec)
     files["set_env.sh"] = _set_env_sh(spec)
+    # MinGW flavor uses its own set_env so MSVC defaults don't clobber
+    # MinGW values (the files are now authoritative, no 'if not defined').
+    files["set_env_mingw.bat"] = _set_env_mingw_bat(spec)
 
     # Generate stubs scripts go in proto/ (shared by service + client)
     files["proto/generate_stubs.bat"] = _gen_stubs_bat(spec)
@@ -413,100 +416,153 @@ namespace {sn} {{
 # -----------------------------------------------------------------------
 
 def _set_env_bat(spec: "ScaffoldSpec") -> str:
-    qt_block = ""
+    """MSVC flavor of set_env.bat — authoritative (no 'if not defined')."""
+    qt_line = ""
+    qt_summary = ""
     if spec.gui_type in ("widget", "wasm"):
-        qt_block = '''
-:: Qt install prefix — needed by the Widgets/WASM GUI client (find_package(Qt6)).
-:: Point to the Qt kit that matches your MSVC toolchain.
-if not defined QT_DIR set "QT_DIR=C:\\Qt\\6.7.1\\msvc2019_64"
-'''
+        qt_line = 'set "QT_DIR=C:\\Qt\\6.7.1\\msvc2019_64"\n'
+        qt_summary = 'echo   QT_DIR     = %QT_DIR%\n'
 
     wasm_block = ""
+    wasm_summary = ""
     if spec.gui_type == "wasm":
         wasm_block = '''
 :: ----- Qt / Emscripten paths (only needed for WASM GUI builds) -----
-if not defined QT_WASM_DIR  set "QT_WASM_DIR=C:\\Qt\\6.7.1\\wasm_singlethread"
-if not defined QT_HOST_DIR  set "QT_HOST_DIR=C:\\Qt\\6.7.1\\msvc2019_64"
-if not defined QT_CMAKE_DIR set "QT_CMAKE_DIR=C:\\Qt\\Tools\\CMake_64\\bin"
-if not defined QT_NINJA_DIR set "QT_NINJA_DIR=C:\\Qt\\Tools\\Ninja"
-if not defined EMSDK_DIR    set "EMSDK_DIR=D:\\emsdk"
+set "QT_WASM_DIR=C:\\Qt\\6.7.1\\wasm_singlethread"
+set "QT_HOST_DIR=C:\\Qt\\6.7.1\\msvc2019_64"
+set "QT_CMAKE_DIR=C:\\Qt\\Tools\\CMake_64\\bin"
+set "QT_NINJA_DIR=C:\\Qt\\Tools\\Ninja"
+set "EMSDK_DIR=D:\\emsdk"
 '''
+        wasm_summary = (
+            'echo   QT_WASM_DIR  = %QT_WASM_DIR%\n'
+            'echo   QT_HOST_DIR  = %QT_HOST_DIR%\n'
+            'echo   QT_CMAKE_DIR = %QT_CMAKE_DIR%\n'
+            'echo   QT_NINJA_DIR = %QT_NINJA_DIR%\n'
+            'echo   EMSDK_DIR    = %EMSDK_DIR%\n'
+        )
+
     return f'''@echo off
-:: Central environment variables for this project.
+:: Central environment for MSVC builds.
 ::
-:: Edit the defaults below, then every build script (build_deploy.bat,
-:: proto\\generate_stubs.bat, build_wasm.bat) picks them up automatically.
+:: THESE VALUES ALWAYS OVERWRITE whatever is in the parent shell.
+:: Edit them directly to match your machine — that way a previous bad
+:: 'set' in the shell can't stick around and break subsequent runs.
 ::
-:: Variables already set in the shell or System Environment are NOT
-:: overwritten — so CI and users with global config still work.
+:: For MinGW builds use set_env_mingw.bat instead (called by
+:: build_deploy_mingw.bat).
 
-if not defined VCPKG_ROOT set "VCPKG_ROOT=C:\\vcpkg"
+set "VCPKG_ROOT=C:\\vcpkg"
 
-:: CMake / Ninja — point these at your installs if they are NOT on PATH.
-:: The block below prepends them to PATH so plain `cmake` / `ninja` work
-:: from a vanilla cmd window (no Visual Studio Developer Prompt needed).
-if not defined CMAKE_DIR set "CMAKE_DIR=C:\\Program Files\\CMake\\bin"
-if not defined NINJA_DIR set "NINJA_DIR="
+:: CMake / Ninja — absolute paths; prepended to PATH if the exe exists.
+set "CMAKE_DIR=C:\\Program Files\\CMake\\bin"
+set "NINJA_DIR="
 
 if exist "%CMAKE_DIR%\\cmake.exe" set "PATH=%CMAKE_DIR%;%PATH%"
 if defined NINJA_DIR if exist "%NINJA_DIR%\\ninja.exe" set "PATH=%NINJA_DIR%;%PATH%"
 
-:: MSVC compiler — call vcvars64.bat so cl.exe, link.exe, and Windows SDK
-:: headers are available.  Skip if already initialised (VSCMD_ARG_TGT_ARCH
-:: is set by vcvars itself) or from a Developer Command Prompt.
-:: Point VS_DEV_CMD at the correct edition (Community / Professional / Enterprise).
-if not defined VS_DEV_CMD set "VS_DEV_CMD=C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+:: MSVC compiler — call vcvars64.bat to set cl.exe, link.exe, Windows SDK.
+:: Skip if already initialised (VSCMD_ARG_TGT_ARCH is set by vcvars itself).
+set "VS_DEV_CMD=C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
 if not defined VSCMD_ARG_TGT_ARCH (
     if exist "%VS_DEV_CMD%" (
         call "%VS_DEV_CMD%" >nul
     )
 )
-{qt_block}{wasm_block}
+{qt_line}{wasm_block}
+echo ==== set_env (MSVC) applied ====
+echo   VCPKG_ROOT = %VCPKG_ROOT%
+echo   CMAKE_DIR  = %CMAKE_DIR%
+echo   NINJA_DIR  = %NINJA_DIR%
+echo   VS_DEV_CMD = %VS_DEV_CMD%
+{qt_summary}{wasm_summary}echo ==================================
+'''
+
+
+def _set_env_mingw_bat(spec: "ScaffoldSpec") -> str:
+    """MinGW flavor of set_env.bat — authoritative (no 'if not defined')."""
+    qt_line = ""
+    qt_summary = ""
+    if spec.gui_type in ("widget", "wasm"):
+        qt_line = 'set "QT_DIR=C:\\Qt\\6.7.1\\mingw_64"\n'
+        qt_summary = 'echo   QT_DIR        = %QT_DIR%\n'
+
+    return f'''@echo off
+:: Central environment for MinGW builds.
+::
+:: THESE VALUES ALWAYS OVERWRITE whatever is in the parent shell.
+:: Edit them directly to match your machine.
+::
+:: Called by build_deploy_mingw.bat; do NOT mix with build_deploy.bat
+:: (which uses set_env.bat + MSVC).
+
+set "VCPKG_ROOT=C:\\vcpkg"
+set "VCPKG_TRIPLET=x64-mingw-dynamic"
+set "MINGW_DIR=C:\\Qt\\Tools\\mingw1120_64\\bin"
+set "NINJA_DIR=C:\\Qt\\Tools\\Ninja"
+set "CMAKE_DIR=C:\\Program Files\\CMake\\bin"
+{qt_line}
+if exist "%MINGW_DIR%\\g++.exe"   set "PATH=%MINGW_DIR%;%PATH%"
+if exist "%NINJA_DIR%\\ninja.exe" set "PATH=%NINJA_DIR%;%PATH%"
+if exist "%CMAKE_DIR%\\cmake.exe" set "PATH=%CMAKE_DIR%;%PATH%"
+
+echo ==== set_env (MinGW) applied ====
+echo   VCPKG_ROOT    = %VCPKG_ROOT%
+echo   VCPKG_TRIPLET = %VCPKG_TRIPLET%
+echo   MINGW_DIR     = %MINGW_DIR%
+echo   NINJA_DIR     = %NINJA_DIR%
+echo   CMAKE_DIR     = %CMAKE_DIR%
+{qt_summary}echo ==================================
 '''
 
 
 def _set_env_sh(spec: "ScaffoldSpec") -> str:
-    qt_block = ""
+    qt_line = ""
+    qt_summary = ""
     if spec.gui_type in ("widget", "wasm"):
-        qt_block = '''
-# Qt install prefix — needed by the Widgets/WASM GUI client (find_package(Qt6)).
-: "${QT_DIR:=$HOME/Qt/6.7.1/gcc_64}"
-export QT_DIR
-'''
+        qt_line = 'export QT_DIR="$HOME/Qt/6.7.1/gcc_64"\n'
+        qt_summary = 'echo "  QT_DIR     = $QT_DIR"\n'
 
     wasm_block = ""
+    wasm_summary = ""
     if spec.gui_type == "wasm":
         wasm_block = '''
 # ----- Qt / Emscripten paths (only needed for WASM GUI builds) -----
-: "${QT_WASM_DIR:=$HOME/Qt/6.7.1/wasm_singlethread}"
-: "${QT_HOST_DIR:=$HOME/Qt/6.7.1/gcc_64}"
-: "${EMSDK_DIR:=$HOME/emsdk}"
-export QT_WASM_DIR QT_HOST_DIR EMSDK_DIR
+export QT_WASM_DIR="$HOME/Qt/6.7.1/wasm_singlethread"
+export QT_HOST_DIR="$HOME/Qt/6.7.1/gcc_64"
+export EMSDK_DIR="$HOME/emsdk"
 '''
+        wasm_summary = (
+            'echo "  QT_WASM_DIR = $QT_WASM_DIR"\n'
+            'echo "  QT_HOST_DIR = $QT_HOST_DIR"\n'
+            'echo "  EMSDK_DIR   = $EMSDK_DIR"\n'
+        )
+
     return f'''#!/usr/bin/env bash
-# Central environment variables for this project.
+# Central environment for native (gcc/clang) builds.
 #
-# Edit the defaults below, then every build script (build_deploy.sh,
-# proto/generate_stubs.sh, build_wasm.sh) sources this file.
-#
-# Variables already set in the shell are NOT overwritten, so CI and
-# users with global exports still work.
+# THESE VALUES ALWAYS OVERWRITE whatever is in the parent shell.  Edit
+# them directly to match your machine — that way a previous bad export
+# can't stick around and break subsequent runs.
 
-: "${{VCPKG_ROOT:=$HOME/vcpkg}}"
-export VCPKG_ROOT
+export VCPKG_ROOT="$HOME/vcpkg"
 
-# CMake / Ninja — point these at your installs if they are NOT on PATH.
-: "${{CMAKE_DIR:=}}"
-: "${{NINJA_DIR:=}}"
+# CMake / Ninja — absolute paths (leave empty to use system PATH).
+export CMAKE_DIR=""
+export NINJA_DIR=""
 [ -n "$CMAKE_DIR" ] && [ -x "$CMAKE_DIR/cmake" ] && export PATH="$CMAKE_DIR:$PATH"
 [ -n "$NINJA_DIR" ] && [ -x "$NINJA_DIR/ninja" ] && export PATH="$NINJA_DIR:$PATH"
 
-# Compiler — override if the system default (gcc/clang) is not what you want.
-: "${{CC:=}}"
-: "${{CXX:=}}"
-[ -n "$CC" ]  && export CC
-[ -n "$CXX" ] && export CXX
-{qt_block}{wasm_block}
+# Compiler — leave empty for the system default (gcc/clang).
+export CC=""
+export CXX=""
+{qt_line}{wasm_block}
+echo "==== set_env applied ===="
+echo "  VCPKG_ROOT = $VCPKG_ROOT"
+echo "  CMAKE_DIR  = $CMAKE_DIR"
+echo "  NINJA_DIR  = $NINJA_DIR"
+echo "  CC / CXX   = $CC / $CXX"
+{qt_summary}{wasm_summary}echo "========================="
 '''
 
 
@@ -621,44 +677,37 @@ if exist "%DIST%\\{sn}_gui.exe" (
 ::
 ::   - Uses Ninja + MinGW g++ instead of MSBuild + cl.exe
 ::   - Uses vcpkg triplet x64-mingw-dynamic
-::   - Points QT_DIR at the Qt MinGW kit (C:\\Qt\\6.x\\mingw_64)
+::   - Points QT_DIR at the Qt MinGW kit
 ::
-:: Edit the three paths below to match your machine, or export them
-:: as global env vars.  Run from the project root:
-::
-::     build_deploy_mingw.bat
+:: All paths come from set_env_mingw.bat (edit that file for your machine).
 ::
 :: First-time vcpkg install for the mingw triplet can take 20-60 min
 :: (ports compile from source).  Pre-seed with:
-::     set VCPKG_DEFAULT_TRIPLET=x64-mingw-dynamic
-::     %VCPKG_ROOT%\\vcpkg install grpc:x64-mingw-dynamic ...
+::     "%VCPKG_ROOT%\\vcpkg" install grpc:x64-mingw-dynamic protobuf:x64-mingw-dynamic curl:x64-mingw-dynamic
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-
-:: ---------------------------------------------------------------------------
-:: MinGW-specific environment.  Set BEFORE calling set_env.bat so the MSVC
-:: vcvars block inside set_env.bat is skipped (via VSCMD_ARG_TGT_ARCH) and
-:: MINGW_DIR / NINJA_DIR / QT_DIR defaults apply.
-:: ---------------------------------------------------------------------------
-if not defined MINGW_DIR     set "MINGW_DIR=C:\\Qt\\Tools\\mingw1120_64\\bin"
-if not defined NINJA_DIR     set "NINJA_DIR=C:\\Qt\\Tools\\Ninja"
-if not defined QT_DIR        set "QT_DIR=C:\\Qt\\6.7.1\\mingw_64"
-if not defined VCPKG_TRIPLET set "VCPKG_TRIPLET=x64-mingw-dynamic"
-
-:: Sentinel so set_env.bat skips the MSVC vcvars64.bat call.
-set "VSCMD_ARG_TGT_ARCH=SKIP_FOR_MINGW"
-
-call "%SCRIPT_DIR%set_env.bat"
-
-:: Put MinGW + Ninja on PATH (idempotent).
-if exist "%MINGW_DIR%\\g++.exe"   set "PATH=%MINGW_DIR%;%PATH%"
-if exist "%NINJA_DIR%\\ninja.exe" set "PATH=%NINJA_DIR%;%PATH%"
+call "%SCRIPT_DIR%set_env_mingw.bat"
 
 where g++ >nul 2>&1
-if errorlevel 1 ( echo ERROR: g++ not found.  Check MINGW_DIR=%MINGW_DIR% & exit /b 1 )
+if errorlevel 1 ( echo ERROR: g++ not found.  Check MINGW_DIR in set_env_mingw.bat & exit /b 1 )
 where ninja >nul 2>&1
-if errorlevel 1 ( echo ERROR: ninja not found.  Check NINJA_DIR=%NINJA_DIR% & exit /b 1 )
+if errorlevel 1 ( echo ERROR: ninja not found.  Check NINJA_DIR in set_env_mingw.bat & exit /b 1 )
+
+:: Verify the mingw-dynamic vcpkg triplet actually has grpc installed.
+:: Without this, find_package falls back to the x64-windows (MSVC) prefix
+:: and the link fails with MSVC-only flags like '-ignore:4221'.
+if not exist "%VCPKG_ROOT%\\installed\\%VCPKG_TRIPLET%\\share\\grpc" (
+    echo.
+    echo ERROR: vcpkg packages for triplet "%VCPKG_TRIPLET%" are not installed.
+    echo.
+    echo        Run this once (first time can take 20-60 min^):
+    echo.
+    echo          set VCPKG_DEFAULT_TRIPLET=%VCPKG_TRIPLET%
+    echo          "%VCPKG_ROOT%\\vcpkg" install grpc:%VCPKG_TRIPLET% protobuf:%VCPKG_TRIPLET% curl:%VCPKG_TRIPLET%
+    echo.
+    exit /b 1
+)
 
 :: ----- Generate proto stubs (idempotent) -----
 if not exist "%SCRIPT_DIR%proto\\{sn}.pb.h" (
