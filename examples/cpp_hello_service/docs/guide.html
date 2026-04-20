@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Building a C++ gRPC Microservice — Step-by-Step Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  /* ---- Left sidebar navigation ---- */
+  .sidebar-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover {
+    color: var(--text);
+    background: rgba(255,255,255,0.04);
+  }
+  .sidebar-nav a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: rgba(56,189,248,0.08);
+  }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  /* Push content right of the sidebar, fill remaining width */
+  main {
+    margin-left: 250px;
+    padding: 30px 40px;
+  }
+
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--accent);
+  }
+  section h2 {
+    color: var(--accent);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: #fbbf24; margin-top: 20px; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    color: #e2e8f0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+  }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+
+  .step-num {
+    display: inline-block;
+    width: 32px; height: 32px;
+    line-height: 32px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 0.9em;
+    margin-right: 10px;
+  }
+
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+
+  .file-tree {
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 0.88em;
+    line-height: 1.8;
+    background: #0b1220;
+    padding: 16px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .file-tree .folder { color: var(--accent); font-weight: 600; }
+  .file-tree .comment { color: var(--muted); font-style: italic; }
+
+  .os-tabs {
+    display: flex; gap: 8px; margin-bottom: 8px;
+  }
+  .os-tabs span {
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 0.82em;
+    font-weight: 600;
+  }
+  .os-win { background: rgba(56,189,248,0.15); color: var(--accent); }
+  .os-linux { background: rgba(16,185,129,0.15); color: var(--green); }
+
+  footer {
+    text-align: center;
+    padding: 30px;
+    margin-left: 250px;
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+
+  /* Responsive: collapse sidebar on narrow screens */
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Building a C++ gRPC Microservice</h1>
+  <p>Step-by-step guide using MicroserviceBase runtime &mdash; Windows &amp; Linux</p>
+</header>
+
+<nav class="sidebar-nav" id="sidebarNav">
+  <div class="nav-title">Guide</div>
+  <a href="#prereqs">Prerequisites</a>
+  <a href="#structure">Project Structure</a>
+
+  <div class="nav-group">Implementation</div>
+  <a href="#proto">1. Define the Proto</a>
+  <a href="#domain">2. Domain Logic</a>
+  <a href="#adapter">3. gRPC Adapter</a>
+  <a href="#settings">4. Settings</a>
+  <a href="#main">5. Entry Point</a>
+  <a href="#cmake">6. CMakeLists.txt</a>
+
+  <div class="nav-group">Build &amp; Run</div>
+  <a href="#build">7. Build</a>
+  <a href="#run">8. Run &amp; Verify</a>
+  <a href="#client">9. Client</a>
+  <a href="#nomad">10. Nomad Deploy</a>
+
+  <div class="nav-group">Reference</div>
+  <a href="#api">Library API</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+</nav>
+
+<main>
+
+<!-- Prerequisites -->
+<section id="prereqs">
+<h2>Prerequisites</h2>
+
+<h3>1. vcpkg (C++ package manager)</h3>
+<p>Choose a location for vcpkg (e.g. <code>~/vcpkg</code> on Linux or <code>C:\vcpkg</code> on Windows):</p>
+<div class="os-tabs"><span class="os-win">Windows</span></div>
+<pre><code>git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+.\bootstrap-vcpkg.bat</code></pre>
+<div class="os-tabs"><span class="os-linux">Linux</span></div>
+<pre><code>git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+./bootstrap-vcpkg.sh</code></pre>
+
+<h3>2. Required C++ packages</h3>
+<div class="os-tabs"><span class="os-win">Windows</span></div>
+<pre><code>vcpkg install grpc:x64-windows protobuf:x64-windows curl:x64-windows</code></pre>
+<div class="os-tabs"><span class="os-linux">Linux</span></div>
+<pre><code>vcpkg install grpc:x64-linux protobuf:x64-linux curl:x64-linux</code></pre>
+<p><code>grpc</code> pulls in <code>protobuf</code> and <code>abseil</code> automatically.
+<code>curl</code> is used by <code>ConsulRegistration</code> to talk to the Consul HTTP API.</p>
+
+<h3>3. Build tools</h3>
+<div class="os-tabs"><span class="os-win">Windows</span></div>
+<table>
+  <tr><th>Tool</th><th>Purpose</th><th>Install</th></tr>
+  <tr><td><code>CMake 3.16+</code></td><td>Build system</td><td><a href="https://cmake.org/download/">cmake.org/download</a> or bundled with Qt</td></tr>
+  <tr><td><code>MSVC 2019+</code></td><td>Compiler</td><td><a href="https://visualstudio.microsoft.com/">visualstudio.microsoft.com</a> &mdash; "Desktop development with C++"</td></tr>
+  <tr><td><code>Ninja</code></td><td>Faster builds</td><td><a href="https://github.com/ninja-build/ninja/releases">github.com/ninja-build</a></td></tr>
+</table>
+<div class="os-tabs"><span class="os-linux">Linux</span></div>
+<pre><code># Debian / Ubuntu
+sudo apt-get update
+sudo apt-get install -y cmake g++ ninja-build pkg-config
+
+# Fedora / RHEL
+sudo dnf install cmake gcc-c++ ninja-build</code></pre>
+
+<h3>4. Consul</h3>
+<div class="os-tabs"><span class="os-win">Windows</span></div>
+<pre><code>choco install consul</code></pre>
+<div class="os-tabs"><span class="os-linux">Linux</span></div>
+<pre><code># Debian / Ubuntu
+wget -O- https://apt.releases.hashicorp.com/gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+  https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt-get update &amp;&amp; sudo apt-get install consul</code></pre>
+<p>Or download the binary from
+<a href="https://developer.hashicorp.com/consul/install">developer.hashicorp.com/consul/install</a>.</p>
+
+<h3>5. Clone MicroserviceBase</h3>
+<pre><code>git clone -b ugc1hc/feat/restructure_microservice_base \
+    https://github.com/test-fullautomation/python-microservice-base.git
+cd python-microservice-base</code></pre>
+</section>
+
+<!-- Structure -->
+<section id="structure">
+<h2>Project Structure</h2>
+<pre class="file-tree"><span class="folder">my_service/</span>
+├── CMakeLists.txt                  <span class="comment"># Build configuration</span>
+├── <span class="folder">proto/</span>
+│   └── my_service.proto            <span class="comment"># gRPC service definition</span>
+├── <span class="folder">src/</span>
+│   ├── main.cpp                    <span class="comment"># Entry point</span>
+│   ├── Settings.h                  <span class="comment"># Env var configuration</span>
+│   ├── <span class="folder">domain/</span>                     <span class="comment"># Pure business logic (NO gRPC)</span>
+│   │   ├── MyService.h
+│   │   └── MyService.cpp
+│   └── <span class="folder">adapters/api/</span>              <span class="comment"># gRPC &rarr; domain bridge</span>
+│       ├── MyGrpcAdapter.h
+│       └── MyGrpcAdapter.cpp
+└── <span class="folder">docs/</span></pre>
+
+<div class="highlight-box">
+  <strong>Key principle:</strong> the <code>domain/</code> folder has zero dependencies on gRPC,
+  Consul, or any framework code.  It's pure C++ with standard library only.
+  The <code>adapters/</code> folder translates between gRPC and the domain.
+</div>
+</section>
+
+<!-- Step 1 -->
+<section id="proto">
+<h2><span class="step-num">1</span> Define the Proto</h2>
+<p>Create <code>proto/my_service.proto</code>:</p>
+<pre><code>syntax = "proto3";
+
+package myservice.v1;
+
+service MyService {
+  rpc DoSomething (DoSomethingRequest) returns (DoSomethingResponse);
+  rpc StreamEvents (StreamRequest) returns (stream Event);
+}
+
+message DoSomethingRequest {
+  string input = 1;
+}
+
+message DoSomethingResponse {
+  string output = 1;
+}
+
+message StreamRequest {
+  int32 count = 1;
+}
+
+message Event {
+  int32 sequence = 1;
+  string data    = 2;
+}</code></pre>
+</section>
+
+<!-- Step 2 -->
+<section id="domain">
+<h2><span class="step-num">2</span> Implement the Domain</h2>
+<p><code>src/domain/MyService.h</code>:</p>
+<pre><code>#pragma once
+#include &lt;string&gt;
+
+class MyService {
+public:
+    std::string doSomething(const std::string&amp; input) const;
+};</code></pre>
+
+<p><code>src/domain/MyService.cpp</code>:</p>
+<pre><code>#include "MyService.h"
+
+std::string MyService::doSomething(const std::string&amp; input) const {
+    return "Processed: " + input;
+}</code></pre>
+
+<div class="highlight-box">
+  No <code>#include &lt;grpcpp/grpcpp.h&gt;</code> anywhere in this folder &mdash; that's the rule.
+</div>
+</section>
+
+<!-- Step 3 -->
+<section id="adapter">
+<h2><span class="step-num">3</span> Implement the gRPC Adapter</h2>
+<p><code>src/adapters/api/MyGrpcAdapter.h</code>:</p>
+<pre><code>#pragma once
+#include &lt;grpcpp/grpcpp.h&gt;
+#include "my_service.grpc.pb.h"
+#include "domain/MyService.h"
+
+class MyGrpcAdapter final : public myservice::v1::MyService::Service {
+public:
+    explicit MyGrpcAdapter(::MyService&amp; domain) : m_domain(domain) {}
+
+    grpc::Status DoSomething(grpc::ServerContext*,
+                             const myservice::v1::DoSomethingRequest*,
+                             myservice::v1::DoSomethingResponse*) override;
+
+    grpc::Status StreamEvents(grpc::ServerContext*,
+                              const myservice::v1::StreamRequest*,
+                              grpc::ServerWriter&lt;myservice::v1::Event&gt;*) override;
+private:
+    ::MyService&amp; m_domain;
+};</code></pre>
+
+<p><code>src/adapters/api/MyGrpcAdapter.cpp</code>:</p>
+<pre><code>#include "MyGrpcAdapter.h"
+#include &lt;thread&gt;
+#include &lt;chrono&gt;
+
+grpc::Status MyGrpcAdapter::DoSomething(
+    grpc::ServerContext*,
+    const myservice::v1::DoSomethingRequest* req,
+    myservice::v1::DoSomethingResponse* resp) {
+    resp-&gt;set_output(m_domain.doSomething(req-&gt;input()));
+    return grpc::Status::OK;
+}
+
+grpc::Status MyGrpcAdapter::StreamEvents(
+    grpc::ServerContext* ctx,
+    const myservice::v1::StreamRequest* req,
+    grpc::ServerWriter&lt;myservice::v1::Event&gt;* writer) {
+    for (int i = 0; i &lt; req-&gt;count() &amp;&amp; !ctx-&gt;IsCancelled(); ++i) {
+        myservice::v1::Event ev;
+        ev.set_sequence(i);
+        ev.set_data("event #" + std::to_string(i));
+        if (!writer-&gt;Write(ev)) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    return grpc::Status::OK;
+}</code></pre>
+</section>
+
+<!-- Step 4 -->
+<section id="settings">
+<h2><span class="step-num">4</span> Service Settings</h2>
+<p><code>src/Settings.h</code>:</p>
+<pre><code>#pragma once
+#include "MicroserviceBase/Settings.h"
+
+struct MySettings : public microservice_base::BaseServiceSettings {
+    MySettings() {
+        service_name = "my_service";
+        loadBaseFromEnv("MYSERVICE_");
+    }
+};</code></pre>
+
+<h3>Base settings (inherited)</h3>
+<table>
+  <tr><th>Env Var</th><th>Field</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>*_GRPC_PORT</code></td><td><code>grpc_port</code></td><td><code>0</code> (dynamic)</td><td>TCP port for gRPC server</td></tr>
+  <tr><td><code>*_SERVICE_HOST</code></td><td><code>service_host</code></td><td><code>0.0.0.0</code></td><td>Bind address</td></tr>
+  <tr><td><code>*_ADVERTISE_ADDR</code></td><td><code>advertise_addr</code></td><td>(auto)</td><td>Address announced to Consul</td></tr>
+  <tr><td><code>*_CONSUL_ADDR</code></td><td><code>consul_addr</code></td><td><code>http://localhost:8500</code></td><td>Consul HTTP API</td></tr>
+  <tr><td><code>*_CONSUL_TOKEN</code></td><td><code>consul_token</code></td><td>(empty)</td><td>Optional ACL token</td></tr>
+  <tr><td><code>*_LOG_LEVEL</code></td><td><code>log_level</code></td><td><code>INFO</code></td><td>Log level</td></tr>
+</table>
+</section>
+
+<!-- Step 5 -->
+<section id="main">
+<h2><span class="step-num">5</span> Entry Point</h2>
+<p><code>src/main.cpp</code>:</p>
+<pre><code>#include &lt;iostream&gt;
+#include "MicroserviceBase/ServiceRunner.h"
+#include "Settings.h"
+#include "domain/MyService.h"
+#include "adapters/api/MyGrpcAdapter.h"
+
+int main() {
+    try {
+        MySettings settings;
+        MyService domain;
+        MyGrpcAdapter adapter(domain);
+
+        microservice_base::ServiceRunner runner(settings, {"v1"});
+        runner.addService(&amp;adapter, "myservice.v1.MyService");
+        runner.serveForever();
+    } catch (const std::exception&amp; e) {
+        std::cerr &lt;&lt; "FATAL: " &lt;&lt; e.what() &lt;&lt; std::endl;
+        return 1;
+    }
+    return 0;
+}</code></pre>
+
+<div class="highlight-box">
+  <strong>What <code>ServiceRunner</code> does automatically:</strong><br>
+  1. Starts the gRPC server (dynamic port if <code>grpc_port=0</code>)<br>
+  2. Enables gRPC health check protocol (for Consul)<br>
+  3. Enables gRPC reflection (for the GUI + <code>grpcurl</code>)<br>
+  4. Registers with Consul (including a health check)<br>
+  5. Installs signal handlers (SIGINT / SIGTERM; SIGBREAK on Windows)<br>
+  6. Blocks until shutdown signal<br>
+  7. Deregisters from Consul<br>
+  8. Stops the gRPC server gracefully
+</div>
+</section>
+
+<!-- Step 6 -->
+<section id="cmake">
+<h2><span class="step-num">6</span> CMakeLists.txt</h2>
+<pre><code>cmake_minimum_required(VERSION 3.16)
+project(my_service VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(gRPC     CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(CURL     CONFIG REQUIRED)
+
+# MicroserviceBase C++ runtime
+# Adjust the relative path if your project lives elsewhere.
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/runtime_cpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime"
+)
+
+# Proto generation
+set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto")
+set(GEN_DIR   "${CMAKE_CURRENT_BINARY_DIR}/gen")
+file(MAKE_DIRECTORY "${GEN_DIR}")
+
+get_target_property(_protoc   protobuf::protoc       LOCATION)
+get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin  LOCATION)
+
+add_custom_command(
+    OUTPUT
+      "${GEN_DIR}/my_service.pb.cc"       "${GEN_DIR}/my_service.pb.h"
+      "${GEN_DIR}/my_service.grpc.pb.cc"  "${GEN_DIR}/my_service.grpc.pb.h"
+    COMMAND ${_protoc}
+      --proto_path="${PROTO_DIR}"
+      --cpp_out="${GEN_DIR}"
+      --grpc_out="${GEN_DIR}"
+      --plugin=protoc-gen-grpc="${_grpc_cpp}"
+      "${PROTO_DIR}/my_service.proto"
+    DEPENDS "${PROTO_DIR}/my_service.proto"
+)
+
+add_executable(my_service
+    src/main.cpp
+    src/domain/MyService.cpp
+    src/adapters/api/MyGrpcAdapter.cpp
+    "${GEN_DIR}/my_service.pb.cc"
+    "${GEN_DIR}/my_service.grpc.pb.cc"
+)
+
+target_include_directories(my_service PRIVATE
+    src "${GEN_DIR}")
+
+target_link_libraries(my_service PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++ gRPC::grpc++_reflection
+    protobuf::libprotobuf)</code></pre>
+</section>
+
+<!-- Step 7 -->
+<section id="build">
+<h2><span class="step-num">7</span> Build</h2>
+<div class="os-tabs"><span class="os-win">Windows</span></div>
+<pre><code>cd my_service
+mkdir build &amp;&amp; cd build
+
+cmake -DCMAKE_TOOLCHAIN_FILE=&lt;path-to-vcpkg&gt;/scripts/buildsystems/vcpkg.cmake ..
+cmake --build . --config Release</code></pre>
+<p>Output: <code>Release\my_service.exe</code></p>
+
+<div class="os-tabs"><span class="os-linux">Linux</span></div>
+<pre><code>cd my_service
+mkdir -p build &amp;&amp; cd build
+
+cmake \
+    -DCMAKE_TOOLCHAIN_FILE=&lt;path-to-vcpkg&gt;/scripts/buildsystems/vcpkg.cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    ..
+cmake --build . --parallel $(nproc)</code></pre>
+<p>Output: <code>./my_service</code></p>
+
+<div class="highlight-box">
+  Replace <code>&lt;path-to-vcpkg&gt;</code> with the absolute path to where you cloned
+  vcpkg (e.g. <code>~/vcpkg</code> or <code>C:\vcpkg</code>).
+</div>
+</section>
+
+<!-- Step 8 -->
+<section id="run">
+<h2><span class="step-num">8</span> Run &amp; Verify</h2>
+
+<h3>Start Consul</h3>
+<pre><code>consul agent -dev</code></pre>
+
+<h3>Start the service</h3>
+<div class="os-tabs"><span class="os-win">Windows</span></div>
+<pre><code>set MYSERVICE_GRPC_PORT=0
+set MYSERVICE_CONSUL_ADDR=http://127.0.0.1:8500
+.\Release\my_service.exe</code></pre>
+
+<div class="os-tabs"><span class="os-linux">Linux</span></div>
+<pre><code>export MYSERVICE_GRPC_PORT=0
+export MYSERVICE_CONSUL_ADDR=http://127.0.0.1:8500
+./my_service</code></pre>
+
+<p>Expected output:</p>
+<pre><code>[ServiceRunner] gRPC server listening on 0.0.0.0:&lt;port&gt;
+[ConsulRegistration] Registering service my_service (id=my_service-xxxxxxxx) at 127.0.0.1:&lt;port&gt;
+[ServiceRunner] Service my_service ready.</code></pre>
+
+<h3>Verify with grpcurl</h3>
+<pre><code># List services exposed by the server
+grpcurl -plaintext 127.0.0.1:&lt;port&gt; list
+
+# Call a method
+grpcurl -plaintext -d '{"input": "test"}' \
+    127.0.0.1:&lt;port&gt; myservice.v1.MyService/DoSomething</code></pre>
+
+<h3>Verify in the GUI</h3>
+<ol>
+  <li>Open MicroserviceManagerGUI</li>
+  <li>Click <strong>Connect</strong> &rarr; confirm Consul URL &rarr; Connect</li>
+  <li><code>my_service</code> appears in the sidebar with a green dot</li>
+  <li>Click it &rarr; methods expand &rarr; type JSON &rarr; <strong>Call</strong></li>
+</ol>
+</section>
+
+<!-- Step 9 -->
+<section id="client">
+<h2><span class="step-num">9</span> Build a Client (Optional)</h2>
+<pre><code>#include &lt;iostream&gt;
+#include &lt;grpcpp/grpcpp.h&gt;
+#include "my_service.grpc.pb.h"
+
+int main() {
+    // Connect to the service (use Consul lookup or direct address)
+    auto channel = grpc::CreateChannel(
+        "127.0.0.1:50051", grpc::InsecureChannelCredentials());
+    auto stub = myservice::v1::MyService::NewStub(channel);
+
+    myservice::v1::DoSomethingRequest req;
+    req.set_input("hello from client");
+
+    myservice::v1::DoSomethingResponse resp;
+    grpc::ClientContext ctx;
+
+    grpc::Status status = stub-&gt;DoSomething(&amp;ctx, req, &amp;resp);
+    if (status.ok())
+        std::cout &lt;&lt; "Response: " &lt;&lt; resp.output() &lt;&lt; std::endl;
+    else
+        std::cerr &lt;&lt; "Error: " &lt;&lt; status.error_message() &lt;&lt; std::endl;
+
+    return 0;
+}</code></pre>
+<p>See the separate <code>examples/cpp_hello_client/</code> project for a full example with:</p>
+<ul>
+  <li><code>ServiceClient&lt;T&gt;</code> from the MicroserviceBase runtime library</li>
+  <li>Consul service discovery (auto-resolves <code>host:port</code> from service name)</li>
+  <li>All three RPC types (unary, echo, server-streaming)</li>
+  <li>Standalone <code>generate_stubs</code> scripts for one-time proto compilation</li>
+  <li>Both direct (<code>--direct host:port</code>) and Consul-based (<code>hello greet Cuong</code>) modes</li>
+</ul>
+</section>
+
+<!-- Step 10 -->
+<section id="nomad">
+<h2><span class="step-num">10</span> Deploy with Nomad (Optional)</h2>
+<pre><code>job "my_service" {
+  datacenters = ["dc1"]
+  type        = "service"
+
+  group "default" {
+    count = 1
+    network { port "grpc" {} }
+
+    task "server" {
+      driver = "raw_exec"
+
+      config {
+        # Use the full path to the built executable.
+        command = "/path/to/my_service"          # Linux
+        # command = "C:/path/to/my_service.exe"  # Windows
+      }
+
+      env {
+        MYSERVICE_GRPC_PORT      = "${NOMAD_PORT_grpc}"
+        MYSERVICE_ADVERTISE_ADDR = "127.0.0.1"
+        MYSERVICE_CONSUL_ADDR    = "http://127.0.0.1:8500"
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+    }
+  }
+}</code></pre>
+<p>Submit from the GUI: <strong>Service Network &rarr; Nomad &rarr; Submit Job &rarr; Load from file &rarr; Submit</strong></p>
+<p>Or from the command line:</p>
+<pre><code>nomad job run my_service.nomad.hcl</code></pre>
+</section>
+
+<!-- API Reference -->
+<section id="api">
+<h2>Library Reference</h2>
+
+<h3><code>microservice_base::ServiceRunner</code></h3>
+<pre><code>#include "MicroserviceBase/ServiceRunner.h"
+
+ServiceRunner(const BaseServiceSettings&amp; settings,
+              std::vector&lt;std::string&gt; tags = {});
+
+void addService(grpc::Service* service,
+                const std::string&amp; full_service_name);
+
+int  start();             // Start gRPC server, return bound port
+void serveForever();      // start() + Consul register + block until signal
+void requestShutdown();   // Trigger graceful shutdown from any thread
+int  boundPort() const;   // Port after start()</code></pre>
+
+<h3><code>microservice_base::BaseServiceSettings</code></h3>
+<pre><code>#include "MicroserviceBase/Settings.h"
+
+struct BaseServiceSettings {
+    std::string service_name;
+    std::string service_host   = "0.0.0.0";
+    int         grpc_port      = 0;
+    std::string advertise_addr;
+    std::string consul_addr    = "http://localhost:8500";
+    std::string consul_token;
+    std::string log_level      = "INFO";
+
+    void loadBaseFromEnv(const std::string&amp; prefix);
+    static void readEnv(const std::string&amp; key, std::string&amp; out);
+    static void readEnv(const std::string&amp; key, int&amp; out);
+};</code></pre>
+
+<h3><code>microservice_base::ConsulRegistration</code></h3>
+<pre><code>#include "MicroserviceBase/ConsulRegistration.h"
+
+ConsulRegistration(name, address, port,
+                   consul_addr, tags, meta,
+                   token, health_interval,
+                   health_timeout, deregister_after);
+
+bool registerService();
+void deregisterService();</code></pre>
+<p>You normally don't use this directly &mdash; <code>ServiceRunner</code> handles it.</p>
+</section>
+
+<!-- Troubleshooting -->
+<section id="troubleshooting">
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Problem</th><th>Fix</th></tr>
+  <tr><td><code>cmake: command not found</code></td><td>Install CMake or add it to PATH</td></tr>
+  <tr><td><code>gRPC::grpc++ not found</code></td><td>Pass <code>-DCMAKE_TOOLCHAIN_FILE=&lt;vcpkg&gt;/scripts/buildsystems/vcpkg.cmake</code></td></tr>
+  <tr><td><code>protoc not found</code></td><td><code>vcpkg install protobuf</code> (with your triplet)</td></tr>
+  <tr><td><code>CURL not found</code></td><td><code>vcpkg install curl</code> (with your triplet)</td></tr>
+  <tr><td><code>LNK2019</code> unresolved external (Win)</td><td>Check <code>target_link_libraries</code> includes all deps</td></tr>
+  <tr><td><code>undefined reference</code> (Linux)</td><td>Same &mdash; also ensure <code>-lpthread</code> if needed</td></tr>
+  <tr><td>Service starts but not in Consul</td><td>Check <code>ADVERTISE_ADDR</code> is <code>127.0.0.1</code> (not <code>::1</code>)</td></tr>
+  <tr><td>Health check fails in Consul</td><td>Make sure gRPC port matches the Consul check target</td></tr>
+  <tr><td>gRPC <code>UNAVAILABLE</code></td><td>Wrong host:port &mdash; check Consul or service log for real port</td></tr>
+  <tr><td><code>WSA Error</code> on client (Win)</td><td>Nothing listening &mdash; <code>netstat -ano | findstr :&lt;port&gt;</code></td></tr>
+  <tr><td><code>Connection refused</code> (Linux)</td><td>Same &mdash; <code>ss -tlnp | grep &lt;port&gt;</code></td></tr>
+</table>
+</section>
+
+</main>
+
+<footer>
+  MicroserviceBase C++ Guide &mdash; open this file in any browser to view
+</footer>
+
+<script>
+// Scroll-spy: highlight the current section in the sidebar as the user scrolls.
+(function () {
+  var links = document.querySelectorAll('#sidebarNav a[href^="#"]');
+  if (!links.length) return;
+
+  var sections = [];
+  links.forEach(function (a) {
+    var id = a.getAttribute('href').replace('#', '');
+    var el = document.getElementById(id);
+    if (el) sections.push({ id: id, el: el, link: a });
+  });
+
+  function update() {
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var current = null;
+
+    for (var i = sections.length - 1; i >= 0; i--) {
+      if (sections[i].el.offsetTop - 80 <= scrollTop) {
+        current = sections[i];
+        break;
+      }
+    }
+
+    links.forEach(function (a) { a.classList.remove('active'); });
+    if (current) current.link.classList.add('active');
+  }
+
+  window.addEventListener('scroll', update, { passive: true });
+  update();
+
+  // Smooth scroll on nav click.
+  links.forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      var id = a.getAttribute('href').replace('#', '');
+      var target = document.getElementById(id);
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        history.replaceState(null, '', '#' + id);
+      }
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

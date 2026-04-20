@@ -1,0 +1,16 @@
+{
+    "name": "TestService",
+    "version": "1.0.0",
+    "routing_key": "TestService",
+    "description": "Sample Test",
+    "shortdesc": "sadfad",
+    "group": "Services",
+    "tag": "",
+    "gui_support": true,
+    "downloadable": false,
+    "broker_host": "localhost",
+    "broker_port": 5672,
+    "broker_vhost": "/",
+    "broker_user": "guest",
+    "broker_pass": "guest"
+}

@@ -1649,8 +1649,907 @@
   }
 
   document.getElementById('btnConnect').addEventListener('click', function () {
-    connect();
+    // New flow: the Connect button opens the Consul connect modal.  The
+    // legacy broker login (connect() -> loginModal) is no longer reachable
+    // from the UI but still works if called programmatically.
+    _openConsulConnectModal();
   });
+
+  var _consulConnectModal = null;
+
+  // Multi-Consul state: each entry is { url, leader, services: [...] }
+  // where ``services`` is the raw service list fetched from this Consul.
+  var _connectedConsuls = [];   // array kept in insertion order
+  var CONSULS_STORAGE_KEY = 'mm_consul_urls';     // JSON array of URLs
+
+  function _saveConsulUrls() {
+    try {
+      var urls = _connectedConsuls.map(function (c) { return c.url; });
+      localStorage.setItem(CONSULS_STORAGE_KEY, JSON.stringify(urls));
+    } catch (e) {}
+  }
+
+  function _loadSavedConsulUrls() {
+    try {
+      var raw = localStorage.getItem(CONSULS_STORAGE_KEY);
+      if (!raw) return [];
+      var arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+
+  function _openConsulConnectModal() {
+    var modalEl = document.getElementById('consulConnectModal');
+    if (!modalEl) return;
+    if (!_consulConnectModal) {
+      _consulConnectModal = new bootstrap.Modal(modalEl);
+    }
+
+    // Prefill with a reasonable default or the most recent URL typed.
+    try {
+      var saved = localStorage.getItem('mm_consul_last_input_url');
+      document.getElementById('consulConnectUrl').value =
+        saved || 'http://127.0.0.1:8500';
+    } catch (e) {}
+
+    _setConsulConnectResult('', '');
+    _consulConnectModal.show();
+  }
+
+  function _setConsulConnectResult(kind, html) {
+    var el = document.getElementById('consulConnectResult');
+    if (!el) return;
+    if (!kind) {
+      el.className = 'small';
+      el.innerHTML = '';
+    } else {
+      el.className = 'small alert alert-' + kind + ' py-2 mb-0 mt-2';
+      el.innerHTML = html;
+    }
+  }
+
+  var _btnConsulConnectSubmit = document.getElementById('btnConsulConnectSubmit');
+  if (_btnConsulConnectSubmit) {
+    _btnConsulConnectSubmit.addEventListener('click', function () {
+      _submitConsulConnect();
+    });
+  }
+
+  var _btnConsulDetect = document.getElementById('btnConsulDetect');
+  if (_btnConsulDetect) {
+    _btnConsulDetect.addEventListener('click', function () {
+      _runConsulDetect();
+    });
+  }
+
+  function _runConsulDetect() {
+    var btn = document.getElementById('btnConsulDetect');
+    var results = document.getElementById('consulDetectResults');
+    if (!btn || !results) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Scanning...';
+    results.innerHTML =
+      '<div class="small text-muted mt-2">' +
+      '  <span class="spinner-border spinner-border-sm me-1"></span>' +
+      '  Looking for running <code>consul</code> processes...' +
+      '</div>';
+
+    MM.consulClient.discover()
+      .then(function (data) {
+        if (data && data.error) {
+          results.innerHTML =
+            '<div class="alert alert-danger small mt-2 mb-0">' +
+            '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+              _escapeHtml(data.error) +
+            '</div>';
+          return;
+        }
+        var instances = (data && data.instances) || [];
+        // Hide instances that are already in _connectedConsuls so the
+        // user isn't offered to re-add what they already have.
+        var already = {};
+        _connectedConsuls.forEach(function (c) { already[c.url] = 1; });
+        instances = instances.filter(function (i) { return !already[i.url]; });
+
+        if (instances.length === 0) {
+          results.innerHTML =
+            '<div class="alert alert-warning small mt-2 mb-0">' +
+            '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+            '  No new Consul processes found. ' +
+            '</div>';
+          return;
+        }
+
+        var rows = instances.map(function (inst) {
+          var roleBadge = inst.server
+            ? '<span class="badge bg-primary ms-1">server</span>'
+            : '<span class="badge bg-secondary ms-1">client</span>';
+          var versionBadge = inst.version
+            ? '<span class="badge bg-light text-dark ms-1">v' + _escapeHtml(inst.version) + '</span>'
+            : '';
+          var dcBadge = inst.datacenter
+            ? '<span class="badge bg-light text-dark ms-1">' + _escapeHtml(inst.datacenter) + '</span>'
+            : '';
+          var pidBadge = inst.pid
+            ? '<span class="badge bg-secondary ms-1">pid ' + inst.pid + '</span>'
+            : '';
+
+          return '<button type="button" class="list-group-item list-group-item-action consul-detect-row"' +
+                 '  data-url="' + _escapeHtml(inst.url) + '">' +
+                 '  <div class="d-flex justify-content-between align-items-center">' +
+                 '    <div>' +
+                 '      <strong>' + _escapeHtml(inst.node_name || inst.host + ':' + inst.port) + '</strong>' +
+                          roleBadge + versionBadge + dcBadge + pidBadge +
+                 '      <div class="small text-muted">' + _escapeHtml(inst.url) + '</div>' +
+                 '    </div>' +
+                 '    <i class="bi bi-chevron-right"></i>' +
+                 '  </div>' +
+                 '</button>';
+        }).join('');
+
+        results.innerHTML =
+          '<div class="small text-muted mb-1">' +
+          '  Found <strong>' + instances.length + '</strong> Consul process(es) — click to select:' +
+          '</div>' +
+          '<div class="list-group mb-2">' + rows + '</div>';
+
+        // Wire each row: fill the URL input.  Don't auto-submit — let the
+        // user review and click Connect themselves (there might be an
+        // ACL token they want to fill in first).
+        results.querySelectorAll('.consul-detect-row').forEach(function (row) {
+          row.addEventListener('click', function () {
+            var url = row.getAttribute('data-url');
+            var input = document.getElementById('consulConnectUrl');
+            if (input) input.value = url;
+            results.querySelectorAll('.consul-detect-row.active')
+                   .forEach(function (el) { el.classList.remove('active'); });
+            row.classList.add('active');
+          });
+        });
+      })
+      .catch(function (err) {
+        results.innerHTML =
+          '<div class="alert alert-danger small mt-2 mb-0">' +
+          '  Detect failed: ' + _escapeHtml(err.message || err) +
+          '</div>';
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-search me-1"></i>Detect';
+      });
+  }
+
+  // Clear detect results when the modal closes so stale rows don't
+  // linger into the next Connect attempt.
+  (function () {
+    var modalEl = document.getElementById('consulConnectModal');
+    if (modalEl) {
+      modalEl.addEventListener('hidden.bs.modal', function () {
+        var results = document.getElementById('consulDetectResults');
+        if (results) results.innerHTML = '';
+      });
+    }
+  })();
+
+  function _submitConsulConnect() {
+    var rawUrl = (document.getElementById('consulConnectUrl').value || '').trim();
+
+    if (!rawUrl) {
+      _setConsulConnectResult('warning', 'Consul URL is required.');
+      return;
+    }
+    var url = rawUrl.replace(/\/+$/, '');   // trim trailing slashes
+    try { localStorage.setItem('mm_consul_last_input_url', url); } catch (e) {}
+
+    // Dedupe
+    var existing = _connectedConsuls.find(function (c) { return c.url === url; });
+    if (existing) {
+      _setConsulConnectResult('warning', 'Already connected to ' + url + '.');
+      return;
+    }
+
+    var btn = document.getElementById('btnConsulConnectSubmit');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Connecting...';
+    }
+    _setConsulConnectResult('info', 'Probing Consul...');
+
+    _connectConsulUrl(url)
+      .then(function (conn) {
+        _connectedConsuls.push(conn);
+        _saveConsulUrls();
+        _renderConsulChips();
+        _renderAllConnectedConsuls();
+
+        _setConsulConnectResult('success',
+          'Connected. ' + conn.services.length + ' service(s) registered.');
+        showToast('Consul',
+          'Connected to ' + url + ' — ' +
+          conn.services.length + ' service(s).', 'success');
+        setTimeout(function () {
+          if (_consulConnectModal) _consulConnectModal.hide();
+        }, 800);
+      })
+      .catch(function (err) {
+        _setConsulConnectResult('danger', 'Connect failed: ' + (err.message || err));
+        showToast('Consul', 'Connect failed: ' + (err.message || err), 'danger');
+      })
+      .finally(function () {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-plug me-1"></i>Connect';
+        }
+      });
+  }
+
+  /**
+   * Probe a Consul URL, fetch its service catalog (with details), and
+   * return a Promise resolving to a connection object
+   *   { url, leader, services: [ {name, tags, address, port, grpcServices, instances} ] }
+   *
+   * The services list is pre-filtered to remove infrastructure entries
+   * (consul/nomad/nomad-client).
+   */
+  function _connectConsulUrl(url) {
+    var HIDDEN = { 'consul': 1, 'nomad': 1, 'nomad-client': 1 };
+    var leader = '';
+
+    return MM.consulClient.testConnection(url)
+      .then(function (health) {
+        if (!health || !health.ok) {
+          throw new Error((health && health.error) || 'Consul not reachable');
+        }
+        leader = health.leader || '';
+        return MM.consulClient.getServices(url);
+      })
+      .then(function (servicesMap) {
+        var names = Object.keys(servicesMap || {}).filter(function (n) {
+          return n && !HIDDEN[n];
+        }).sort();
+        var detailPromises = names.map(function (name) {
+          return MM.consulClient.getServiceDetail(name, url)
+            .catch(function () { return []; });
+        });
+        return Promise.all(detailPromises).then(function (details) {
+          var services = names.map(function (name, i) {
+            var instances = Array.isArray(details[i]) ? details[i] : [];
+            var first = instances[0] || {};
+            var svc = first.Service || {};
+            return {
+              name: name,
+              tags: (servicesMap[name] || []),
+              address: svc.Address || '',
+              port: svc.Port || 0,
+              grpcServices: (svc.Meta && svc.Meta.grpc_services) || '',
+              instances: instances.length,
+              status: _computeServiceStatus(instances)
+            };
+          });
+          return { url: url, leader: leader, services: services, alive: true };
+        });
+      });
+  }
+
+  function _removeConsulConnection(url) {
+    _connectedConsuls = _connectedConsuls.filter(function (c) {
+      return c.url !== url;
+    });
+    _saveConsulUrls();
+    _renderConsulChips();
+    _renderAllConnectedConsuls();
+    showToast('Consul', 'Disconnected from ' + url, 'info');
+  }
+
+  function _renderConsulChips() {
+    var container = document.getElementById('consulChips');
+    if (!container) return;
+    container.innerHTML = '';
+
+    _connectedConsuls.forEach(function (conn) {
+      var chip = document.createElement('div');
+      var alive = conn.alive !== false;
+      chip.className = 'consul-chip' + (alive ? '' : ' consul-chip-down');
+      chip.title = conn.url +
+        (conn.leader ? '  (leader: ' + conn.leader + ')' : '') +
+        (!alive ? '  — unreachable' + (conn.lastError ? ': ' + conn.lastError : '') : '');
+
+      var label = _shortenConsulUrl(conn.url);
+      var iconCls = alive
+        ? 'bi bi-compass consul-chip-icon'
+        : 'bi bi-plug consul-chip-icon consul-chip-icon-down';
+
+      chip.innerHTML =
+        '<i class="' + iconCls + '"></i>' +
+        '<span class="consul-chip-label">' + _escapeHtml(label) + '</span>' +
+        '<button type="button" class="consul-chip-close" aria-label="Disconnect">' +
+        '  <i class="bi bi-x"></i>' +
+        '</button>';
+
+      chip.querySelector('.consul-chip-close').addEventListener('click', function (e) {
+        e.stopPropagation();
+        _removeConsulConnection(conn.url);
+      });
+
+      container.appendChild(chip);
+    });
+  }
+
+  function _shortenConsulUrl(url) {
+    // Strip http(s):// for compactness; keep host:port.
+    return String(url || '').replace(/^https?:\/\//, '');
+  }
+
+  /**
+   * Given a list of instance entries from /v1/health/service/{name}, return
+   * an overall status object usable for the sidebar indicator.  The entry
+   * shape is { Node, Service, Checks: [{Status, ...}] }.
+   *
+   * Status precedence (worst wins): critical > warning > passing > unknown.
+   * Returns:
+   *    { kind: 'passing' | 'warning' | 'critical' | 'unknown',
+   *      label: string,
+   *      passing: N, warning: N, critical: N }
+   */
+  function _computeServiceStatus(instances) {
+    if (!Array.isArray(instances) || instances.length === 0) {
+      return { kind: 'unknown', label: 'no instances',
+               passing: 0, warning: 0, critical: 0 };
+    }
+    var p = 0, w = 0, c = 0;
+    instances.forEach(function (inst) {
+      // Reduce the per-instance checks to one status (worst wins).
+      var checks = (inst && inst.Checks) || [];
+      var worst = 'passing';
+      for (var i = 0; i < checks.length; i++) {
+        var s = checks[i].Status;
+        if (s === 'critical') { worst = 'critical'; break; }
+        if (s === 'warning' && worst !== 'critical') worst = 'warning';
+      }
+      if (worst === 'critical') c++;
+      else if (worst === 'warning') w++;
+      else p++;
+    });
+
+    var total = p + w + c;
+    var kind = 'passing';
+    var label = 'running';
+    if (c > 0 && p === 0 && w === 0) {
+      kind = 'critical';
+      label = 'critical';
+    } else if (c > 0 || w > 0) {
+      kind = 'warning';
+      label = 'degraded ' + p + '/' + total;
+    } else {
+      kind = 'passing';
+      label = total > 1 ? ('running ' + p + '/' + total) : 'running';
+    }
+    return { kind: kind, label: label, passing: p, warning: w, critical: c };
+  }
+
+  /**
+   * Render the sidebar from the current set of _connectedConsuls.  One
+   * accordion group per Consul URL, with its services inside.  Called
+   * whenever the connection list changes (add, remove, reload).
+   */
+  function _renderAllConnectedConsuls() {
+    var container = document.getElementById('servicesList');
+    if (!container) return;
+
+    container.classList.remove('multi-broker');
+    container.innerHTML = '';
+
+    // Rebuild MM.servicesInfor for method lookup and search.  Keys are
+    // scoped by URL so two services with the same name on different
+    // Consuls don't collide.
+    MM.servicesInfor = {};
+    _connectedConsuls.forEach(function (conn) {
+      conn.services.forEach(function (svc) {
+        var key = svc.name + '@' + conn.url;
+        MM.servicesInfor[key] = {
+          name: svc.name,
+          routing_key: svc.name,
+          version: '1.0.0',
+          tag: svc.tags.join(','),
+          shortdesc: svc.grpcServices || 'gRPC service',
+          description: 'Consul ' + conn.url + ' @ ' +
+                        (svc.address || '?') + ':' + (svc.port || '?'),
+          methods: [],
+          gui_support: false,
+          address: svc.address,
+          port: svc.port,
+          consulUrl: conn.url
+        };
+      });
+    });
+
+    if (_connectedConsuls.length === 0) {
+      container.innerHTML =
+        '<div class="sidebar-empty-hint">' +
+        '  Click <strong>Connect</strong> in the toolbar to connect to a ' +
+        '  Consul cluster.' +
+        '</div>';
+      return;
+    }
+
+    _connectedConsuls.forEach(function (conn, idx) {
+      var groupId = 'consulGroup_' + idx;
+      var shortUrl = _shortenConsulUrl(conn.url);
+      var alive = conn.alive !== false;
+
+      var item = document.createElement('div');
+      item.className = 'accordion-item' + (alive ? '' : ' consul-group-down');
+      item.innerHTML =
+        '  <h2 class="accordion-header">' +
+        '    <button class="accordion-button" type="button"' +
+        '            data-bs-toggle="collapse" data-bs-target="#' + groupId + '"' +
+        '            aria-expanded="true">' +
+        '      <i class="bi ' + (alive ? 'bi-compass' : 'bi-plug') + ' me-2"></i>' +
+        '      <span class="me-2">' + _escapeHtml(shortUrl) + '</span>' +
+        (alive && conn.leader
+          ? '<span class="badge bg-secondary me-1">' + _escapeHtml(conn.leader) + '</span>'
+          : '') +
+        (alive
+          ? '<span class="badge bg-info">' + conn.services.length + '</span>'
+          : '<span class="badge bg-danger">unreachable</span>') +
+        '    </button>' +
+        '  </h2>' +
+        '  <div id="' + groupId + '" class="accordion-collapse collapse show">' +
+        '    <div class="accordion-body p-0">' +
+        '      <ul class="list-group list-group-flush"></ul>' +
+        '    </div>' +
+        '  </div>';
+      container.appendChild(item);
+
+      var list = item.querySelector('ul.list-group');
+
+      if (!alive) {
+        list.innerHTML =
+          '<li class="list-group-item sidebar-empty-row">' +
+          '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+          '  <em>Consul is unreachable</em>' +
+          (conn.lastError
+            ? '<div class="small text-muted mt-1">' + _escapeHtml(conn.lastError) + '</div>'
+            : '') +
+          '</li>';
+        return;
+      }
+
+      if (conn.services.length === 0) {
+        list.innerHTML =
+          '<li class="list-group-item sidebar-empty-row">' +
+          '  <em>No services registered yet.</em>' +
+          '</li>';
+        return;
+      }
+
+      conn.services.forEach(function (svc) {
+        var row = document.createElement('li');
+        row.className = 'list-group-item';
+        row.setAttribute('data-service-name', svc.name);
+
+        var status = svc.status || { kind: 'unknown', label: 'unknown' };
+
+        // Wrap in a single block child so the two lines stack vertically
+        // inside the flex row of .list-group-item.
+        row.innerHTML =
+          '<div class="svc-row">' +
+          '  <div class="svc-name">' +
+          '    <span class="svc-status svc-status-' + status.kind + '"' +
+          '          title="' + _escapeHtml(status.label) + '"></span>' +
+                 _escapeHtml(svc.name) +
+          '  </div>' +
+          '  <div class="svc-hint">' +
+               _escapeHtml((svc.address || '?') + ':' + (svc.port || '?')) +
+               (svc.tags.length
+                 ? ' · ' + svc.tags.slice(0, 3).map(_escapeHtml).join(', ')
+                 : '') +
+          '  </div>' +
+          '</div>';
+
+        // Attach the Consul URL so the gRPC panel can route its calls
+        // through the right bridge query param.
+        var svcWithUrl = Object.assign({}, svc, { consulUrl: conn.url });
+
+        row.addEventListener('click', function () {
+          _showGrpcServicePanel(svcWithUrl);
+          // Visual selection across all groups
+          document
+            .querySelectorAll('#servicesList .list-group-item.active')
+            .forEach(function (el) { el.classList.remove('active'); });
+          row.classList.add('active');
+        });
+
+        list.appendChild(row);
+      });
+    });
+  }
+
+  /**
+   * Render the method panel for a selected service in #serviceContent.
+   *
+   * Fetches the method list via GET /api/grpc/services/{name} and builds
+   * an accordion: one item per gRPC method, each with a JSON textarea
+   * pre-filled from the reflected schema, a Call button, and a response
+   * display area below.
+   */
+  function _showGrpcServicePanel(svc) {
+    var content = document.getElementById('serviceContent');
+    if (!content) return;
+
+    content.innerHTML =
+      '<div class="p-3">' +
+      '  <div class="d-flex align-items-center mb-2">' +
+      '    <h5 class="mb-0 me-2"><i class="bi bi-box me-2"></i>' + _escapeHtml(svc.name) + '</h5>' +
+      '    <span class="badge bg-secondary me-1">' +
+           _escapeHtml((svc.address || '?') + ':' + (svc.port || '?')) +
+      '    </span>' +
+      (svc.tags && svc.tags.length
+        ? '<span class="badge bg-light text-dark">' +
+            _escapeHtml(svc.tags.join(', ')) + '</span>'
+        : '') +
+      '  </div>' +
+      '  <p class="text-muted small mb-3">' +
+      '    <i class="bi bi-diagram-3 me-1"></i>' +
+      '    Methods are discovered via gRPC server reflection.' +
+      '  </p>' +
+      '  <div id="grpcMethodList">' +
+      '    <div class="text-muted small">' +
+      '      <span class="spinner-border spinner-border-sm me-2"></span>' +
+      '      Loading methods from ' + _escapeHtml(svc.name) + '...' +
+      '    </div>' +
+      '  </div>' +
+      '</div>';
+
+    MM.grpcClient.getServiceMethods(svc.name, svc.consulUrl)
+      .then(function (data) {
+        _renderGrpcMethods(svc, data);
+      })
+      .catch(function (err) {
+        var target = document.getElementById('grpcMethodList');
+        if (target) {
+          target.innerHTML =
+            '<div class="alert alert-danger">' +
+            '  <strong>Failed to load methods:</strong> ' +
+            _escapeHtml(err.message || err) +
+            '</div>';
+        }
+      });
+  }
+
+  function _renderGrpcMethods(svc, data) {
+    var target = document.getElementById('grpcMethodList');
+    if (!target) return;
+
+    if (data && data.error) {
+      target.innerHTML =
+        '<div class="alert alert-danger">' + _escapeHtml(data.error) + '</div>';
+      return;
+    }
+
+    var services = (data && data.grpc_services) || [];
+    if (services.length === 0) {
+      target.innerHTML =
+        '<div class="alert alert-warning">No gRPC services found at ' +
+        _escapeHtml(data.target || '') + '.</div>';
+      return;
+    }
+
+    var html = '';
+    services.forEach(function (s, si) {
+      if (s.error) {
+        html += '<div class="alert alert-warning">' +
+                '<strong>' + _escapeHtml(s.name) + '</strong>: ' +
+                _escapeHtml(s.error) + '</div>';
+        return;
+      }
+      html += '<div class="mb-3">' +
+              '  <div class="small text-muted mb-1"><i class="bi bi-diagram-3 me-1"></i>' +
+              _escapeHtml(s.name) +
+              '  </div>' +
+              '  <div class="accordion" id="grpcAcc_' + si + '">';
+
+      (s.methods || []).forEach(function (m, mi) {
+        var itemId = 'grpcMethod_' + si + '_' + mi;
+        var bodyId = itemId + '_body';
+        var textareaId = itemId + '_json';
+        var resultId = itemId + '_result';
+        var streaming = m.client_streaming || m.server_streaming;
+
+        var streamBadge = '';
+        if (m.client_streaming && m.server_streaming) {
+          streamBadge = '<span class="badge bg-warning text-dark ms-2">bidi stream</span>';
+        } else if (m.client_streaming) {
+          streamBadge = '<span class="badge bg-warning text-dark ms-2">client stream</span>';
+        } else if (m.server_streaming) {
+          streamBadge = '<span class="badge bg-warning text-dark ms-2">server stream</span>';
+        }
+
+        var skeleton = '{}';
+        try { skeleton = JSON.stringify(m.input_skeleton || {}, null, 2); }
+        catch (e) {}
+
+        var fieldsHtml = (m.input_fields || []).map(function (f) {
+          var repeat = (f.label === 'repeated') ? '[]' : '';
+          var t = _escapeHtml(f.type + repeat);
+          return '<span class="badge bg-light text-dark me-1 mb-1">' +
+                 _escapeHtml(f.name) + ': ' + t + '</span>';
+        }).join('');
+
+        // Disable Call only for client/bidi streaming.  Server streaming is
+        // collected server-side and returned when the stream ends.
+        var unsupported = m.client_streaming;
+        var btnLabel = m.server_streaming ? 'Collect stream' : 'Call';
+
+        html +=
+          '<div class="accordion-item">' +
+          '  <h2 class="accordion-header">' +
+          '    <button class="accordion-button collapsed" type="button"' +
+          '            data-bs-toggle="collapse" data-bs-target="#' + bodyId + '">' +
+          '      <code class="me-2">' + _escapeHtml(m.name) + '</code>' +
+          '      <span class="small text-muted">' +
+                   _escapeHtml(m.input_type) + ' → ' + _escapeHtml(m.output_type) +
+          '      </span>' +
+                 streamBadge +
+          '    </button>' +
+          '  </h2>' +
+          '  <div id="' + bodyId + '" class="accordion-collapse collapse"' +
+          '       data-bs-parent="#grpcAcc_' + si + '">' +
+          '    <div class="accordion-body">' +
+          (fieldsHtml
+            ? '<div class="mb-2">' + fieldsHtml + '</div>'
+            : '') +
+          (m.server_streaming
+            ? '<div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>' +
+              'Server-streaming RPC — up to 100 events or 15 seconds are collected, ' +
+              'then the stream is cancelled.</div>'
+            : '') +
+          '      <label class="form-label small mb-1">Request JSON</label>' +
+          '      <textarea id="' + textareaId + '" class="form-control mb-2" rows="8" ' +
+          '        style="font-family:Consolas,monospace;font-size:12px;" ' +
+          '        spellcheck="false">' + _escapeHtml(skeleton) + '</textarea>' +
+          '      <button class="btn btn-sm btn-primary grpc-call-btn"' +
+          (unsupported ? ' disabled title="Client-streaming RPCs are not supported"' : '') +
+          '              data-svc="' + _escapeHtml(svc.name) + '"' +
+          '              data-consul-url="' + _escapeHtml(svc.consulUrl || '') + '"' +
+          '              data-grpc-svc="' + _escapeHtml(s.name) + '"' +
+          '              data-method="' + _escapeHtml(m.name) + '"' +
+          '              data-textarea="' + textareaId + '"' +
+          '              data-result="' + resultId + '">' +
+          '        <i class="bi bi-play-fill me-1"></i>' + btnLabel +
+          '      </button>' +
+          '      <div id="' + resultId + '" class="mt-2 small"></div>' +
+          '    </div>' +
+          '  </div>' +
+          '</div>';
+      });
+
+      html += '  </div>' +
+              '</div>';
+    });
+
+    target.innerHTML = html;
+
+    // Wire all Call buttons.
+    target.querySelectorAll('.grpc-call-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var consulName = btn.getAttribute('data-svc');
+        var consulUrl  = btn.getAttribute('data-consul-url') || '';
+        var grpcSvc = btn.getAttribute('data-grpc-svc');
+        var method = btn.getAttribute('data-method');
+        var textarea = document.getElementById(btn.getAttribute('data-textarea'));
+        var resultEl = document.getElementById(btn.getAttribute('data-result'));
+
+        var argsJson = textarea ? textarea.value : '{}';
+
+        if (resultEl) {
+          resultEl.className = 'mt-2 small alert alert-info py-2';
+          resultEl.innerHTML =
+            '<span class="spinner-border spinner-border-sm me-1"></span>Calling...';
+        }
+        btn.disabled = true;
+
+        MM.grpcClient.callMethod({
+          consulName: consulName,
+          consulUrl:  consulUrl,
+          grpcService: grpcSvc,
+          method: method,
+          argsJson: argsJson
+        }).then(function (data) {
+          if (!resultEl) return;
+          if (data.ok) {
+            if (data.streaming) {
+              var events = data.events || [];
+              var count = events.length;
+              var header =
+                '<strong>Stream collected ' + count + ' event' +
+                (count === 1 ? '' : 's') +
+                (data.truncated ? ' (truncated)' : '') + ':</strong>';
+
+              if (count === 0) {
+                resultEl.className = 'mt-2 small alert alert-warning py-2';
+                resultEl.innerHTML = header + ' (no events received)';
+                return;
+              }
+
+              // Render each event as an indexed JSON block.
+              var body = events.map(function (ev, i) {
+                var pretty = '';
+                try { pretty = JSON.stringify(ev, null, 2); }
+                catch (e) { pretty = String(ev); }
+                return '<div class="small text-muted mt-1">#' + i + '</div>' +
+                       '<pre class="mb-0" style="white-space:pre-wrap;">' +
+                       _escapeHtml(pretty) + '</pre>';
+              }).join('');
+
+              var errNote = data.error
+                ? '<div class="mt-2 text-danger"><strong>Stream error:</strong> ' +
+                  _escapeHtml(data.error) + '</div>'
+                : '';
+
+              resultEl.className = 'mt-2 small alert alert-success py-2';
+              resultEl.innerHTML =
+                header +
+                '<div style="max-height:320px;overflow:auto;">' + body + '</div>' +
+                errNote;
+            } else {
+              var pretty = '';
+              try { pretty = JSON.stringify(data.result, null, 2); }
+              catch (e) { pretty = String(data.result); }
+              resultEl.className = 'mt-2 small alert alert-success py-2';
+              resultEl.innerHTML =
+                '<strong>Response:</strong>' +
+                '<pre class="mb-0 mt-1" style="white-space:pre-wrap;">' +
+                _escapeHtml(pretty) + '</pre>';
+            }
+          } else {
+            resultEl.className = 'mt-2 small alert alert-danger py-2';
+            resultEl.innerHTML =
+              '<strong>Error:</strong> ' + _escapeHtml(data.error || 'Unknown');
+          }
+        }).catch(function (err) {
+          if (!resultEl) return;
+          resultEl.className = 'mt-2 small alert alert-danger py-2';
+          resultEl.innerHTML =
+            '<strong>Error:</strong> ' + _escapeHtml(err.message || err);
+        }).finally(function () {
+          btn.disabled = false;
+        });
+      });
+    });
+  }
+
+  function _escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // Render the initial empty sidebar state + any chips from localStorage.
+  _renderAllConnectedConsuls();
+
+  // Expose the multi-Consul connection list so other modules (notably
+  // ConsulDashboard) can check whether any Consul is already connected
+  // without needing to duplicate the state machine.
+  MM.getConnectedConsuls = function () {
+    return _connectedConsuls.slice();   // defensive copy
+  };
+
+  // --------------------------------------------------------------------
+  // Periodic refresh of connected Consuls
+  // --------------------------------------------------------------------
+  //
+  // Each connection is re-probed every 10 seconds so chips and sidebar
+  // groups reflect the live state:
+  //   - If a Consul becomes unreachable (agent killed, bridge down),
+  //     the chip + sidebar group fade to gray and show "unreachable".
+  //   - If services come and go, the sidebar rows appear/disappear
+  //     without a manual refresh.
+  //   - Auto-recovers when a down Consul comes back.
+
+  var CONSUL_POLL_INTERVAL_MS = 10000;
+  var _consulPollTimer = null;
+
+  function _sameServices(a, b) {
+    // Quick deep-equal for the list of service summaries we render.
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      var x = a[i], y = b[i];
+      if (!x || !y) return false;
+      if (x.name !== y.name || x.address !== y.address ||
+          x.port !== y.port || x.instances !== y.instances) return false;
+      // Status kind is the most likely field to change.
+      var sx = (x.status && x.status.kind) || '';
+      var sy = (y.status && y.status.kind) || '';
+      if (sx !== sy) return false;
+    }
+    return true;
+  }
+
+  function _refreshConsul(conn) {
+    // Re-run the same fetch used by initial connect, but tolerate
+    // errors — on failure we mark the connection unreachable instead
+    // of throwing.
+    return _connectConsulUrl(conn.url)
+      .then(function (fresh) {
+        var changed = !conn.alive || conn.leader !== fresh.leader ||
+                      !_sameServices(conn.services, fresh.services);
+        conn.alive = true;
+        conn.leader = fresh.leader;
+        conn.services = fresh.services;
+        delete conn.lastError;
+        return changed;
+      })
+      .catch(function (err) {
+        var wasDown = conn.alive === false;
+        conn.alive = false;
+        conn.lastError = (err && err.message) || String(err);
+        conn.services = [];   // hide services of an unreachable cluster
+        return !wasDown;  // changed if it was previously up
+      });
+  }
+
+  function _pollConnectedConsuls() {
+    if (_connectedConsuls.length === 0) return;
+    Promise.all(_connectedConsuls.map(_refreshConsul))
+      .then(function (flags) {
+        if (flags.some(Boolean)) {
+          _renderConsulChips();
+          _renderAllConnectedConsuls();
+        }
+      });
+  }
+
+  function _startConsulPolling() {
+    if (_consulPollTimer) return;
+    _consulPollTimer = setInterval(_pollConnectedConsuls, CONSUL_POLL_INTERVAL_MS);
+  }
+
+  _startConsulPolling();
+
+  // When the bridge goes down/up, poll immediately so the UI reacts
+  // within a second instead of waiting up to 10s for the next tick.
+  window.addEventListener('mm:bridge-state', function () {
+    setTimeout(_pollConnectedConsuls, 200);
+  });
+
+  // Auto-reconnect to every Consul URL saved from a previous session.
+  // Wait briefly so the bridge has time to probe first (and so polling
+  // from InfraStatus doesn't race us).
+  (function _autoReconnectConsuls() {
+    var urls = _loadSavedConsulUrls();
+    if (!urls.length) return;
+    setTimeout(function () {
+      urls.forEach(function (url) {
+        // Skip duplicates (in case user also had connections pending)
+        if (_connectedConsuls.find(function (c) { return c.url === url; })) return;
+        _connectConsulUrl(url)
+          .then(function (conn) {
+            conn.alive = true;
+            _connectedConsuls.push(conn);
+            _renderConsulChips();
+            _renderAllConnectedConsuls();
+          })
+          .catch(function (err) {
+            // Still add a placeholder entry marked unreachable so the
+            // chip is visible; the poll will recover it if Consul
+            // comes back.
+            _connectedConsuls.push({
+              url: url,
+              leader: '',
+              services: [],
+              alive: false,
+              lastError: (err && err.message) || String(err)
+            });
+            _renderConsulChips();
+            _renderAllConnectedConsuls();
+            console.warn('[app] Consul auto-reconnect failed for', url, err);
+          });
+      });
+    }, 1500);
+  })();
 
   document.getElementById('btnLoginSubmit').addEventListener('click', function () {
     onLoginSubmit();
@@ -2535,53 +3434,33 @@
   }
 
   function activateFleetMode() {
-    if (!MM.fleetDashboard || !MM.fleetClient) return;
-
-    // Activate the currently visible sub-tab
-    var localTab = document.getElementById('tabLocalHub');
+    // Only Nomad and Consul sub-tabs remain after ProcessHub removal.
     var nomadTab = document.getElementById('tabNomad');
-    var isLocalActive = localTab && localTab.classList.contains('active');
-    var isNomadActive = nomadTab && nomadTab.classList.contains('active');
+    var consulTab = document.getElementById('tabConsul');
+    var isConsulActive = consulTab && consulTab.classList.contains('active');
 
-    if (isNomadActive) {
-      _activateNomadSubTab();
-    } else if (isLocalActive) {
-      _activateLocalHubSubTab();
+    if (isConsulActive) {
+      _activateConsulSubTab();
     } else {
-      _activateFleetRemoteSubTab();
+      _activateNomadSubTab();
     }
 
     // Wire sub-tab switch events
-    var tabLocalHub = document.getElementById('tabLocalHub');
-    var tabFleetRemote = document.getElementById('tabFleetRemote');
-    var tabNomad = document.getElementById('tabNomad');
-
-    if (tabLocalHub) {
-      tabLocalHub._mmHandler = tabLocalHub._mmHandler || function () {
-        _deactivateFleetRemoteSubTab();
-        _deactivateNomadSubTab();
-        _activateLocalHubSubTab();
-      };
-      tabLocalHub.removeEventListener('shown.bs.tab', tabLocalHub._mmHandler);
-      tabLocalHub.addEventListener('shown.bs.tab', tabLocalHub._mmHandler);
-    }
-    if (tabFleetRemote) {
-      tabFleetRemote._mmHandler = tabFleetRemote._mmHandler || function () {
-        _deactivateLocalHubSubTab();
-        _deactivateNomadSubTab();
-        _activateFleetRemoteSubTab();
-      };
-      tabFleetRemote.removeEventListener('shown.bs.tab', tabFleetRemote._mmHandler);
-      tabFleetRemote.addEventListener('shown.bs.tab', tabFleetRemote._mmHandler);
-    }
-    if (tabNomad) {
-      tabNomad._mmHandler = tabNomad._mmHandler || function () {
-        _deactivateFleetRemoteSubTab();
-        _deactivateLocalHubSubTab();
+    if (nomadTab) {
+      nomadTab._mmHandler = nomadTab._mmHandler || function () {
+        _deactivateConsulSubTab();
         _activateNomadSubTab();
       };
-      tabNomad.removeEventListener('shown.bs.tab', tabNomad._mmHandler);
-      tabNomad.addEventListener('shown.bs.tab', tabNomad._mmHandler);
+      nomadTab.removeEventListener('shown.bs.tab', nomadTab._mmHandler);
+      nomadTab.addEventListener('shown.bs.tab', nomadTab._mmHandler);
+    }
+    if (consulTab) {
+      consulTab._mmHandler = consulTab._mmHandler || function () {
+        _deactivateNomadSubTab();
+        _activateConsulSubTab();
+      };
+      consulTab.removeEventListener('shown.bs.tab', consulTab._mmHandler);
+      consulTab.addEventListener('shown.bs.tab', consulTab._mmHandler);
     }
   }
 
@@ -2595,61 +3474,6 @@
       '</div>';
   }
 
-  function _activateFleetRemoteSubTab() {
-    var fleetPane = document.getElementById('fleetRemotePane');
-    if (fleetPane && !fleetPane.hasChildNodes()) _showContentSpinner('fleetRemotePane');
-    MM.fleetDashboard.activate();
-
-    // Bridge URL is available in both browser mode (same origin) and
-    // Electron mode (configured via settings / localStorage).
-    var bridgeOrigin = MM.serviceClient ? MM.serviceClient.apiUrl : '';
-    var hasBridge = bridgeOrigin && bridgeOrigin.indexOf('http') === 0;
-
-    if (hasBridge) {
-      // Check if bridge has a fleet URL configured before polling.
-      fetch(bridgeOrigin + '/api/fleet/config')
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          if (data && data.fleet_api_url) {
-            MM.fleetClient.startPolling();
-          } else {
-            // Bridge lost the URL (e.g. restart) — restore from localStorage
-            var saved = null;
-            try { saved = localStorage.getItem('mm_fleet_api_url'); } catch (e) {}
-            if (saved) {
-              MM.fleetClient.configure(saved).then(function () {
-                MM.fleetClient.startPolling();
-              });
-            } else {
-              MM.fleetDashboard.renderConfigurePrompt();
-            }
-          }
-        })
-        .catch(function () {
-          MM.fleetDashboard.renderConfigurePrompt();
-        });
-    } else if (MM.fleetClient.isConfigured()) {
-      MM.fleetClient.startPolling();
-    } else {
-      MM.fleetDashboard.renderConfigurePrompt();
-    }
-  }
-
-  function _deactivateFleetRemoteSubTab() {
-    if (MM.fleetClient) MM.fleetClient.stopPolling();
-    if (MM.fleetDashboard) MM.fleetDashboard.deactivate();
-  }
-
-  function _activateLocalHubSubTab() {
-    var hubPane = document.getElementById('localHubPane');
-    if (hubPane && !hubPane.hasChildNodes()) _showContentSpinner('localHubPane');
-    if (MM.localHubDashboard) MM.localHubDashboard.activate();
-  }
-
-  function _deactivateLocalHubSubTab() {
-    if (MM.localHubDashboard) MM.localHubDashboard.deactivate();
-  }
-
   function _activateNomadSubTab() {
     if (MM.nomadDashboard) MM.nomadDashboard.activate();
   }
@@ -2658,11 +3482,19 @@
     if (MM.nomadDashboard) MM.nomadDashboard.deactivate();
   }
 
+  function _activateConsulSubTab() {
+    var pane = document.getElementById('consulPane');
+    if (pane && !pane.hasChildNodes()) _showContentSpinner('consulPane');
+    if (MM.consulDashboard) MM.consulDashboard.activate();
+  }
+
+  function _deactivateConsulSubTab() {
+    if (MM.consulDashboard) MM.consulDashboard.deactivate();
+  }
+
   function deactivateFleetMode() {
-    if (MM.fleetClient) MM.fleetClient.stopPolling();
-    if (MM.fleetDashboard) MM.fleetDashboard.deactivate();
-    if (MM.localHubDashboard) MM.localHubDashboard.deactivate();
     if (MM.nomadDashboard) MM.nomadDashboard.deactivate();
+    if (MM.consulDashboard) MM.consulDashboard.deactivate();
   }
 
   function activateCreatorMode() {

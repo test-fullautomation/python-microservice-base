@@ -85,6 +85,187 @@ html, body {
   background-color: #2ecc71;
 }
 
+/* ---- Bridge control (navbar) ---- */
+.bridge-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  margin-right: 8px;
+}
+
+.bridge-led {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #9e9e9e;                     /* unknown */
+  box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+  transition: background-color 0.3s, box-shadow 0.3s;
+}
+.bridge-led.up {
+  background-color: #2ecc71;                     /* running */
+  box-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
+}
+.bridge-led.down {
+  background-color: #e74c3c;                     /* stopped */
+  box-shadow: 0 0 4px rgba(231, 76, 60, 0.6);
+}
+.bridge-led.pending {
+  background-color: #f1c40f;                     /* transitioning */
+  animation: bridgePulse 1s ease-in-out infinite;
+}
+@keyframes bridgePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.7); }
+  50%      { box-shadow: 0 0 0 6px rgba(241, 196, 15, 0); }
+}
+
+.bridge-label {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.82rem;
+  font-weight: 500;
+  user-select: none;
+}
+
+.btn-bridge {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.8);
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn-bridge:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+.btn-bridge:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.btn-bridge-start:hover:not(:disabled) { color: #2ecc71; border-color: #2ecc71; }
+.btn-bridge-stop:hover:not(:disabled)  { color: #e74c3c; border-color: #e74c3c; }
+
+/* ---- Legacy broker UI (hidden) ---- */
+.legacy-broker-ui { display: none !important; }
+
+/* ---- Infra status pills (Consul, Nomad) ---- */
+.infra-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+}
+
+.infra-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.infra-pill:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+.infra-led {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #9e9e9e;
+  box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  transition: background-color 0.3s, box-shadow 0.3s;
+}
+.infra-led.up      { background-color: #2ecc71; box-shadow: 0 0 6px rgba(46, 204, 113, 0.8); }
+.infra-led.down    { background-color: #e74c3c; box-shadow: 0 0 4px rgba(231, 76, 60, 0.6); }
+.infra-led.unknown { background-color: #9e9e9e; }
+
+/* ---- Consul connection chips ---- */
+.consul-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-right: 8px;
+}
+
+.consul-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 10px;
+  background: rgba(46, 204, 113, 0.12);
+  border: 1px solid rgba(46, 204, 113, 0.45);
+  border-radius: 999px;
+  color: #eafaf0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  max-width: 280px;
+}
+.consul-chip .consul-chip-icon   { color: #2ecc71; }
+.consul-chip .consul-chip-label  {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.consul-chip .consul-chip-close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, color 0.15s;
+}
+.consul-chip .consul-chip-close:hover {
+  background: rgba(231, 76, 60, 0.35);
+  color: #fff;
+}
+
+/* Unreachable chip — muted red border, gray icon. */
+.consul-chip.consul-chip-down {
+  background: rgba(231, 76, 60, 0.12);
+  border-color: rgba(231, 76, 60, 0.55);
+  color: rgba(255, 255, 255, 0.65);
+}
+.consul-chip.consul-chip-down .consul-chip-icon-down {
+  color: #e74c3c;
+}
+.consul-chip.consul-chip-down .consul-chip-label {
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+/* Sidebar accordion group for a Consul that's currently unreachable. */
+.sidebar-content .accordion-item.consul-group-down .accordion-button {
+  color: rgba(255, 255, 255, 0.55);
+}
+.sidebar-content .accordion-item.consul-group-down .accordion-button .bi-plug {
+  color: #e74c3c;
+}
+
 .btn-settings {
   background: transparent;
   border: none;
@@ -297,6 +478,85 @@ html, body {
 
 .sidebar-content .list-group-item.service-disabled:hover {
   background-color: transparent;
+}
+
+/* ---- Consul service rows (name + hint stacked) ----
+   The parent .list-group-item is display:flex to keep the icon helper
+   aligned, so the Consul rows wrap their stacked content in .svc-row
+   to become a single flex child. */
+.sidebar-content .list-group-item .svc-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;  /* allow text-overflow to work inside flex */
+}
+
+.sidebar-content .list-group-item .svc-name {
+  font-weight: 600;
+  color: var(--sidebar-text);
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+}
+
+/* Per-service status indicator (dot beside the service name). */
+.sidebar-content .svc-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+  background-color: #9e9e9e;  /* unknown fallback */
+}
+.sidebar-content .svc-status-passing {
+  background-color: #2ecc71;
+  box-shadow: 0 0 4px rgba(46, 204, 113, 0.7);
+}
+.sidebar-content .svc-status-warning {
+  background-color: #f1c40f;
+  box-shadow: 0 0 4px rgba(241, 196, 15, 0.7);
+}
+.sidebar-content .svc-status-critical {
+  background-color: #e74c3c;
+  box-shadow: 0 0 4px rgba(231, 76, 60, 0.7);
+}
+.sidebar-content .svc-status-unknown {
+  background-color: #9e9e9e;
+}
+
+.sidebar-content .list-group-item .svc-hint {
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.60);   /* much brighter than Bootstrap text-muted */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-content .list-group-item.active .svc-hint {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Empty state placeholders in the sidebar. */
+.sidebar-content .sidebar-empty-hint {
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.70);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.sidebar-content .sidebar-empty-row {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.82rem;
+  padding: 0.5rem 1rem 0.5rem 1.5rem;
+  cursor: default;
+}
+.sidebar-content .sidebar-empty-row:hover {
+  background-color: transparent !important;
 }
 
 /* ---------- Content Area ---------- */

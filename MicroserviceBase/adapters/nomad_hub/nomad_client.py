@@ -154,6 +154,22 @@ Supports ACL token authentication and blocking queries (long-poll).
       """POST /v1/jobs — register (create or update) a job."""
       return self._request('POST', '/jobs', body={'Job': job_spec})
 
+   def parse_hcl(self, hcl_text, canonicalize=True):
+      """POST /v1/jobs/parse — convert an HCL job spec to JSON.
+
+      Used by the GUI "Submit Job" dialog so users can paste HCL directly
+      instead of JSON.  Nomad's own ``nomad job run`` does the same under
+      the hood.
+
+      Returns the parsed job dict ready to be wrapped in ``{"Job": ...}``
+      and POSTed to ``/v1/jobs``.
+      """
+      body = {
+         'JobHCL': hcl_text,
+         'Canonicalize': bool(canonicalize),
+      }
+      return self._request('POST', '/jobs/parse', body=body)
+
    def stop_job(self, job_id, purge=False):
       """DELETE /v1/job/:id — stop a job. purge=True removes it entirely."""
       params = {}

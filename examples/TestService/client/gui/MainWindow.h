@@ -1,0 +1,48 @@
+#pragma once
+
+#include <QString>
+#include <QWidget>
+
+#include <functional>
+#include <memory>
+#include <vector>
+
+#include "MicroserviceBase/ServiceClient.h"
+#include "test_service.grpc.pb.h"
+
+QT_BEGIN_NAMESPACE
+class QFormLayout;
+namespace Ui { class MainWindow; }
+QT_END_NAMESPACE
+
+class MainWindow : public QWidget {
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow() override;
+
+private slots:
+    void onMethodChanged(int idx);
+    void onSend();
+
+private:
+    struct ParamSpec {
+        QString name;
+        QString type;
+    };
+    struct MethodBinding {
+        QString name;
+        std::vector<ParamSpec> params;
+        std::function<QString(const std::vector<QWidget*>&)> invoke;
+    };
+
+    void buildMethodBindings();
+    void rebuildForm(int idx);
+
+    Ui::MainWindow *ui;
+    QFormLayout   *m_form = nullptr;
+    std::vector<MethodBinding>  m_methods;
+    std::vector<QWidget*>       m_currentWidgets;
+    std::unique_ptr<
+        microservice_base::ServiceClient<test_service::v1::TestServiceService>> m_client;
+};
