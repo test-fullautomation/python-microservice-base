@@ -41,8 +41,12 @@ def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
     if spec.gen_build_scripts:
         files["build_deploy.bat"] = _build_bat(spec)
         files["build_deploy.sh"] = _build_sh(spec)
-        # MinGW variant of the Windows deploy script (Ninja + g++).
+        # MinGW variant — uses vcpkg + x64-mingw-dynamic triplet.
         files["build_deploy_mingw.bat"] = _build_mingw_bat(spec)
+        # MSYS2 variant — uses MSYS2's pacman tree (more reliable than
+        # vcpkg+MinGW, which has community-tier port support).
+        files["build_deploy_msys2.bat"] = _build_msys2_bat(spec)
+        files["set_env_msys2.bat"] = _set_env_msys2_bat(spec)
 
     if spec.gui_type == "qml":
         files.update(_qml_files(spec))
@@ -470,6 +474,8 @@ if not defined VSCMD_ARG_TGT_ARCH (
     )
 )
 {qt_line}{wasm_block}
+set "MSBASE_ENV_LOADED=msvc"
+
 echo ==== set_env (MSVC) applied ====
 echo   VCPKG_ROOT = %VCPKG_ROOT%
 echo   CMAKE_DIR  = %CMAKE_DIR%
@@ -505,6 +511,8 @@ set "CMAKE_DIR=C:\\Program Files\\CMake\\bin"
 if exist "%MINGW_DIR%\\g++.exe"   set "PATH=%MINGW_DIR%;%PATH%"
 if exist "%NINJA_DIR%\\ninja.exe" set "PATH=%NINJA_DIR%;%PATH%"
 if exist "%CMAKE_DIR%\\cmake.exe" set "PATH=%CMAKE_DIR%;%PATH%"
+
+set "MSBASE_ENV_LOADED=mingw"
 
 echo ==== set_env (MinGW) applied ====
 echo   VCPKG_ROOT    = %VCPKG_ROOT%
@@ -709,11 +717,16 @@ if not exist "%VCPKG_ROOT%\\installed\\%VCPKG_TRIPLET%\\share\\grpc" (
     exit /b 1
 )
 
-:: ----- Generate proto stubs (idempotent) -----
-if not exist "%SCRIPT_DIR%proto\\{sn}.pb.h" (
-    call "%SCRIPT_DIR%proto\\generate_stubs.bat"
-    if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
-)
+:: ----- Generate proto stubs (FORCE regenerate with MinGW protoc) -----
+:: Proto stubs are toolchain-ABI-sensitive: stubs produced by a different
+:: toolchain's protoc won't compile against this toolchain's protobuf
+:: headers.  Always regenerate so they match the active install.
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.h"       >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.cc"      >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.h"  >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.cc" >nul 2>&1
+call "%SCRIPT_DIR%proto\\generate_stubs.bat"
+if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
 
 :: ----- Build service (Ninja + MinGW) -----
 set "SERVICE_BUILD=%SCRIPT_DIR%build-mingw"
@@ -765,6 +778,161 @@ if defined MINGW_DIR (
 {windeployqt_block}
 echo.
 echo MinGW build complete.  Binaries + runtime DLLs collected in: %DIST%
+endlocal
+'''
+
+
+# -----------------------------------------------------------------------
+# MSYS2 variant (pacman packages — most reliable MinGW path on Windows)
+# -----------------------------------------------------------------------
+
+def _set_env_msys2_bat(spec: "ScaffoldSpec") -> str:
+    """MSYS2 env setup — uses MSYS2's mingw64 tree for toolchain + deps."""
+    return '''@echo off
+:: Central environment for MSYS2 / MinGW builds.
+::
+:: Uses MSYS2's native MinGW packages (installed via pacman) instead of
+:: vcpkg — more reliable MinGW story on Windows.
+::
+:: One-time setup:
+::   1. Install MSYS2 from https://www.msys2.org/ (default path: C:\\msys64)
+::   2. Install the required packages:
+::        C:\\msys64\\usr\\bin\\pacman -S --needed ^
+::           mingw-w64-x86_64-gcc ^
+::           mingw-w64-x86_64-cmake ^
+::           mingw-w64-x86_64-ninja ^
+::           mingw-w64-x86_64-grpc ^
+::           mingw-w64-x86_64-protobuf ^
+::           mingw-w64-x86_64-curl ^
+::           mingw-w64-x86_64-qt6-base ^
+::           mingw-w64-x86_64-qt6-tools
+::
+:: THESE VALUES ALWAYS OVERWRITE whatever is in the parent shell.
+
+set "MSYS2_ROOT=C:\\msys64\\mingw64"
+set "QT_DIR=%MSYS2_ROOT%"
+
+set "PATH=%MSYS2_ROOT%\\bin;%PATH%"
+
+set "MSBASE_ENV_LOADED=msys2"
+
+echo ==== set_env (MSYS2) applied ====
+echo   MSYS2_ROOT = %MSYS2_ROOT%
+echo   QT_DIR     = %QT_DIR%
+echo ==================================
+'''
+
+
+def _build_msys2_bat(spec: "ScaffoldSpec") -> str:
+    """MSYS2 deploy script — uses MSYS2's native MinGW packages."""
+    sn = spec.snake_name
+
+    windeployqt_block = ""
+    if spec.gui_type == "widget":
+        windeployqt_block = f'''
+:: ----- Deploy Qt runtime for the GUI (MSYS2 ships windeployqt with qt6-tools) -----
+if exist "%DIST%\\{sn}_gui.exe" (
+    if exist "%MSYS2_ROOT%\\bin\\windeployqt-qt6.exe" (
+        echo Running windeployqt-qt6 for {sn}_gui.exe ...
+        "%MSYS2_ROOT%\\bin\\windeployqt-qt6.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime "%DIST%\\{sn}_gui.exe" >nul
+    ) else if exist "%MSYS2_ROOT%\\bin\\windeployqt.exe" (
+        echo Running windeployqt for {sn}_gui.exe ...
+        "%MSYS2_ROOT%\\bin\\windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime "%DIST%\\{sn}_gui.exe" >nul
+    ) else (
+        echo WARNING: windeployqt not found in %MSYS2_ROOT%\\bin
+        echo          Install with:  pacman -S mingw-w64-x86_64-qt6-tools
+    )
+)
+'''
+
+    return f'''@echo off
+:: MSYS2 variant of build_deploy.bat.
+::
+::   - Uses MSYS2's native MinGW toolchain (g++/cmake/ninja)
+::   - Consumes MSYS2 pacman packages (grpc, protobuf, curl, Qt6)
+::   - No vcpkg, no community-tier triplet gymnastics
+::
+:: Much more reliable than vcpkg+MinGW.  See set_env_msys2.bat for the
+:: one-time pacman install.
+setlocal
+
+set "SCRIPT_DIR=%~dp0"
+call "%SCRIPT_DIR%set_env_msys2.bat"
+
+where g++   >nul 2>&1 || ( echo ERROR: g++ not found.   Check MSYS2_ROOT in set_env_msys2.bat & exit /b 1 )
+where ninja >nul 2>&1 || ( echo ERROR: ninja not found. Install: pacman -S mingw-w64-x86_64-ninja & exit /b 1 )
+where cmake >nul 2>&1 || ( echo ERROR: cmake not found. Install: pacman -S mingw-w64-x86_64-cmake & exit /b 1 )
+
+:: Verify MSYS2 has gRPC installed.
+if not exist "%MSYS2_ROOT%\\share\\grpc" (
+    echo.
+    echo ERROR: MSYS2 package mingw-w64-x86_64-grpc is not installed.
+    echo.
+    echo        From a cmd or MSYS2 shell:
+    echo          C:\\msys64\\usr\\bin\\pacman -S --needed ^
+    echo            mingw-w64-x86_64-grpc mingw-w64-x86_64-protobuf mingw-w64-x86_64-curl ^
+    echo            mingw-w64-x86_64-qt6-base mingw-w64-x86_64-qt6-tools
+    echo.
+    exit /b 1
+)
+
+:: ----- Generate proto stubs (FORCE regenerate with MSYS2 protoc) -----
+:: Proto stubs are toolchain-ABI-sensitive: stubs produced by vcpkg's
+:: protoc (often v21.x) won't compile against MSYS2's protobuf (v33+).
+:: Always regenerate so they match the active install.
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.h"       >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.cc"      >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.h"  >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.cc" >nul 2>&1
+call "%SCRIPT_DIR%proto\\generate_stubs.bat"
+if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
+
+:: ----- Build service -----
+set "SERVICE_BUILD=%SCRIPT_DIR%build-msys2"
+if not exist "%SERVICE_BUILD%" mkdir "%SERVICE_BUILD%"
+pushd "%SERVICE_BUILD%"
+cmake -G Ninja ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_PREFIX_PATH="%MSYS2_ROOT%;%QT_DIR%" ^
+      ..
+if errorlevel 1 ( echo Service configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Build client -----
+set "CLIENT_BUILD=%SCRIPT_DIR%client\\build-msys2"
+if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
+pushd "%CLIENT_BUILD%"
+cmake -G Ninja ^
+      -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_PREFIX_PATH="%MSYS2_ROOT%;%QT_DIR%" ^
+      ..
+if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Collect binaries + runtime DLLs into dist-msys2\\ -----
+set "DIST=%SCRIPT_DIR%dist-msys2"
+if not exist "%DIST%" mkdir "%DIST%"
+xcopy /Y /Q "%SERVICE_BUILD%\\*.exe" "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%SERVICE_BUILD%\\*.dll" "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\*.exe"  "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\*.dll"  "%DIST%\\" >nul 2>&1
+
+:: MSYS2 runtime + dependency DLLs.
+if exist "%MSYS2_ROOT%\\bin" (
+    for %%L in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll zlib1.dll) do (
+        if exist "%MSYS2_ROOT%\\bin\\%%L" copy /Y "%MSYS2_ROOT%\\bin\\%%L" "%DIST%\\" >nul
+    )
+    for %%G in (libgrpc libprotobuf libabsl libcares libre2 libssl libcrypto libcurl libidn2 libintl libiconv libpsl libunistring libzstd libbrotli libnghttp2 libssh2) do (
+        xcopy /Y /Q "%MSYS2_ROOT%\\bin\\%%G*.dll" "%DIST%\\" >nul 2>&1
+    )
+)
+{windeployqt_block}
+echo.
+echo MSYS2 build complete.  Binaries + runtime DLLs collected in: %DIST%
 endlocal
 '''
 
@@ -853,27 +1021,30 @@ set "PROTO_DIR=%~dp0"
 :: Remove trailing backslash
 if "!PROTO_DIR:~-1!"=="\\" set "PROTO_DIR=!PROTO_DIR:~0,-1!"
 
-:: Pull VCPKG_ROOT from the central set_env.bat in the project root.
-if exist "!PROTO_DIR!\\..\\set_env.bat" call "!PROTO_DIR!\\..\\set_env.bat"
+:: Only call set_env.bat if the caller hasn't already loaded an env.
+:: Re-sourcing would overwrite VCPKG_ROOT / PATH and pick the wrong
+:: protoc (e.g. when called from build_deploy_mingw.bat / _msys2.bat).
+if not defined MSBASE_ENV_LOADED (
+    if exist "!PROTO_DIR!\\..\\set_env.bat" call "!PROTO_DIR!\\..\\set_env.bat"
+)
 
 :: ----- Find protoc and grpc_cpp_plugin -----
+:: Prefer PATH (so the caller's chosen toolchain wins), fall back to vcpkg.
 set "PROTOC="
 set "GRPC_PLUGIN="
 
-if defined VCPKG_ROOT (
+for /f "delims=" %%P in ('where protoc 2^>nul') do if "!PROTOC!"=="" set "PROTOC=%%P"
+for /f "delims=" %%P in ('where grpc_cpp_plugin 2^>nul') do if "!GRPC_PLUGIN!"=="" set "GRPC_PLUGIN=%%P"
+
+if "!PROTOC!"=="" if defined VCPKG_ROOT (
     if exist "!VCPKG_ROOT!\\installed\\x64-windows\\tools\\protobuf\\protoc.exe" (
         set "PROTOC=!VCPKG_ROOT!\\installed\\x64-windows\\tools\\protobuf\\protoc.exe"
     )
+)
+if "!GRPC_PLUGIN!"=="" if defined VCPKG_ROOT (
     if exist "!VCPKG_ROOT!\\installed\\x64-windows\\tools\\grpc\\grpc_cpp_plugin.exe" (
         set "GRPC_PLUGIN=!VCPKG_ROOT!\\installed\\x64-windows\\tools\\grpc\\grpc_cpp_plugin.exe"
     )
-)
-
-if "!PROTOC!"=="" (
-    for /f "delims=" %%P in ('where protoc 2^>nul') do set "PROTOC=%%P"
-)
-if "!GRPC_PLUGIN!"=="" (
-    for /f "delims=" %%P in ('where grpc_cpp_plugin 2^>nul') do set "GRPC_PLUGIN=%%P"
 )
 
 if "!PROTOC!"=="" (

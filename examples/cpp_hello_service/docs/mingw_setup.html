@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MinGW Setup on Windows — Step-by-Step Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  /* ---- Left sidebar navigation ---- */
+  .sidebar-nav {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: rgba(56,189,248,0.08);
+  }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  main {
+    margin-left: 250px;
+    padding: 30px 40px;
+    max-width: 1100px;
+  }
+
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--accent);
+  }
+  section h2 {
+    color: var(--accent);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 20px; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+    position: relative;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  .copy-btn {
+    position: absolute;
+    top: 8px; right: 8px;
+    background: var(--panel);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.72em;
+    cursor: pointer;
+    font-family: inherit;
+    opacity: 0.7;
+    transition: opacity 0.15s, color 0.15s;
+  }
+  .copy-btn:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
+  .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+
+  .step-num {
+    display: inline-block;
+    width: 32px; height: 32px;
+    line-height: 32px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 0.9em;
+    margin-right: 10px;
+  }
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .danger-box {
+    background: rgba(248,113,113,0.08);
+    border-left: 4px solid var(--red);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+
+  .tldr {
+    font-size: 1.02em;
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 16px 0;
+  }
+  .tldr strong { color: var(--accent); }
+  .kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    font-family: monospace;
+    font-size: 0.82em;
+    color: var(--text);
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+
+  footer {
+    text-align: center;
+    padding: 30px;
+    margin-left: 250px;
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MinGW Setup on Windows</h1>
+  <p>From zero to a working MinGW build environment — using MSYS2</p>
+</header>
+
+<nav class="sidebar-nav" id="sidebarNav">
+  <div class="nav-title">MinGW Guide</div>
+  <a href="#quickstart">Quick Start</a>
+
+  <div class="nav-group">Why</div>
+  <a href="#why">Why MSYS2?</a>
+  <a href="#existing-qt">If I already have Qt for MinGW?</a>
+
+  <div class="nav-group">Install</div>
+  <a href="#step1">1. Install MSYS2</a>
+  <a href="#step2">2. First-time update</a>
+  <a href="#step3">3. Install packages</a>
+  <a href="#step4">4. Verify</a>
+
+  <div class="nav-group">Use</div>
+  <a href="#step5">5. Point project at MSYS2</a>
+  <a href="#step6">6. Build</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Troubleshooting</a>
+  <a href="#uninstall">Uninstall / reset</a>
+</nav>
+
+<main>
+
+<!-- ========================= Quick Start ========================= -->
+<section id="quickstart">
+<h2>Quick Start</h2>
+<div class="tldr">
+  Install <strong>MSYS2</strong> → <code>pacman -Syu</code> twice → install the compiler + packages → run <code>build_deploy_msys2.bat</code>.
+  <br><br>
+  Total time: <strong>~20 minutes</strong>, most of it downloading.
+</div>
+<pre><code># One-liner after MSYS2 is installed and updated:
+pacman -S --needed --noconfirm \
+    mingw-w64-x86_64-gcc \
+    mingw-w64-x86_64-cmake \
+    mingw-w64-x86_64-ninja \
+    mingw-w64-x86_64-grpc \
+    mingw-w64-x86_64-protobuf \
+    mingw-w64-x86_64-curl \
+    mingw-w64-x86_64-qt6-base \
+    mingw-w64-x86_64-qt6-tools</code></pre>
+</section>
+
+<!-- ========================= Why MSYS2 ========================= -->
+<section id="why">
+<h2>Why MSYS2 for MinGW on Windows?</h2>
+<p>
+  MinGW itself is just a compiler.  You still need a package manager to
+  install the libraries your code depends on — gRPC, Protobuf, curl, Qt.
+  For MinGW on Windows there are realistically three options:
+</p>
+<table>
+  <tr><th>Option</th><th>Outcome</th></tr>
+  <tr>
+    <td>vcpkg + <code>x64-mingw-dynamic</code> triplet</td>
+    <td>Community-tier.  Ports break often (openssl, protobuf, grpc).  First-time install: 20–60 min of source compile, many retries.</td>
+  </tr>
+  <tr>
+    <td>Build gRPC/Qt/etc. from source manually</td>
+    <td>Works.  Takes a full day per version upgrade.  Not recommended.</td>
+  </tr>
+  <tr>
+    <td><strong>MSYS2 via <code>pacman</code></strong></td>
+    <td><strong>Prebuilt binaries.  Installs in minutes.  Maintained.</strong></td>
+  </tr>
+</table>
+<div class="highlight-box">
+  <strong>MSYS2 is the native MinGW-w64 ecosystem on Windows.</strong>  Its
+  <code>pacman</code> repository ships thousands of MinGW libraries — the
+  same ones most open-source C++ projects on Windows use.  You install
+  MSYS2 once, then use it as a library host; your day-to-day work still
+  happens in plain Windows cmd.
+</div>
+</section>
+
+<!-- ========================= Already have Qt? ========================= -->
+<section id="existing-qt">
+<h2>"I already have Qt for MinGW from the Qt installer — can I skip MSYS2's Qt?"</h2>
+<p><strong>No.</strong>  Here's why.</p>
+<table>
+  <tr><th>Component</th><th>Built with</th></tr>
+  <tr><td>Qt installer's Qt6 (MinGW kit)</td><td>MinGW-w64 <strong>GCC 11.2.0</strong></td></tr>
+  <tr><td>MSYS2's <code>mingw-w64-x86_64-grpc</code></td><td>MinGW-w64 <strong>GCC 15.2.0</strong> (current)</td></tr>
+</table>
+<p>
+  These are different GCC major versions.  Linking Qt libs built with
+  GCC 11.2 + gRPC libs built with GCC 15.2 into the same binary is an
+  ABI coin-flip: linker succeeds, runtime blows up inside
+  <code>std::string</code> or <code>std::mutex</code>.
+</p>
+<div class="danger-box">
+  <strong>The rule:</strong> every library in a single binary must come
+  from <strong>one</strong> MinGW toolchain.  Either Qt installer's
+  GCC 11.2 for everything (hours building grpc from source), or MSYS2's
+  current GCC for everything (minutes of <code>pacman</code>).
+</div>
+<p>
+  Your existing Qt installer install <strong>isn't wasted</strong> — it
+  stays useful for the <strong>MSVC</strong> build path
+  (<code>build_deploy.bat</code> points <code>QT_DIR</code> at
+  <code>C:\Qt\&lt;ver&gt;\msvc2019_64</code>).  The two kits coexist on
+  the same machine without conflict.
+</p>
+</section>
+
+<!-- ========================= Step 1 ========================= -->
+<section id="step1">
+<h2><span class="step-num">1</span> Install MSYS2</h2>
+<ol>
+  <li>Download the installer:
+      <a href="https://www.msys2.org/" target="_blank">https://www.msys2.org/</a>
+      &mdash; "Installer: msys2-x86_64-…exe"</li>
+  <li>Run it.  <strong>Accept the default path:</strong> <code>C:\msys64</code>.</li>
+  <li>Next → Finish.  The installer offers to launch MSYS2 immediately — let it.</li>
+</ol>
+<div class="warn-box">
+  If you clicked past the "Run MSYS2 now" checkbox, don't worry — launch
+  it from <strong>Start Menu → MSYS2 UCRT64</strong>.
+</div>
+<p>A terminal window opens.  You'll use it for the next two steps only.</p>
+</section>
+
+<!-- ========================= Step 2 ========================= -->
+<section id="step2">
+<h2><span class="step-num">2</span> First-Time Update (One-Time)</h2>
+<p>
+  This refreshes MSYS2's package keyring and updates <code>pacman</code>
+  itself.  <strong>Run these inside the MSYS2 terminal</strong> (not plain cmd).
+</p>
+<pre><code>pacman -Syu --noconfirm</code></pre>
+<p>
+  Near the end it may say <em>"close the terminal and reopen it to
+  continue"</em>.  Do exactly that:
+</p>
+<ol>
+  <li>Close the MSYS2 terminal window.</li>
+  <li>Re-open <strong>MSYS2 UCRT64</strong> from the Start Menu.</li>
+  <li>Run it a second time:</li>
+</ol>
+<pre><code>pacman -Syu --noconfirm</code></pre>
+<p>
+  Done.  You won't need to do this again for future projects.
+</p>
+</section>
+
+<!-- ========================= Step 3 ========================= -->
+<section id="step3">
+<h2><span class="step-num">3</span> Install Compiler + Libraries</h2>
+<p>Still inside the MSYS2 terminal:</p>
+<pre><code>pacman -S --needed --noconfirm \
+    mingw-w64-x86_64-gcc \
+    mingw-w64-x86_64-cmake \
+    mingw-w64-x86_64-ninja \
+    mingw-w64-x86_64-grpc \
+    mingw-w64-x86_64-protobuf \
+    mingw-w64-x86_64-curl \
+    mingw-w64-x86_64-qt6-base \
+    mingw-w64-x86_64-qt6-tools</code></pre>
+
+<h3>What each package does</h3>
+<table>
+  <tr><th>Package</th><th>Purpose</th></tr>
+  <tr><td><code>mingw-w64-x86_64-gcc</code></td><td>The C++ compiler (<code>g++.exe</code>) + libstdc++</td></tr>
+  <tr><td><code>mingw-w64-x86_64-cmake</code></td><td>Build-system generator</td></tr>
+  <tr><td><code>mingw-w64-x86_64-ninja</code></td><td>Fast parallel build driver</td></tr>
+  <tr><td><code>mingw-w64-x86_64-grpc</code></td><td>gRPC++ runtime + <code>grpc_cpp_plugin</code> for code generation</td></tr>
+  <tr><td><code>mingw-w64-x86_64-protobuf</code></td><td>Protobuf runtime + <code>protoc</code> compiler</td></tr>
+  <tr><td><code>mingw-w64-x86_64-curl</code></td><td>Used by <code>ConsulRegistration</code> to talk to Consul</td></tr>
+  <tr><td><code>mingw-w64-x86_64-qt6-base</code></td><td>Qt 6 Core / GUI / Widgets — for the Widgets GUI client</td></tr>
+  <tr><td><code>mingw-w64-x86_64-qt6-tools</code></td><td>Qt tools (incl. <code>windeployqt-qt6.exe</code>) for packaging</td></tr>
+</table>
+
+<div class="highlight-box">
+  <strong>Expected time: 5&ndash;15 minutes.</strong>  Download size
+  ~500 MB, installed size ~1.5 GB.  No compilation &mdash; these are
+  prebuilt.
+</div>
+
+<p>When the prompt returns, close the MSYS2 terminal.  You're done with it for this project.</p>
+</section>
+
+<!-- ========================= Step 4 ========================= -->
+<section id="step4">
+<h2><span class="step-num">4</span> Verify the Install</h2>
+<p>
+  Open a <strong>plain Windows cmd</strong> (<span class="kbd">Win</span>+<span class="kbd">R</span>
+  → <code>cmd</code> → <span class="kbd">Enter</span>).
+  Run:
+</p>
+<pre><code>dir C:\msys64\mingw64\bin\g++.exe
+dir C:\msys64\mingw64\bin\protoc.exe
+dir C:\msys64\mingw64\bin\grpc_cpp_plugin.exe
+dir C:\msys64\mingw64\share\grpc</code></pre>
+<p>
+  All four should list files (no <em>"File Not Found"</em>).  If they
+  do, your MinGW stack is ready.
+</p>
+<p>
+  Optional — confirm the compiler version:
+</p>
+<pre><code>C:\msys64\mingw64\bin\g++.exe --version</code></pre>
+<p>You should see something like <code>g++.exe (Rev2, Built by MSYS2 project) 15.2.0</code>.</p>
+</section>
+
+<!-- ========================= Step 5 ========================= -->
+<section id="step5">
+<h2><span class="step-num">5</span> Point the Project at MSYS2</h2>
+<p>
+  Open your service folder (e.g. <code>examples\SampleService</code>)
+  and edit <strong><code>set_env_msys2.bat</code></strong>.  The top
+  line should read:
+</p>
+<pre><code>set "MSYS2_ROOT=C:\msys64\mingw64"</code></pre>
+<p>
+  If you installed MSYS2 somewhere else (rare), change this path to
+  point at the folder that contains <code>bin\g++.exe</code>.
+</p>
+<div class="warn-box">
+  <strong>Do not edit <code>set_env.bat</code></strong> — that one is for
+  the MSVC build path and should keep its Visual Studio / vcpkg values.
+  MSVC and MSYS2 use separate env files so you can switch between them
+  without conflict.
+</div>
+</section>
+
+<!-- ========================= Step 6 ========================= -->
+<section id="step6">
+<h2><span class="step-num">6</span> Build</h2>
+<p>From the same Windows cmd, in the service folder:</p>
+<pre><code>build_deploy_msys2.bat</code></pre>
+
+<h3>Expected output (first ~20 lines)</h3>
+<pre><code>==== set_env (MSYS2) applied ====
+  MSYS2_ROOT = C:\msys64\mingw64
+  QT_DIR     = C:\msys64\mingw64
+==================================
+protoc:          C:\msys64\mingw64\bin\protoc.exe
+grpc_cpp_plugin: C:\msys64\mingw64\bin\grpc_cpp_plugin.exe
+
+Generating stubs from my_service.proto ...
+-- The CXX compiler identification is GNU 15.2.0
+-- Check for working CXX compiler: C:/msys64/mingw64/bin/c++.exe - skipped
+-- Found OpenSSL: ... 3.6.2
+-- Found Protobuf: ... 33.x
+-- Configuring done
+-- Generating done
+...
+MSYS2 build complete.  Binaries + runtime DLLs collected in: ...\dist-msys2</code></pre>
+
+<p>Output binaries live in <code>dist-msys2\</code>:</p>
+<ul>
+  <li><code>my_service.exe</code> — the service</li>
+  <li><code>my_service_client.exe</code> — console client</li>
+  <li><code>my_service_gui.exe</code> — Qt Widgets GUI (if enabled)</li>
+  <li><code>libstdc++-6.dll</code>, <code>libgcc_s_seh-1.dll</code>, <code>libwinpthread-1.dll</code> — MinGW runtime</li>
+  <li><code>libgrpc*.dll</code>, <code>libprotobuf*.dll</code>, <code>libssl*.dll</code>, ... — dependencies</li>
+  <li><code>Qt6Core.dll</code>, <code>Qt6Widgets.dll</code>, <code>platforms\qwindows.dll</code>, ... — Qt runtime (if GUI enabled)</li>
+</ul>
+<p>
+  The folder is self-contained — copy it to another Windows machine and
+  it runs without MSYS2 installed there.
+</p>
+</section>
+
+<!-- ========================= Troubleshooting ========================= -->
+<section id="troubleshooting">
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr>
+    <td><code>pacman: command not found</code></td>
+    <td>You opened plain cmd instead of the MSYS2 terminal.  Launch <strong>"MSYS2 UCRT64"</strong> from Start Menu.</td>
+  </tr>
+  <tr>
+    <td>Mirror / SSL errors during Step 3</td>
+    <td>Re-run the <code>pacman -S</code> command 2&ndash;3 times; pacman rotates mirrors.  If persistent, temporarily disable VPN or corporate proxy.</td>
+  </tr>
+  <tr>
+    <td><code>signature is unknown trust</code> / <code>signature is invalid</code></td>
+    <td>Your MSYS2 install is old and its PGP keyring expired.  Fix:
+<pre><code>pacman -Sy --needed --noconfirm msys2-keyring
+pacman-key --init
+pacman-key --populate msys2
+pacman -Scc --noconfirm
+pacman -Syu --noconfirm</code></pre>
+    </td>
+  </tr>
+  <tr>
+    <td><code>HTTP server doesn't seem to support byte ranges</code></td>
+    <td>Partial / corrupted cached package.  Delete the cache and retry:
+<pre><code>pacman -Scc --noconfirm</code></pre>
+    </td>
+  </tr>
+  <tr>
+    <td><code>ERROR: g++ not found</code> when running <code>build_deploy_msys2.bat</code></td>
+    <td>Check <code>MSYS2_ROOT</code> in <code>set_env_msys2.bat</code> points at the folder containing <code>bin\g++.exe</code>.</td>
+  </tr>
+  <tr>
+    <td><code>MSYS2 package mingw-w64-x86_64-grpc is not installed</code></td>
+    <td>Step 3 was skipped or didn't finish.  Re-run it from MSYS2 UCRT64.</td>
+  </tr>
+  <tr>
+    <td><code>PROTOBUF_NAMESPACE_OPEN does not name a type</code></td>
+    <td>Stale stubs from a different toolchain.  Fix:
+<pre><code>del proto\my_service.pb.* proto\my_service.grpc.pb.*
+rmdir /s /q build-msys2 client\build-msys2
+build_deploy_msys2.bat</code></pre>
+    (The generated script already does this automatically since v2; if you're still seeing the error, your scripts are out-of-date.)
+    </td>
+  </tr>
+  <tr>
+    <td><code>my_service_gui.exe</code> exits silently (no window)</td>
+    <td>Qt runtime wasn't deployed.  Re-run <code>build_deploy_msys2.bat</code>; it invokes <code>windeployqt-qt6.exe</code> to copy <code>Qt6*.dll</code> and <code>platforms\qwindows.dll</code> into <code>dist-msys2\</code>.</td>
+  </tr>
+  <tr>
+    <td>Error mentions <code>vcpkg</code> even though I'm using MSYS2</td>
+    <td>You ran <code>build_deploy_mingw.bat</code> (vcpkg-based) or <code>build_deploy.bat</code> (MSVC), not <code>build_deploy_msys2.bat</code>.  Check the exact filename.</td>
+  </tr>
+</table>
+</section>
+
+<!-- ========================= Uninstall ========================= -->
+<section id="uninstall">
+<h2>Uninstall / Reset</h2>
+<p>If the keyring is hopelessly corrupted and you'd rather start fresh:</p>
+<pre><code>:: From Windows cmd (NOT inside MSYS2):
+rmdir /s /q C:\msys64
+:: Then re-download the installer from msys2.org and repeat Step 1.</code></pre>
+<p>
+  A fresh install ships a current keyring, so Steps 2&ndash;3 take maybe
+  15 minutes and avoid all the "key expired" errors.
+</p>
+
+<h3>Disk-space tip</h3>
+<p>
+  MSYS2's <code>qt6-base</code> + <code>qt6-tools</code> is ~350 MB.  If
+  you also have Qt installer's MinGW 11.2 kit and you never plan to use
+  it, free disk space with:
+</p>
+<ol>
+  <li>Open <strong>Qt Maintenance Tool</strong>.</li>
+  <li>Uncheck <em>Qt 6.x → MinGW 11.2.0 64-bit</em> and
+      <em>Developer and Designer Tools → MinGW 11.2.0 64-bit</em>.</li>
+  <li>Click Update.  Frees ~1 GB.</li>
+</ol>
+<p>
+  Keep Qt installer's MSVC kit — <code>build_deploy.bat</code> still uses it.
+</p>
+</section>
+
+</main>
+
+<footer>
+  MinGW Setup Guide — open this file in any browser to view
+</footer>
+
+<script>
+// Scroll-spy: highlight current section in the sidebar.
+(function () {
+  var links = document.querySelectorAll('#sidebarNav a[href^="#"]');
+  if (!links.length) return;
+  var sections = [];
+  links.forEach(function (a) {
+    var id = a.getAttribute('href').replace('#', '');
+    var el = document.getElementById(id);
+    if (el) sections.push({ id: id, el: el, link: a });
+  });
+
+  function update() {
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var current = null;
+    for (var i = sections.length - 1; i >= 0; i--) {
+      if (sections[i].el.offsetTop - 80 <= scrollTop) {
+        current = sections[i];
+        break;
+      }
+    }
+    links.forEach(function (a) { a.classList.remove('active'); });
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  update();
+
+  links.forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      var id = a.getAttribute('href').replace('#', '');
+      var target = document.getElementById(id);
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        history.replaceState(null, '', '#' + id);
+      }
+    });
+  });
+})();
+
+// Add a "copy" button to every <pre>.
+document.querySelectorAll('pre').forEach(function (pre) {
+  var btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.textContent = 'copy';
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var text = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
+    navigator.clipboard.writeText(text).then(function () {
+      btn.textContent = 'copied';
+      btn.classList.add('copied');
+      setTimeout(function () {
+        btn.textContent = 'copy';
+        btn.classList.remove('copied');
+      }, 1500);
+    });
+  });
+  pre.appendChild(btn);
+});
+</script>
+
+</body>
+</html>
