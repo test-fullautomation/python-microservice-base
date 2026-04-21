@@ -1,8 +1,13 @@
 .idea/
 __pycache__/
 build/
+build-mingw/
+build-msys2/
+build-wasm/
 node_modules/
 dist/
+dist-mingw/
+dist-msys2/
 *.egg-info
 *.log
 MicroserviceBase/MicroserviceManagerGUI/python/bridge.pid

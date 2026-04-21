@@ -245,6 +245,7 @@
 
   <div class="nav-group">Why</div>
   <a href="#why">Why MSYS2?</a>
+  <a href="#vs-msvc">MinGW vs. MSVC</a>
   <a href="#existing-qt">If I already have Qt for MinGW?</a>
 
   <div class="nav-group">Install</div>
@@ -313,6 +314,98 @@ pacman -S --needed --noconfirm \
   same ones most open-source C++ projects on Windows use.  You install
   MSYS2 once, then use it as a library host; your day-to-day work still
   happens in plain Windows cmd.
+</div>
+</section>
+
+<!-- ========================= MinGW vs MSVC ========================= -->
+<section id="vs-msvc">
+<h2>MinGW vs. MSVC &mdash; what's the honest difference?</h2>
+
+<p>
+  A common misconception is that "MinGW makes Windows apps run like Linux
+  apps."  That's <strong>not true</strong>.  MinGW-compiled binaries are
+  100% native Windows PE executables.  They call <code>CreateFile</code>,
+  <code>WaitForSingleObject</code>, all the normal Win32 APIs, just like
+  an MSVC build does.  Windows has no idea they came from GCC.
+</p>
+
+<p>
+  What MinGW actually is: a <strong>GCC compiler + GNU C++ runtime
+  ported to Windows</strong>.  The compiler has Unix heritage; the
+  output binary does not.
+</p>
+
+<h3>Where the size difference comes from</h3>
+<table>
+  <tr><th></th><th>MSVC</th><th>MinGW</th></tr>
+  <tr>
+    <td>C / C++ runtime</td>
+    <td><strong>MSVCRT / Universal CRT</strong> &mdash; ships with Windows 10+ by default</td>
+    <td><strong>GNU libstdc++</strong> &mdash; not on Windows; each app must carry it</td>
+  </tr>
+  <tr>
+    <td>Runtime DLLs shipped alongside your .exe</td>
+    <td>none (system has them)</td>
+    <td>
+      <code>libstdc++-6.dll</code> (~2 MB)<br>
+      <code>libgcc_s_seh-1.dll</code> (~100 KB)<br>
+      <code>libwinpthread-1.dll</code> (~60 KB)
+    </td>
+  </tr>
+  <tr>
+    <td>Typical Hello World size overhead</td>
+    <td>baseline</td>
+    <td><strong>+3&ndash;5 MB</strong></td>
+  </tr>
+</table>
+
+<h3>Other integration trade-offs</h3>
+<table>
+  <tr><th>Aspect</th><th>MSVC</th><th>MinGW</th></tr>
+  <tr>
+    <td>Debugging tools</td>
+    <td>Visual Studio / WinDbg / ETW understand MSVC <strong>PDB</strong> symbols natively; crash dumps "just work"</td>
+    <td>Produces DWARF symbols; needs <code>gdb</code>, or conversion to PDB</td>
+  </tr>
+  <tr>
+    <td>Windows SDK + DirectX + commercial SDKs</td>
+    <td>Ship MSVC-compatible libraries by default</td>
+    <td>ABI walls &mdash; you can't link MSVC-built libs with MinGW</td>
+  </tr>
+  <tr>
+    <td>vcpkg Windows port quality</td>
+    <td>First-class, tested, most ports prebuilt</td>
+    <td>Community-tier; <code>openssl</code> / <code>protobuf</code> / <code>grpc</code> frequently fail to build</td>
+  </tr>
+  <tr>
+    <td>GPL / LGPL licensing</td>
+    <td>MSVC runtime is proprietary &mdash; not always compatible</td>
+    <td>GNU runtime is GPL-with-exception &mdash; sometimes required for LGPL Qt distributions</td>
+  </tr>
+</table>
+
+<div class="highlight-box">
+  <strong>Summary for end users:</strong>
+  <br>
+  <em>"MinGW is a Linux-style compiler (GCC) that produces Windows
+  binaries.  Those binaries are native Windows apps, but they use GNU's
+  C++ runtime &mdash; which Windows doesn't include &mdash; so every
+  MinGW app ships an extra 3&ndash;5 MB of <code>libstdc++</code> /
+  <code>libgcc</code> / <code>libwinpthread</code> DLLs alongside the
+  exe.  MSVC uses Microsoft's runtime which is already part of every
+  Windows install, so MSVC apps ship smaller and integrate more cleanly
+  with the OS."</em>
+</div>
+
+<div class="warn-box">
+  <strong>So why use MinGW at all?</strong>  A few valid reasons:
+  <ul style="margin:6px 0 0 20px">
+    <li>You don't want to install Visual Studio (6 GB) and want a smaller toolchain (MSYS2 is ~2 GB).</li>
+    <li>You need LGPL-clean Qt redistribution; MinGW's LGPL+exception runtime is simpler to comply with than MSVC's.</li>
+    <li>You already have a MinGW toolchain in CI from cross-platform projects.</li>
+    <li>You're allergic to Microsoft developer tooling.</li>
+  </ul>
+  For everyone else on Windows: <strong>use MSVC</strong> (<code>build_deploy.bat</code>) and skip the pain.
 </div>
 </section>
 
