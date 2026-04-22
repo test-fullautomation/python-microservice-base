@@ -69,7 +69,14 @@ def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
 # -----------------------------------------------------------------------
 
 def _snake(name: str) -> str:
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+    """CamelCase → snake_case, keeping runs of capitals together.
+
+    ``MyService`` → ``my_service``, ``PPSService`` → ``pps_service``,
+    ``XMLParser`` → ``xml_parser``, ``HTTPServer2`` → ``http_server2``.
+    """
+    s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s)
+    return s.lower()
 
 
 def _upper(name: str) -> str:
@@ -82,6 +89,8 @@ def _upper(name: str) -> str:
 
 def _cmake(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     svc = spec.service_name
     gui = spec.gui_type
 
@@ -220,6 +229,8 @@ add_subdirectory(
 
 def _main_cpp(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     svc = spec.service_name
     return f'''#include <iostream>
 #include "MicroserviceBase/ServiceRunner.h"
@@ -252,6 +263,8 @@ int main() {{
 
 def _settings_h(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     prefix = spec.env_prefix
     return f'''#pragma once
 
@@ -276,7 +289,28 @@ struct Settings : public microservice_base::BaseServiceSettings {{
 
 def _domain_h(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     svc = spec.service_name
+
+    imported = any(m.input_type or m.output_type for m in spec.methods)
+
+    if imported:
+        # Imported proto: we can't infer the right domain signatures.
+        # Emit an empty class; the user adds methods matching their proto.
+        return f'''#pragma once
+
+#include <string>
+
+namespace {sn} {{
+
+class {svc}Service {{
+public:
+    // TODO: add domain methods for your imported proto here.
+}};
+
+}}  // namespace {sn}
+'''
 
     methods = ""
     for m in spec.methods:
@@ -300,7 +334,21 @@ public:
 
 def _domain_cpp(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     svc = spec.service_name
+
+    imported = any(m.input_type or m.output_type for m in spec.methods)
+
+    if imported:
+        return f'''#include "{svc}Service.h"
+
+namespace {sn} {{
+
+// TODO: add domain implementations for your imported proto here.
+
+}}  // namespace {sn}
+'''
 
     methods = ""
     for m in spec.methods:
@@ -326,21 +374,25 @@ namespace {sn} {{
 
 def _adapter_h(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     svc = spec.service_name
 
     methods = ""
     for m in spec.methods:
+        inT  = ("::" + m.input_type.replace(".", "::")) if m.input_type else f"{ns}::{m.name}Request"
+        outT = ("::" + m.output_type.replace(".", "::")) if m.output_type else f"{ns}::{m.name}Response"
         if m.server_streaming:
             methods += (
                 f"    grpc::Status {m.name}(grpc::ServerContext*,\n"
-                f"        const {sn}::v1::{m.name}Request*,\n"
-                f"        grpc::ServerWriter<{sn}::v1::{m.name}Response>*) override;\n\n"
+                f"        const {inT}*,\n"
+                f"        grpc::ServerWriter<{outT}>*) override;\n\n"
             )
         else:
             methods += (
                 f"    grpc::Status {m.name}(grpc::ServerContext*,\n"
-                f"        const {sn}::v1::{m.name}Request*,\n"
-                f"        {sn}::v1::{m.name}Response*) override;\n\n"
+                f"        const {inT}*,\n"
+                f"        {outT}*) override;\n\n"
             )
 
     return f'''#pragma once
@@ -351,7 +403,7 @@ def _adapter_h(spec: "ScaffoldSpec") -> str:
 
 namespace {sn} {{
 
-class {svc}GrpcAdapter final : public {sn}::v1::{svc}Service::Service {{
+class {svc}GrpcAdapter final : public {ns}::{svc}Service::Service {{
 public:
     explicit {svc}GrpcAdapter({svc}Service& domain) : m_domain(domain) {{}}
 
@@ -366,10 +418,40 @@ private:
 
 def _adapter_cpp(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     svc = spec.service_name
 
     methods = ""
     for m in spec.methods:
+        imported = bool(m.input_type or m.output_type)
+        inT  = ("::" + m.input_type.replace(".", "::")) if m.input_type else f"{ns}::{m.name}Request"
+        outT = ("::" + m.output_type.replace(".", "::")) if m.output_type else f"{ns}::{m.name}Response"
+
+        if imported:
+            # Imported proto: can't infer field names, emit UNIMPLEMENTED stub.
+            if m.server_streaming:
+                methods += f'''
+grpc::Status {svc}GrpcAdapter::{m.name}(
+    grpc::ServerContext* /*ctx*/,
+    const {inT}* /*request*/,
+    grpc::ServerWriter<{outT}>* /*writer*/) {{
+    // TODO: stream {outT} responses to the writer based on `request` + m_domain.
+    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TODO: implement {m.name}");
+}}
+'''
+            else:
+                methods += f'''
+grpc::Status {svc}GrpcAdapter::{m.name}(
+    grpc::ServerContext* /*ctx*/,
+    const {inT}* /*request*/,
+    {outT}* /*response*/) {{
+    // TODO: read fields from `request`, call m_domain, populate `response`.
+    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TODO: implement {m.name}");
+}}
+'''
+            continue
+
         param_reads = "\n".join(
             f"    auto _{p.name} = request->{p.name}();"
             for p in m.params
@@ -380,11 +462,11 @@ def _adapter_cpp(spec: "ScaffoldSpec") -> str:
             methods += f'''
 grpc::Status {svc}GrpcAdapter::{m.name}(
     grpc::ServerContext* ctx,
-    const {sn}::v1::{m.name}Request* request,
-    grpc::ServerWriter<{sn}::v1::{m.name}Response>* writer) {{
+    const {inT}* request,
+    grpc::ServerWriter<{outT}>* writer) {{
 {param_reads}
     // TODO: implement streaming
-    {sn}::v1::{m.name}Response resp;
+    {outT} resp;
     resp.set_result(m_domain.{_snake(m.name)}({args}));
     writer->Write(resp);
     return grpc::Status::OK;
@@ -394,8 +476,8 @@ grpc::Status {svc}GrpcAdapter::{m.name}(
             methods += f'''
 grpc::Status {svc}GrpcAdapter::{m.name}(
     grpc::ServerContext*,
-    const {sn}::v1::{m.name}Request* request,
-    {sn}::v1::{m.name}Response* response) {{
+    const {inT}* request,
+    {outT}* response) {{
 {param_reads}
     response->set_result(m_domain.{_snake(m.name)}({args}));
     return grpc::Status::OK;
@@ -580,6 +662,8 @@ echo "  CC / CXX   = $CC / $CXX"
 
 def _build_bat(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     windeployqt_block = ""
     if spec.gui_type == "widget":
         windeployqt_block = f'''
@@ -661,6 +745,8 @@ def _build_mingw_bat(spec: "ScaffoldSpec") -> str:
     toolchains don't collide.
     """
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
 
     windeployqt_block = ""
     if spec.gui_type == "widget":
@@ -826,6 +912,8 @@ echo ==================================
 def _build_msys2_bat(spec: "ScaffoldSpec") -> str:
     """MSYS2 deploy script — uses MSYS2's native MinGW packages."""
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
 
     windeployqt_block = ""
     if spec.gui_type == "widget":
@@ -939,6 +1027,8 @@ endlocal
 
 def _build_sh(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     gui_copy = ""
     if spec.gui_type == "widget":
         gui_copy = (
@@ -1012,6 +1102,8 @@ echo "Build complete. Binaries + libraries collected in: $DIST"
 
 def _gen_stubs_bat(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     return f'''@echo off
 :: Generate C++ gRPC stubs from {sn}.proto.
 :: Run once, then both service and client can build without protoc.
@@ -1077,6 +1169,8 @@ endlocal
 
 def _gen_stubs_sh(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     return f'''#!/usr/bin/env bash
 # Generate C++ gRPC stubs from {sn}.proto.
 # Run once, then both service and client can build without protoc.
@@ -1130,6 +1224,8 @@ echo "Done. Both service and client can now build without protoc."
 
 def _build_wasm_bat(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     return f'''@echo off
 setlocal enabledelayedexpansion
 :: Build the Qt WASM GUI and copy output to GUIs/
@@ -1180,6 +1276,8 @@ endlocal
 
 def _build_wasm_sh(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     return f'''#!/usr/bin/env bash
 # Build the Qt WASM GUI and copy output to GUIs/
 #
@@ -1299,6 +1397,8 @@ QtObject {
 def _wasm_files(spec: "ScaffoldSpec") -> Dict[str, str]:
     svc = spec.service_name
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     return {
         "wasm/main.cpp": f'''#include <QApplication>
 #include "MainWidget.h"
@@ -1407,10 +1507,10 @@ def _widget_method_binding(m: "MethodSpec", sn: str) -> str:
         b.params = {{ {params_init} }};
         b.invoke = [this](const std::vector<QWidget*>& ws) -> QString {{
             grpc::ClientContext ctx;
-            {sn}::v1::{m.name}Request req;
+            {ns}::{m.name}Request req;
 {setters_str}
             auto reader = m_client->stub().{m.name}(&ctx, req);
-            {sn}::v1::{m.name}Response resp;
+            {ns}::{m.name}Response resp;
             QString acc;
             int count = 0;
             while (reader->Read(&resp)) {{
@@ -1434,9 +1534,9 @@ def _widget_method_binding(m: "MethodSpec", sn: str) -> str:
         b.params = {{ {params_init} }};
         b.invoke = [this](const std::vector<QWidget*>& ws) -> QString {{
             grpc::ClientContext ctx;
-            {sn}::v1::{m.name}Request req;
+            {ns}::{m.name}Request req;
 {setters_str}
-            {sn}::v1::{m.name}Response resp;
+            {ns}::{m.name}Response resp;
             auto st = m_client->stub().{m.name}(&ctx, req, &resp);
             if (!st.ok()) {{
                 return QString("[error] ") + QString::fromStdString(st.error_message());
@@ -1459,6 +1559,8 @@ def _widget_files(spec: "ScaffoldSpec") -> Dict[str, str]:
     """
     svc = spec.service_name
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
 
     method_blocks = "\n\n".join(
         _widget_method_binding(m, sn) for m in spec.methods
@@ -1570,7 +1672,7 @@ private:
     std::vector<MethodBinding>  m_methods;
     std::vector<QWidget*>       m_currentWidgets;
     std::unique_ptr<
-        microservice_base::ServiceClient<{sn}::v1::{svc}Service>> m_client;
+        microservice_base::ServiceClient<{ns}::{svc}Service>> m_client;
 }};
 '''
 
@@ -1646,7 +1748,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->outputTextEdit->append("Resolving {sn} via Consul...");
         try {{
             m_client = std::make_unique<
-                microservice_base::ServiceClient<{sn}::v1::{svc}Service>>("{sn}");
+                microservice_base::ServiceClient<{ns}::{svc}Service>>("{sn}");
             const QString tgt = QString::fromStdString(m_client->target());
             ui->outputTextEdit->append(tgt.isEmpty()
                 ? QString("[warn] Consul returned no healthy instance.")
@@ -1716,6 +1818,8 @@ void MainWindow::buildMethodBindings() {{
 
 def _client_files(spec: "ScaffoldSpec") -> Dict[str, str]:
     sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
     svc = spec.service_name
     prefix = spec.env_prefix
 
@@ -1844,7 +1948,7 @@ target_link_libraries({sn}_client PRIVATE
 #include "{sn}.grpc.pb.h"
 #include "MicroserviceBase/ServiceClient.h"
 
-using {sn}::v1::{svc}Service;
+using {ns}::{svc}Service;
 
 int main(int argc, char* argv[]) {{
     if (argc < 2) {{
@@ -1875,9 +1979,9 @@ int main(int argc, char* argv[]) {{
 
     // TODO: Add RPC calls here. Example:
     // grpc::ClientContext ctx;
-    // {sn}::v1::DoSomethingRequest req;
+    // {ns}::DoSomethingRequest req;
     // req.set_input("test");
-    // {sn}::v1::DoSomethingResponse resp;
+    // {ns}::DoSomethingResponse resp;
     // auto status = stub.DoSomething(&ctx, req, &resp);
 
     std::cout << "Client ready. Add RPC calls to src/client.cpp." << std::endl;
@@ -1914,3 +2018,1947 @@ Uses `ServiceClient<{svc}Service>` from MicroserviceBase runtime for
 automatic Consul discovery and channel management.
 ''',
     }
+
+
+# =======================================================================
+# Monorepo mode — single project folder, N services build into N .exe's
+# =======================================================================
+
+def _mono_snake(name: str) -> str:
+    """Same smart snake-case as :func:`_snake` — keeps acronym runs
+    together (``PPSService`` → ``pps_service``)."""
+    s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s)
+    return s.lower()
+
+
+def generate_monorepo(spec: "ScaffoldSpec", services) -> Dict[str, str]:
+    """Emit a single-project scaffold with one executable per service.
+
+    All services share one proto (written verbatim from spec.proto_content_override
+    or regenerated), one CMakeLists.txt with N add_executable() calls, and
+    a single build_deploy.bat that drops every .exe into dist/.
+
+    `services` is a list of ServiceBlock (name + methods).
+    v1: C++ only, no client subproject, no Qt widget GUI per service.
+    """
+    files: Dict[str, str] = {}
+    project_name = spec.service_name        # used as the project folder & CMake project
+    project_snake = spec.snake_name         # used for shared .proto filename
+
+    # ------ Shared proto ------
+    if spec.proto_content_override:
+        files[f"proto/{project_snake}.proto"] = spec.proto_content_override
+    else:
+        # Fallback: build a merged proto from all services.  This preserves
+        # semantic correctness even when the user didn't import a .proto.
+        files[f"proto/{project_snake}.proto"] = _mono_gen_proto(spec, services)
+
+    files["proto/generate_stubs.bat"] = _gen_stubs_bat(spec)
+    files["proto/generate_stubs.sh"] = _gen_stubs_sh(spec)
+
+    # ------ set_env.bat + variants ------
+    files["set_env.bat"] = _set_env_bat(spec)
+    files["set_env.sh"] = _set_env_sh(spec)
+    files["set_env_mingw.bat"] = _set_env_mingw_bat(spec)
+    files["set_env_msys2.bat"] = _set_env_msys2_bat(spec)
+
+    # ------ Root CMakeLists.txt ------
+    files["CMakeLists.txt"] = _mono_cmake(spec, services)
+
+    # ------ Per-service source tree ------
+    for svc in services:
+        svc_snake = _mono_snake(svc.name)
+        svc_pascal = svc.name   # verbatim — already includes any "Service" suffix
+        files[f"src/{svc_snake}/main.cpp"] = _mono_main_cpp(spec, svc)
+        files[f"src/{svc_snake}/Settings.h"] = _mono_settings_h(spec, svc)
+        files[f"src/{svc_snake}/domain/{svc_pascal}.h"] = _mono_domain_h(spec, svc)
+        files[f"src/{svc_snake}/domain/{svc_pascal}.cpp"] = _mono_domain_cpp(spec, svc)
+        files[f"src/{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.h"] = _mono_adapter_h(spec, svc)
+        files[f"src/{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.cpp"] = _mono_adapter_cpp(spec, svc)
+
+    # ------ Nomad jobs (one per service) ------
+    if spec.gen_nomad:
+        for svc in services:
+            svc_snake = _mono_snake(svc.name)
+            files[f"deploy/{svc_snake}.nomad.hcl"] = _mono_nomad(spec, svc)
+
+    # ------ service_config.json (one per service) ------
+    for svc in services:
+        svc_snake = _mono_snake(svc.name)
+        files[f"deploy/{svc_snake}_service_config.json"] = _mono_service_config(spec, svc)
+
+    # ------ build_deploy.bat / .sh + MinGW + MSYS2 variants ------
+    if spec.gen_build_scripts:
+        files["build_deploy.bat"] = _mono_build_bat(spec, services)
+        files["build_deploy.sh"] = _mono_build_sh(spec, services)
+        files["build_deploy_mingw.bat"] = _mono_build_mingw_bat(spec, services)
+        files["build_deploy_msys2.bat"] = _mono_build_msys2_bat(spec, services)
+
+    # ------ Client subproject (one test binary per service) ------
+    files.update(_mono_client_files(spec, services))
+
+    # ------ README ------
+    if spec.gen_readme:
+        files["README.md"] = _mono_readme(spec, services)
+
+    # ------ Pre-generate C++ proto stubs server-side (optional) ------
+    # Handled by the caller via _generate_cpp_stubs if spec.gen_stubs; we
+    # include an empty marker so the post-processing picks it up.
+    return files
+
+
+# ----------------------------------------------------------------------
+# Monorepo helpers
+# ----------------------------------------------------------------------
+
+def _mono_gen_proto(spec, services) -> str:
+    """Fallback proto generator for monorepo (when user didn't import)."""
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    lines = [
+        'syntax = "proto3";',
+        '',
+        f'package {pkg};',
+        '',
+    ]
+    for svc in services:
+        # Use svc.name verbatim — caller supplies the full service identifier
+        # (imported protos already include any "Service" suffix the user chose).
+        lines.append(f'service {svc.name} {{')
+        for m in svc.methods:
+            stream = "stream " if m.server_streaming else ""
+            lines.append(f'  rpc {m.name} ({m.name}Request) returns ({stream}{m.name}Response);')
+        lines.append('}')
+        lines.append('')
+        for m in svc.methods:
+            lines.append(f'message {m.name}Request {{')
+            for i, p in enumerate(m.params, 1):
+                # Minimal type map for the fallback path.
+                t = {'string': 'string', 'int32': 'int32', 'int64': 'int64',
+                     'bool': 'bool', 'float': 'float', 'double': 'double',
+                     'bytes': 'bytes'}.get((p.type or 'string').lower(), 'string')
+                lines.append(f'  {t} {p.name} = {i};')
+            if not m.params:
+                lines.append('  // no parameters')
+            lines.append('}')
+            lines.append('')
+            rt = {'string': 'string', 'int32': 'int32', 'int64': 'int64',
+                  'bool': 'bool', 'float': 'float', 'double': 'double',
+                  'bytes': 'bytes'}.get((m.return_type or 'string').lower(), 'string')
+            lines.append(f'message {m.name}Response {{')
+            lines.append(f'  {rt} result = 1;')
+            lines.append('}')
+            lines.append('')
+    return '\n'.join(lines)
+
+
+def _mono_cmake(spec, services) -> str:
+    project_name = spec.service_name
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    proto_srcs_var = f"{sn.upper()}_PROTO_SRCS"
+    proto_inc_var  = f"{sn.upper()}_PROTO_INC"
+
+    exe_blocks = []
+    for svc in services:
+        svc_snake = _mono_snake(svc.name)
+        svc_pascal = svc.name
+        exe_blocks.append(f'''
+# ---- {svc_pascal} ----
+add_executable({svc_snake}
+    src/{svc_snake}/main.cpp
+    src/{svc_snake}/domain/{svc_pascal}.cpp
+    src/{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.cpp
+    ${{{proto_srcs_var}}}
+)
+target_include_directories({svc_snake} PRIVATE
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/src/{svc_snake}"
+    "${{{proto_inc_var}}}"
+)
+target_link_libraries({svc_snake} PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++ gRPC::grpc++_reflection
+    protobuf::libprotobuf
+)
+'''.rstrip())
+
+    exe_joined = '\n'.join(exe_blocks)
+
+    return f'''cmake_minimum_required(VERSION 3.16)
+project({project_name} VERSION {spec.version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Auto-detect vcpkg from VCPKG_ROOT env var.
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{{VCPKG_ROOT}})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{{VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected)")
+endif()
+if(CMAKE_TOOLCHAIN_FILE AND EXISTS "${{CMAKE_TOOLCHAIN_FILE}}")
+    get_filename_component(_vr "${{CMAKE_TOOLCHAIN_FILE}}" DIRECTORY)
+    get_filename_component(_vr "${{_vr}}" DIRECTORY)
+    get_filename_component(_vr "${{_vr}}" DIRECTORY)
+    if(EXISTS "${{_vr}}/installed/x64-windows/share")
+        list(APPEND CMAKE_PREFIX_PATH "${{_vr}}/installed/x64-windows")
+    endif()
+endif()
+
+find_package(gRPC     CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(CURL     CONFIG REQUIRED)
+
+# Shared MicroserviceBase runtime.
+add_subdirectory(
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/../../MicroserviceBase/runtime_cpp"
+    "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
+
+# ---- Proto stubs (shared by every service in this project) ----
+set(PROTO_DIR "${{CMAKE_CURRENT_SOURCE_DIR}}/proto")
+if(EXISTS "${{PROTO_DIR}}/{sn}.pb.h")
+    set({proto_srcs_var}
+        "${{PROTO_DIR}}/{sn}.pb.cc"
+        "${{PROTO_DIR}}/{sn}.grpc.pb.cc")
+    set({proto_inc_var} "${{PROTO_DIR}}")
+else()
+    set(GEN_DIR "${{CMAKE_CURRENT_BINARY_DIR}}/gen")
+    file(MAKE_DIRECTORY "${{GEN_DIR}}")
+    get_target_property(_protoc   protobuf::protoc       LOCATION)
+    get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin  LOCATION)
+    add_custom_command(
+        OUTPUT
+            "${{GEN_DIR}}/{sn}.pb.cc"  "${{GEN_DIR}}/{sn}.pb.h"
+            "${{GEN_DIR}}/{sn}.grpc.pb.cc" "${{GEN_DIR}}/{sn}.grpc.pb.h"
+        COMMAND ${{_protoc}}
+            --proto_path="${{PROTO_DIR}}"
+            --cpp_out="${{GEN_DIR}}"
+            --grpc_out="${{GEN_DIR}}"
+            --plugin=protoc-gen-grpc="${{_grpc_cpp}}"
+            "${{PROTO_DIR}}/{sn}.proto"
+        DEPENDS "${{PROTO_DIR}}/{sn}.proto")
+    set({proto_srcs_var}
+        "${{GEN_DIR}}/{sn}.pb.cc"
+        "${{GEN_DIR}}/{sn}.grpc.pb.cc")
+    set({proto_inc_var} "${{GEN_DIR}}")
+endif()
+
+# ---- Per-service executables ----
+{exe_joined}
+'''
+
+
+def _mono_main_cpp(spec, svc) -> str:
+    sn = spec.snake_name  # proto package is derived from *project* snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    return f'''#include <iostream>
+#include "MicroserviceBase/ServiceRunner.h"
+
+#include "Settings.h"
+#include "domain/{svc_pascal}.h"
+#include "adapters/api/{svc_pascal}GrpcAdapter.h"
+
+int main() {{
+    try {{
+        {svc_snake}::Settings settings;
+        {svc_snake}::{svc_pascal} domain;
+        {svc_snake}::{svc_pascal}GrpcAdapter adapter(domain);
+
+        microservice_base::ServiceRunner runner(settings, {{"v1"}});
+        runner.addService(&adapter, "{pkg}.{svc_pascal}");
+        runner.serveForever();
+    }} catch (const std::exception& e) {{
+        std::cerr << "FATAL: " << e.what() << std::endl;
+        return 1;
+    }}
+    return 0;
+}}
+'''
+
+
+def _mono_settings_h(spec, svc) -> str:
+    svc_snake = _mono_snake(svc.name)
+    prefix = svc_snake.upper() + "_"
+    return f'''#pragma once
+
+#include "MicroserviceBase/Settings.h"
+
+namespace {svc_snake} {{
+
+struct Settings : public microservice_base::BaseServiceSettings {{
+    Settings() {{
+        service_name = "{svc_snake}";
+        loadBaseFromEnv("{prefix}");
+    }}
+}};
+
+}}  // namespace {svc_snake}
+'''
+
+
+def _mono_domain_h(spec, svc) -> str:
+    """Domain class is a placeholder — the user adds methods matching
+    their proto's real request/response fields.  We intentionally don't
+    guess signatures because we can't map arbitrary imported protos."""
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    method_hints = "\n".join(
+        f"    // rpc {m.name}(...)  -  wire in adapters/api/{svc_pascal}GrpcAdapter.cpp"
+        for m in svc.methods
+    ) or "    // (no methods declared in proto yet)"
+    return f'''#pragma once
+
+// Domain layer for {svc.name}.
+//
+// Pure C++ — no gRPC, no Consul.  Add one method per RPC:
+//   - signature matches your proto's request/response fields
+//   - the adapter in adapters/api/ marshals between proto and these
+//     method arguments / return values.
+
+#include <string>
+
+namespace {svc_snake} {{
+
+class {svc_pascal} {{
+public:
+    // TODO: add your methods here.  Expected API surface:
+{method_hints}
+}};
+
+}}  // namespace {svc_snake}
+'''
+
+
+def _mono_domain_cpp(spec, svc) -> str:
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    return f'''#include "{svc_pascal}.h"
+
+namespace {svc_snake} {{
+
+// TODO: implement your domain methods here.
+
+}}  // namespace {svc_snake}
+'''
+
+
+def _mono_input_cpp_type(m, ns_fallback) -> str:
+    """C++ type string for a method's input message.  Prefers m.input_type
+    (fully-qualified from imported proto), else <ns>::<Method>Request."""
+    if m.input_type:
+        return "::" + m.input_type.replace(".", "::")
+    return f"{ns_fallback}::{m.name}Request"
+
+
+def _mono_output_cpp_type(m, ns_fallback) -> str:
+    if m.output_type:
+        return "::" + m.output_type.replace(".", "::")
+    return f"{ns_fallback}::{m.name}Response"
+
+
+def _mono_adapter_h(spec, svc) -> str:
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    methods = ""
+    for m in svc.methods:
+        inT  = _mono_input_cpp_type(m, ns)
+        outT = _mono_output_cpp_type(m, ns)
+        if m.server_streaming:
+            methods += (
+                f"    grpc::Status {m.name}(grpc::ServerContext*,\n"
+                f"        const {inT}*,\n"
+                f"        grpc::ServerWriter<{outT}>*) override;\n\n"
+            )
+        else:
+            methods += (
+                f"    grpc::Status {m.name}(grpc::ServerContext*,\n"
+                f"        const {inT}*,\n"
+                f"        {outT}*) override;\n\n"
+            )
+    return f'''#pragma once
+
+#include <grpcpp/grpcpp.h>
+#include "{sn}.grpc.pb.h"
+#include "domain/{svc_pascal}.h"
+
+namespace {svc_snake} {{
+
+class {svc_pascal}GrpcAdapter final : public {ns}::{svc_pascal}::Service {{
+public:
+    explicit {svc_pascal}GrpcAdapter({svc_pascal}& domain) : m_domain(domain) {{}}
+
+{methods}
+private:
+    {svc_pascal}& m_domain;
+}};
+
+}}  // namespace {svc_snake}
+'''
+
+
+def _mono_adapter_cpp(spec, svc) -> str:
+    """Adapter bodies are placeholders — user fills in marshaling logic.
+
+    For arbitrary imported protos we can't infer how the user's domain
+    class maps to their specific request/response fields, so we emit a
+    safe-compiling `UNIMPLEMENTED` stub with TODO markers.
+    """
+    ns = spec.proto_namespace
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    methods = ""
+    for m in svc.methods:
+        inT  = _mono_input_cpp_type(m, ns)
+        outT = _mono_output_cpp_type(m, ns)
+        if m.server_streaming:
+            methods += f'''
+grpc::Status {svc_pascal}GrpcAdapter::{m.name}(
+    grpc::ServerContext* /*ctx*/,
+    const {inT}* /*request*/,
+    grpc::ServerWriter<{outT}>* /*writer*/) {{
+    // TODO: stream {outT} responses to the writer based on `request` + m_domain.
+    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TODO: implement {m.name}");
+}}
+'''
+        else:
+            methods += f'''
+grpc::Status {svc_pascal}GrpcAdapter::{m.name}(
+    grpc::ServerContext* /*ctx*/,
+    const {inT}* /*request*/,
+    {outT}* /*response*/) {{
+    // TODO: read fields from `request`, call m_domain, populate `response`.
+    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TODO: implement {m.name}");
+}}
+'''
+    return f'''#include "{svc_pascal}GrpcAdapter.h"
+
+namespace {svc_snake} {{
+{methods}
+}}  // namespace {svc_snake}
+'''
+
+
+def _mono_nomad(spec, svc) -> str:
+    """Per-service Nomad HCL spec."""
+    svc_snake = _mono_snake(svc.name)
+    prefix = svc_snake.upper() + "_"
+    dc = getattr(spec, 'nomad_dc', 'dc1') or 'dc1'
+    driver = getattr(spec, 'nomad_driver', 'raw_exec') or 'raw_exec'
+    cpu = getattr(spec, 'nomad_cpu', 100) or 100
+    mem = getattr(spec, 'nomad_mem', 128) or 128
+    consul_addr = getattr(spec, 'nomad_consul_addr', '') or 'http://127.0.0.1:8500'
+    # On Windows + raw_exec, the task inherits a minimal env — it will NOT
+    # have MSYS2's mingw64/bin on PATH, so the exe silently dies on missing
+    # DLLs.  Thread it through as a task env var.  Nomad on Linux just
+    # ignores Windows paths, so this is a no-op there.
+    path_entry = 'PATH           = "C:\\\\msys64\\\\mingw64\\\\bin;${PATH}"\n        '
+    return f'''# Nomad job for {svc.name} (part of {spec.service_name} monorepo).
+job "{svc_snake}" {{
+  datacenters = ["{dc}"]
+  type        = "service"
+
+  group "{svc_snake}" {{
+    count = 1
+    network {{ port "grpc" {{}} }}
+
+    task "server" {{
+      driver = "{driver}"
+      config {{ command = "/path/to/{svc_snake}" }}
+      env {{
+        {path_entry}{prefix}GRPC_PORT      = "${{NOMAD_PORT_grpc}}"
+        {prefix}ADVERTISE_ADDR = "127.0.0.1"
+        {prefix}CONSUL_ADDR    = "{consul_addr}"
+        {prefix}LOG_LEVEL      = "INFO"
+      }}
+      resources {{
+        cpu    = {cpu}
+        memory = {mem}
+      }}
+    }}
+  }}
+}}
+'''
+
+
+def _mono_service_config(spec, svc) -> str:
+    import json
+    svc_snake = _mono_snake(svc.name)
+    cfg = {
+        "name": svc_snake,
+        "version": spec.version,
+        "routing_key": svc_snake,
+        "description": f"{svc.name} microservice (part of {spec.service_name}).",
+        "shortdesc": svc.name,
+        "group": spec.group or "Services",
+        "tag": spec.tag or "",
+        "gui_support": False,
+        "downloadable": False,
+    }
+    return json.dumps(cfg, indent=4) + "\n"
+
+
+def _mono_build_bat(spec, services) -> str:
+    """MSVC build: services + client test binaries, collected into dist/."""
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    exe_copies = "\n".join(
+        f'xcopy /Y /Q "%SERVICE_BUILD%\\Release\\{_mono_snake(s.name)}.exe" "%DIST%\\" >nul 2>&1'
+        for s in services
+    )
+    client_copies = "\n".join(
+        f'xcopy /Y /Q "%CLIENT_BUILD%\\Release\\{_mono_snake(s.name)}_client.exe" "%DIST%\\" >nul 2>&1'
+        for s in services
+    )
+    return f'''@echo off
+setlocal
+set "SCRIPT_DIR=%~dp0"
+call "%SCRIPT_DIR%set_env.bat"
+
+:: ----- Generate proto stubs (idempotent) -----
+if not exist "%SCRIPT_DIR%proto\\{sn}.pb.h" (
+    call "%SCRIPT_DIR%proto\\generate_stubs.bat"
+    if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
+)
+
+:: ----- Build services -----
+set "SERVICE_BUILD=%SCRIPT_DIR%build"
+if not exist "%SERVICE_BUILD%" mkdir "%SERVICE_BUILD%"
+pushd "%SERVICE_BUILD%"
+cmake -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" ..
+if errorlevel 1 ( echo Service configure failed. & popd & exit /b 1 )
+cmake --build . --config Release
+if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Build client test binaries -----
+set "QT_PREFIX_ARG="
+if defined QT_DIR set "QT_PREFIX_ARG=-DCMAKE_PREFIX_PATH=%QT_DIR%"
+set "CLIENT_BUILD=%SCRIPT_DIR%client\\build"
+if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
+pushd "%CLIENT_BUILD%"
+cmake -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" %QT_PREFIX_ARG% ..
+if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
+cmake --build . --config Release
+if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Collect binaries + runtime DLLs into dist\\ -----
+set "DIST=%SCRIPT_DIR%dist"
+if not exist "%DIST%" mkdir "%DIST%"
+{exe_copies}
+{client_copies}
+xcopy /Y /Q "%SERVICE_BUILD%\\Release\\*.dll" "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\Release\\*.dll"  "%DIST%\\" >nul 2>&1
+
+echo.
+echo Build complete.  Binaries collected in: %DIST%
+endlocal
+'''
+
+
+def _mono_build_sh(spec, services) -> str:
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    exe_copies = "\n".join(
+        f'cp "$SERVICE_BUILD/{_mono_snake(s.name)}"        "$DIST/" 2>/dev/null || true'
+        for s in services
+    )
+    client_copies = "\n".join(
+        f'cp "$CLIENT_BUILD/{_mono_snake(s.name)}_client" "$DIST/" 2>/dev/null || true'
+        for s in services
+    )
+    return f'''#!/usr/bin/env bash
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/set_env.sh"
+
+if [ ! -f "$SCRIPT_DIR/proto/{sn}.pb.h" ]; then
+    bash "$SCRIPT_DIR/proto/generate_stubs.sh"
+fi
+
+# ----- Services -----
+SERVICE_BUILD="$SCRIPT_DIR/build"
+mkdir -p "$SERVICE_BUILD"
+cmake -S "$SCRIPT_DIR" -B "$SERVICE_BUILD" \\
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \\
+    -DCMAKE_BUILD_TYPE=Release
+cmake --build "$SERVICE_BUILD" --parallel $(nproc)
+
+# ----- Client test binaries -----
+QT_PREFIX_ARG=()
+if [ -n "${{QT_DIR:-}}" ]; then QT_PREFIX_ARG=(-DCMAKE_PREFIX_PATH="$QT_DIR"); fi
+CLIENT_BUILD="$SCRIPT_DIR/client/build"
+mkdir -p "$CLIENT_BUILD"
+cmake -S "$SCRIPT_DIR/client" -B "$CLIENT_BUILD" \\
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \\
+    "${{QT_PREFIX_ARG[@]}}" \\
+    -DCMAKE_BUILD_TYPE=Release
+cmake --build "$CLIENT_BUILD" --parallel $(nproc)
+
+DIST="$SCRIPT_DIR/dist"
+mkdir -p "$DIST"
+{exe_copies}
+{client_copies}
+
+echo ""
+echo "Monorepo build complete. Binaries in: $DIST"
+'''
+
+
+def _mono_readme(spec, services) -> str:
+    svc_lines = "\n".join(
+        f"- **{s.name}** — {len(s.methods)} method(s), env prefix `{_mono_snake(s.name).upper()}_`"
+        for s in services
+    )
+    return f'''# {spec.service_name}
+
+Monorepo containing {len(services)} gRPC services that share a single
+`.proto` file and build from one CMakeLists.
+
+## Services
+
+{svc_lines}
+
+## Layout
+
+```
+{spec.service_name}/
+├── proto/{spec.snake_name}.proto     Shared API definition
+├── src/<service>/                    One folder per service
+├── deploy/<service>.nomad.hcl        One Nomad job per service
+├── CMakeLists.txt                    Single CMake project
+├── build_deploy.bat / .sh            One command builds all services
+└── dist/                             Output: N .exe's + shared DLLs
+```
+
+## Build
+
+```cmd
+build_deploy.bat        :: Windows (MSVC)
+./build_deploy.sh       # Linux
+```
+
+Each service is an independent executable listening on its own gRPC port
+(see the `*_GRPC_PORT` env var per service).  All services register with
+the same Consul agent by default.
+'''
+
+
+# ----------------------------------------------------------------------
+# Monorepo: MinGW + MSYS2 build variants
+# ----------------------------------------------------------------------
+
+def _mono_build_mingw_bat(spec, services) -> str:
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    exe_copies = "\n".join(
+        f'xcopy /Y /Q "%SERVICE_BUILD%\\{_mono_snake(s.name)}.exe" "%DIST%\\" >nul 2>&1'
+        for s in services
+    )
+    client_copies = "\n".join(
+        f'xcopy /Y /Q "%CLIENT_BUILD%\\{_mono_snake(s.name)}_client.exe" "%DIST%\\" >nul 2>&1'
+        for s in services
+    )
+    return f'''@echo off
+:: MinGW variant (vcpkg + x64-mingw-dynamic triplet).
+setlocal
+set "SCRIPT_DIR=%~dp0"
+call "%SCRIPT_DIR%set_env_mingw.bat"
+
+where g++   >nul 2>&1 || ( echo ERROR: g++ not found.   & exit /b 1 )
+where ninja >nul 2>&1 || ( echo ERROR: ninja not found. & exit /b 1 )
+
+if not exist "%VCPKG_ROOT%\\installed\\%VCPKG_TRIPLET%\\share\\grpc" (
+    echo ERROR: vcpkg packages for %VCPKG_TRIPLET% are not installed.
+    echo        "%VCPKG_ROOT%\\vcpkg" install grpc:%VCPKG_TRIPLET% protobuf:%VCPKG_TRIPLET% curl:%VCPKG_TRIPLET%
+    exit /b 1
+)
+
+:: ----- Force-regenerate stubs with MinGW protoc -----
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.h"       >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.cc"      >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.h"  >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.cc" >nul 2>&1
+call "%SCRIPT_DIR%proto\\generate_stubs.bat"
+if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
+
+:: ----- Build services -----
+set "SERVICE_BUILD=%SCRIPT_DIR%build-mingw"
+if not exist "%SERVICE_BUILD%" mkdir "%SERVICE_BUILD%"
+pushd "%SERVICE_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ..
+if errorlevel 1 ( echo Service configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Build clients -----
+set "CLIENT_BUILD=%SCRIPT_DIR%client\\build-mingw"
+if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
+pushd "%CLIENT_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ..
+if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Collect -----
+set "DIST=%SCRIPT_DIR%dist-mingw"
+if not exist "%DIST%" mkdir "%DIST%"
+{exe_copies}
+{client_copies}
+xcopy /Y /Q "%SERVICE_BUILD%\\*.dll" "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\*.dll"  "%DIST%\\" >nul 2>&1
+
+if defined MINGW_DIR (
+    for %%L in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll) do (
+        if exist "%MINGW_DIR%\\%%L" copy /Y "%MINGW_DIR%\\%%L" "%DIST%\\" >nul
+    )
+)
+
+echo.
+echo MinGW monorepo build complete.  Binaries in: %DIST%
+endlocal
+'''
+
+
+def _mono_build_msys2_bat(spec, services) -> str:
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    project_snake = sn
+    exe_copies = "\n".join(
+        f'xcopy /Y /Q "%SERVICE_BUILD%\\{_mono_snake(s.name)}.exe" "%DIST%\\" >nul 2>&1'
+        for s in services
+    )
+    # Single unified client exe now (built in client/).  Kept separate so
+    # the list can grow (e.g. a GUI client alongside the console one).
+    client_copies_list = [
+        f'xcopy /Y /Q "%CLIENT_BUILD%\\{project_snake}_client.exe" "%DIST%\\" >nul 2>&1'
+    ]
+    if spec.gui_type in ("widget", "wasm", "qml"):
+        client_copies_list.append(
+            f'xcopy /Y /Q "%CLIENT_BUILD%\\{project_snake}_gui.exe" "%DIST%\\" >nul 2>&1')
+    client_copies = "\n".join(client_copies_list)
+
+    # Runtime PATH launcher .bat per service (and per client exe).  On
+    # Windows, silent "exe dies immediately" almost always means a transitive
+    # DLL from MSYS2's mingw64/bin wasn't found — the build_deploy script
+    # copies the big ones but not every transitive dep.  Prepending PATH is
+    # bulletproof and doesn't require keeping the copy-list perfectly in sync
+    # with MSYS2 package churn.
+    launcher_names = [_mono_snake(s.name) for s in services]
+    launcher_names.append(f"{project_snake}_client")
+    if spec.gui_type in ("widget", "wasm", "qml"):
+        launcher_names.append(f"{project_snake}_gui")
+
+    launcher_lines = []
+    for n in launcher_names:
+        launcher_lines.append(
+            f'call :emit_launcher "%DIST%\\run_{n}.bat" "{n}.exe"')
+    launcher_block = "\n".join(launcher_lines)
+    return f'''@echo off
+:: MSYS2 variant (native MinGW from pacman).
+setlocal
+set "SCRIPT_DIR=%~dp0"
+call "%SCRIPT_DIR%set_env_msys2.bat"
+
+where g++   >nul 2>&1 || ( echo ERROR: g++ not found.   & exit /b 1 )
+where ninja >nul 2>&1 || ( echo ERROR: ninja not found. & exit /b 1 )
+where cmake >nul 2>&1 || ( echo ERROR: cmake not found. & exit /b 1 )
+
+if not exist "%MSYS2_ROOT%\\share\\grpc" (
+    echo ERROR: MSYS2 package mingw-w64-x86_64-grpc is not installed.
+    echo        C:\\msys64\\usr\\bin\\pacman -S --needed mingw-w64-x86_64-grpc mingw-w64-x86_64-protobuf mingw-w64-x86_64-curl
+    exit /b 1
+)
+
+:: ----- Force-regenerate stubs with MSYS2 protoc -----
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.h"       >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.pb.cc"      >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.h"  >nul 2>&1
+del /q "%SCRIPT_DIR%proto\\{sn}.grpc.pb.cc" >nul 2>&1
+call "%SCRIPT_DIR%proto\\generate_stubs.bat"
+if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
+
+:: ----- Build services -----
+set "SERVICE_BUILD=%SCRIPT_DIR%build-msys2"
+if not exist "%SERVICE_BUILD%" mkdir "%SERVICE_BUILD%"
+pushd "%SERVICE_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_PREFIX_PATH="%MSYS2_ROOT%;%QT_DIR%" ..
+if errorlevel 1 ( echo Service configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Build clients -----
+set "CLIENT_BUILD=%SCRIPT_DIR%client\\build-msys2"
+if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
+pushd "%CLIENT_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_PREFIX_PATH="%MSYS2_ROOT%;%QT_DIR%" ..
+if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Collect -----
+set "DIST=%SCRIPT_DIR%dist-msys2"
+if not exist "%DIST%" mkdir "%DIST%"
+{exe_copies}
+{client_copies}
+xcopy /Y /Q "%SERVICE_BUILD%\\*.dll" "%DIST%\\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\\*.dll"  "%DIST%\\" >nul 2>&1
+
+if exist "%MSYS2_ROOT%\\bin" (
+    for %%L in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll zlib1.dll) do (
+        if exist "%MSYS2_ROOT%\\bin\\%%L" copy /Y "%MSYS2_ROOT%\\bin\\%%L" "%DIST%\\" >nul
+    )
+    for %%G in (libgrpc libprotobuf libabsl libcares libre2 libssl libcrypto libcurl libidn2 libintl libiconv libpsl libunistring libzstd libbrotli libnghttp2 libssh2) do (
+        xcopy /Y /Q "%MSYS2_ROOT%\\bin\\%%G*.dll" "%DIST%\\" >nul 2>&1
+    )
+)
+
+:: ----- Emit run_*.bat launchers that ensure MSYS2 bin is on PATH -----
+{launcher_block}
+
+echo.
+echo MSYS2 monorepo build complete.  Binaries in: %DIST%
+echo.
+echo To run a service, use the generated launcher (prepends MSYS2 bin to PATH):
+echo    %DIST%\\run_^<service^>.bat
+echo Launching the .exe directly will silently die if any transitive MSYS2
+echo DLL isn't already reachable via PATH.
+endlocal
+exit /b 0
+
+:emit_launcher
+:: %~1 = launcher path, %~2 = target exe name
+> "%~1" echo @echo off
+>> "%~1" echo if not defined MSYS2_ROOT set "MSYS2_ROOT=C:\\msys64\\mingw64"
+>> "%~1" echo set "PATH=%%MSYS2_ROOT%%\\bin;%%PATH%%"
+>> "%~1" echo "%%~dp0%~2" %%*
+exit /b 0
+'''
+
+
+# ----------------------------------------------------------------------
+# Monorepo: client subproject (one test binary per service)
+# ----------------------------------------------------------------------
+
+def _mono_client_files(spec, services) -> Dict[str, str]:
+    """Client subproject for the monorepo.
+
+    Always emits an interactive console client (``<project>_client``).  If
+    ``spec.gui_type`` is ``widget``/``wasm``/``qml``, also emits a matching
+    UI client (``<project>_gui``) with service→method pickers and a JSON
+    request/response editor.  All UI variants share the same JSON-based
+    ``ClientRegistry`` backend so they work uniformly with imported and
+    wizard-generated protos.
+    """
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    pkg = spec.proto_package
+    project_snake = sn
+    files: Dict[str, str] = {}
+
+    # ---- Console client (always) -------------------------------------
+    files["client/src/client.cpp"] = _mono_client_main_cpp(spec, services)
+    files["client/src/client_common.h"] = _mono_client_common_h()
+    for svc in services:
+        files[f"client/src/{_mono_snake(svc.name)}_menu.h"]   = _mono_client_menu_h(spec, svc)
+        files[f"client/src/{_mono_snake(svc.name)}_menu.cpp"] = _mono_client_menu_cpp(spec, svc)
+
+    # ---- Shared JSON-based dispatch registry (for UI clients) --------
+    ui_kind = spec.gui_type if spec.gui_type in ("widget", "wasm", "qml") else "none"
+    if ui_kind != "none":
+        files["client/gui/ClientRegistry.h"]   = _mono_client_registry_h()
+        files["client/gui/ClientRegistry.cpp"] = _mono_client_registry_cpp(spec, services)
+
+    if ui_kind in ("widget", "wasm"):
+        files["client/gui/main.cpp"]      = _mono_widget_main_cpp()
+        files["client/gui/MainWindow.h"]  = _mono_widget_mainwindow_h()
+        files["client/gui/MainWindow.cpp"] = _mono_widget_mainwindow_cpp(spec)
+        if ui_kind == "wasm":
+            files["client/build_wasm.bat"] = _mono_wasm_build_bat(spec)
+            files["client/build_wasm.sh"]  = _mono_wasm_build_sh(spec)
+    elif ui_kind == "qml":
+        files["client/gui/main.cpp"]         = _mono_qml_main_cpp(spec)
+        files["client/gui/ClientBridge.h"]   = _mono_qml_bridge_h()
+        files["client/gui/ClientBridge.cpp"] = _mono_qml_bridge_cpp()
+        # QML type names come from the file stem and must start uppercase.
+        files["client/gui/Main.qml"]         = _mono_qml_main_qml(spec)
+
+    # ---- CMakeLists.txt ----------------------------------------------
+    files["client/CMakeLists.txt"] = _mono_client_cmake(spec, services, ui_kind)
+
+    # ---- README ------------------------------------------------------
+    svc_list = "\n".join(
+        f"- **{s.name}** — {len(s.methods)} RPC method(s)" for s in services
+    )
+    ui_section = ""
+    if ui_kind in ("widget", "wasm"):
+        ui_section = f'''
+## UI client
+
+A Qt Widgets UI (`{project_snake}_gui`) is also built.  It has the same
+service→method picker plus a JSON editor for the request and a read-only
+JSON view of the response.  All proto messages are (de)serialised with
+`google::protobuf::util::JsonStringToMessage` so it works for both
+imported and generated protos without per-field code.
+'''
+        if ui_kind == "wasm":
+            ui_section += f'''
+To build the WASM target run `client/build_wasm.bat` (Windows) or
+`client/build_wasm.sh` (Linux) — requires the Qt for WebAssembly SDK.
+'''
+    elif ui_kind == "qml":
+        ui_section = f'''
+## UI client
+
+A Qt Quick (QML) UI (`{project_snake}_gui`) is also built.  UI logic is
+in `gui/main.qml`; the C++ backend `ClientBridge` exposes the JSON
+invoke/list helpers from `ClientRegistry` as Q_INVOKABLE methods.
+'''
+
+    files["client/README.md"] = f'''# {spec.service_name} client
+
+Single interactive client for the whole **{spec.service_name}**
+monorepo.  On launch it shows a menu of services; pick one and it
+shows that service's RPC methods; pick one and it's invoked.
+
+## Services
+
+{svc_list}
+
+## Usage (console)
+
+```cmd
+:: Consul-based discovery (default)
+{project_snake}_client
+
+:: Direct connection (bypass Consul) — applied to every service
+{project_snake}_client --direct 127.0.0.1:50051
+```
+{ui_section}
+For methods whose request/response come from an imported .proto, the
+console client calls the RPC with a default-constructed request and
+prints status only.  Fill in `req.set_<field>(...)` in
+`client/src/<svc>_menu.cpp` to exercise real values — or use the JSON
+UI (if generated) which handles arbitrary messages via reflection.
+'''
+    return files
+
+
+# ----------------------------------------------------------------------
+# Monorepo client CMakeLists.txt
+# ----------------------------------------------------------------------
+
+def _mono_client_cmake(spec, services, ui_kind: str) -> str:
+    sn = spec.snake_name
+    project_snake = sn
+
+    console_sources = "\n".join(
+        f"    src/{_mono_snake(s.name)}_menu.cpp" for s in services
+    )
+
+    gui_block = ""
+    if ui_kind in ("widget", "wasm"):
+        gui_block = f'''
+# ---- UI client ({ui_kind}) ----------------------------------------------
+# Qt 6 discovery: honour QT_DIR / Qt6_DIR env vars (set in ../set_env.bat).
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{{Qt6_DIR}})
+    set(Qt6_DIR "$ENV{{Qt6_DIR}}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{{QT_DIR}} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{{QT_DIR}}")
+endif()
+
+find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+
+qt_add_executable({project_snake}_gui
+    gui/main.cpp
+    gui/MainWindow.cpp
+    gui/MainWindow.h
+    gui/ClientRegistry.cpp
+    gui/ClientRegistry.h
+    ${{STUB_SRCS}})
+
+target_include_directories({project_snake}_gui PRIVATE
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/gui"
+    "${{PROTO_DIR}}")
+
+target_link_libraries({project_snake}_gui PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++
+    protobuf::libprotobuf
+    Qt6::Widgets)
+
+set_target_properties({project_snake}_gui PROPERTIES
+    WIN32_EXECUTABLE ON
+    MACOSX_BUNDLE    ON)
+'''
+    elif ui_kind == "qml":
+        gui_block = f'''
+# ---- UI client (qml) ---------------------------------------------------
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{{Qt6_DIR}})
+    set(Qt6_DIR "$ENV{{Qt6_DIR}}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{{QT_DIR}} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{{QT_DIR}}")
+endif()
+
+find_package(Qt6 COMPONENTS Core Gui Quick Qml REQUIRED)
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+
+qt_add_executable({project_snake}_gui
+    gui/main.cpp
+    gui/ClientBridge.cpp
+    gui/ClientBridge.h
+    gui/ClientRegistry.cpp
+    gui/ClientRegistry.h
+    ${{STUB_SRCS}})
+
+qt_add_qml_module({project_snake}_gui
+    URI {project_snake}
+    VERSION 1.0
+    QML_FILES gui/Main.qml)
+
+target_include_directories({project_snake}_gui PRIVATE
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/gui"
+    "${{PROTO_DIR}}")
+
+target_link_libraries({project_snake}_gui PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++
+    protobuf::libprotobuf
+    Qt6::Quick
+    Qt6::Qml)
+'''
+
+    return f'''cmake_minimum_required(VERSION 3.16)
+project({spec.service_name}Client VERSION {spec.version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{{VCPKG_ROOT}})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{{VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain")
+endif()
+if(CMAKE_TOOLCHAIN_FILE AND EXISTS "${{CMAKE_TOOLCHAIN_FILE}}")
+    get_filename_component(_vr "${{CMAKE_TOOLCHAIN_FILE}}" DIRECTORY)
+    get_filename_component(_vr "${{_vr}}" DIRECTORY)
+    get_filename_component(_vr "${{_vr}}" DIRECTORY)
+    if(EXISTS "${{_vr}}/installed/x64-windows/share")
+        list(APPEND CMAKE_PREFIX_PATH "${{_vr}}/installed/x64-windows")
+    endif()
+endif()
+
+find_package(gRPC     CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+
+add_subdirectory(
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/../../../MicroserviceBase/runtime_cpp"
+    "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
+
+# Shared proto stubs from the parent project's proto/ folder.
+set(PROTO_DIR "${{CMAKE_CURRENT_SOURCE_DIR}}/../proto")
+set(STUB_SRCS
+    "${{PROTO_DIR}}/{sn}.pb.cc"
+    "${{PROTO_DIR}}/{sn}.grpc.pb.cc")
+
+if(NOT EXISTS "${{PROTO_DIR}}/{sn}.pb.h")
+    message(FATAL_ERROR
+        "Proto stubs not found in ${{PROTO_DIR}}.\\n"
+        "Run proto/generate_stubs.bat (Win) or .sh (Linux) first.")
+endif()
+
+# ---- Console client ----------------------------------------------------
+add_executable({project_snake}_client
+    src/client.cpp
+{console_sources}
+    ${{STUB_SRCS}})
+
+target_include_directories({project_snake}_client PRIVATE
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/src"
+    "${{PROTO_DIR}}")
+
+target_link_libraries({project_snake}_client PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++ protobuf::libprotobuf)
+{gui_block}'''
+
+
+# ----------------------------------------------------------------------
+# Monorepo: shared JSON-based dispatch registry
+# ----------------------------------------------------------------------
+
+def _mono_client_registry_h() -> str:
+    return '''#pragma once
+
+// Shared JSON-based dispatch registry used by every UI client variant.
+//
+// Each (service, method) pair parses the request as JSON via
+// google::protobuf::util::JsonStringToMessage, invokes the RPC, then
+// serialises the response back to JSON.  Works for arbitrary imported
+// protos without per-field code.
+
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace client_registry {
+
+/// Set the direct host:port for every subsequent invoke().  Pass an empty
+/// string to use Consul (default).  Changing it resets all cached clients.
+void set_direct_host(const std::string& hostPort);
+
+/// List the services available in this monorepo.
+std::vector<std::string> services();
+
+/// List the RPC methods defined by the given service.  Returns an empty
+/// vector if the service name is unknown.
+std::vector<std::string> methods(const std::string& serviceName);
+
+/// Invoke an RPC with a JSON-encoded request.  Returns {ok, jsonOrError}.
+///  - On success: .first = true, .second = response as JSON.
+///  - On failure: .first = false, .second = human-readable error message.
+std::pair<bool, std::string>
+invoke(const std::string& serviceName,
+       const std::string& methodName,
+       const std::string& requestJson);
+
+}  // namespace client_registry
+'''
+
+
+def _mono_client_registry_cpp(spec, services) -> str:
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+
+    # Client slots (one unique_ptr per service) + lazy getters.
+    client_slots = []
+    getter_fns = []
+    for svc in services:
+        svc_pascal = svc.name
+        svc_snake = _mono_snake(svc.name)
+        client_slots.append(
+            f'    std::unique_ptr<microservice_base::ServiceClient<{ns}::{svc_pascal}>> '
+            f'g_{svc_snake}_client;')
+        getter_fns.append(f'''    microservice_base::ServiceClient<{ns}::{svc_pascal}>&
+    get_{svc_snake}_client() {{
+        if (!g_{svc_snake}_client) {{
+            if (!g_direct_host.empty())
+                g_{svc_snake}_client = std::make_unique<
+                    microservice_base::ServiceClient<{ns}::{svc_pascal}>>(
+                        "{svc_snake}", g_direct_host, true);
+            else
+                g_{svc_snake}_client = std::make_unique<
+                    microservice_base::ServiceClient<{ns}::{svc_pascal}>>(
+                        "{svc_snake}");
+        }}
+        return *g_{svc_snake}_client;
+    }}''')
+
+    svc_labels = ", ".join(f'"{s.name}"' for s in services)
+
+    # methods(service) dispatch
+    methods_cases = []
+    for svc in services:
+        method_labels = ", ".join(f'"{m.name}"' for m in svc.methods)
+        methods_cases.append(
+            f'    if (serviceName == "{svc.name}") return {{ {method_labels} }};')
+    methods_body = "\n".join(methods_cases) if methods_cases else "    (void)serviceName;"
+
+    # invoke(service, method, json) dispatch
+    invoke_cases = []
+    for svc in services:
+        svc_pascal = svc.name
+        svc_snake = _mono_snake(svc.name)
+        for m in svc.methods:
+            inT  = _mono_input_cpp_type(m, ns)
+            outT = _mono_output_cpp_type(m, ns)
+            if m.server_streaming:
+                body = f'''    if (serviceName == "{svc.name}" && methodName == "{m.name}") {{
+        return {{ false, "{m.name}: streaming RPCs are not supported by the JSON UI client." }};
+    }}'''
+            else:
+                body = f'''    if (serviceName == "{svc.name}" && methodName == "{m.name}") {{
+        {inT} req;
+        auto s0 = google::protobuf::util::JsonStringToMessage(requestJson, &req);
+        if (!s0.ok()) return {{ false, std::string("JSON parse: ") + s0.ToString() }};
+        {outT} resp;
+        grpc::ClientContext ctx;
+        grpc::Status st;
+        try {{
+            auto& c = get_{svc_snake}_client();
+            st = c.stub().{m.name}(&ctx, req, &resp);
+        }} catch (const std::exception& e) {{
+            return {{ false, std::string("Connect failed: ") + e.what() }};
+        }}
+        if (!st.ok()) return {{ false, std::string("RPC failed: ") + st.error_message() }};
+        std::string out;
+        google::protobuf::util::JsonPrintOptions opts;
+        opts.add_whitespace = true;
+        auto s1 = google::protobuf::util::MessageToJsonString(resp, &out, opts);
+        if (!s1.ok()) return {{ false, std::string("JSON serialize: ") + s1.ToString() }};
+        return {{ true, out }};
+    }}'''
+            invoke_cases.append(body)
+
+    invoke_body = "\n".join(invoke_cases)
+
+    reset_stmts = "\n".join(
+        f"    g_{_mono_snake(s.name)}_client.reset();" for s in services
+    )
+
+    return f'''#include "ClientRegistry.h"
+
+#include <grpcpp/grpcpp.h>
+#include <google/protobuf/util/json_util.h>
+
+#include <memory>
+
+#include "{sn}.grpc.pb.h"
+#include "MicroserviceBase/ServiceClient.h"
+
+namespace client_registry {{
+namespace {{
+
+std::string g_direct_host;
+
+{chr(10).join(client_slots)}
+
+{chr(10).join(getter_fns)}
+
+}}  // anonymous
+
+void set_direct_host(const std::string& hostPort) {{
+    if (hostPort == g_direct_host) return;
+    g_direct_host = hostPort;
+{reset_stmts}
+}}
+
+std::vector<std::string> services() {{
+    return {{ {svc_labels} }};
+}}
+
+std::vector<std::string> methods(const std::string& serviceName) {{
+{methods_body}
+    return {{}};
+}}
+
+std::pair<bool, std::string>
+invoke(const std::string& serviceName,
+       const std::string& methodName,
+       const std::string& requestJson) {{
+{invoke_body}
+    return {{ false, "Unknown (service, method) pair: " + serviceName + "." + methodName }};
+}}
+
+}}  // namespace client_registry
+'''
+
+
+# ----------------------------------------------------------------------
+# Monorepo: Qt Widgets UI client
+# ----------------------------------------------------------------------
+
+def _mono_widget_main_cpp() -> str:
+    return '''#include <QApplication>
+#include "MainWindow.h"
+
+int main(int argc, char* argv[]) {
+    QApplication app(argc, argv);
+    MainWindow w;
+    w.show();
+    return app.exec();
+}
+'''
+
+
+def _mono_widget_mainwindow_h() -> str:
+    return '''#pragma once
+
+#include <QWidget>
+
+QT_BEGIN_NAMESPACE
+class QComboBox;
+class QTextEdit;
+class QLineEdit;
+class QCheckBox;
+class QPushButton;
+class QLabel;
+QT_END_NAMESPACE
+
+class MainWindow : public QWidget {
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+
+private slots:
+    void onServiceChanged(int);
+    void onSend();
+    void onConsulToggled(bool consul);
+
+private:
+    void applyHostMode();
+
+    QLineEdit*   m_directHost = nullptr;
+    QCheckBox*   m_useConsul  = nullptr;
+    QComboBox*   m_serviceCombo = nullptr;
+    QComboBox*   m_methodCombo  = nullptr;
+    QTextEdit*   m_requestEdit  = nullptr;
+    QTextEdit*   m_responseEdit = nullptr;
+    QPushButton* m_sendButton   = nullptr;
+    QLabel*      m_statusLabel  = nullptr;
+};
+'''
+
+
+def _mono_widget_mainwindow_cpp(spec) -> str:
+    title = f"{spec.service_name} Client"
+    return f'''#include "MainWindow.h"
+#include "ClientRegistry.h"
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QTextEdit>
+#include <QVBoxLayout>
+
+MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {{
+    setWindowTitle("{title}");
+    resize(820, 640);
+
+    auto* v = new QVBoxLayout(this);
+
+    // ---- Host row ----
+    auto* hostRow = new QHBoxLayout;
+    m_useConsul  = new QCheckBox("Use Consul", this);
+    m_useConsul->setChecked(true);
+    m_directHost = new QLineEdit(this);
+    m_directHost->setPlaceholderText("host:port (when Consul disabled)");
+    m_directHost->setEnabled(false);
+    hostRow->addWidget(m_useConsul);
+    hostRow->addWidget(m_directHost, 1);
+    v->addLayout(hostRow);
+
+    // ---- Service + method row ----
+    auto* pickRow = new QHBoxLayout;
+    pickRow->addWidget(new QLabel("Service:", this));
+    m_serviceCombo = new QComboBox(this);
+    pickRow->addWidget(m_serviceCombo, 1);
+    pickRow->addWidget(new QLabel("Method:", this));
+    m_methodCombo = new QComboBox(this);
+    pickRow->addWidget(m_methodCombo, 1);
+    v->addLayout(pickRow);
+
+    // ---- Request JSON ----
+    v->addWidget(new QLabel("Request (JSON):", this));
+    m_requestEdit = new QTextEdit(this);
+    m_requestEdit->setPlainText("{{}}");
+    v->addWidget(m_requestEdit, 1);
+
+    // ---- Send + status ----
+    auto* sendRow = new QHBoxLayout;
+    m_sendButton = new QPushButton("Send", this);
+    m_statusLabel = new QLabel("(idle)", this);
+    sendRow->addWidget(m_sendButton);
+    sendRow->addWidget(m_statusLabel, 1);
+    v->addLayout(sendRow);
+
+    // ---- Response JSON ----
+    v->addWidget(new QLabel("Response:", this));
+    m_responseEdit = new QTextEdit(this);
+    m_responseEdit->setReadOnly(true);
+    v->addWidget(m_responseEdit, 2);
+
+    // ---- Populate services ----
+    for (const auto& s : client_registry::services())
+        m_serviceCombo->addItem(QString::fromStdString(s));
+    onServiceChanged(0);
+
+    connect(m_serviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onServiceChanged);
+    connect(m_sendButton, &QPushButton::clicked, this, &MainWindow::onSend);
+    connect(m_useConsul, &QCheckBox::toggled, this, &MainWindow::onConsulToggled);
+    connect(m_directHost, &QLineEdit::editingFinished, this,
+            [this]() {{ applyHostMode(); }});
+
+    applyHostMode();
+}}
+
+void MainWindow::onConsulToggled(bool consul) {{
+    m_directHost->setEnabled(!consul);
+    applyHostMode();
+}}
+
+void MainWindow::applyHostMode() {{
+    if (m_useConsul->isChecked())
+        client_registry::set_direct_host("");
+    else
+        client_registry::set_direct_host(m_directHost->text().toStdString());
+}}
+
+void MainWindow::onServiceChanged(int) {{
+    m_methodCombo->clear();
+    auto svc = m_serviceCombo->currentText().toStdString();
+    for (const auto& m : client_registry::methods(svc))
+        m_methodCombo->addItem(QString::fromStdString(m));
+}}
+
+void MainWindow::onSend() {{
+    auto svc = m_serviceCombo->currentText().toStdString();
+    auto mth = m_methodCombo->currentText().toStdString();
+    if (svc.empty() || mth.empty()) {{
+        m_statusLabel->setText("Pick a service and method first.");
+        return;
+    }}
+    auto req = m_requestEdit->toPlainText().toStdString();
+    m_statusLabel->setText(QString("Calling %1.%2 ...")
+        .arg(QString::fromStdString(svc), QString::fromStdString(mth)));
+    auto [ok, body] = client_registry::invoke(svc, mth, req);
+    m_responseEdit->setPlainText(QString::fromStdString(body));
+    m_statusLabel->setText(ok ? "OK" : "FAILED");
+}}
+'''
+
+
+# ----------------------------------------------------------------------
+# Monorepo: WASM build scripts (reuses the Widget client)
+# ----------------------------------------------------------------------
+
+def _mono_wasm_build_bat(spec) -> str:
+    project_snake = spec.snake_name
+    return f'''@echo off
+:: Build the Qt Widgets monorepo client ({project_snake}_gui) as WebAssembly.
+:: Requires:
+::   - Qt for WebAssembly (QT_WASM_DIR env var pointing at the install)
+::   - Emscripten SDK (EMSDK env var)  — run emsdk_env.bat first
+::
+:: Output: client/build-wasm/{project_snake}_gui.{{html,js,wasm}}
+
+setlocal
+if not defined QT_WASM_DIR (
+    echo ERROR: QT_WASM_DIR not set ^(path to Qt-for-WebAssembly install^).
+    exit /b 1
+)
+if not defined EMSDK (
+    echo ERROR: EMSDK not set.  Run emsdk_env.bat before this script.
+    exit /b 1
+)
+
+set "BUILD=%~dp0build-wasm"
+if not exist "%BUILD%" mkdir "%BUILD%"
+cd /d "%BUILD%"
+
+"%QT_WASM_DIR%\\bin\\qt-cmake.bat" -G Ninja .. ^
+    -DCMAKE_BUILD_TYPE=Release
+
+cmake --build . --target {project_snake}_gui
+if errorlevel 1 exit /b 1
+
+echo WASM client built: %BUILD%\\{project_snake}_gui.html
+endlocal
+'''
+
+
+def _mono_wasm_build_sh(spec) -> str:
+    project_snake = spec.snake_name
+    return f'''#!/usr/bin/env bash
+# Build the Qt Widgets monorepo client ({project_snake}_gui) as WebAssembly.
+#
+# Requires Qt for WebAssembly (QT_WASM_DIR) + Emscripten (source emsdk_env.sh).
+
+set -euo pipefail
+
+: "${{QT_WASM_DIR:?Set QT_WASM_DIR to your Qt-for-WebAssembly install}}"
+: "${{EMSDK:?Run emsdk_env.sh before this script}}"
+
+BUILD="$(dirname "$(readlink -f "$0")")/build-wasm"
+mkdir -p "$BUILD"
+cd "$BUILD"
+
+"$QT_WASM_DIR/bin/qt-cmake" -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . --target {project_snake}_gui
+
+echo "WASM client built: $BUILD/{project_snake}_gui.html"
+'''
+
+
+# ----------------------------------------------------------------------
+# Monorepo: Qt Quick (QML) UI client
+# ----------------------------------------------------------------------
+
+def _mono_qml_main_cpp(spec) -> str:
+    project_snake = spec.snake_name
+    return f'''#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+
+#include "ClientBridge.h"
+
+int main(int argc, char* argv[]) {{
+    QGuiApplication app(argc, argv);
+    QQmlApplicationEngine engine;
+
+    ClientBridge bridge;
+    engine.rootContext()->setContextProperty("clientBridge", &bridge);
+
+    // URI must match qt_add_qml_module(... URI {project_snake} ...) in CMake.
+    engine.loadFromModule("{project_snake}", "Main");
+    if (engine.rootObjects().isEmpty()) return 1;
+    return app.exec();
+}}
+'''
+
+
+def _mono_qml_bridge_h() -> str:
+    return '''#pragma once
+
+// Qt/QML-facing wrapper around ClientRegistry.  All methods are
+// Q_INVOKABLE so QML can call them directly as `clientBridge.*`.
+
+#include <QObject>
+#include <QString>
+#include <QStringList>
+#include <QVariantMap>
+
+class ClientBridge : public QObject {
+    Q_OBJECT
+public:
+    explicit ClientBridge(QObject* parent = nullptr) : QObject(parent) {}
+
+    Q_INVOKABLE QStringList services() const;
+    Q_INVOKABLE QStringList methods(const QString& serviceName) const;
+
+    Q_INVOKABLE void setDirectHost(const QString& hostPort);
+
+    /// Returns { "ok": bool, "body": QString }.
+    Q_INVOKABLE QVariantMap invoke(const QString& serviceName,
+                                   const QString& methodName,
+                                   const QString& requestJson);
+};
+'''
+
+
+def _mono_qml_bridge_cpp() -> str:
+    return '''#include "ClientBridge.h"
+#include "ClientRegistry.h"
+
+QStringList ClientBridge::services() const {
+    QStringList out;
+    for (const auto& s : client_registry::services())
+        out << QString::fromStdString(s);
+    return out;
+}
+
+QStringList ClientBridge::methods(const QString& serviceName) const {
+    QStringList out;
+    for (const auto& m : client_registry::methods(serviceName.toStdString()))
+        out << QString::fromStdString(m);
+    return out;
+}
+
+void ClientBridge::setDirectHost(const QString& hostPort) {
+    client_registry::set_direct_host(hostPort.toStdString());
+}
+
+QVariantMap ClientBridge::invoke(const QString& serviceName,
+                                 const QString& methodName,
+                                 const QString& requestJson) {
+    auto [ok, body] = client_registry::invoke(
+        serviceName.toStdString(),
+        methodName.toStdString(),
+        requestJson.toStdString());
+    QVariantMap m;
+    m["ok"] = ok;
+    m["body"] = QString::fromStdString(body);
+    return m;
+}
+'''
+
+
+def _mono_qml_main_qml(spec) -> str:
+    title = f"{spec.service_name} Client"
+    return f'''import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+ApplicationWindow {{
+    width: 820; height: 640
+    visible: true
+    title: "{title}"
+
+    ColumnLayout {{
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 6
+
+        RowLayout {{
+            CheckBox {{
+                id: useConsul
+                text: "Use Consul"
+                checked: true
+                onCheckedChanged: {{
+                    if (checked) clientBridge.setDirectHost("")
+                    else         clientBridge.setDirectHost(directHost.text)
+                }}
+            }}
+            TextField {{
+                id: directHost
+                enabled: !useConsul.checked
+                placeholderText: "host:port (when Consul disabled)"
+                Layout.fillWidth: true
+                onEditingFinished: if (!useConsul.checked)
+                    clientBridge.setDirectHost(text)
+            }}
+        }}
+
+        RowLayout {{
+            Label {{ text: "Service:" }}
+            ComboBox {{
+                id: svcCombo
+                model: clientBridge.services()
+                Layout.fillWidth: true
+                onCurrentTextChanged: methodCombo.model =
+                    clientBridge.methods(currentText)
+                Component.onCompleted: methodCombo.model =
+                    clientBridge.methods(currentText)
+            }}
+            Label {{ text: "Method:" }}
+            ComboBox {{
+                id: methodCombo
+                Layout.fillWidth: true
+            }}
+        }}
+
+        Label {{ text: "Request (JSON):" }}
+        ScrollView {{
+            Layout.fillWidth: true
+            Layout.preferredHeight: 140
+            TextArea {{
+                id: requestEdit
+                text: "{{}}"
+                wrapMode: TextEdit.Wrap
+                font.family: "monospace"
+            }}
+        }}
+
+        RowLayout {{
+            Button {{
+                text: "Send"
+                onClicked: {{
+                    statusLabel.text = "Calling " + svcCombo.currentText +
+                        "." + methodCombo.currentText + " ..."
+                    var r = clientBridge.invoke(svcCombo.currentText,
+                                                methodCombo.currentText,
+                                                requestEdit.text)
+                    responseEdit.text = r.body
+                    statusLabel.text = r.ok ? "OK" : "FAILED"
+                }}
+            }}
+            Label {{
+                id: statusLabel
+                text: "(idle)"
+                Layout.fillWidth: true
+            }}
+        }}
+
+        Label {{ text: "Response:" }}
+        ScrollView {{
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            TextArea {{
+                id: responseEdit
+                readOnly: true
+                wrapMode: TextEdit.Wrap
+                font.family: "monospace"
+            }}
+        }}
+    }}
+}}
+'''
+
+
+def _mono_client_common_h() -> str:
+    return '''#pragma once
+
+// Shared helpers for the unified monorepo client.
+
+#include <string>
+#include <vector>
+
+namespace client_common {
+
+// Optional "host:port" for --direct mode.  Empty = use Consul.
+extern std::string g_direct_host;
+
+// Render a numbered menu and read one choice.  Returns 0 on "back/quit"
+// or invalid input, 1..choices.size() on a valid pick.
+int prompt_choice(const std::string& title,
+                  const std::vector<std::string>& choices);
+
+}  // namespace client_common
+'''
+
+
+def _mono_client_main_cpp(spec, services) -> str:
+    sn = spec.snake_name
+    project_snake = sn
+
+    includes = "\n".join(
+        f'#include "{_mono_snake(s.name)}_menu.h"' for s in services
+    )
+
+    labels = ", ".join(f'"{s.name}"' for s in services)
+
+    dispatch_cases = "\n".join(
+        f"            case {i+1}: {_mono_snake(s.name)}_menu::run(); break;"
+        for i, s in enumerate(services)
+    )
+
+    return f'''// client.cpp — unified interactive test client for the
+// {spec.service_name} monorepo.  Picks a service, then an RPC method.
+
+#include <iostream>
+#include <string>
+#include <vector>
+#include "client_common.h"
+{includes}
+
+namespace client_common {{
+    std::string g_direct_host;
+
+    int prompt_choice(const std::string& title,
+                      const std::vector<std::string>& choices) {{
+        std::cout << "\\n" << title << "\\n";
+        for (size_t i = 0; i < choices.size(); ++i)
+            std::cout << "  " << (i + 1) << ") " << choices[i] << "\\n";
+        std::cout << "  0) back/quit\\n> " << std::flush;
+        int sel = 0;
+        if (!(std::cin >> sel)) {{
+            std::cin.clear();
+            std::string discard; std::cin >> discard;
+            return 0;
+        }}
+        if (sel < 0 || sel > static_cast<int>(choices.size())) return 0;
+        return sel;
+    }}
+}}
+
+int main(int argc, char* argv[]) {{
+    for (int i = 1; i < argc; ++i) {{
+        std::string a = argv[i];
+        if (a == "--direct" && i + 1 < argc) {{
+            client_common::g_direct_host = argv[++i];
+        }} else if (a == "-h" || a == "--help") {{
+            std::cout <<
+                "Usage: {project_snake}_client [--direct host:port]\\n"
+                "  --direct  bypass Consul, use <host:port> for every service\\n";
+            return 0;
+        }}
+    }}
+
+    if (!client_common::g_direct_host.empty()) {{
+        std::cout << "Direct mode -> " << client_common::g_direct_host << "\\n";
+    }} else {{
+        std::cout << "Consul discovery mode\\n";
+    }}
+
+    std::vector<std::string> svc_labels = {{ {labels} }};
+    while (true) {{
+        int pick = client_common::prompt_choice("Pick a service:", svc_labels);
+        if (pick == 0) break;
+        switch (pick) {{
+{dispatch_cases}
+            default: break;
+        }}
+    }}
+    return 0;
+}}
+'''
+
+
+def _mono_client_menu_h(spec, svc) -> str:
+    svc_snake = _mono_snake(svc.name)
+    return f'''#pragma once
+
+// Interactive method menu for {svc.name}.
+
+namespace {svc_snake}_menu {{
+    void run();
+}}
+'''
+
+
+def _mono_client_menu_cpp(spec, svc) -> str:
+    """Interactive per-service menu: resolves the stub, then loops showing
+    a list of RPC methods.  Each method is invoked with a default request
+    (for imported protos) or sample values (for wizard-generated protos)."""
+    sn = spec.snake_name
+    ns = spec.proto_namespace
+    svc_pascal = svc.name
+    svc_snake = _mono_snake(svc.name)
+
+    method_labels = ", ".join(f'"{m.name}"' for m in svc.methods)
+
+    # Build one `case N:` block per method.
+    cases = []
+    for idx, m in enumerate(svc.methods, start=1):
+        inT  = _mono_input_cpp_type(m, ns)
+        outT = _mono_output_cpp_type(m, ns)
+        imported = bool(m.input_type or m.output_type)
+
+        if imported:
+            body = f'''            case {idx}: {{
+                grpc::ClientContext ctx;
+                {inT} req;   // TODO: fill fields — set_<field>(...)
+                {outT} resp;
+                auto st = stub.{m.name}(&ctx, req, &resp);
+                if (st.ok()) std::cout << "  {m.name}: OK (fill in response print)\\n";
+                else         std::cerr << "  {m.name} FAILED: " << st.error_message() << "\\n";
+                break;
+            }}'''
+            cases.append(body)
+            continue
+
+        # Wizard-generated conventions: parameters map to set_<param>().
+        param_lines = []
+        for p in m.params:
+            t = (p.type or "string").lower()
+            if t in ("string", "bytes", "str"):
+                param_lines.append(f'                req.set_{p.name}("sample");')
+            elif t in ("int32", "int", "uint32", "int64", "uint64"):
+                param_lines.append(f'                req.set_{p.name}(1);')
+            elif t in ("float", "double"):
+                param_lines.append(f'                req.set_{p.name}(1.0);')
+            elif t == "bool":
+                param_lines.append(f'                req.set_{p.name}(true);')
+            else:
+                param_lines.append(f'                req.set_{p.name}("sample");')
+        setters = "\n".join(param_lines) if param_lines else "                // no params"
+
+        rt = (m.return_type or "string").lower()
+        if rt == "bool":
+            print_expr = '(resp.result() ? "true" : "false")'
+        else:
+            print_expr = "resp.result()"
+
+        if m.server_streaming:
+            body = f'''            case {idx}: {{
+                grpc::ClientContext ctx;
+                {inT} req;
+{setters}
+                auto reader = stub.{m.name}(&ctx, req);
+                {outT} resp;
+                int n = 0;
+                while (reader->Read(&resp)) {{
+                    std::cout << "  {m.name} [" << n++ << "] = " << {print_expr} << "\\n";
+                }}
+                auto st = reader->Finish();
+                std::cout << "  {m.name}: " << (st.ok() ? "done" : st.error_message()) << "\\n";
+                break;
+            }}'''
+        else:
+            body = f'''            case {idx}: {{
+                grpc::ClientContext ctx;
+                {inT} req;
+{setters}
+                {outT} resp;
+                auto st = stub.{m.name}(&ctx, req, &resp);
+                if (st.ok()) std::cout << "  {m.name} -> " << {print_expr} << "\\n";
+                else         std::cerr << "  {m.name} FAILED: " << st.error_message() << "\\n";
+                break;
+            }}'''
+        cases.append(body)
+
+    cases_joined = "\n".join(cases) if cases \
+        else '            default: std::cout << "(no methods)\\n"; break;'
+
+    return f'''// {svc_pascal} interactive test menu.
+//
+// Each entry invokes one RPC on a persistent ServiceClient<{svc_pascal}>
+// (opened on first use, reused while this menu is active).
+
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+#include <grpcpp/grpcpp.h>
+#include "{sn}.grpc.pb.h"
+#include "MicroserviceBase/ServiceClient.h"
+#include "client_common.h"
+#include "{svc_snake}_menu.h"
+
+using {ns}::{svc_pascal};
+
+namespace {svc_snake}_menu {{
+
+static std::unique_ptr<microservice_base::ServiceClient<{svc_pascal}>> s_client;
+
+static bool ensure_client() {{
+    if (s_client) return true;
+    try {{
+        if (!client_common::g_direct_host.empty()) {{
+            s_client = std::make_unique<microservice_base::ServiceClient<{svc_pascal}>>(
+                "{svc_snake}", client_common::g_direct_host, true);
+            std::cout << "{svc_pascal}: connected direct -> "
+                      << s_client->target() << "\\n";
+        }} else {{
+            s_client = std::make_unique<microservice_base::ServiceClient<{svc_pascal}>>(
+                "{svc_snake}");
+            std::cout << "{svc_pascal}: resolved via Consul -> "
+                      << s_client->target() << "\\n";
+        }}
+    }} catch (const std::exception& e) {{
+        std::cerr << "{svc_pascal}: connect failed: " << e.what() << "\\n";
+        s_client.reset();
+        return false;
+    }}
+    return true;
+}}
+
+void run() {{
+    if (!ensure_client()) return;
+    auto& stub = s_client->stub();
+
+    std::vector<std::string> labels = {{ {method_labels} }};
+    while (true) {{
+        int pick = client_common::prompt_choice(
+            "{svc_pascal} — pick a method:", labels);
+        if (pick == 0) return;
+        switch (pick) {{
+{cases_joined}
+            default: break;
+        }}
+    }}
+}}
+
+}}  // namespace {svc_snake}_menu
+'''
+
+

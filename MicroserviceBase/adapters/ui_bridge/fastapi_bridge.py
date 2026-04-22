@@ -2156,6 +2156,13 @@ Generate scaffolding for a new microservice project.
          return_type: str = "string"
          description: str = ""
          server_streaming: bool = False
+         input_type: str = ""    # fully-qualified proto type (imported protos)
+         output_type: str = ""   # fully-qualified proto type (imported protos)
+
+      class ScaffoldV2Service(BaseModel):
+         """One service block inside a monorepo scaffold."""
+         name: str = ""
+         methods: List[ScaffoldV2Method] = []
 
       class ScaffoldV2Request(BaseModel):
          service_name: str
@@ -2181,17 +2188,181 @@ Generate scaffolding for a new microservice project.
          nomad_consul_addr: str = "http://127.0.0.1:8500"
          methods: List[ScaffoldV2Method] = []
          output_path: str = ""
+         proto_content_override: str = ""   # if non-empty, written verbatim to proto/<sn>.proto
+         monorepo: bool = False             # when true, emit one project with N executables
+         services: List[ScaffoldV2Service] = []  # for monorepo: [{name, methods}]
+         proto_package: str = ""            # real .proto `package X;` when importing
+
+      class ParseProtoRequest(BaseModel):
+         proto_content: str
+
+      @app.post("/api/scaffold/parse-proto")
+      def scaffold_parse_proto(body: ParseProtoRequest):
+         """Parse a .proto file via protoc and return services/methods/params.
+
+         Used by the Service Creator wizard's "Import .proto..." button.
+         Returns a list of services (user picks one in the UI if > 1).
+         """
+         import os
+         import tempfile
+         try:
+            from grpc_tools import protoc as grpc_protoc
+            from google.protobuf import descriptor_pb2
+         except ImportError:
+            return {"status": "error",
+                    "error": "grpc_tools / protobuf not installed on the bridge."}
+
+         if not body.proto_content.strip():
+            return {"status": "error", "error": "Empty .proto content."}
+
+         # Scalar types the wizard + generated GUI know how to handle.
+         _SCALAR = {
+            1:  "double",   2:  "float",    3:  "int64",    4:  "uint64",
+            5:  "int32",    6:  "fixed64",  7:  "fixed32",  8:  "bool",
+            9:  "string",   12: "bytes",    13: "uint32",
+            15: "sfixed32", 16: "sfixed64", 17: "sint32",   18: "sint64",
+         }
+         TYPE_MESSAGE = 11
+         TYPE_ENUM = 14
+
+         warnings = []
+         with tempfile.TemporaryDirectory() as tmpdir:
+            proto_path = os.path.join(tmpdir, "_import.proto")
+            desc_path = os.path.join(tmpdir, "_import.pb")
+            with open(proto_path, "w", encoding="utf-8") as f:
+               f.write(body.proto_content)
+
+            rc = grpc_protoc.main([
+               "grpc_tools.protoc",
+               f"--proto_path={tmpdir}",
+               f"--descriptor_set_out={desc_path}",
+               proto_path,
+            ])
+            if rc != 0:
+               return {"status": "error",
+                       "error": "protoc rejected the .proto (see bridge logs)."}
+
+            with open(desc_path, "rb") as f:
+               fds = descriptor_pb2.FileDescriptorSet()
+               fds.ParseFromString(f.read())
+
+         if not fds.file:
+            return {"status": "error", "error": "Empty descriptor — no file parsed."}
+
+         file_desc = fds.file[0]
+         # Index all messages in the file by short name (no leading dot) so
+         # we can resolve method input/output types.
+         msgs = {m.name: m for m in file_desc.message_type}
+
+         def _extract_fields(msg_name: str):
+            """Return list of {name, type} dicts for all fields in msg_name."""
+            msg = msgs.get(msg_name)
+            if msg is None:
+               warnings.append(f"Message '{msg_name}' not found in this file "
+                               f"(imports are not resolved).")
+               return []
+            out = []
+            for fld in msg.field:
+               if fld.label == 3:   # LABEL_REPEATED
+                  warnings.append(
+                     f"Field '{msg_name}.{fld.name}' is repeated — "
+                     f"generated GUI won't support lists.")
+               if fld.type == TYPE_MESSAGE or fld.type == TYPE_ENUM:
+                  warnings.append(
+                     f"Field '{msg_name}.{fld.name}' is a "
+                     f"{'nested message' if fld.type == TYPE_MESSAGE else 'enum'} — "
+                     f"not supported in generated GUI.")
+                  out.append({"name": fld.name, "type": "string"})
+               else:
+                  out.append({"name": fld.name, "type": _SCALAR.get(fld.type, "string")})
+            return out
+
+         def _first_field_type(msg_name: str) -> str:
+            msg = msgs.get(msg_name)
+            if not msg or not msg.field:
+               return "string"
+            f0 = msg.field[0]
+            return _SCALAR.get(f0.type, "string")
+
+         def _strip_pkg(qualified: str) -> str:
+            # protoc emits ".pkg.sub.MsgName"; strip package prefix.
+            return qualified.rsplit(".", 1)[-1]
+
+         services = []
+         for svc in file_desc.service:
+            methods = []
+            for m in svc.method:
+               input_short  = _strip_pkg(m.input_type)
+               output_short = _strip_pkg(m.output_type)
+               # Fully-qualified types (descriptor names begin with a dot).
+               input_fqn  = m.input_type.lstrip(".")
+               output_fqn = m.output_type.lstrip(".")
+               if m.client_streaming:
+                  warnings.append(
+                     f"Method '{svc.name}.{m.name}' uses client streaming — "
+                     f"generated GUI only supports unary and server-streaming.")
+               methods.append({
+                  "name": m.name,
+                  "input_type": input_fqn,            # e.g. "device.ChannelRequest"
+                  "output_type": output_fqn,          # e.g. "device.ChannelCountResponse"
+                  "params": _extract_fields(input_short),
+                  "return_type": _first_field_type(output_short),
+                  "server_streaming": bool(m.server_streaming),
+                  "description": "",
+               })
+            services.append({
+               "name": svc.name,
+               "methods": methods,
+            })
+
+         if not services:
+            return {"status": "error",
+                    "error": "No 'service' block found in the .proto."}
+
+         return {
+            "status": "ok",
+            "proto_package": file_desc.package,
+            "services": services,
+            "warnings": warnings,
+         }
 
       @app.post("/api/scaffold/generate-v2")
       def scaffold_generate_v2(body: ScaffoldV2Request):
          """Generate scaffolding for a new microservice (v2 — Python/C++, multi-GUI)."""
          from ..scaffold import generate_scaffold, ScaffoldSpec
-         from ..scaffold.generator import MethodSpec, MethodParam
+         from ..scaffold.generator import MethodSpec, MethodParam, ServiceBlock
 
          try:
             _validate_safe_name(body.service_name)
          except ValueError as exc:
             return {"status": "error", "error": str(exc)}
+
+         # Convert monorepo services list into ServiceBlock dataclasses.
+         mono_services = []
+         if body.monorepo and body.services:
+            for svc in body.services:
+               try:
+                  _validate_safe_name(svc.name)
+               except ValueError as exc:
+                  return {"status": "error",
+                          "error": f"Invalid service name '{svc.name}': {exc}"}
+               mono_services.append(ServiceBlock(
+                  name=svc.name,
+                  methods=[
+                     MethodSpec(
+                        name=m.name,
+                        params=[MethodParam(name=p.name, type=p.type,
+                                            required=p.required, description=p.description)
+                                for p in m.params],
+                        return_type=m.return_type,
+                        description=m.description,
+                        server_streaming=m.server_streaming,
+                        input_type=m.input_type,
+                        output_type=m.output_type,
+                     )
+                     for m in svc.methods
+                  ],
+               ))
 
          spec = ScaffoldSpec(
             service_name=body.service_name,
@@ -2224,9 +2395,14 @@ Generate scaffolding for a new microservice project.
                   return_type=m.return_type,
                   description=m.description,
                   server_streaming=m.server_streaming,
+                  input_type=m.input_type,
+                  output_type=m.output_type,
                )
                for m in body.methods
             ],
+            proto_content_override=body.proto_content_override,
+            proto_package_override=body.proto_package,
+            services=mono_services,
          )
 
          try:

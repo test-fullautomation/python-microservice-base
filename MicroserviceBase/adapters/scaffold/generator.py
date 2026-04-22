@@ -28,6 +28,19 @@ class MethodSpec:
     return_type: str = "string"
     description: str = ""
     server_streaming: bool = False
+    # Fully-qualified proto type names (imported protos only).
+    # Empty strings = fall back to the "<Method>Request" / "<Method>Response"
+    # convention used by the wizard's built-in proto generator.
+    input_type: str = ""
+    output_type: str = ""
+
+
+@dataclass
+class ServiceBlock:
+    """One service inside a monorepo scaffold (single .proto, multiple
+    executables sharing the same project tree)."""
+    name: str
+    methods: List[MethodSpec] = field(default_factory=list)
 
 
 @dataclass
@@ -64,17 +77,41 @@ class ScaffoldSpec:
     # Step 3 — Methods
     methods: List[MethodSpec] = field(default_factory=list)
 
+    # When the user imported a .proto file, keep its original text so we
+    # write it verbatim instead of regenerating (preserves comments,
+    # options, imports we couldn't parse).  Empty string = regenerate.
+    proto_content_override: str = ""
+
+    # Package name from the imported .proto's `package X;` declaration.
+    # Empty string = fall back to the computed `<snake_name>.v1`.
+    proto_package_override: str = ""
+
+    # Monorepo mode: when non-empty, emit a single project folder with N
+    # executables (one per service) sharing one .proto + one CMakeLists.
+    # `service_name` then acts as the *project* folder name.
+    services: List[ServiceBlock] = field(default_factory=list)
+
     # Derived helpers
     @property
     def snake_name(self) -> str:
-        """``MyService`` → ``my_service``"""
+        """CamelCase → snake_case, keeping runs of capitals together.
+
+        ``MyService`` → ``my_service``, ``PPSService`` → ``pps_service``,
+        ``XMLParser`` → ``xml_parser``.
+        """
         import re
-        s = re.sub(r'(?<!^)(?=[A-Z])', '_', self.service_name)
+        s = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', self.service_name)
+        s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s)
         return s.lower()
 
     @property
     def proto_package(self) -> str:
-        return f"{self.snake_name}.v1"
+        return self.proto_package_override or f"{self.snake_name}.v1"
+
+    @property
+    def proto_namespace(self) -> str:
+        """C++ namespace form of proto_package (dots → `::`)."""
+        return self.proto_package.replace(".", "::")
 
     @property
     def env_prefix(self) -> str:
@@ -86,10 +123,26 @@ def generate_scaffold(spec: ScaffoldSpec) -> Dict[str, str]:
 
     Paths are relative to the project root (e.g. ``src/main.cpp``).
     """
+    # Monorepo path: one project folder, N executables sharing the proto.
+    # v1: C++ only.  Python monorepo is a straightforward follow-up.
+    if spec.services and len(spec.services) > 1:
+        if spec.language != "cpp":
+            raise NotImplementedError(
+                "Monorepo layout is C++ only in v1. "
+                "Use separate-folder layout for Python."
+            )
+        return cpp_tmpl.generate_monorepo(spec, spec.services)
+
     files: Dict[str, str] = {}
 
     # ---- Shared files (all combinations) --------------------------------
-    files[f"proto/{spec.snake_name}.proto"] = shared.gen_proto(spec)
+    # If the user imported a .proto via the wizard, write it verbatim so
+    # we preserve whatever we couldn't parse (comments, options, imports).
+    # Otherwise regenerate from spec.methods.
+    if spec.proto_content_override:
+        files[f"proto/{spec.snake_name}.proto"] = spec.proto_content_override
+    else:
+        files[f"proto/{spec.snake_name}.proto"] = shared.gen_proto(spec)
 
     if spec.gen_readme:
         files["README.md"] = shared.gen_readme(spec)

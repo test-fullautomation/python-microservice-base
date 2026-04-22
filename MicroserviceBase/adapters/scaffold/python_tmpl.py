@@ -368,7 +368,12 @@ function initialize{svc}() {{
 # -----------------------------------------------------------------------
 
 def _snake(name: str) -> str:
-    """``DoSomething`` → ``do_something``"""
+    """CamelCase → snake_case, keeping runs of capitals together.
+
+    ``DoSomething`` → ``do_something``, ``PPSService`` → ``pps_service``,
+    ``XMLParser`` → ``xml_parser``.
+    """
     import re
-    s = re.sub(r"(?<!^)(?=[A-Z])", "_", name)
+    s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s)
     return s.lower()
