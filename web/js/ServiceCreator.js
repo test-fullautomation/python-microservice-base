@@ -74,6 +74,10 @@
       guiMode: 'schema',        // 'schema' | 'custom'
       guiSchema: null,
       methods: [],
+      importedProtoContent: '',     // non-empty when user imported a .proto file
+      importedProtoFileName: '',
+      importedServices: [],         // [{name, methods}] when user imported 2+ services
+      monorepoLayout: false,        // false = separate folders, true = single project
       outputPath: '',
       customGuiHtml: null,
       customGuiJs: null
@@ -389,10 +393,55 @@
           'These become the <code>service</code> block in the generated <code>.proto</code> file. ' +
           'Use <strong>PascalCase</strong> for method names (e.g. <code>GetStatus</code>, not <code>get_status</code>).</p>' +
         '</div>' +
-        '<div id="creatorMethodList"></div>' +
-        '<button class="btn btn-outline-primary btn-sm mb-3" id="btnAddMethod">' +
-          '<i class="bi bi-plus-lg me-1"></i>Add Method' +
-        '</button>' +
+        // Multi-service imported: show summary card in place of editable methods.
+        (_formData.importedServices && _formData.importedServices.length > 1 ?
+          '<div class="card mb-3 border-success">' +
+            '<div class="card-body">' +
+              '<h6 class="card-title text-success mb-3">' +
+                '<i class="bi bi-collection me-2"></i>' +
+                _formData.importedServices.length + ' services will be generated ' +
+                '<span class="badge bg-primary ms-2">' +
+                  (_formData.monorepoLayout ? 'monorepo' : 'separate folders') +
+                '</span>' +
+              '</h6>' +
+              '<ul class="mb-2">' +
+                _formData.importedServices.map(function (s) {
+                  return '<li><strong>' + _escapeHtml(s.name) + '</strong>' +
+                    ' <span class="text-muted">— ' + s.methods.length + ' method(s)</span></li>';
+                }).join('') +
+              '</ul>' +
+              '<p class="text-muted small mb-2">' +
+                (_formData.monorepoLayout ?
+                  'All services will be scaffolded into <strong>one project folder</strong> ' +
+                  'with one CMakeLists and one <code>build_deploy.bat</code>.  Each service ' +
+                  'builds to its own <code>.exe</code>, sharing a single <code>.proto</code>.' :
+                  'Each service gets its own folder under the output path, sharing ' +
+                  'this single <code>.proto</code> file.') +
+                '  To edit methods, modify the <code>.proto</code> and re-import.' +
+              '</p>' +
+              '<button class="btn btn-sm btn-outline-secondary" id="btnClearImport">' +
+                '<i class="bi bi-x-circle me-1"></i>Clear import &amp; enter manually' +
+              '</button>' +
+            '</div>' +
+          '</div>'
+        :
+          '<div id="creatorMethodList"></div>' +
+          '<div class="d-flex gap-2 mb-3 flex-wrap">' +
+            '<button class="btn btn-outline-primary btn-sm" id="btnAddMethod">' +
+              '<i class="bi bi-plus-lg me-1"></i>Add Method' +
+            '</button>' +
+            '<button class="btn btn-outline-secondary btn-sm" id="btnImportProto" ' +
+              'title="Load methods from an existing .proto file">' +
+              '<i class="bi bi-upload me-1"></i>Import .proto…' +
+            '</button>' +
+            '<input type="file" id="importProtoFile" accept=".proto,text/plain" ' +
+              'style="display:none">' +
+            (_formData.importedProtoContent ?
+              '<span class="badge bg-success align-self-center">' +
+                '<i class="bi bi-check-circle me-1"></i>Imported .proto loaded' +
+              '</span>' : '') +
+          '</div>'
+        ) +
 
         '<div class="card mb-3">' +
           '<div class="card-body py-2">' +
@@ -501,6 +550,21 @@
 
     var methodList = document.getElementById('creatorMethodList');
 
+    // Multi-service mode: only the summary card is rendered, skip method list wiring.
+    if (_formData.importedServices && _formData.importedServices.length > 1) {
+      var clearBtn = document.getElementById('btnClearImport');
+      if (clearBtn) clearBtn.addEventListener('click', function () {
+        _formData.importedServices = [];
+        _formData.importedProtoContent = '';
+        _formData.importedProtoFileName = '';
+        _formData.monorepoLayout = false;
+        _formData.methods = [];
+        _renderStep(_currentStep);
+      });
+      _wireNavButtons();
+      return;
+    }
+
     _formData.methods.forEach(function (method) {
       _appendMethodCard(methodList, method);
     });
@@ -518,7 +582,238 @@
       _appendMethodCard(methodList, method);
     });
 
+    // ---- Import .proto... ----
+    var importBtn = document.getElementById('btnImportProto');
+    var importFileInput = document.getElementById('importProtoFile');
+    importBtn.addEventListener('click', function () { importFileInput.click(); });
+    importFileInput.addEventListener('change', function (ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (e) { _handleImportedProto(e.target.result, file.name); };
+      reader.readAsText(file);
+      // Clear so the same file can be re-picked.
+      importFileInput.value = '';
+    });
+
     _wireNavButtons();
+  }
+
+  // ---- Import .proto handling -----------------------------------------
+
+  function _handleImportedProto(protoText, fileName) {
+    var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
+      var settings = MM.getSettings ? MM.getSettings() : {};
+      var bridgePort = settings.bridgePort || 1112;
+      apiUrl = 'http://localhost:' + bridgePort;
+    }
+
+    fetch(apiUrl + '/api/scaffold/parse-proto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proto_content: protoText })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.status !== 'ok') {
+          MM.showToast('Import failed', data.error || 'Unknown error', 'danger');
+          return;
+        }
+        if (!data.services || data.services.length === 0) {
+          MM.showToast('Import failed', 'No services found in the .proto', 'warning');
+          return;
+        }
+        // Warnings are non-fatal hints.
+        (data.warnings || []).slice(0, 3).forEach(function (w) {
+          MM.showToast('Heads up', w, 'warning');
+        });
+
+        if (data.services.length === 1) {
+          _formData.monorepoLayout = false;
+          _applyImportedServices([data.services[0]], data.proto_package, protoText, fileName);
+        } else {
+          _showServicePickerModal(data.services, function (pick) {
+            if (!pick || !pick.indices || pick.indices.length === 0) return;
+            var picked = pick.indices.map(function (i) { return data.services[i]; });
+            _formData.monorepoLayout = !!pick.monorepo;
+            _applyImportedServices(picked, data.proto_package, protoText, fileName);
+          });
+        }
+      })
+      .catch(function (err) {
+        MM.showToast('Import failed', 'Bridge unreachable: ' + err.message, 'danger');
+      });
+  }
+
+  function _applyImportedServices(services, protoPackage, protoText, fileName) {
+    // services is an array of {name, methods[...]}; length >= 1.
+    _formData.importedProtoContent = protoText;
+    _formData.importedProtoFileName = fileName || '';
+    if (protoPackage) _formData.protoPackage = protoPackage;
+
+    // The first service drives the wizard's single-service fields.
+    // If > 1, the wizard shows a summary card and disables method editing.
+    var primary = services[0];
+    // Service name rule:
+    //  - Single service  → always use the proto's service name.
+    //  - Multi-service   → keep whatever the user already typed in Basic Info
+    //                      (that becomes the project/folder name for monorepo
+    //                      OR the parent folder for separate-folders mode).
+    //                      Fall back to the first service's name only if the
+    //                      Basic Info field is empty.
+    if (services.length === 1 || !_formData.serviceName) {
+      _formData.serviceName = primary.name;
+    }
+    _formData.methods = (primary.methods || []).map(function (m) {
+      return {
+        id: ++_methodIdCounter,
+        name: m.name,
+        params: (m.params || []).map(function (p) {
+          return { name: p.name, type: p.type || 'string', required: true };
+        }),
+        returnType: m.return_type || 'string',
+        description: m.description || '',
+        serverStreaming: !!m.server_streaming,
+        inputType: m.input_type || '',
+        outputType: m.output_type || ''
+      };
+    });
+
+    // Keep the full list so submit can loop generate-v2 per service.
+    _formData.importedServices = (services.length > 1) ? services.map(function (s) {
+      return {
+        name: s.name,
+        methods: (s.methods || []).map(function (m) {
+          return {
+            name: m.name,
+            params: (m.params || []).map(function (p) {
+              return { name: p.name, type: p.type || 'string', required: true };
+            }),
+            returnType: m.return_type || 'string',
+            description: m.description || '',
+            serverStreaming: !!m.server_streaming,
+            inputType: m.input_type || '',
+            outputType: m.output_type || ''
+          };
+        })
+      };
+    }) : [];
+
+    if (services.length === 1) {
+      MM.showToast('Import complete',
+        primary.name + ' — ' + _formData.methods.length + ' method(s) loaded',
+        'success');
+    } else {
+      var total = services.reduce(function (n, s) { return n + (s.methods ? s.methods.length : 0); }, 0);
+      MM.showToast('Import complete',
+        services.length + ' services / ' + total + ' methods — each will get its own folder',
+        'success');
+    }
+    // Re-render so the summary badge + any UI changes appear.
+    _renderStep(_currentStep);
+  }
+
+  function _showServicePickerModal(services, onPick) {
+    // Multi-select modal + layout choice.  onPick receives:
+    //   { indices: [int], monorepo: bool }
+    var rows = services.map(function (s, i) {
+      return '<div class="form-check">' +
+        '<input class="form-check-input svc-pick" type="checkbox" id="svcPick' + i +
+          '" data-idx="' + i + '" checked>' +
+        '<label class="form-check-label" for="svcPick' + i + '">' +
+          '<strong>' + _escapeHtml(s.name) + '</strong>' +
+          '<span class="text-muted ms-2">' +
+            (s.methods ? s.methods.length : 0) + ' method(s)</span>' +
+        '</label>' +
+      '</div>';
+    }).join('');
+
+    var html =
+      '<div class="modal fade" id="svcPickerModal" tabindex="-1">' +
+        '<div class="modal-dialog modal-lg">' +
+          '<div class="modal-content">' +
+            '<div class="modal-header">' +
+              '<h5 class="modal-title">Services found in .proto</h5>' +
+              '<button type="button" class="btn-close" data-bs-dismiss="modal"></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+              '<p class="text-muted">Select the services you want to scaffold:</p>' +
+              '<div class="mb-2">' +
+                '<button type="button" class="btn btn-link btn-sm p-0 me-3" id="svcPickAll">' +
+                  'Select all</button>' +
+                '<button type="button" class="btn btn-link btn-sm p-0" id="svcPickNone">' +
+                  'Select none</button>' +
+              '</div>' +
+              '<div id="svcPickerList" class="mb-3">' + rows + '</div>' +
+
+              '<hr>' +
+              '<h6 class="mb-2">Output layout</h6>' +
+              '<div class="form-check">' +
+                '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                  'id="svcLayoutSeparate" value="separate" checked>' +
+                '<label class="form-check-label" for="svcLayoutSeparate">' +
+                  '<strong>One folder per service</strong> (independent projects)<br>' +
+                  '<span class="text-muted small">' +
+                    'Each service becomes a self-contained scaffold — its own proto, ' +
+                    'CMakeLists, build script, and Nomad job.  Good for services that ' +
+                    'ship separately or are owned by different teams.' +
+                  '</span>' +
+                '</label>' +
+              '</div>' +
+              '<div class="form-check mt-2">' +
+                '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                  'id="svcLayoutMonorepo" value="monorepo">' +
+                '<label class="form-check-label" for="svcLayoutMonorepo">' +
+                  '<strong>Single project (monorepo)</strong> (<em>C++ only, v1</em>)<br>' +
+                  '<span class="text-muted small">' +
+                    'One folder, one CMakeLists, one build that produces ' +
+                    'N executables sharing the same .proto.  Good for cohesive ' +
+                    'systems of related services.' +
+                  '</span>' +
+                '</label>' +
+              '</div>' +
+            '</div>' +
+            '<div class="modal-footer">' +
+              '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>' +
+              '<button type="button" class="btn btn-primary" id="svcPickerConfirm">' +
+                'Import selected</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    var existing = document.getElementById('svcPickerModal');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    var modalEl = document.getElementById('svcPickerModal');
+    var modal = new bootstrap.Modal(modalEl);
+
+    function _gatherPicked() {
+      return Array.prototype.slice.call(
+        modalEl.querySelectorAll('.svc-pick:checked')
+      ).map(function (cb) { return parseInt(cb.getAttribute('data-idx'), 10); });
+    }
+
+    modalEl.querySelector('#svcPickAll').addEventListener('click', function () {
+      modalEl.querySelectorAll('.svc-pick').forEach(function (cb) { cb.checked = true; });
+    });
+    modalEl.querySelector('#svcPickNone').addEventListener('click', function () {
+      modalEl.querySelectorAll('.svc-pick').forEach(function (cb) { cb.checked = false; });
+    });
+    modalEl.querySelector('#svcPickerConfirm').addEventListener('click', function () {
+      var picked = _gatherPicked();
+      if (picked.length === 0) {
+        MM.showToast('Pick at least one service', '', 'warning');
+        return;
+      }
+      var layoutRadio = modalEl.querySelector('input[name="svcLayout"]:checked');
+      var monorepo = layoutRadio && layoutRadio.value === 'monorepo';
+      modal.hide();
+      onPick({ indices: picked, monorepo: monorepo });
+    });
+    modalEl.addEventListener('hidden.bs.modal', function () { modalEl.remove(); });
+    modal.show();
   }
 
   function _appendMethodCard(container, method) {
@@ -1423,24 +1718,48 @@
     var guiLabels = { none: 'None', html: 'HTML/JS', qml: 'QML', wasm: 'WASM', widget: 'Widget' };
     var guiLabel = guiLabels[d.guiType] || d.guiType;
 
-    // Build methods summary (proto-style, not svc_api_)
-    var methodsHtml = '';
-    if (d.methods.length === 0) {
-      methodsHtml = '<div class="text-muted fst-italic">No methods defined</div>';
-    } else {
-      d.methods.forEach(function (m) {
+    // Is this a multi-service import? Drives title + methods rendering.
+    var isMulti = d.importedServices && d.importedServices.length > 1;
+
+    function _renderMethodList(methods) {
+      if (!methods || methods.length === 0) {
+        return '<div class="text-muted fst-italic">No methods defined</div>';
+      }
+      return methods.map(function (m) {
         var paramStr = (m.params || []).map(function (p) {
           return p.name + ':' + (p.type || 'string');
         }).join(', ');
         var streaming = m.serverStreaming ? ' <span class="badge bg-warning text-dark">stream</span>' : '';
-        methodsHtml +=
-          '<div class="creator-summary-method">' +
+        return '<div class="creator-summary-method">' +
             '<code>rpc ' + _escapeHtml(m.name) + '(' + _escapeHtml(paramStr) + ')</code>' +
             (m.returnType ? ' &rarr; <code>' + _escapeHtml(m.returnType) + '</code>' : '') +
             streaming +
             (m.description ? '<div class="text-muted small">' + _escapeHtml(m.description) + '</div>' : '') +
           '</div>';
-      });
+      }).join('');
+    }
+
+    // Methods summary — per-service blocks in multi-import mode, flat list otherwise.
+    var methodsHtml = '';
+    if (isMulti) {
+      var totalMethods = d.importedServices.reduce(
+        function (n, s) { return n + (s.methods ? s.methods.length : 0); }, 0);
+      methodsHtml =
+        '<div class="text-muted small mb-2">' +
+          totalMethods + ' total across ' + d.importedServices.length + ' services' +
+        '</div>' +
+        d.importedServices.map(function (svc) {
+          return '<div class="mb-3 p-2" style="background:rgba(56,189,248,0.06); border-left:3px solid var(--bs-info,#0dcaf0); border-radius:4px">' +
+            '<div class="fw-semibold mb-1">' +
+              '<i class="bi bi-box me-1"></i>' + _escapeHtml(svc.name) +
+              '<span class="text-muted small ms-2">' +
+                svc.methods.length + ' method(s)</span>' +
+            '</div>' +
+            _renderMethodList(svc.methods) +
+          '</div>';
+        }).join('');
+    } else {
+      methodsHtml = _renderMethodList(d.methods);
     }
 
     // Infra badges
@@ -1463,7 +1782,18 @@
         // Summary card
         '<div class="creator-summary">' +
           '<div class="creator-summary-header">' +
-            '<i class="bi bi-box-seam me-2"></i>' + _escapeHtml(d.serviceName) + ' v' + _escapeHtml(d.version) +
+            (isMulti
+              ? '<i class="bi bi-collection me-2"></i>' +
+                _escapeHtml(d.serviceName) +
+                ' <span class="badge bg-primary ms-2">' +
+                  d.importedServices.length + ' services' +
+                '</span>' +
+                ' <span class="badge ' +
+                  (d.monorepoLayout ? 'bg-info' : 'bg-secondary') + ' ms-1">' +
+                  (d.monorepoLayout ? 'monorepo' : 'separate folders') +
+                '</span>'
+              : '<i class="bi bi-box-seam me-2"></i>' +
+                _escapeHtml(d.serviceName) + ' v' + _escapeHtml(d.version)) +
           '</div>' +
           '<div class="creator-summary-body">' +
             _summaryRow('Language', '<span class="badge bg-primary">' + langLabel + '</span>') +
@@ -1472,8 +1802,14 @@
             _summaryRow('Description', d.description ? _escapeHtml(d.description) : '<em class="text-muted">none</em>') +
             _summaryRow('Group', d.group ? _escapeHtml(d.group) : '<em class="text-muted">none</em>') +
             _summaryRow('Infrastructure', infraHtml || '<em class="text-muted">none</em>') +
+            (isMulti && d.importedProtoFileName
+              ? _summaryRow('Imported proto',
+                  '<code>' + _escapeHtml(d.importedProtoFileName) + '</code>')
+              : '') +
             '<div class="creator-summary-methods">' +
-              '<div class="fw-semibold mb-2" style="font-size:0.85rem">gRPC Methods (' + d.methods.length + ')</div>' +
+              '<div class="fw-semibold mb-2" style="font-size:0.85rem">' +
+                (isMulti ? 'Services &amp; Methods' : 'gRPC Methods (' + d.methods.length + ')') +
+              '</div>' +
               methodsHtml +
             '</div>' +
           '</div>' +
@@ -1760,6 +2096,10 @@
 
     if (n === 2) {
       _collectFormData();
+      // Multi-service import: proto-driven, no in-wizard method editing.
+      if (_formData.importedServices && _formData.importedServices.length > 1) {
+        return true;
+      }
       for (var i = 0; i < _formData.methods.length; i++) {
         var m = _formData.methods[i];
         if (!m.name) {
@@ -2120,51 +2460,96 @@
       return;
     }
 
-    // "Save to Path" mode — calls the v2 scaffold endpoint which supports
-    // Python/C++ with multiple GUI types and infrastructure files.
-    var payload = {
-      service_name: d.serviceName,
-      version: d.version,
-      description: d.description,
-      short_desc: d.shortDescription,
-      group: d.group,
-      tag: d.tag,
-      language: d.language || 'python',
-      gui_type: d.guiType || 'none',
-      gen_nomad: d.genNomad !== false,
-      gen_build_scripts: d.genBuildScripts !== false,
-      gen_readme: d.genReadme !== false,
-      gen_stubs: d.genStubs !== false,
-      vcpkg_root: d.vcpkgRoot || '',
-      protoc_path: d.protocPath || '',
-      grpc_plugin_path: d.grpcPluginPath || '',
-      nomad_dc: d.nomadDc || 'dc1',
-      nomad_driver: d.nomadDriver || 'raw_exec',
-      nomad_command: d.nomadCommand || '',
-      nomad_cpu: d.nomadCpu || 100,
-      nomad_mem: d.nomadMem || 128,
-      nomad_consul_addr: d.nomadConsulAddr || 'http://127.0.0.1:8500',
-      methods: d.methods.map(function (m) {
-        return {
-          name: m.name,
-          params: (m.params || []).map(function (p) {
-            return { name: p.name, type: p.type || 'string',
-                     required: p.required !== false, description: p.description || '' };
-          }),
-          return_type: m.returnType || 'string',
-          description: m.description || '',
-          server_streaming: !!m.serverStreaming
-        };
-      }),
-      output_path: d.outputPath
-    };
-
+    // Resolve bridge URL once.
     var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
     if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
       var settings = MM.getSettings ? MM.getSettings() : {};
       var bridgePort = settings.bridgePort || 1112;
       apiUrl = 'http://localhost:' + bridgePort;
     }
+
+    // ---- Monorepo import: single POST, backend generates one project folder
+    //                       with N executables.
+    if (d.importedServices && d.importedServices.length > 1 && d.monorepoLayout) {
+      var payload = _buildGeneratePayload(d, d.serviceName, d.methods);
+      payload.monorepo = true;
+      payload.services = d.importedServices.map(function (svc) {
+        return {
+          name: svc.name,
+          methods: (svc.methods || []).map(function (m) {
+            return {
+              name: m.name,
+              params: (m.params || []).map(function (p) {
+                return { name: p.name, type: p.type || 'string',
+                         required: p.required !== false, description: p.description || '' };
+              }),
+              return_type: m.returnType || 'string',
+              description: m.description || '',
+              server_streaming: !!m.serverStreaming,
+              input_type: m.inputType || '',
+              output_type: m.outputType || ''
+            };
+          })
+        };
+      });
+      fetch(apiUrl + '/api/scaffold/generate-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status === 'ok') {
+            MM.showToast('Success',
+              'Monorepo with ' + d.importedServices.length + ' services saved to ' + data.path,
+              'success');
+          } else {
+            MM.showToast('Error', data.error || 'Generation failed.', 'danger');
+          }
+        })
+        .catch(function (err) {
+          MM.showToast('Error', 'Failed to save: ' + err.message, 'danger');
+        });
+      return;
+    }
+
+    // ---- Separate-folders multi-service import: loop N POSTs.
+    if (d.importedServices && d.importedServices.length > 1) {
+      var results = { ok: 0, fail: 0, errors: [] };
+      var chain = Promise.resolve();
+      d.importedServices.forEach(function (svc) {
+        chain = chain.then(function () {
+          var p = _buildGeneratePayload(d, svc.name, svc.methods);
+          return fetch(apiUrl + '/api/scaffold/generate-v2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(p)
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.status === 'ok') results.ok++;
+              else { results.fail++; results.errors.push(svc.name + ': ' + (data.error || '')); }
+            })
+            .catch(function (err) {
+              results.fail++;
+              results.errors.push(svc.name + ': ' + err.message);
+            });
+        });
+      });
+      chain.then(function () {
+        if (results.fail === 0) {
+          MM.showToast('Success',
+            results.ok + ' services generated in ' + d.outputPath, 'success');
+        } else {
+          MM.showToast('Partial: ' + results.ok + ' ok / ' + results.fail + ' failed',
+            results.errors.join('; '), 'warning');
+        }
+      });
+      return;
+    }
+
+    // Single-service path (manual wizard or single imported service).
+    var payload = _buildGeneratePayload(d, d.serviceName, d.methods);
 
     fetch(apiUrl + '/api/scaffold/generate-v2', {
       method: 'POST',
@@ -2188,6 +2573,52 @@
       .catch(function (err) {
         MM.showToast('Error', 'Failed to save: ' + err.message, 'danger');
       });
+  }
+
+  // Build a generate-v2 POST payload. Factored out so multi-service
+  // imports can loop and pass a per-service name + methods while reusing
+  // every other wizard field (language, GUI, Nomad, paths, …).
+  function _buildGeneratePayload(d, serviceName, methods) {
+    return {
+      service_name: serviceName,
+      version: d.version,
+      description: d.description,
+      short_desc: d.shortDescription,
+      group: d.group,
+      tag: d.tag,
+      language: d.language || 'python',
+      gui_type: d.guiType || 'none',
+      gen_nomad: d.genNomad !== false,
+      gen_build_scripts: d.genBuildScripts !== false,
+      gen_readme: d.genReadme !== false,
+      gen_stubs: d.genStubs !== false,
+      vcpkg_root: d.vcpkgRoot || '',
+      protoc_path: d.protocPath || '',
+      grpc_plugin_path: d.grpcPluginPath || '',
+      nomad_dc: d.nomadDc || 'dc1',
+      nomad_driver: d.nomadDriver || 'raw_exec',
+      nomad_command: d.nomadCommand || '',
+      nomad_cpu: d.nomadCpu || 100,
+      nomad_mem: d.nomadMem || 128,
+      nomad_consul_addr: d.nomadConsulAddr || 'http://127.0.0.1:8500',
+      methods: (methods || []).map(function (m) {
+        return {
+          name: m.name,
+          params: (m.params || []).map(function (p) {
+            return { name: p.name, type: p.type || 'string',
+                     required: p.required !== false, description: p.description || '' };
+          }),
+          return_type: m.returnType || 'string',
+          description: m.description || '',
+          server_streaming: !!m.serverStreaming,
+          input_type: m.inputType || '',
+          output_type: m.outputType || ''
+        };
+      }),
+      output_path: d.outputPath,
+      proto_content_override: d.importedProtoContent || '',
+      proto_package: d.protoPackage || ''
+    };
   }
 
   // ---- Public API ----
