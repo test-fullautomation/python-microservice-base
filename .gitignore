@@ -15,6 +15,7 @@ MicroserviceBase/MicroserviceManagerGUI/python/hub_processes.json
 MicroserviceBase/MicroserviceManagerGUI/python/services/
 nul
 MicroserviceBase/MicroserviceManagerGUI/node_modules
+MicroserviceBase/MicroserviceManagerGUI/tools/
 MicroserviceBase/MicroserviceManagerGUI/web/services/*
 !MicroserviceBase/MicroserviceManagerGUI/web/services/ServiceAlias*/
 MicroserviceBase/MicroserviceManagerGUI/electron/alias.json

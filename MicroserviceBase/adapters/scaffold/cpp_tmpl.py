@@ -18,12 +18,13 @@ def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
     files: Dict[str, str] = {}
 
     # ---- Service project ----
+    grpc_name = _grpc_svc_name(spec)  # e.g. "HelloService" or "AnalogInputService"
     files["CMakeLists.txt"] = _cmake(spec)
     files["src/main.cpp"] = _main_cpp(spec)
     files["src/Settings.h"] = _settings_h(spec)
-    files[f"src/domain/{spec.service_name}Service.h"] = _domain_h(spec)
-    files[f"src/domain/{spec.service_name}Service.cpp"] = _domain_cpp(spec)
-    files[f"src/adapters/api/{spec.service_name}GrpcAdapter.h"] = _adapter_h(spec)
+    files[f"src/domain/{grpc_name}.h"]   = _domain_h(spec)
+    files[f"src/domain/{grpc_name}.cpp"] = _domain_cpp(spec)
+    files[f"src/adapters/api/{spec.service_name}GrpcAdapter.h"]   = _adapter_h(spec)
     files[f"src/adapters/api/{spec.service_name}GrpcAdapter.cpp"] = _adapter_cpp(spec)
 
     # Central env var file — all build scripts source this so the user
@@ -81,6 +82,21 @@ def _snake(name: str) -> str:
 
 def _upper(name: str) -> str:
     return _snake(name).upper()
+
+
+def _grpc_svc_name(spec: "ScaffoldSpec") -> str:
+    """Canonical gRPC service class + domain class name for the single-service
+    scaffold.  This is also used as the stem for the domain .h/.cpp files.
+
+    - **Imported .proto** (``spec.proto_content_override`` is set): the user's
+      proto already declares ``service <name> { ... }`` — use ``service_name``
+      verbatim so we don't produce ``<name>Service`` which wouldn't exist.
+    - **Wizard-generated proto**: :func:`shared.gen_proto` emits
+      ``service <name>Service {{ ... }}``; append ``Service`` to match.
+    """
+    if spec.proto_content_override:
+        return spec.service_name
+    return f"{spec.service_name}Service"
 
 
 # -----------------------------------------------------------------------
@@ -145,12 +161,13 @@ else()
 endif()'''
 
     # Service executable
+    grpc_name = _grpc_svc_name(spec)
     exe_block = f'''
 add_executable({sn}
     src/main.cpp
     src/Settings.h
-    src/domain/{svc}Service.h
-    src/domain/{svc}Service.cpp
+    src/domain/{grpc_name}.h
+    src/domain/{grpc_name}.cpp
     src/adapters/api/{svc}GrpcAdapter.h
     src/adapters/api/{svc}GrpcAdapter.cpp
     ${{{_upper(svc)}_SRCS}}
@@ -232,21 +249,22 @@ def _main_cpp(spec: "ScaffoldSpec") -> str:
     ns = spec.proto_namespace
     pkg = spec.proto_package
     svc = spec.service_name
+    grpc_name = _grpc_svc_name(spec)  # matches proto's `service X { ... }`
     return f'''#include <iostream>
 #include "MicroserviceBase/ServiceRunner.h"
 
 #include "Settings.h"
-#include "domain/{svc}Service.h"
+#include "domain/{grpc_name}.h"
 #include "adapters/api/{svc}GrpcAdapter.h"
 
 int main() {{
     try {{
         {sn}::Settings settings;
-        {sn}::{svc}Service domain;
+        {sn}::{grpc_name} domain;
         {sn}::{svc}GrpcAdapter adapter(domain);
 
         microservice_base::ServiceRunner runner(settings, {{"v1"}});
-        runner.addService(&adapter, "{spec.proto_package}.{svc}Service");
+        runner.addService(&adapter, "{pkg}.{grpc_name}");
         runner.serveForever();
     }} catch (const std::exception& e) {{
         std::cerr << "FATAL: " << e.what() << std::endl;
@@ -289,9 +307,7 @@ struct Settings : public microservice_base::BaseServiceSettings {{
 
 def _domain_h(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
-    ns = spec.proto_namespace
-    pkg = spec.proto_package
-    svc = spec.service_name
+    grpc_name = _grpc_svc_name(spec)
 
     imported = any(m.input_type or m.output_type for m in spec.methods)
 
@@ -304,7 +320,7 @@ def _domain_h(spec: "ScaffoldSpec") -> str:
 
 namespace {sn} {{
 
-class {svc}Service {{
+class {grpc_name} {{
 public:
     // TODO: add domain methods for your imported proto here.
 }};
@@ -323,7 +339,7 @@ public:
 
 namespace {sn} {{
 
-class {svc}Service {{
+class {grpc_name} {{
 public:
 {methods if methods else "    // Add methods here."}
 }};
@@ -334,14 +350,12 @@ public:
 
 def _domain_cpp(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
-    ns = spec.proto_namespace
-    pkg = spec.proto_package
-    svc = spec.service_name
+    grpc_name = _grpc_svc_name(spec)
 
     imported = any(m.input_type or m.output_type for m in spec.methods)
 
     if imported:
-        return f'''#include "{svc}Service.h"
+        return f'''#include "{grpc_name}.h"
 
 namespace {sn} {{
 
@@ -354,13 +368,13 @@ namespace {sn} {{
     for m in spec.methods:
         params = ", ".join(f"const std::string& {p.name}" for p in m.params)
         methods += f'''
-std::string {svc}Service::{_snake(m.name)}({params}) const {{
+std::string {grpc_name}::{_snake(m.name)}({params}) const {{
     // TODO: implement
     return "not implemented";
 }}
 '''
 
-    return f'''#include "{svc}Service.h"
+    return f'''#include "{grpc_name}.h"
 
 namespace {sn} {{
 {methods if methods else "// Add implementations here."}
@@ -395,21 +409,22 @@ def _adapter_h(spec: "ScaffoldSpec") -> str:
                 f"        {outT}*) override;\n\n"
             )
 
+    grpc_name = _grpc_svc_name(spec)
     return f'''#pragma once
 
 #include <grpcpp/grpcpp.h>
 #include "{sn}.grpc.pb.h"
-#include "domain/{svc}Service.h"
+#include "domain/{grpc_name}.h"
 
 namespace {sn} {{
 
-class {svc}GrpcAdapter final : public {ns}::{svc}Service::Service {{
+class {svc}GrpcAdapter final : public {ns}::{grpc_name}::Service {{
 public:
-    explicit {svc}GrpcAdapter({svc}Service& domain) : m_domain(domain) {{}}
+    explicit {svc}GrpcAdapter({grpc_name}& domain) : m_domain(domain) {{}}
 
 {methods}
 private:
-    {svc}Service& m_domain;
+    {grpc_name}& m_domain;
 }};
 
 }}  // namespace {sn}
@@ -421,6 +436,7 @@ def _adapter_cpp(spec: "ScaffoldSpec") -> str:
     ns = spec.proto_namespace
     pkg = spec.proto_package
     svc = spec.service_name
+    grpc_name = _grpc_svc_name(spec)
 
     methods = ""
     for m in spec.methods:
@@ -1447,19 +1463,62 @@ MainWidget::MainWidget(QWidget *parent) : QWidget(parent) {{
 # Widget GUI files
 # -----------------------------------------------------------------------
 
-def _widget_method_binding(m: "MethodSpec", sn: str) -> str:
+def _widget_method_binding(m: "MethodSpec", sn: str, ns: str) -> str:
     """Emit one `MethodBinding` initializer block for `buildMethodBindings()`.
 
     Picks the right widget cast + req setter per proto type, and the right
     display expression for the response's `result` field.  Supports unary
-    and server-streaming RPCs.
+    and server-streaming RPCs.  For imported protos (``m.input_type``/
+    ``m.output_type`` set) we can't infer field names so we emit a
+    compile-only skeleton: default request, status-only response.
     """
-    # Params vector initialiser
+    imported = bool(m.input_type or m.output_type)
+    inT  = ("::" + m.input_type.replace(".", "::"))  if m.input_type  else f"{ns}::{m.name}Request"
+    outT = ("::" + m.output_type.replace(".", "::")) if m.output_type else f"{ns}::{m.name}Response"
+
+    if imported:
+        # No params list — imported protos don't have the flat param shape;
+        # user fills in req fields + result printing by hand.
+        if m.server_streaming:
+            return f'''    // --- {m.name} (imported proto, server streaming) ---
+    {{
+        MethodBinding b;
+        b.name = "{m.name}";
+        b.params = {{}};
+        b.invoke = [this](const std::vector<QWidget*>& /*ws*/) -> QString {{
+            grpc::ClientContext ctx;
+            {inT} req;   // TODO: fill request fields
+            auto reader = m_client->stub().{m.name}(&ctx, req);
+            {outT} resp;
+            int count = 0;
+            while (reader->Read(&resp)) ++count;
+            auto st = reader->Finish();
+            if (!st.ok()) return QString("[error] ") + QString::fromStdString(st.error_message());
+            return QString("({m.name}: %1 messages — fill in response formatting)").arg(count);
+        }};
+        m_methods.push_back(std::move(b));
+    }}'''
+        return f'''    // --- {m.name} (imported proto) ---
+    {{
+        MethodBinding b;
+        b.name = "{m.name}";
+        b.params = {{}};
+        b.invoke = [this](const std::vector<QWidget*>& /*ws*/) -> QString {{
+            grpc::ClientContext ctx;
+            {inT} req;    // TODO: fill request fields
+            {outT} resp;
+            auto st = m_client->stub().{m.name}(&ctx, req, &resp);
+            if (!st.ok()) return QString("[error] ") + QString::fromStdString(st.error_message());
+            return "{m.name}: OK (fill in response formatting)";
+        }};
+        m_methods.push_back(std::move(b));
+    }}'''
+
+    # ---- Wizard-generated proto (flat params, `result` field) ----
     params_init = ", ".join(
         f'{{"{p.name}", "{p.type}"}}' for p in m.params
     )
 
-    # Setter lines (one per param)
     setters = []
     for i, p in enumerate(m.params):
         t = (p.type or "string").lower()
@@ -1490,7 +1549,6 @@ def _widget_method_binding(m: "MethodSpec", sn: str) -> str:
             )
     setters_str = "\n".join(setters) if setters else "            (void)ws;"
 
-    # Return-value display expression (response always has `result` field)
     rt = (m.return_type or "string").lower()
     if rt in ("string", "bytes", "str"):
         ret_expr = "QString::fromStdString(resp.result())"
@@ -1507,10 +1565,10 @@ def _widget_method_binding(m: "MethodSpec", sn: str) -> str:
         b.params = {{ {params_init} }};
         b.invoke = [this](const std::vector<QWidget*>& ws) -> QString {{
             grpc::ClientContext ctx;
-            {ns}::{m.name}Request req;
+            {inT} req;
 {setters_str}
             auto reader = m_client->stub().{m.name}(&ctx, req);
-            {ns}::{m.name}Response resp;
+            {outT} resp;
             QString acc;
             int count = 0;
             while (reader->Read(&resp)) {{
@@ -1534,9 +1592,9 @@ def _widget_method_binding(m: "MethodSpec", sn: str) -> str:
         b.params = {{ {params_init} }};
         b.invoke = [this](const std::vector<QWidget*>& ws) -> QString {{
             grpc::ClientContext ctx;
-            {ns}::{m.name}Request req;
+            {inT} req;
 {setters_str}
-            {ns}::{m.name}Response resp;
+            {outT} resp;
             auto st = m_client->stub().{m.name}(&ctx, req, &resp);
             if (!st.ok()) {{
                 return QString("[error] ") + QString::fromStdString(st.error_message());
@@ -1561,9 +1619,10 @@ def _widget_files(spec: "ScaffoldSpec") -> Dict[str, str]:
     sn = spec.snake_name
     ns = spec.proto_namespace
     pkg = spec.proto_package
+    grpc_name = _grpc_svc_name(spec)
 
     method_blocks = "\n\n".join(
-        _widget_method_binding(m, sn) for m in spec.methods
+        _widget_method_binding(m, sn, ns) for m in spec.methods
     )
 
     ui_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -1672,7 +1731,7 @@ private:
     std::vector<MethodBinding>  m_methods;
     std::vector<QWidget*>       m_currentWidgets;
     std::unique_ptr<
-        microservice_base::ServiceClient<{ns}::{svc}Service>> m_client;
+        microservice_base::ServiceClient<{ns}::{grpc_name}>> m_client;
 }};
 '''
 
@@ -1748,7 +1807,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->outputTextEdit->append("Resolving {sn} via Consul...");
         try {{
             m_client = std::make_unique<
-                microservice_base::ServiceClient<{ns}::{svc}Service>>("{sn}");
+                microservice_base::ServiceClient<{ns}::{grpc_name}>>("{sn}");
             const QString tgt = QString::fromStdString(m_client->target());
             ui->outputTextEdit->append(tgt.isEmpty()
                 ? QString("[warn] Consul returned no healthy instance.")
@@ -1822,6 +1881,7 @@ def _client_files(spec: "ScaffoldSpec") -> Dict[str, str]:
     pkg = spec.proto_package
     svc = spec.service_name
     prefix = spec.env_prefix
+    grpc_name = _grpc_svc_name(spec)
 
     gui_block = ""
     if spec.gui_type == "widget":
@@ -1948,7 +2008,7 @@ target_link_libraries({sn}_client PRIVATE
 #include "{sn}.grpc.pb.h"
 #include "MicroserviceBase/ServiceClient.h"
 
-using {ns}::{svc}Service;
+using {ns}::{grpc_name};
 
 int main(int argc, char* argv[]) {{
     if (argc < 2) {{
@@ -1957,16 +2017,16 @@ int main(int argc, char* argv[]) {{
     }}
 
     std::string arg1 = argv[1];
-    std::unique_ptr<microservice_base::ServiceClient<{svc}Service>> client;
+    std::unique_ptr<microservice_base::ServiceClient<{grpc_name}>> client;
 
     try {{
         if (arg1 == "--direct") {{
             if (argc < 3) {{ std::cerr << "Missing host:port" << std::endl; return 1; }}
-            client = std::make_unique<microservice_base::ServiceClient<{svc}Service>>(
+            client = std::make_unique<microservice_base::ServiceClient<{grpc_name}>>(
                 "{sn}", argv[2], true);
             std::cout << "Connected directly to " << client->target() << std::endl;
         }} else {{
-            client = std::make_unique<microservice_base::ServiceClient<{svc}Service>>(arg1);
+            client = std::make_unique<microservice_base::ServiceClient<{grpc_name}>>(arg1);
             std::cout << "Resolved " << arg1 << " via Consul -> "
                       << client->target() << std::endl;
         }}
@@ -2014,7 +2074,7 @@ cmake --build . --config Release
 ```
 
 Proto stubs are shared with the service from `../proto/`.
-Uses `ServiceClient<{svc}Service>` from MicroserviceBase runtime for
+Uses `ServiceClient<{grpc_name}>` from MicroserviceBase runtime for
 automatic Consul discovery and channel management.
 ''',
     }
