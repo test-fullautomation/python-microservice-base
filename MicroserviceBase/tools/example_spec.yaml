@@ -1,0 +1,57 @@
+# Example scaffold spec.  Every field is optional except service_name +
+# output_path (which can also come from the --name and --output CLI flags).
+#
+#   python -m MicroserviceBase.tools.scaffold_cli --config example_spec.yaml
+
+service_name: Hello
+version: 1.0.0
+description: Greets the world.
+short_desc: Greeter
+group: Samples
+tag: demo
+
+language: python            # python | cpp
+gui_type: none              # none | html | qml | wasm | widget
+
+gen_nomad: true
+gen_build_scripts: true
+gen_readme: true
+gen_stubs: true
+
+# Where the scaffold is written; a folder named <service_name> is created inside.
+output_path: ./generated
+
+# Method list.  For an imported .proto use --proto on the CLI and this
+# section is auto-populated.
+methods:
+  - name: Greet
+    params:
+      - { name: name, type: string, required: true, description: "Person to greet" }
+    return_type: string
+    description: "Return a greeting."
+    server_streaming: false
+
+# Nomad deployment knobs (only used when gen_nomad: true)
+nomad_dc: dc1
+nomad_driver: raw_exec
+nomad_cpu: 100
+nomad_mem: 128
+nomad_consul_addr: http://127.0.0.1:8500
+
+# --- Monorepo example (C++ only) ---------------------------------------
+# Uncomment to emit one project folder with two services.  Leave `services`
+# empty when generating a single-service scaffold.
+#
+# language: cpp
+# monorepo: true
+# services:
+#   - name: ChannelService
+#     methods:
+#       - name: GetChannelCount
+#         params: []
+#         return_type: int32
+#   - name: PPSService
+#     methods:
+#       - name: Sync
+#         params: []
+#         return_type: bool

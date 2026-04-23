@@ -2514,11 +2514,19 @@ def _mono_nomad(spec, svc) -> str:
     cpu = getattr(spec, 'nomad_cpu', 100) or 100
     mem = getattr(spec, 'nomad_mem', 128) or 128
     consul_addr = getattr(spec, 'nomad_consul_addr', '') or 'http://127.0.0.1:8500'
-    # On Windows + raw_exec, the task inherits a minimal env — it will NOT
-    # have MSYS2's mingw64/bin on PATH, so the exe silently dies on missing
-    # DLLs.  Thread it through as a task env var.  Nomad on Linux just
-    # ignores Windows paths, so this is a no-op there.
-    path_entry = 'PATH           = "C:\\\\msys64\\\\mingw64\\\\bin;${PATH}"\n        '
+    # On Windows + raw_exec, launching the .exe directly tends to die with
+    # STATUS_DLL_NOT_FOUND (0xC0000135) — Nomad's `env` block doesn't actually
+    # propagate PATH to the Windows DLL loader, and ${{PATH}} in that block
+    # doesn't expand to the agent's OS PATH.
+    #
+    # Fix: invoke the `run_<svc>.bat` launcher that build_deploy_msys2.bat
+    # writes into dist-msys2/.  The .bat prepends MSYS2's bin to the PATH
+    # inherited from cmd.exe (which inherits the agent's full PATH,
+    # including C:\Windows\system32), so DLL resolution Just Works.
+    #
+    # **Edit the absolute path below to match where you deployed the build.**
+    # On Linux / macOS, replace the config block with a direct command to
+    # the ELF binary — raw_exec on POSIX inherits PATH normally.
     return f'''# Nomad job for {svc.name} (part of {spec.service_name} monorepo).
 job "{svc_snake}" {{
   datacenters = ["{dc}"]
@@ -2526,17 +2534,35 @@ job "{svc_snake}" {{
 
   group "{svc_snake}" {{
     count = 1
-    network {{ port "grpc" {{}} }}
+
+    network {{
+      port "grpc" {{}}   # dynamic port — Nomad picks a free one
+    }}
 
     task "server" {{
       driver = "{driver}"
-      config {{ command = "/path/to/{svc_snake}" }}
+
+      # Windows: launch via the run_<svc>.bat that build_deploy_msys2.bat
+      # emits into dist-msys2/.  Avoids 0xC0000135 DLL-load failures by
+      # layering MSYS2's bin on top of the agent-inherited PATH.
+      # Edit the absolute path to match where you deployed the project.
+      config {{
+        command = "cmd.exe"
+        args    = ["/c", "C:/path/to/{spec.service_name}/dist-msys2/run_{svc_snake}.bat"]
+      }}
+
+      # On Linux use this instead (no PATH gymnastics needed):
+      # config {{
+      #   command = "/path/to/{svc_snake}"
+      # }}
+
       env {{
-        {path_entry}{prefix}GRPC_PORT      = "${{NOMAD_PORT_grpc}}"
+        {prefix}GRPC_PORT      = "${{NOMAD_PORT_grpc}}"
         {prefix}ADVERTISE_ADDR = "127.0.0.1"
         {prefix}CONSUL_ADDR    = "{consul_addr}"
         {prefix}LOG_LEVEL      = "INFO"
       }}
+
       resources {{
         cpu    = {cpu}
         memory = {mem}
@@ -2826,11 +2852,56 @@ def _mono_build_msys2_bat(spec, services) -> str:
     if spec.gui_type in ("widget", "wasm", "qml"):
         launcher_names.append(f"{project_snake}_gui")
 
+    # GUI launcher also sets QT_PLUGIN_PATH — without the Qt platform plugin
+    # (qwindows.dll under `platforms/`) the GUI exits silently before `main`.
+    gui_launcher_name = f"{project_snake}_gui" if spec.gui_type in ("widget", "wasm", "qml") else None
+
     launcher_lines = []
     for n in launcher_names:
-        launcher_lines.append(
-            f'call :emit_launcher "%DIST%\\run_{n}.bat" "{n}.exe"')
+        if n == gui_launcher_name:
+            launcher_lines.append(
+                f'call :emit_gui_launcher "%DIST%\\run_{n}.bat" "{n}.exe"')
+        else:
+            launcher_lines.append(
+                f'call :emit_launcher "%DIST%\\run_{n}.bat" "{n}.exe"')
     launcher_block = "\n".join(launcher_lines)
+
+    # Run windeployqt on the GUI exe so `dist-msys2/` is self-contained
+    # (copies Qt DLLs + the platforms/qml/styles plugin dirs next to the exe).
+    # Requires mingw-w64-x86_64-qt6-tools from pacman.
+    windeployqt_block = ""
+    if spec.gui_type in ("widget", "wasm"):
+        windeployqt_block = f'''
+:: ----- Deploy Qt runtime for the GUI client -----
+if exist "%DIST%\\{project_snake}_gui.exe" (
+    if exist "%MSYS2_ROOT%\\bin\\windeployqt-qt6.exe" (
+        echo Running windeployqt-qt6 for {project_snake}_gui.exe ...
+        "%MSYS2_ROOT%\\bin\\windeployqt-qt6.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime "%DIST%\\{project_snake}_gui.exe" >nul
+    ) else if exist "%MSYS2_ROOT%\\bin\\windeployqt.exe" (
+        echo Running windeployqt for {project_snake}_gui.exe ...
+        "%MSYS2_ROOT%\\bin\\windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime "%DIST%\\{project_snake}_gui.exe" >nul
+    ) else (
+        echo WARNING: windeployqt not found in %MSYS2_ROOT%\\bin
+        echo          Install with:  pacman -S mingw-w64-x86_64-qt6-tools
+        echo          GUI exe will rely on QT_PLUGIN_PATH from run_{project_snake}_gui.bat
+    )
+)
+'''
+    elif spec.gui_type == "qml":
+        windeployqt_block = f'''
+:: ----- Deploy Qt runtime + QML imports for the GUI client -----
+if exist "%DIST%\\{project_snake}_gui.exe" (
+    if exist "%MSYS2_ROOT%\\bin\\windeployqt-qt6.exe" (
+        echo Running windeployqt-qt6 for {project_snake}_gui.exe ^(QML^)...
+        "%MSYS2_ROOT%\\bin\\windeployqt-qt6.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime --qmldir "%SCRIPT_DIR%client\\gui" "%DIST%\\{project_snake}_gui.exe" >nul
+    ) else if exist "%MSYS2_ROOT%\\bin\\windeployqt.exe" (
+        "%MSYS2_ROOT%\\bin\\windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime --qmldir "%SCRIPT_DIR%client\\gui" "%DIST%\\{project_snake}_gui.exe" >nul
+    ) else (
+        echo WARNING: windeployqt not found in %MSYS2_ROOT%\\bin
+        echo          Install with:  pacman -S mingw-w64-x86_64-qt6-tools
+    )
+)
+'''
     return f'''@echo off
 :: MSYS2 variant (native MinGW from pacman).
 setlocal
@@ -2893,8 +2964,8 @@ if exist "%MSYS2_ROOT%\\bin" (
         xcopy /Y /Q "%MSYS2_ROOT%\\bin\\%%G*.dll" "%DIST%\\" >nul 2>&1
     )
 )
-
-:: ----- Emit run_*.bat launchers that ensure MSYS2 bin is on PATH -----
+{windeployqt_block}
+:: ----- Emit run_*.bat launchers that ensure MSYS2 bin + Qt plugins are reachable -----
 {launcher_block}
 
 echo.
@@ -2903,7 +2974,7 @@ echo.
 echo To run a service, use the generated launcher (prepends MSYS2 bin to PATH):
 echo    %DIST%\\run_^<service^>.bat
 echo Launching the .exe directly will silently die if any transitive MSYS2
-echo DLL isn't already reachable via PATH.
+echo DLL — or a Qt platform plugin — isn't reachable.
 endlocal
 exit /b 0
 
@@ -2912,6 +2983,20 @@ exit /b 0
 > "%~1" echo @echo off
 >> "%~1" echo if not defined MSYS2_ROOT set "MSYS2_ROOT=C:\\msys64\\mingw64"
 >> "%~1" echo set "PATH=%%MSYS2_ROOT%%\\bin;%%PATH%%"
+>> "%~1" echo "%%~dp0%~2" %%*
+exit /b 0
+
+:emit_gui_launcher
+:: Same as :emit_launcher but also exposes Qt plugins.  windeployqt drops
+:: `platforms/`, `qml/`, `styles/`, ... next to the exe, so Qt's automatic
+:: lookup finds them.  QT_PLUGIN_PATH is a belt-and-braces fallback for
+:: when windeployqt wasn't available at build time.
+:: %~1 = launcher path, %~2 = target exe name
+> "%~1" echo @echo off
+>> "%~1" echo if not defined MSYS2_ROOT set "MSYS2_ROOT=C:\\msys64\\mingw64"
+>> "%~1" echo set "PATH=%%MSYS2_ROOT%%\\bin;%%PATH%%"
+>> "%~1" echo if not defined QT_PLUGIN_PATH set "QT_PLUGIN_PATH=%%MSYS2_ROOT%%\\share\\qt6\\plugins"
+>> "%~1" echo if not defined QML2_IMPORT_PATH set "QML2_IMPORT_PATH=%%MSYS2_ROOT%%\\share\\qt6\\qml"
 >> "%~1" echo "%%~dp0%~2" %%*
 exit /b 0
 '''
