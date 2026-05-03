@@ -2192,7 +2192,10 @@
       '  </div>' +
       '  <p class="text-muted small mb-3">' +
       '    <i class="bi bi-diagram-3 me-1"></i>' +
-      '    Methods are discovered via gRPC server reflection.' +
+      '    Methods are discovered via gRPC server reflection ' +
+      '    (or, if the server doesn&rsquo;t ship reflection, by compiling ' +
+      '    local <code>.proto</code> files &mdash; set ' +
+      '    <code>MB_PROTO_SEARCH_PATH</code>).' +
       '  </p>' +
       '  <div id="grpcMethodList">' +
       '    <div class="text-muted small">' +
@@ -2202,7 +2205,13 @@
       '  </div>' +
       '</div>';
 
-    MM.grpcClient.getServiceMethods(svc.name, svc.consulUrl)
+    // Per-service proto path (typed by the user when reflection +
+    // MB_PROTO_SEARCH_PATH both fail).  Persisted in sessionStorage so
+    // it survives sidebar navigation but not a full reload.
+    var protoPath = _getStoredProtoPath(svc.name);
+    svc.protoPath = protoPath;
+
+    MM.grpcClient.getServiceMethods(svc.name, svc.consulUrl, protoPath)
       .then(function (data) {
         _renderGrpcMethods(svc, data);
       })
@@ -2213,9 +2222,119 @@
             '<div class="alert alert-danger">' +
             '  <strong>Failed to load methods:</strong> ' +
             _escapeHtml(err.message || err) +
-            '</div>';
+            '</div>' +
+            _renderProtoPathForm(svc);
+          _wireProtoPathForm(svc);
         }
       });
+  }
+
+  // ---- Proto-path override (for servers without gRPC reflection) -----
+
+  function _protoPathStorageKey(consulName) {
+    return 'mm_proto_path_' + consulName;
+  }
+  function _getStoredProtoPath(consulName) {
+    try { return sessionStorage.getItem(_protoPathStorageKey(consulName)) || ''; }
+    catch (e) { return ''; }
+  }
+  function _setStoredProtoPath(consulName, value) {
+    try {
+      if (value) sessionStorage.setItem(_protoPathStorageKey(consulName), value);
+      else       sessionStorage.removeItem(_protoPathStorageKey(consulName));
+    } catch (e) { /* private mode etc. */ }
+  }
+
+  /**
+   * Render an inline form letting the user supply a folder containing
+   * the service's .proto file, used as an extra search path for the
+   * bridge's LocalProtoClient fallback when reflection + the env var
+   * search paths both came up empty.
+   *
+   * Returned as an HTML fragment; caller is responsible for injecting
+   * it into the DOM and then calling _wireProtoPathForm(svc).
+   */
+  function _renderProtoPathForm(svc) {
+    var current = _getStoredProtoPath(svc.name);
+    return '' +
+      '<div class="card mt-3 mb-2">' +
+      '  <div class="card-body py-3">' +
+      '    <div class="mb-2">' +
+      '      <i class="bi bi-folder2-open me-1"></i>' +
+      '      <strong>Provide a <code>.proto</code> folder</strong>' +
+      '    </div>' +
+      '    <p class="small text-muted mb-2">' +
+      '      The bridge will compile every <code>*.proto</code> under this folder ' +
+      '      (recursively) and use the result to discover + invoke methods on ' +
+      '      this service.  Persisted for the rest of this browser session.' +
+      '    </p>' +
+      '    <div class="input-group input-group-sm">' +
+      '      <span class="input-group-text"><i class="bi bi-folder me-1"></i>Folder path</span>' +
+      '      <input type="text" class="form-control" id="grpcProtoPathInput"' +
+      '             value="' + _escapeHtml(current) + '"' +
+      '             placeholder="e.g. D:\\Project\\.\\examples\\PowerDeviceService\\proto"' +
+      '             spellcheck="false">' +
+      '      <button class="btn btn-primary" id="grpcProtoPathApply" type="button">' +
+      '        <i class="bi bi-arrow-repeat me-1"></i>Use this path' +
+      '      </button>' +
+      '      <button class="btn btn-outline-secondary" id="grpcProtoPathClear" type="button"' +
+      (current ? '' : ' disabled') + '>' +
+      '        Clear' +
+      '      </button>' +
+      '    </div>' +
+      '    <p class="small text-muted mt-2 mb-0">' +
+      '      Tip: a permanent fix is either rebuilding the server with ' +
+      '      <code>grpc++_reflection</code> linked, or setting ' +
+      '      <code>MB_PROTO_SEARCH_PATH</code> in the bridge environment.' +
+      '    </p>' +
+      '  </div>' +
+      '</div>';
+  }
+
+  function _wireProtoPathForm(svc) {
+    var input = document.getElementById('grpcProtoPathInput');
+    var apply = document.getElementById('grpcProtoPathApply');
+    var clear = document.getElementById('grpcProtoPathClear');
+    if (!input || !apply) return;
+
+    function submit(value) {
+      _setStoredProtoPath(svc.name, value);
+      svc.protoPath = value;
+      // Re-render with a spinner, then re-fetch.
+      var target = document.getElementById('grpcMethodList');
+      if (target) {
+        target.innerHTML =
+          '<div class="text-muted small">' +
+          '  <span class="spinner-border spinner-border-sm me-2"></span>' +
+          '  Re-discovering methods using ' + _escapeHtml(value || '(default search paths)') + '...' +
+          '</div>';
+      }
+      MM.grpcClient.getServiceMethods(svc.name, svc.consulUrl, value)
+        .then(function (data) { _renderGrpcMethods(svc, data); })
+        .catch(function (err) {
+          var t = document.getElementById('grpcMethodList');
+          if (t) {
+            t.innerHTML =
+              '<div class="alert alert-danger">' +
+              '  <strong>Still failed:</strong> ' +
+              _escapeHtml(err.message || err) +
+              '</div>' +
+              _renderProtoPathForm(svc);
+            _wireProtoPathForm(svc);
+          }
+        });
+    }
+
+    apply.addEventListener('click', function () { submit(input.value.trim()); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); submit(input.value.trim()); }
+    });
+    if (clear) {
+      clear.addEventListener('click', function () {
+        input.value = '';
+        submit('');
+      });
+    }
   }
 
   function _renderGrpcMethods(svc, data) {
@@ -2223,8 +2342,15 @@
     if (!target) return;
 
     if (data && data.error) {
+      // Reflection failed AND the bridge's local-proto fallback found
+      // nothing.  Render the proto-path input so the user can point us
+      // at the right folder without restarting the bridge.
+      var needsProtoPath = /Reflection unavailable|no \.proto files matched/i
+                              .test(data.error);
       target.innerHTML =
-        '<div class="alert alert-danger">' + _escapeHtml(data.error) + '</div>';
+        '<div class="alert alert-danger">' + _escapeHtml(data.error) + '</div>' +
+        (needsProtoPath ? _renderProtoPathForm(svc) : '');
+      if (needsProtoPath) _wireProtoPathForm(svc);
       return;
     }
 
@@ -2237,6 +2363,27 @@
     }
 
     var html = '';
+    // Banner when the bridge fell back to compiling local .proto files
+    // because the server didn't ship gRPC reflection (e.g. vcpkg's grpc
+    // port without the reflection feature).  Calls still work — the
+    // bridge built the descriptor pool from disk.
+    var src = data && data.discovery_source;
+    if (src && src.indexOf('local_proto:') === 0) {
+      var paths = src.substring('local_proto:'.length);
+      html += '<div class="alert alert-info py-2 small mb-3">' +
+              '  <i class="bi bi-info-circle me-1"></i>' +
+              '  <strong>Reflection unavailable on the server.</strong>' +
+              '  Methods discovered by compiling <code>.proto</code> files from ' +
+              '  <code>' + _escapeHtml(paths) + '</code>.' +
+              '  To enable server-side reflection, rebuild with ' +
+              '  <code>grpc++_reflection</code> linked into the runtime.' +
+              '  <span class="ms-2">' +
+              '    <a href="#" id="grpcShowProtoForm">Override proto path</a>' +
+              '  </span>' +
+              '</div>' +
+              '<div id="grpcProtoFormSlot"></div>';
+    }
+
     services.forEach(function (s, si) {
       if (s.error) {
         html += '<div class="alert alert-warning">' +
@@ -2331,6 +2478,21 @@
 
     target.innerHTML = html;
 
+    // "Override proto path" link in the local-proto fallback banner —
+    // reveals the same form that appears on hard failures.
+    var showLink = document.getElementById('grpcShowProtoForm');
+    var slot     = document.getElementById('grpcProtoFormSlot');
+    if (showLink && slot) {
+      showLink.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (!slot.innerHTML) {
+          slot.innerHTML = _renderProtoPathForm(svc);
+          _wireProtoPathForm(svc);
+          showLink.style.display = 'none';
+        }
+      });
+    }
+
     // Wire all Call buttons.
     target.querySelectorAll('.grpc-call-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -2355,7 +2517,10 @@
           consulUrl:  consulUrl,
           grpcService: grpcSvc,
           method: method,
-          argsJson: argsJson
+          argsJson: argsJson,
+          // svc.protoPath is set by _showGrpcServicePanel from
+          // sessionStorage; falsy when reflection works server-side.
+          protoPath: svc && svc.protoPath ? svc.protoPath : ''
         }).then(function (data) {
           if (!resultEl) return;
           if (data.ok) {

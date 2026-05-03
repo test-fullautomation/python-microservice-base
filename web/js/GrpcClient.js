@@ -39,8 +39,16 @@
     });
   }
 
-  function _consulQ(consulUrl) {
-    return consulUrl ? ('?consul=' + encodeURIComponent(consulUrl)) : '';
+  function _buildQuery(params) {
+    // {k: v} -> "?k=v&k2=v2" with proper URL-encoding; skips empty values.
+    var parts = [];
+    Object.keys(params).forEach(function (k) {
+      var v = params[k];
+      if (v !== undefined && v !== null && v !== '') {
+        parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+      }
+    });
+    return parts.length ? ('?' + parts.join('&')) : '';
   }
 
   MM.grpcClient = {
@@ -50,12 +58,19 @@
      *
      * @param {string} consulName The Consul service name.
      * @param {string} [consulUrl] Optional Consul cluster URL (for multi-Consul).
+     * @param {string} [protoPath] Optional .proto search dir for the
+     *     LocalProtoClient fallback (used when the server doesn't ship
+     *     gRPC reflection).  Joined with MB_PROTO_SEARCH_PATH on the bridge.
      * @returns {Promise<object>}
      */
-    getServiceMethods: function (consulName, consulUrl) {
+    getServiceMethods: function (consulName, consulUrl, protoPath) {
+      var query = _buildQuery({
+        consul:     consulUrl  || '',
+        proto_path: protoPath  || ''
+      });
       return _fetchJson(
         'GET',
-        '/api/grpc/services/' + encodeURIComponent(consulName) + _consulQ(consulUrl)
+        '/api/grpc/services/' + encodeURIComponent(consulName) + query
       );
     },
 
@@ -68,6 +83,8 @@
      * @param {string} opts.method       Method name.
      * @param {string} opts.argsJson     JSON payload for the request message.
      * @param {string} [opts.consulUrl]  Consul cluster URL (for multi-Consul).
+     * @param {string} [opts.protoPath]  .proto search dir for the
+     *     LocalProtoClient fallback (see getServiceMethods).
      * @returns {Promise<object>}
      */
     callMethod: function (opts) {
@@ -76,7 +93,8 @@
         grpc_service: opts.grpcService,
         method:       opts.method,
         args_json:    opts.argsJson || '{}',
-        consul:       opts.consulUrl || ''
+        consul:       opts.consulUrl || '',
+        proto_path:   opts.protoPath || ''
       });
     }
   };
