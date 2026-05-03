@@ -97,6 +97,8 @@ def _defaults() -> Dict[str, Any]:
         "tag": "",
         "language": "python",
         "gui_type": "none",
+        "client_grpc_kind": "google",
+        "server_grpc_kind": "msys2",
         "gen_nomad": True,
         "gen_build_scripts": True,
         "gen_readme": True,
@@ -153,12 +155,14 @@ def _build_payload(args: argparse.Namespace,
 
     # Inline flag overrides
     overrides = {
-        "service_name":  args.name,
-        "language":      args.language,
-        "gui_type":      args.gui,
-        "output_path":   args.output,
-        "version":       args.version,
-        "description":   args.description,
+        "service_name":     args.name,
+        "language":         args.language,
+        "gui_type":         args.gui,
+        "client_grpc_kind": args.client_grpc,
+        "server_grpc_kind": args.server_grpc,
+        "output_path":      args.output,
+        "version":          args.version,
+        "description":      args.description,
     }
     for k, v in overrides.items():
         if v is not None:
@@ -244,6 +248,21 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="Target language")
     ap.add_argument("--gui", choices=("none", "html", "qml", "wasm", "widget"),
                     help="GUI variant")
+    ap.add_argument("--client-grpc", dest="client_grpc",
+                    choices=("google", "qt", "google_vcpkg"),
+                    help="Which gRPC stack the GUI client uses:\n"
+                         "  google         - Google grpc++ via MSYS2 prebuilt (default)\n"
+                         "  qt             - Qt6::Grpc + Qt6::Protobuf, qt_client/ project\n"
+                         "  google_vcpkg   - Google grpc++ via vcpkg + Qt MinGW, "
+                         "qt_client_grpcpp/ project")
+    ap.add_argument("--server-grpc", dest="server_grpc",
+                    choices=("msys2", "vcpkg"),
+                    help="Toolchain the server is built with:\n"
+                         "  msys2  - Google grpc++ from MSYS2 prebuilt (default)\n"
+                         "  vcpkg  - Google grpc++ via vcpkg + Qt MinGW; emits "
+                         "build_qt_vcpkg.bat + shared triplets/ + ports/ overlay. "
+                         "Independent of --client-grpc; pick 'vcpkg' for both sides "
+                         "to share the vcpkg cache.")
     ap.add_argument("-o", "--output",
                     help="Output folder (the service dir is created inside this)")
     ap.add_argument("--version", help="Service version string (default 1.0.0)")

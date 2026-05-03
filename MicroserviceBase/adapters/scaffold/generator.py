@@ -58,6 +58,31 @@ class ScaffoldSpec:
     # Step 2 — Technology
     language: str = "python"          # "python" | "cpp"
     gui_type: str = "none"            # "none" | "html" | "qml" | "wasm" | "widget"
+    # Which gRPC stack the *client* uses.
+    #   "google"        - Google grpc++ from MSYS2 prebuilt; server uses
+    #                     the same MSYS2 toolchain.  Default.
+    #   "qt"            - Client uses Qt6::Grpc + Qt6::Protobuf in a
+    #                     separate qt_client/ project (Qt-installer MinGW).
+    #                     Server still on MSYS2 + Google grpc.
+    #   "google_vcpkg"  - Client uses Google grpc++ in qt_client_grpcpp/,
+    #                     built with Qt-installer MinGW via vcpkg
+    #                     (custom triplet x64-mingw-qt + ports overlay).
+    #                     Server's CMakeLists is also re-targeted to vcpkg
+    #                     so client AND server share one toolchain
+    #                     (Qt 6.x MinGW 13.1.0 kit) end-to-end.
+    client_grpc_kind: str = "google"  # "google" | "qt" | "google_vcpkg"
+
+    # Toolchain the *server* is built with.  Independent of client choice
+    # (you can mix any combination — wire format is the same).
+    #   "msys2"   - Google grpc++ from MSYS2 prebuilt (default).
+    #               Build via build_deploy_msys2.bat.
+    #   "vcpkg"   - Google grpc++ via vcpkg + Qt-installer MinGW 13.1.0
+    #               (custom triplet x64-mingw-qt + ports overlay).
+    #               Build via build_qt_vcpkg.bat.
+    # Picking "vcpkg" emits the same shared triplets/ + ports/ + init
+    # script that the qt_client_grpcpp/ client uses, so if both sides
+    # are "vcpkg" the install tree + binary cache is shared.
+    server_grpc_kind: str = "msys2"  # "msys2" | "vcpkg"
     gen_nomad: bool = True
     gen_build_scripts: bool = True
     gen_readme: bool = True

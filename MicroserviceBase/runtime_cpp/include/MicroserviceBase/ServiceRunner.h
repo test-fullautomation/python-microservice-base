@@ -23,7 +23,12 @@
 
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
+// gRPC server reflection is optional - vcpkg's grpc 1.76 port doesn't
+// build the reflection lib/header.  CMake defines MB_HAVE_GRPC_REFLECTION=1
+// when it's available; we skip the InitProto... call otherwise.
+#if defined(MB_HAVE_GRPC_REFLECTION) && MB_HAVE_GRPC_REFLECTION
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
+#endif
 
 #include "Settings.h"
 #include "ConsulRegistration.h"

@@ -10,6 +10,10 @@ time.  All type information is obtained at runtime via the standard
    https://grpc.io/docs/guides/reflection/
 """
 
-from .reflect_client import GrpcReflectClient, GrpcReflectError
+from .reflect_client import (
+    GrpcReflectClient,
+    GrpcReflectError,
+    LocalProtoClient,
+)
 
-__all__ = ["GrpcReflectClient", "GrpcReflectError"]
+__all__ = ["GrpcReflectClient", "GrpcReflectError", "LocalProtoClient"]

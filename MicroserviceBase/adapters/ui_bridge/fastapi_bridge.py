@@ -1670,13 +1670,94 @@ Forward a request to the FleetWebAPI.
          meta = svc.get('Meta') or {}
          return host, port, meta
 
+      def _proto_search_paths(extra: list = None) -> list:
+         """Resolve the search paths used to find .proto files when the
+         server doesn't ship reflection.  Order: caller-supplied *extra*
+         paths first (highest priority — typically a user-typed override
+         from the GUI), then ``MB_PROTO_SEARCH_PATH`` env var
+         (semicolon-separated), then a few sensible defaults."""
+         import os
+         paths = []
+         for p in (extra or []):
+            p = (p or "").strip()
+            if p and p not in paths:
+               paths.append(p)
+         raw = os.environ.get("MB_PROTO_SEARCH_PATH", "")
+         for p in raw.split(os.pathsep):
+            p = (p or "").strip()
+            if p and p not in paths:
+               paths.append(p)
+         # Sensible defaults — common locations for generated scaffolds.
+         here = os.path.dirname(os.path.abspath(__file__))
+         repo_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+         for default in [
+            os.path.join(repo_root, "examples"),
+            os.path.join(repo_root, "SampleServices"),
+         ]:
+            if os.path.isdir(default) and default not in paths:
+               paths.append(default)
+         return paths
+
+      def _open_grpc_client(target: str, consul_name: str = "",
+                             proto_path: str = ""):
+         """Try server reflection first; on UNIMPLEMENTED, fall back to
+         compiling local .proto files.
+
+         *proto_path*: optional caller-supplied search dir (e.g. typed
+         into the GUI).  Joined with ``MB_PROTO_SEARCH_PATH`` + defaults.
+
+         Returns ``(client, source)`` where ``source`` is one of:
+            * ``"reflection"``           — server-side reflection worked
+            * ``"local_proto:<paths>"``  — compiled from disk
+         Raises :class:`GrpcReflectError` if both paths fail.
+         """
+         from ..grpc_bridge import (
+            GrpcReflectClient, GrpcReflectError, LocalProtoClient,
+         )
+         import logging as _lg
+
+         # Probe reflection with a cheap list_services() so we detect
+         # UNIMPLEMENTED before the caller commits to a specific service.
+         client = GrpcReflectClient(target)
+         try:
+            client.list_services()
+            return client, "reflection"
+         except GrpcReflectError as exc:
+            if not exc.is_unimplemented:
+               client.close()
+               raise
+            client.close()
+            _lg.getLogger(__name__).info(
+               "Reflection UNIMPLEMENTED on %s; falling back to local proto files",
+               target,
+            )
+
+         # Fallback — compile local .protos.  GUI-supplied path wins.
+         extra = [proto_path] if proto_path else []
+         search_paths = _proto_search_paths(extra=extra)
+         try:
+            local = LocalProtoClient.from_search_paths(target, search_paths)
+            return local, "local_proto:" + os.pathsep.join(search_paths)
+         except GrpcReflectError as exc:
+            hint = ("Set MB_PROTO_SEARCH_PATH or use the in-GUI proto-path "
+                    "field to point at a folder containing your service's "
+                    ".proto file, or rebuild the server with "
+                    "grpc++_reflection enabled.")
+            raise GrpcReflectError(
+               "Reflection unavailable on %s and no .proto files matched "
+               "in search paths (%s).  %s  Underlying: %s"
+               % (target, search_paths or "<empty>", hint, exc)
+            ) from exc
+
       @app.get("/api/grpc/services/{consul_name}")
-      def grpc_list_methods(consul_name: str, consul: str = ""):
+      def grpc_list_methods(consul_name: str, consul: str = "",
+                             proto_path: str = ""):
          """Enumerate gRPC services/methods for a Consul-registered service.
 
          Returns:
             {
               "target": "host:port",
+              "discovery_source": "reflection" | "local_proto:...",
               "grpc_services": [
                 {
                   "name": "hello.v1.HelloService",
@@ -1690,7 +1771,8 @@ Forward a request to the FleetWebAPI.
               ]
             }
          """
-         from ..grpc_bridge import GrpcReflectClient, GrpcReflectError
+         from ..grpc_bridge import GrpcReflectError
+         import os
 
          target_info = _find_service_target(consul_name, consul=consul)
          if target_info is None:
@@ -1699,18 +1781,28 @@ Forward a request to the FleetWebAPI.
          host, port, meta = target_info
          target = "%s:%d" % (host, port)
 
-         # Prefer the explicit grpc_services metadata that ServiceRunner
-         # writes on registration.  Fall back to reflection's ListServices
-         # if metadata is missing.
          advertised = [s.strip() for s in
                         (meta.get('grpc_services') or '').split(',')
                         if s.strip()]
 
-         with GrpcReflectClient(target) as client:
+         try:
+            client, source = _open_grpc_client(target, consul_name,
+                                                proto_path=proto_path)
+         except GrpcReflectError as e:
+            return {"target": target, "error": str(e)}
+
+         with client:
             try:
-               service_names = advertised or client.list_services()
+               # If reflection worked, prefer Consul-advertised names.
+               # If we fell back to local protos, the local pool is the
+               # source of truth — its list_services() is authoritative.
+               if source == "reflection" and advertised:
+                  service_names = advertised
+               else:
+                  service_names = client.list_services()
             except GrpcReflectError as e:
-               return {"target": target, "error": str(e)}
+               return {"target": target, "discovery_source": source,
+                       "error": str(e)}
 
             out = []
             for name in service_names:
@@ -1720,7 +1812,8 @@ Forward a request to the FleetWebAPI.
                except GrpcReflectError as e:
                   out.append({"name": name, "error": str(e)})
 
-         return {"target": target, "grpc_services": out}
+         return {"target": target, "discovery_source": source,
+                 "grpc_services": out}
 
       class GrpcCallBody(BaseModel):
          consul_name: str
@@ -1728,11 +1821,14 @@ Forward a request to the FleetWebAPI.
          method: str
          args_json: str = "{}"
          consul: str = ""
+         proto_path: str = ""   # GUI-supplied proto search dir; used as
+                                # an additional search path for the
+                                # LocalProtoClient fallback.
 
       @app.post("/api/grpc/call")
       def grpc_call(body: GrpcCallBody):
          """Invoke a unary gRPC method and return the JSON response."""
-         from ..grpc_bridge import GrpcReflectClient, GrpcReflectError
+         from ..grpc_bridge import GrpcReflectError
 
          target_info = _find_service_target(body.consul_name, consul=body.consul)
          if target_info is None:
@@ -1742,19 +1838,28 @@ Forward a request to the FleetWebAPI.
          target = "%s:%d" % (host, port)
 
          try:
-            with GrpcReflectClient(target) as client:
+            client, source = _open_grpc_client(target, body.consul_name,
+                                                proto_path=body.proto_path)
+         except GrpcReflectError as e:
+            return {"ok": False, "target": target, "error": str(e)}
+
+         try:
+            with client:
                envelope = client.call_method(
                    body.grpc_service, body.method, body.args_json or "{}"
                )
             # call_method returns either:
             #   {"streaming": False, "result": <dict>}
             #   {"streaming": True,  "events": [...], "truncated": bool, "error"?: str}
-            return {"ok": True, "target": target, **envelope}
+            return {"ok": True, "target": target,
+                    "discovery_source": source, **envelope}
          except GrpcReflectError as e:
-            return {"ok": False, "target": target, "error": str(e)}
+            return {"ok": False, "target": target,
+                    "discovery_source": source, "error": str(e)}
          except Exception as e:
-            return {"ok": False, "target": target, "error": "%s: %s" %
-                    (type(e).__name__, e)}
+            return {"ok": False, "target": target,
+                    "discovery_source": source,
+                    "error": "%s: %s" % (type(e).__name__, e)}
 
       # ---- Service Scaffolding endpoint ----
 
@@ -2173,6 +2278,8 @@ Generate scaffolding for a new microservice project.
          tag: str = ""
          language: str = "python"       # "python" | "cpp"
          gui_type: str = "none"         # "none" | "html" | "qml" | "wasm" | "widget"
+         client_grpc_kind: str = "google"  # "google" | "qt" | "google_vcpkg" — only used when gui_type != "none".
+         server_grpc_kind: str = "msys2"   # "msys2" | "vcpkg" — toolchain the server is built with. Independent of client.
          gen_nomad: bool = True
          gen_build_scripts: bool = True
          gen_readme: bool = True
@@ -2373,6 +2480,8 @@ Generate scaffolding for a new microservice project.
             tag=body.tag,
             language=body.language,
             gui_type=body.gui_type,
+            client_grpc_kind=body.client_grpc_kind,
+            server_grpc_kind=body.server_grpc_kind,
             gen_nomad=body.gen_nomad,
             gen_build_scripts=body.gen_build_scripts,
             gen_readme=body.gen_readme,

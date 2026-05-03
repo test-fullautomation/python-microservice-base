@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WASM Cleware Service — Step-by-Step Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #10b981, #38bdf8);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  .sidebar-nav {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  main {
+    margin-left: 250px;
+    padding: 30px 40px;
+    max-width: 1100px;
+  }
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--green);
+  }
+  section h2 {
+    color: var(--green);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 14px; margin-bottom: 6px; font-size: 1em; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: var(--green); }
+  tr:last-child td { border-bottom: none; }
+
+  .step-num {
+    display: inline-block;
+    width: 32px; height: 32px;
+    line-height: 32px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--green);
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 0.9em;
+    margin-right: 10px;
+  }
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+
+  a { color: var(--accent); }
+  footer { text-align: center; padding: 30px; margin-left: 250px; color: var(--muted); font-size: 0.85em; }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>WASM Cleware Service</h1>
+  <p>Building a Cleware USB switch box service with a Qt WebAssembly UI</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">WASM Cleware</div>
+  <a href="#prereq">Prerequisites</a>
+  <a href="#source">Source code</a>
+
+  <div class="nav-group">Build the service</div>
+  <a href="#step1">1. Project structure</a>
+  <a href="#step2">2. Copy USB library</a>
+  <a href="#step3">3. service_config.json</a>
+  <a href="#qtcreator-add">Adding files in Qt Creator</a>
+  <a href="#step4">4. C++ backend</a>
+  <a href="#step5">5. WASM GUI</a>
+  <a href="#step6">6. CMakeLists.txt</a>
+  <a href="#step7">7. CMakePresets.json</a>
+  <a href="#step8">8. Build scripts</a>
+  <a href="#step9">9. serve_dev.py</a>
+  <a href="#step10">10. Build in Qt Creator</a>
+  <a href="#step11">11. Build / run from CLI</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Troubleshooting</a>
+  <a href="#reference">Reference templates</a>
+
+  <div class="nav-group">Companion docs</div>
+  <a href="index.html">&larr; Docs index</a>
+  <a href="mingw_setup.html">MinGW (MSYS2) setup</a>
+  <a href="qt_grpc_setup.html">Qt6::Grpc setup</a>
+  <a href="vcpkg_setup.html">vcpkg + Qt MinGW setup</a>
+  <a href="service_creation.html">Service creation</a>
+</nav>
+
+<main>
+
+<!-- =========================== Prerequisites ============================ -->
+<section id="prereq">
+<h2>Prerequisites — Tools to Install</h2>
+
+<h3>1. Qt 6 (with WebAssembly + MSVC kits)</h3>
+<p>Install via <a href="https://www.qt.io/download-qt-installer" target="_blank" rel="noopener">Qt Online Installer</a>:</p>
+<ul>
+  <li><strong>Qt 6.7.3 or later (recommended)</strong> — the Online
+      Installer now ships WebAssembly support and a matching Emscripten
+      SDK as ordinary components.  No manual <code>emsdk</code> clone
+      needed.</li>
+  <li><strong>Qt 6.7.2 or earlier</strong> — WebAssembly isn't a
+      first-class component; you have to install Emscripten yourself
+      (see <a href="#emsdk-fallback">Step 2 — fallback for Qt &lt; 6.7.3</a>).</li>
+</ul>
+<p>Components to tick in Maintenance Tool:</p>
+<ul>
+  <li><code>MSVC 2019 64-bit</code> (or <code>MinGW 13.1.0 64-bit</code>) — needed for host tools (moc, uic, rcc) and desktop backend</li>
+  <li><code>WebAssembly (single-threaded)</code> — for browser GUI</li>
+  <li><code>Qt Quick Controls 2</code>, <code>Qt Widgets</code></li>
+  <li><strong>Qt Creator</strong> (latest)</li>
+  <li>Qt → Tools → <strong>CMake</strong>, <strong>Ninja</strong>, and (for Qt 6.7.3+) <strong>Emscripten</strong> under the WebAssembly group</li>
+</ul>
+<p>Default install path: <code>C:\Qt\&lt;version&gt;\</code>.</p>
+
+<h3 id="emsdk-fallback">2. Emscripten SDK <em>(only for Qt &lt; 6.7.3)</em></h3>
+
+<div class="highlight-box">
+  <strong>Skip this step on Qt 6.7.3+</strong> — the Online Installer
+  ships a matching Emscripten SDK and Qt Creator auto-discovers it.
+  The instructions below apply only when Qt's Maintenance Tool
+  doesn't offer Emscripten as a tickable component.
+</div>
+
+<p>Install the SDK matching your Qt version (e.g. Qt 6.7.1 → Emscripten 3.1.50):</p>
+<pre><code>cd D:\Project\robot\github
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+emsdk install 3.1.50    # MUST match Qt's required Emscripten version
+emsdk activate 3.1.50</code></pre>
+
+<p>
+  The required Emscripten version per Qt release is documented at
+  <a href="https://doc.qt.io/qt-6/wasm.html#installing-emscripten" target="_blank" rel="noopener">doc.qt.io/qt-6/wasm.html</a>.
+</p>
+
+<p><strong>Configure Qt Creator to use the manual Emscripten install:</strong></p>
+<ol>
+  <li>Open Qt Creator → <strong>Edit → Preferences → Devices → WebAssembly</strong>
+      (or <strong>Tools → Options → Devices → WebAssembly</strong> on older versions).</li>
+  <li>Set <strong>Emscripten SDK path</strong> to <code>D:\Project\robot\github\emsdk</code>.</li>
+  <li>Qt Creator validates the version and shows a green check if it matches the
+      Qt WebAssembly kit's required Emscripten version.</li>
+  <li>Go to <strong>Edit → Preferences → Kits</strong>. Confirm a
+      <strong>Qt 6.x.x WebAssembly (single-threaded)</strong> kit appears with no warnings.</li>
+  <li>If the kit is missing, click <strong>Add</strong>, set:
+    <ul>
+      <li><strong>Compiler</strong>: <code>Emscripten Compiler</code> (auto-detected from step 2)</li>
+      <li><strong>Qt version</strong>: <code>Qt 6.x.x wasm_singlethread</code></li>
+      <li><strong>CMake Tool</strong>: the one bundled with Qt (<code>C:\Qt\Tools\CMake_64\bin\cmake.exe</code>)</li>
+      <li><strong>CMake generator</strong>: <code>Ninja</code></li>
+    </ul>
+  </li>
+</ol>
+
+<h3>3. Visual Studio 2019 Build Tools</h3>
+<p>Install <a href="https://visualstudio.microsoft.com/vs/older-downloads/" target="_blank" rel="noopener">Visual Studio 2019 Community</a> with:</p>
+<ul>
+  <li>"Desktop development with C++" workload</li>
+  <li>MSVC v142 toolchain, Windows 10 SDK</li>
+</ul>
+
+<h3>4. vcpkg (for backend dependencies)</h3>
+<pre><code>cd D:\Project\Out
+git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+.\bootstrap-vcpkg.bat
+.\vcpkg install librabbitmq:x64-windows nlohmann-json:x64-windows</code></pre>
+
+<h3>5. RabbitMQ Server</h3>
+<p>Download from <a href="https://www.rabbitmq.com/install-windows.html" target="_blank" rel="noopener">rabbitmq.com</a> — installs Erlang + RabbitMQ. Verify it runs on <code>localhost:5672</code>.</p>
+
+<h3>6. Python 3.x + MicroserviceBase</h3>
+<p>The MicroserviceBase repo bundles a Python distribution at <code>RobotFramework\python3\</code>. After cloning:</p>
+<pre><code>cd D:\Project\robot\github\python-microservice-base
+pip install .
+pip install pika fastapi uvicorn</code></pre>
+
+<h3>7. Cleware USB Hardware</h3>
+<ul>
+  <li>Cleware switch box or USB multiplexer device</li>
+  <li>USB cable + driver (auto-installs on Windows)</li>
+</ul>
+</section>
+
+<!-- =========================== Source ============================ -->
+<section id="source">
+<h2>Source Code</h2>
+<h3>Clone the repositories</h3>
+<pre><code>cd D:\Project\robot\github
+
+# Main MicroserviceBase framework (includes the WASM template + CppServiceBase)
+git clone -b ugc1hc/feat/restructure_microservice_base \
+    https://github.com/test-fullautomation/python-microservice-base.git
+
+# Original Python Cleware service (source for Cleware USB DLL + reference)
+git clone &lt;develop_ms_cleware-url&gt; develop_ms_cleware</code></pre>
+</section>
+
+<!-- =========================== Step 1 ============================ -->
+<section id="step1">
+<h2><span class="step-num">1</span> Create the project structure</h2>
+
+<h3>Option A — Command line</h3>
+<pre><code>cd D:\Project\robot\github\python-microservice-base\examples
+mkdir cpp_wasm_cleware_service
+cd cpp_wasm_cleware_service
+mkdir src wasm GUIs libs\Windows</code></pre>
+
+<h3>Option B — Qt Creator UI</h3>
+<ol>
+  <li><strong>File → New Project → Non-Qt Project → Plain C++ Application</strong>
+      (we'll replace the auto-generated <code>CMakeLists.txt</code> later).</li>
+  <li><strong>Name</strong>: <code>cpp_wasm_cleware_service</code></li>
+  <li><strong>Location</strong>: <code>D:\Project\robot\github\python-microservice-base\examples</code></li>
+  <li><strong>Build system</strong>: <code>CMake</code></li>
+  <li><strong>Kit selection</strong>: tick both
+      <strong>Desktop Qt 6.7.1 MSVC2019 64bit</strong> and
+      <strong>Qt 6.7.1 WebAssembly (single-threaded)</strong> — Qt Creator will
+      create a build directory per kit.</li>
+  <li>After the project opens, right-click the project root in the
+      <strong>Projects pane</strong> → <strong>Add New → General → Empty File</strong>
+      to create each subfolder by typing the path
+      (e.g. <code>src/ClewareAccess.h</code>).  Qt Creator creates missing
+      folders automatically.</li>
+  <li>For binary files (<code>libs/Windows/USBaccessX64.dll</code>, <code>.lib</code>,
+      <code>.h</code>), copy them in Explorer first, then right-click the
+      project → <strong>Add Existing Files</strong> to make them visible in the
+      project tree.</li>
+</ol>
+</section>
+
+<!-- =========================== Step 2 ============================ -->
+<section id="step2">
+<h2><span class="step-num">2</span> Copy the Cleware USB library from the Python project</h2>
+<pre><code>copy ..\..\..\develop_ms_cleware\MicroserviceClewareSwitch\libs\Windows\USBaccessX64.dll  libs\Windows\
+copy ..\..\..\develop_ms_cleware\MicroserviceClewareSwitch\libs\Windows\USBaccessX64.lib  libs\Windows\
+copy ..\..\..\develop_ms_cleware\MicroserviceClewareSwitch\libs\Windows\USBaccess.h       libs\Windows\</code></pre>
+</section>
+
+<!-- =========================== Step 3 ============================ -->
+<section id="step3">
+<h2><span class="step-num">3</span> Create <code>service_config.json</code></h2>
+<p>
+  Service metadata + RabbitMQ broker config.  <strong>Critical</strong>:
+  <code>routing_key</code> must equal the service <code>name</code>
+  (otherwise the LiveServiceBridge can't reach the backend).
+</p>
+</section>
+
+<!-- =========================== Adding files ============================ -->
+<section id="qtcreator-add">
+<h2>Adding source files in Qt Creator</h2>
+
+<p>For <strong>every C++ file</strong> in Steps 4 and 5 below, the workflow in Qt Creator is the same:</p>
+<ol>
+  <li>In the <strong>Projects pane</strong> (left sidebar), right-click the
+      target folder (e.g. <code>src/</code>) → <strong>Add New…</strong></li>
+  <li>Choose the template:
+    <ul>
+      <li>C++ header: <strong>C/C++ → C++ Header File</strong></li>
+      <li>C++ source: <strong>C/C++ → C++ Source File</strong></li>
+      <li>Qt Designer form: <strong>Qt → Qt Designer Form → Widget</strong></li>
+    </ul>
+  </li>
+  <li>Enter the file name (e.g. <code>ClewareAccess.h</code>) — leave the path as the selected folder.</li>
+  <li>Tick <strong>Add to project</strong> so the new file is added to
+      <code>CMakeLists.txt</code> automatically (Qt Creator will offer to update it).</li>
+  <li>Paste the code into the editor.  Save with <strong>Ctrl+S</strong>.</li>
+</ol>
+
+<div class="highlight-box">
+  <strong>Tip:</strong> If you prefer to edit <code>CMakeLists.txt</code>
+  manually, untick the "Add to project" option and add the file under the
+  correct <code>qt_add_executable()</code> / <code>add_executable()</code>
+  source list yourself.
+</div>
+
+<p>
+  For the <strong><code>.ui</code> file</strong> (<code>src/ServiceUI.ui</code>),
+  Qt Creator opens it in the visual <strong>Design</strong> mode where you can
+  drag widgets from the palette.  To paste the XML directly:
+  <strong>Right-click the form file → Open With → Plain Text Editor</strong>,
+  then overwrite with the XML content.
+</p>
+</section>
+
+<!-- =========================== Step 4 ============================ -->
+<section id="step4">
+<h2><span class="step-num">4</span> Implement the C++ backend</h2>
+<h4><code>src/ClewareAccess.h/cpp</code> — Runtime wrapper for <code>USBaccessX64.dll</code></h4>
+<ul>
+  <li>Use <code>LoadLibrary</code> + <code>GetProcAddress</code> (Windows) /
+      <code>dlopen</code> + <code>dlsym</code> (Linux)</li>
+  <li>Resolve <code>FCWInitObject</code>, <code>FCWOpenCleware</code>,
+      <code>FCWSetSwitch</code>, <code>FCWGetSwitch</code>,
+      <code>FCWGetSerialNumber</code></li>
+  <li>Expose <code>getAllDevicesState()</code> returning <code>nlohmann::json</code></li>
+</ul>
+
+<h4><code>src/ServiceCleware.h/cpp</code> — Microservice extending <code>ServiceBase</code></h4>
+<ul>
+  <li><code>svc_api_get_all_devices_state</code> — returns <code>m_cleware.getAllDevicesState()</code></li>
+  <li><code>svc_api_set_switch(device_no, switch_id, state)</code> — calls
+      <code>m_cleware.setSwitch()</code> then publishes update</li>
+  <li><code>notifyUpdates()</code> — opens a separate
+      <code>RabbitMQConnection</code>, declares fanout exchange
+      <code>updates_sw_state</code>, publishes new state</li>
+</ul>
+
+<h4><code>src/main.cpp</code></h4>
+<p>
+  Entry point that loads <code>service_config.json</code>, creates
+  <code>ServiceCleware</code>, registers signal handlers, calls
+  <code>registerService()</code> + <code>serve()</code>.
+</p>
+</section>
+
+<!-- =========================== Step 5 ============================ -->
+<section id="step5">
+<h2><span class="step-num">5</span> Implement the WASM GUI</h2>
+
+<h4><code>src/ServiceUI.ui</code> — Qt Designer form</h4>
+<ul>
+  <li>Header label</li>
+  <li>Device combo + Initialize button + Type combo (Switch Box / Multiplexer)</li>
+  <li><code>QStackedWidget</code> with two pages:
+    <ul>
+      <li>Page 0: 8 toggle <code>QPushButton</code>s (sw0–sw7) + All On / All Off / Refresh</li>
+      <li>Page 1: 2 IN buttons + 4 OUT buttons + route label</li>
+    </ul>
+  </li>
+</ul>
+
+<h4><code>src/MainWidget.h/cpp</code> — Logic</h4>
+<ul>
+  <li>Constructor: <code>setupUi</code>, create <code>ServiceBridge</code>, wire button signals</li>
+  <li><code>onSwitchToggled(i)</code> — read state, call <code>setSwitch(0x10+i, "on"/"off")</code></li>
+  <li><code>onMuxInClicked(in)</code> / <code>onMuxOutClicked(out)</code> — compute <code>switchIndex = in*4 + out</code></li>
+  <li><code>onResponse(method, result)</code> — parse JSON, update combo + button states/colors</li>
+  <li><code>updateSwitchUI()</code> / <code>updateMuxUI()</code> — apply stylesheets (green=on, blue=in, orange=out)</li>
+</ul>
+
+<h4><code>src/ServiceBridge.h/cpp</code></h4>
+<p>
+  Copy verbatim from <code>qt_wasm_service_template/src/</code>.
+  Implements EM_JS-based polling bridge to <code>window.callMicroservice</code>.
+</p>
+
+<h4><code>wasm/main.cpp</code></h4>
+<p>Trivial: <code>QApplication app; MainWidget w; w.show(); app.exec();</code></p>
+</section>
+
+<!-- =========================== Step 6 ============================ -->
+<section id="step6">
+<h2><span class="step-num">6</span> Create CMakeLists.txt</h2>
+<p>Dual-target build:</p>
+<ul>
+  <li><strong><code>if(EMSCRIPTEN)</code></strong> branch: builds
+      <code>servicecleware_wasm</code> with Qt Widgets + ServiceBridge +
+      MainWidget (<code>-Oz -flto</code>, <code>QT_WASM_PTHREAD_POOL_SIZE 0</code>)</li>
+  <li><strong><code>else()</code></strong> branch: builds
+      <code>ServiceCleware.exe</code> linking <code>CppServiceBase</code>
+      (added via <code>add_subdirectory</code>)</li>
+  <li>IDE-visibility section so Qt Creator shows backend files when in
+      WASM kit and vice versa</li>
+</ul>
+</section>
+
+<!-- =========================== Step 7 ============================ -->
+<section id="step7">
+<h2><span class="step-num">7</span> Create <code>CMakePresets.json</code></h2>
+<p>
+  Two presets (<code>default</code> Debug, <code>release</code> Release) with
+  <code>toolchainFile</code> pointing to
+  <code>D:/Project/Out/vcpkg/scripts/buildsystems/vcpkg.cmake</code> for the
+  desktop backend.
+</p>
+</section>
+
+<!-- =========================== Step 8 ============================ -->
+<section id="step8">
+<h2><span class="step-num">8</span> Create build scripts</h2>
+
+<h4><code>build_wasm.bat</code></h4>
+<p>
+  Sets <code>QT_WASM_DIR</code>, <code>QT_HOST_DIR</code>,
+  <code>EMSDK_DIR</code>.  Runs <code>cmake -G Ninja</code> with Qt's WASM
+  toolchain + Emscripten chainload.  Copies
+  <code>servicecleware_wasm.{wasm,js}</code> to <code>GUIs/</code>.
+</p>
+
+<h4><code>build_deploy.bat</code></h4>
+<p>
+  Calls <code>vcvars64.bat</code>, runs <code>cmake --preset release</code>,
+  builds <code>ServiceCleware.exe</code>, copies executable +
+  <code>service_config.json</code> + <code>libs/</code> + vcpkg DLLs
+  (<code>rabbitmq.4.dll</code>, <code>libssl-3-x64.dll</code>,
+  <code>libcrypto-3-x64.dll</code>) into <code>deploy/</code>.
+</p>
+</section>
+
+<!-- =========================== Step 9 ============================ -->
+<section id="step9">
+<h2><span class="step-num">9</span> Create <code>serve_dev.py</code> + <code>serve.bat</code></h2>
+<p>HTTP server that:</p>
+<ul>
+  <li>Serves files from <code>build/wasm/</code> (with <code>application/wasm</code> MIME type)</li>
+  <li>Injects <code>window.callMicroservice</code> JavaScript bridge into HTML responses</li>
+  <li><code>POST /api/request</code> → uses <code>RabbitMQTransportAdapter</code>
+      to RPC-call <code>services_request</code> exchange with routing_key = service name</li>
+  <li>Sets COOP/COEP headers for SharedArrayBuffer</li>
+</ul>
+</section>
+
+<!-- =========================== Step 10 ============================ -->
+<section id="step10">
+<h2><span class="step-num">10</span> Build inside Qt Creator (optional)</h2>
+<p>You can build entirely from Qt Creator instead of using the <code>.bat</code> scripts:</p>
+<ol>
+  <li><strong>Bottom-left kit selector</strong> → switch between
+      <strong>Desktop Qt 6.7.1 MSVC2019 64bit</strong> (backend) and
+      <strong>Qt 6.7.1 WebAssembly (single-threaded)</strong> (WASM GUI).</li>
+  <li><strong>Build → Run CMake</strong> to reconfigure when switching kits.</li>
+  <li><strong>Build → Build Project "ServiceClewareWasm"</strong> (Ctrl+B).</li>
+  <li>The active target appears next to the kit selector — pick
+      <code>ServiceCleware</code> (backend) or <code>servicecleware_wasm</code> (WASM).</li>
+  <li><strong>Run</strong> (Ctrl+R) — for the backend this launches
+      <code>ServiceCleware.exe</code>; for the WASM target Qt Creator starts
+      its own dev server and opens the browser.</li>
+  <li>To use the project's own dev server with the RabbitMQ bridge, run
+      <code>serve.bat</code> in a terminal instead of Qt Creator's built-in
+      WASM server.</li>
+</ol>
+</section>
+
+<!-- =========================== Step 11 ============================ -->
+<section id="step11">
+<h2><span class="step-num">11</span> Build and run from the command line</h2>
+<pre><code># 1. Start RabbitMQ (should already be running as a Windows service)
+net start RabbitMQ
+
+# 2. Build the WASM GUI
+cd D:\Project\robot\github\python-microservice-base\examples\cpp_wasm_cleware_service
+build_wasm.bat
+# Output: GUIs\servicecleware_wasm.{js,wasm}
+
+# 3. Build the backend
+build_deploy.bat
+# Output: deploy\ServiceCleware.exe
+
+# 4. Plug in the Cleware USB device
+
+# 5. Start the backend
+cd deploy
+ServiceCleware.exe
+# Should print: "[ClewareAccess] Initialized. Devices found: N"
+#               "[INFO] ServiceCleware v1.0.0 started."
+
+# 6. In another terminal, start the dev server
+cd ..
+serve.bat
+# Opens http://localhost:8090/servicecleware_wasm.html
+
+# 7. In the browser:
+#    - Click "Initialize" → device serial appears in dropdown
+#    - Click LED buttons → switches toggle on the physical device
+#    - Switch to "USB Multiplexer" type → IN/OUT matrix view</code></pre>
+</section>
+
+<!-- =========================== Troubleshooting ============================ -->
+<section id="troubleshooting">
+<h2>Troubleshooting Checklist</h2>
+<table>
+  <tr><th>Issue</th><th>Fix</th></tr>
+  <tr><td><code>cmake: command not found</code></td>
+      <td>Add <code>C:\Qt\Tools\CMake_64\bin</code> to PATH</td></tr>
+  <tr><td><code>emcc not found</code></td>
+      <td>Run <code>emsdk activate 3.1.50</code> first</td></tr>
+  <tr><td><code>librabbitmq not found</code></td>
+      <td>Run <code>vcpkg install librabbitmq:x64-windows</code></td></tr>
+  <tr><td>Backend builds but service not reached</td>
+      <td>Check <code>routing_key == name</code> in <code>service_config.json</code></td></tr>
+  <tr><td><code>404 /api/nomad/agent/start</code></td>
+      <td>Reinstall MicroserviceBase: <code>pip install .</code></td></tr>
+  <tr><td>WASM compile but blank page</td>
+      <td>Check browser console; verify <code>serve.bat</code> is running and bridge script is injected</td></tr>
+  <tr><td>Cleware DLL not loaded</td>
+      <td>Make sure <code>libs/Windows/USBaccessX64.dll</code> is next to <code>ServiceCleware.exe</code></td></tr>
+  <tr><td>No devices found</td>
+      <td>Check Cleware device is plugged in and not in use by another process</td></tr>
+</table>
+</section>
+
+<!-- =========================== Reference ============================ -->
+<section id="reference">
+<h2>Reference Templates</h2>
+<ul>
+  <li><strong>WASM template</strong> (UI pattern): <code>examples/qt_wasm_service_template/</code></li>
+  <li><strong>C++ QML version</strong> (same backend): <code>examples/cpp_qml_cleware_service/</code></li>
+  <li><strong>Original Python service</strong> (reference for hardware API + Cleware DLL):
+      <code>develop_ms_cleware/MicroserviceClewareSwitch/</code></li>
+</ul>
+</section>
+
+</main>
+
+<footer>
+  Companion to <a href="../md/wasm_cleware_service_guide.md">../md/wasm_cleware_service_guide.md</a> &mdash;
+  same content, different format.
+</footer>
+
+</body>
+</html>

@@ -73,9 +73,13 @@ void ServiceRunner::addService(grpc::Service* service,
 }
 
 int ServiceRunner::start() {
-    // Enable default health check service and reflection before building.
+    // Enable default health check service.  Reflection is optional and
+    // only initialised when grpc was built with the reflection lib (CMake
+    // sets MB_HAVE_GRPC_REFLECTION=1 in that case).
     grpc::EnableDefaultHealthCheckService(true);
+#if defined(MB_HAVE_GRPC_REFLECTION) && MB_HAVE_GRPC_REFLECTION
     grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+#endif
 
     grpc::ServerBuilder builder;
 

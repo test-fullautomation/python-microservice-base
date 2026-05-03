@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MicroserviceBase — Documentation</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-2: #8b5cf6;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
+    padding: 50px 30px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2.4em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 10px 0 0; opacity: 0.9; font-size: 1.1em; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 30px; }
+
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--accent);
+  }
+  section h2 {
+    color: var(--accent);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 18px; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+
+  /* ---- Card grid for navigation ---- */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .card {
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  }
+  .card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(56,189,248,0.15);
+  }
+  .card .card-tag {
+    display: inline-block;
+    align-self: flex-start;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+  }
+  .card .card-title { font-size: 1.15em; font-weight: 700; margin-bottom: 4px; }
+  .card .card-title a { color: var(--accent); text-decoration: none; }
+  .card .card-title a:hover { text-decoration: underline; }
+  .card .card-sub  { color: var(--muted); font-size: 0.92em; margin-bottom: 12px; }
+  .card .card-body { font-size: 0.92em; flex: 1; }
+  .card .card-meta { color: var(--muted); font-size: 0.82em; margin-top: 12px; }
+  .card .card-formats {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .card .card-formats a {
+    text-decoration: none;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.78em;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+  }
+  .card .card-formats a:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(56,189,248,0.08);
+  }
+  .tag-toolchain { background: rgba(56,189,248,0.15); color: var(--accent); }
+  .tag-tutorial  { background: rgba(16,185,129,0.15); color: var(--green); }
+  .tag-reference { background: rgba(251,191,36,0.15); color: var(--amber); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.92em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+
+  .kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    font-family: monospace;
+    font-size: 0.82em;
+    color: var(--text);
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  a { color: var(--accent); }
+  footer { text-align: center; padding: 30px; color: var(--muted); font-size: 0.85em; }
+
+  /* ---- Decision tree ---- */
+  .decision {
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+  }
+  .decision .branch {
+    border-left: 3px solid var(--border);
+    padding-left: 14px;
+    margin: 10px 0 10px 8px;
+  }
+  .decision .branch .q { font-weight: 600; color: var(--text); }
+  .decision .branch .a { color: var(--muted); margin-left: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MicroserviceBase Documentation</h1>
+  <p>Build microservices in C++ or Python &mdash; pick a toolchain, follow the path</p>
+</header>
+
+<main>
+
+<!-- =========================== Overview ============================ -->
+<section>
+<h2>What is MicroserviceBase?</h2>
+<p>
+  A scaffolding framework for building gRPC-based microservices.  It
+  generates production-ready service projects with a hexagonal
+  architecture (domain &middot; ports &middot; adapters), Consul
+  service discovery, Nomad deploy specs, build scripts for multiple
+  toolchains, and matching client projects with optional Qt GUIs.
+</p>
+<p>
+  This <code>docs/</code> folder is split into two layers:
+</p>
+<ul>
+  <li><strong>Toolchain setup</strong> &mdash; install the right
+      compilers / Qt / dependencies for the variant you want.</li>
+  <li><strong>Service creation</strong> &mdash; the per-feature tutorial
+      (define proto, implement domain, wire adapter, build, deploy).</li>
+</ul>
+<p>
+  Most users start by picking a toolchain below, then move to the
+  service creation guide.
+</p>
+</section>
+
+<!-- =========================== Decision tree ============================ -->
+<section>
+<h2>Pick your path</h2>
+<p>Start here if you're new.  The right entry point depends on what you're building:</p>
+
+<div class="decision">
+  <div class="branch">
+    <div class="q">📦 Building a service (server) in C++ on Windows?</div>
+    <div class="a">→ <a href="mingw_setup.html">MinGW setup with MSYS2</a> &mdash; the standard server toolchain (Google grpc++, Google libprotobuf).</div>
+  </div>
+  <div class="branch">
+    <div class="q">🖼 Want a Qt-native GUI client (signals/slots, QML)?</div>
+    <div class="a">→ <a href="qt_grpc_setup.html">Qt6::Grpc client setup</a> &mdash; uses the Qt-installer toolchain, separate from the server's MSYS2 build.  Server stays on Google grpc++ (Qt has no server module).</div>
+  </div>
+  <div class="branch">
+    <div class="q">🔧 Want one toolchain for client AND server (Qt MinGW everywhere)?</div>
+    <div class="a">→ <a href="vcpkg_setup.html">vcpkg + Qt MinGW setup</a> &mdash; Google grpc++ for both sides, built by vcpkg with the Qt-installer MinGW.  ~30&ndash;60 min first build, instant after.  <strong>Recommended for new teams</strong> &mdash; one ABI end-to-end, no MSYS2 / Qt MinGW mismatches.</div>
+  </div>
+  <div class="branch">
+    <div class="q">⏱ Want vcpkg + Qt MinGW but don&rsquo;t want the 30&ndash;60 min compile?</div>
+    <div class="a">→ Download the prebuilt artifacts from <a href="https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x" target="_blank">SharePoint</a> and run <code>import_prebuilt.bat &lt;path&gt;.zip</code> at your project root.  See the <em>Use prebuilt libraries</em> section in any vcpkg project&rsquo;s <code>README.html</code>.</div>
+  </div>
+  <div class="branch">
+    <div class="q">🌐 Adding a browser-rendered UI (WASM)?</div>
+    <div class="a">→ <a href="wasm_cleware_service_guide.html">WASM Cleware service guide</a> &mdash; full walkthrough of building a service with a Qt-WebAssembly UI.</div>
+  </div>
+  <div class="branch">
+    <div class="q">🛠 Already have the toolchain &mdash; want to write the service code?</div>
+    <div class="a">→ <a href="service_creation.html">Service creation guide</a> &mdash; the long tutorial: proto, domain, adapter, settings, main, build, run, debug.</div>
+  </div>
+  <div class="branch">
+    <div class="q">🪄 Want the boilerplate generated for you?</div>
+    <div class="a">→ <a href="gui_wizard.html">Service Creator wizard guide</a> &mdash; drive the Manager GUI's 4-step wizard, or use the <code>mb-scaffold</code> CLI.</div>
+  </div>
+  <div class="branch">
+    <div class="q">🎛 Don&rsquo;t want to run <code>consul agent -dev</code> / <code>nomad agent -dev</code> in two terminals?</div>
+    <div class="a">→ <a href="manager_gui_ops.html">Manager GUI ops guide</a> &mdash; the GUI starts/stops both agents, shows live LEDs, lists registered services, and submits Nomad jobs from a file picker.  Replaces the per-terminal CLI workflow.</div>
+  </div>
+  <div class="branch">
+    <div class="q">⚡ Just want to scaffold something fast?</div>
+    <div class="a">Run <code>python -m MicroserviceBase.tools.scaffold_cli --help</code> from the project root.</div>
+  </div>
+</div>
+</section>
+
+<!-- =========================== Doc cards ============================ -->
+<section>
+<h2>All docs</h2>
+<div class="card-grid">
+
+  <div class="card">
+    <span class="card-tag tag-toolchain">Toolchain</span>
+    <div class="card-title"><a href="mingw_setup.html">MinGW Setup (MSYS2)</a></div>
+    <div class="card-sub">Google grpc++ &middot; libprotobuf &middot; Qt Creator kit</div>
+    <div class="card-body">
+      Install MSYS2, install <code>mingw-w64-x86_64-grpc</code> and
+      friends, point the build scripts at it.  The standard server
+      toolchain on Windows.  Includes a step-by-step Qt Creator kit
+      registration.
+    </div>
+    <div class="card-meta">For: services, Google-grpc clients, console clients</div>
+    <div class="card-formats">
+      <a href="mingw_setup.html">html</a>
+      <a href="../md/mingw_setup.md">md</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="card-tag tag-toolchain">Toolchain</span>
+    <div class="card-title"><a href="qt_grpc_setup.html">Qt6::Grpc Client Setup</a></div>
+    <div class="card-sub">Qt-installer MinGW &middot; Qt6::Protobuf &middot; <code>qt_client/</code></div>
+    <div class="card-body">
+      Install Qt 6.8+ with the GRPC and Protobuf modules, install
+      Google's <code>protoc</code> separately, configure the
+      <code>qt_client/</code> CMake project.  Covers the
+      <code>Protobuf_PROTOC_EXECUTABLE</code> trap that catches first-time
+      Qt Creator users.
+    </div>
+    <div class="card-meta">For: Qt-native clients (Widgets / QML)</div>
+    <div class="card-formats">
+      <a href="qt_grpc_setup.html">html</a>
+      <a href="../md/qt_grpc_setup.md">md</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="card-tag tag-toolchain">Toolchain</span>
+    <div class="card-title"><a href="vcpkg_setup.html">vcpkg + Qt MinGW Setup</a></div>
+    <div class="card-sub">Google grpc++ via vcpkg &middot; custom triplet &middot; <code>qt_client_grpcpp/</code></div>
+    <div class="card-body">
+      The "single toolchain" path: client AND server both built with
+      Qt-installer MinGW 13.1.0.  vcpkg compiles boringssl + abseil +
+      protobuf + grpc once (~30&ndash;60 min); subsequent builds are
+      instant via the binary cache.  Includes the gcc 13.1.0 ICE
+      workaround patch and <code>export_prebuilt.bat</code> /
+      <code>import_prebuilt.bat</code> for sharing built artifacts with
+      teammates &mdash; download the prebuilt zip from
+      <a href="https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x"
+         target="_blank">SharePoint</a> and skip the rebuild.  Each
+      generated project&rsquo;s <code>README.html</code> includes the
+      full kit-flow walkthrough plus a <em>Common issues</em> section
+      (Qt Creator <code>VCPKG_ROOT</code> quirks, F5 missing-DLL fix,
+      <code>${sourceDir}</code> macro caveat, etc.).
+    </div>
+    <div class="card-meta">For: teams who want one ABI end-to-end and don't need Qt6::Grpc's signal/slot ergonomics. <strong>Recommended for new teams.</strong></div>
+    <div class="card-formats">
+      <a href="vcpkg_setup.html">html</a>
+      <a href="../md/vcpkg_setup.md">md</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="card-tag tag-tutorial">Tutorial</span>
+    <div class="card-title"><a href="manager_gui_ops.html">Manager GUI &mdash; Consul + Nomad ops</a></div>
+    <div class="card-sub">Service Network tab &middot; agent start/stop &middot; live LEDs</div>
+    <div class="card-body">
+      The easiest on-ramp to the runtime: launch the Manager GUI
+      (Electron or browser), open <strong>Service Network</strong>, and
+      start Consul + Nomad with one click each.  Connected dashboards
+      show registered services, running jobs, per-job logs, and a
+      submit-from-file picker for the generated <code>.nomad.hcl</code>
+      files.  Navbar pills show live infra health.  Same actions are
+      available via <code>POST /api/{consul,nomad}/agent/start</code>
+      for scripting.
+    </div>
+    <div class="card-meta">For: anyone who'd rather not babysit two terminal windows</div>
+    <div class="card-formats">
+      <a href="manager_gui_ops.html">html</a>
+      <a href="../md/manager_gui_ops.md">md</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="card-tag tag-tutorial">Tutorial</span>
+    <div class="card-title"><a href="gui_wizard.html">Service Creator Wizard</a></div>
+    <div class="card-sub">Manager GUI &middot; 4-step wizard &middot; <code>mb-scaffold</code></div>
+    <div class="card-body">
+      End-to-end walkthrough of generating a service scaffold (proto +
+      domain + adapter + clients + Nomad) from the Manager GUI without
+      writing boilerplate.  Covers Basic Info, Technology choice
+      (incl. Qt6::Grpc), Methods (manual + import .proto), Review &amp;
+      Generate.  Same generator backend as the
+      <code>mb-scaffold</code> CLI.
+    </div>
+    <div class="card-meta">For: anyone starting a new service</div>
+    <div class="card-formats">
+      <a href="gui_wizard.html">html</a>
+      <a href="../md/gui_wizard.md">md</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="card-tag tag-tutorial">Tutorial</span>
+    <div class="card-title"><a href="wasm_cleware_service_guide.html">WASM Cleware Service Guide</a></div>
+    <div class="card-sub">Qt for WebAssembly &middot; Cleware USB switch box</div>
+    <div class="card-body">
+      End-to-end walkthrough: build a Cleware USB device service with a
+      C++ backend and a Qt-WebAssembly UI rendered in the browser.
+      Built on top of <code>examples/qt_wasm_service_template</code>.
+    </div>
+    <div class="card-meta">For: services with browser-rendered Qt UIs</div>
+    <div class="card-formats">
+      <a href="wasm_cleware_service_guide.html">html</a>
+      <a href="../md/wasm_cleware_service_guide.md">md</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <span class="card-tag tag-tutorial">Tutorial</span>
+    <div class="card-title"><a href="service_creation.html">Service Creation Guide</a></div>
+    <div class="card-sub">Proto &middot; Domain &middot; Adapter &middot; Build &middot; Run</div>
+    <div class="card-body">
+      The long-form tutorial: write the <code>.proto</code>, implement
+      the hexagonal domain, wire the gRPC adapter, configure settings,
+      build with MSVC / MinGW / MSYS2, run, debug, deploy with Nomad.
+      Originally written against <code>cpp_hello_service</code>.
+    </div>
+    <div class="card-meta">For: anyone building a C++ service from scratch</div>
+    <div class="card-formats">
+      <a href="service_creation.html">html</a>
+      <a href="../md/service_creation.md">md</a>
+    </div>
+  </div>
+
+</div>
+</section>
+
+<!-- =========================== Toolchain compatibility ============================ -->
+<section>
+<h2>Toolchain &amp; gRPC stack matrix</h2>
+<p>
+  Quick reference for which combinations work.  Each binary uses
+  <em>one</em> toolchain; mixing libstdc++ versions inside one binary
+  causes link errors.  Wire-protocol interop between binaries is
+  always fine because they only share gRPC over HTTP/2.
+</p>
+
+<table>
+  <tr>
+    <th>Component</th>
+    <th>Toolchain</th>
+    <th>gRPC stack</th>
+    <th>Setup doc</th>
+  </tr>
+  <tr>
+    <td>Service (server) &mdash; MSYS2 path</td>
+    <td>MSYS2 MinGW</td>
+    <td>Google grpc++ + libprotobuf</td>
+    <td><a href="mingw_setup.html">MinGW Setup</a></td>
+  </tr>
+  <tr>
+    <td>Service (server) &mdash; vcpkg path</td>
+    <td>Qt-installer MinGW + vcpkg</td>
+    <td>Google grpc++ + libprotobuf (vcpkg-built)</td>
+    <td><a href="vcpkg_setup.html">vcpkg Setup</a></td>
+  </tr>
+  <tr>
+    <td>Console client (<code>client/</code>)</td>
+    <td>MSYS2 MinGW (same as server)</td>
+    <td>Google grpc++</td>
+    <td><a href="mingw_setup.html">MinGW Setup</a></td>
+  </tr>
+  <tr>
+    <td>JSON-Widget client (<code>client/gui/</code>)</td>
+    <td>MSYS2 MinGW (same as server)</td>
+    <td>Google grpc++ + Qt6 Widgets via MSYS2's qt6-base</td>
+    <td><a href="mingw_setup.html">MinGW Setup</a></td>
+  </tr>
+  <tr>
+    <td>Qt-native client (<code>qt_client/</code>)</td>
+    <td>Qt-installer MinGW (separate)</td>
+    <td>Qt6::Grpc + Qt6::Protobuf</td>
+    <td><a href="qt_grpc_setup.html">Qt6::Grpc Setup</a></td>
+  </tr>
+  <tr>
+    <td>Qt+grpc++ client (<code>qt_client_grpcpp/</code>)</td>
+    <td>Qt-installer MinGW + vcpkg</td>
+    <td>Google grpc++ (vcpkg) + Qt6 Widgets</td>
+    <td><a href="vcpkg_setup.html">vcpkg Setup</a></td>
+  </tr>
+  <tr>
+    <td>WASM UI</td>
+    <td>Qt for WebAssembly + Emscripten</td>
+    <td>Qt6::Grpc (Qt-WASM)</td>
+    <td><a href="wasm_cleware_service_guide.html">WASM Guide</a></td>
+  </tr>
+</table>
+</section>
+
+<!-- =========================== Quick reference ============================ -->
+<section>
+<h2>Quick reference</h2>
+
+<h3>Common environment variables</h3>
+<table>
+  <tr><th>Variable</th><th>Used by</th><th>Typical value</th></tr>
+  <tr>
+    <td><code>MSYS2_ROOT</code></td>
+    <td>MSYS2 build scripts</td>
+    <td><code>C:\msys64\mingw64</code></td>
+  </tr>
+  <tr>
+    <td><code>QT_DIR</code></td>
+    <td>Qt-installer build scripts (<code>build_qt.bat</code>, <code>build_qt_vcpkg.bat</code>)</td>
+    <td><code>C:\Qt\6.11.0\mingw_64</code></td>
+  </tr>
+  <tr>
+    <td><code>QT_TOOLS</code></td>
+    <td><code>build_qt.bat</code> (CMake / Ninja / MinGW autodetect)</td>
+    <td><code>C:\Qt\Tools</code></td>
+  </tr>
+  <tr>
+    <td><code>PROTOC_DIR</code></td>
+    <td>Qt6::Grpc CMakeLists auto-discovery</td>
+    <td><code>C:\msys64\mingw64\bin</code></td>
+  </tr>
+  <tr>
+    <td><code>QT_MINGW_BIN</code></td>
+    <td>vcpkg path: pin compiler to Qt's MinGW</td>
+    <td><code>C:\Qt\Tools\mingw1310_64\bin</code></td>
+  </tr>
+  <tr>
+    <td><code>VCPKG_ROOT</code></td>
+    <td>vcpkg-based fallback discovery + vcpkg path</td>
+    <td><code>C:\vcpkg</code></td>
+  </tr>
+  <tr>
+    <td><code>VCPKG_BINARY_SOURCES</code></td>
+    <td>Shared vcpkg cache (team setup)</td>
+    <td><code>files,\\fileserver\share\vcpkg-cache,readwrite</code></td>
+  </tr>
+  <tr>
+    <td><code>CONSUL_ADDR</code></td>
+    <td>Service runtime + clients</td>
+    <td><code>http://127.0.0.1:8500</code></td>
+  </tr>
+</table>
+
+<h3>One-liner sanity checks</h3>
+<table>
+  <tr><th>Check</th><th>Command</th></tr>
+  <tr><td>MSYS2 grpc/protobuf installed?</td>
+      <td><code>dir C:\msys64\mingw64\bin\protoc.exe</code></td></tr>
+  <tr><td>Qt6 GRPC component installed?</td>
+      <td><code>dir C:\Qt\6.11.0\mingw_64\lib\cmake\Qt6Grpc</code></td></tr>
+  <tr><td>Qt-bundled MinGW installed?</td>
+      <td><code>dir C:\Qt\Tools\mingw1310_64\bin\g++.exe</code></td></tr>
+  <tr><td>vcpkg bootstrapped?</td>
+      <td><code>dir %VCPKG_ROOT%\vcpkg.exe</code></td></tr>
+  <tr><td>vcpkg cache populated?</td>
+      <td><code>dir %LOCALAPPDATA%\vcpkg\archives</code></td></tr>
+  <tr><td>Consul running?</td>
+      <td><code>curl http://127.0.0.1:8500/v1/status/leader</code></td></tr>
+  <tr><td>Nomad running?</td>
+      <td><code>curl http://127.0.0.1:4646/v1/status/leader</code></td></tr>
+</table>
+</section>
+
+</main>
+
+<footer>
+  Docs source: <code>examples/docs/</code> &middot;
+  Generator: <code>MicroserviceBase/adapters/scaffold/cpp_tmpl.py</code>
+</footer>
+
+</body>
+</html>

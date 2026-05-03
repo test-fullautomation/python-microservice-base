@@ -61,6 +61,8 @@
       // Technology (step 2 — new)
       language: 'python',        // 'python' | 'cpp'
       guiType: 'none',           // 'none' | 'html' | 'qml' | 'wasm' | 'widget'
+      clientGrpcKind: 'google',  // 'google' | 'qt' | 'google_vcpkg' — only relevant when guiType != 'none' on C++
+      serverGrpcKind: 'msys2',   // 'msys2' | 'vcpkg' — toolchain the server is built with (independent of client)
       genNomad: true,
       genBuildScripts: true,
       genReadme: true,
@@ -315,6 +317,132 @@
       '  <div id="scGuiTypeRadios">' + guiRadios + '</div>' +
       '</div>' +
 
+      // Client gRPC stack — only relevant for C++ projects with a Qt GUI.
+      // Server is always Google grpc++ (Qt has no server module); this
+      // controls which stack the *client* uses.
+      ((f.language === 'cpp' && ['widget', 'wasm', 'qml'].indexOf(f.guiType) >= 0) ?
+        '<div class="mb-4" id="scClientGrpcBlock">' +
+        '  <label class="form-label fw-bold">Client gRPC Stack</label>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scClientGrpc" ' +
+        '           id="scClientGrpcGoogle" value="google"' +
+                 (f.clientGrpcKind === 'google' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scClientGrpcGoogle">' +
+        '      <strong>Google grpc++</strong>' +
+        '      <span class="text-muted ms-1">&mdash; client lives in <code>client/</code> alongside the server, MSYS2 toolchain</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scClientGrpc" ' +
+        '           id="scClientGrpcQt" value="qt"' +
+                 (f.clientGrpcKind === 'qt' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scClientGrpcQt">' +
+        '      <strong>Qt6::Grpc + Qt6::Protobuf</strong>' +
+        '      <span class="text-muted ms-1">&mdash; emits a separate <code>qt_client/</code> project that builds with the Qt-installer MinGW kit (no MSYS2 / Google grpc dependency)</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scClientGrpc" ' +
+        '           id="scClientGrpcVcpkg" value="google_vcpkg"' +
+                 (f.clientGrpcKind === 'google_vcpkg' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scClientGrpcVcpkg">' +
+        '      <strong>Google grpc++ via vcpkg + Qt MinGW</strong>' +
+        '      <span class="text-muted ms-1">&mdash; emits <code>qt_client_grpcpp/</code> + <code>triplets/</code> + <code>ports/</code>; vcpkg builds grpc/protobuf/abseil with the Qt-installer MinGW so client AND server share one toolchain. First build ~30&ndash;60&nbsp;min (vcpkg cache); subsequent builds instant.</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-text">Server side: with <em>google</em> or <em>qt</em> the server uses MSYS2-prebuilt grpc; with <em>google_vcpkg</em> the server CMakeLists is also re-targeted to vcpkg.</div>' +
+
+        // Version-support alert — shown only when "qt" is currently selected.
+        (f.clientGrpcKind === 'qt' ?
+          '<div class="alert alert-warning small mt-2 mb-0 py-2 px-3">' +
+          '  <div><i class="bi bi-info-circle me-1"></i>' +
+          '    <strong>Qt version requirement for the generated <code>qt_client/</code></strong>' +
+          '  </div>' +
+          '  <ul class="mb-2 mt-2" style="padding-left: 1.2rem;">' +
+          '    <li><strong>Qt 6.8 or later</strong> &mdash; recommended. ' +
+                 '<code>Qt6::Grpc</code> and <code>Qt6::Protobuf</code> are stable ' +
+                 'and installed by default with the MinGW kit.</li>' +
+          '    <li><strong>Qt 6.7</strong> &mdash; works, but Qt GRPC/Protobuf are ' +
+                 '<em>Technology Preview</em> and not installed by default. ' +
+                 'Open the Qt Maintenance Tool, select 6.7.x &rarr; MinGW 64-bit, ' +
+                 'and tick <em>Qt GRPC</em> and <em>Qt Protobuf</em>.</li>' +
+          '    <li><strong>Qt 6.6 or earlier</strong> &mdash; not supported (no Qt GRPC module).</li>' +
+          '  </ul>' +
+          '  <div class="text-muted">' +
+          '    Verify with: <code>dir C:\\Qt\\&lt;version&gt;\\mingw_64\\lib\\cmake\\Qt6Grpc</code> ' +
+          '    &mdash; the folder must exist or CMake fails with ' +
+          '    <em>Failed to find required Qt component "Grpc"</em>.' +
+          '  </div>' +
+          '</div>'
+          : '') +
+
+        // Vcpkg/Qt-MinGW prerequisites alert — shown only when "google_vcpkg" is selected.
+        (f.clientGrpcKind === 'google_vcpkg' ?
+          '<div class="alert alert-info small mt-2 mb-0 py-2 px-3">' +
+          '  <div><i class="bi bi-info-circle me-1"></i>' +
+          '    <strong>Prerequisites for <code>google_vcpkg</code></strong>' +
+          '  </div>' +
+          '  <ul class="mb-2 mt-2" style="padding-left: 1.2rem;">' +
+          '    <li><strong>Qt 6.x MinGW 64-bit kit</strong> at <code>C:\\Qt\\Tools\\mingw1310_64\\</code> ' +
+                 '(or override via <code>QT_MINGW_BIN</code> env var).</li>' +
+          '    <li><strong>vcpkg</strong> cloned + bootstrapped, with <code>VCPKG_ROOT</code> env var set ' +
+                 '(<code>git clone https://github.com/microsoft/vcpkg.git C:\\vcpkg</code> &rarr; ' +
+                 '<code>C:\\vcpkg\\bootstrap-vcpkg.bat</code> &rarr; <code>setx VCPKG_ROOT C:\\vcpkg</code>).</li>' +
+          '    <li><strong>Windows 10 1803+</strong> (for built-in <code>tar.exe</code> used by deploy/export scripts).</li>' +
+          '  </ul>' +
+          '  <div class="text-muted">' +
+          '    First <code>build_qt.bat</code> run takes 30&ndash;60&nbsp;min while vcpkg compiles ' +
+          '    boringssl + abseil + protobuf + grpc with Qt&rsquo;s MinGW. Subsequent runs hit the ' +
+          '    binary cache (~5&nbsp;sec). Use <code>export_prebuilt.bat</code> to share built ' +
+          '    artifacts with other developers so they skip this cost.' +
+          '  </div>' +
+          '</div>'
+          : '') +
+        '</div>'
+        : '') +
+
+      // Server toolchain — applies to ALL C++ services (regardless of GUI).
+      // Independent of client gRPC stack; user can pick any combination.
+      ((f.language === 'cpp') ?
+        '<div class="mb-4" id="scServerGrpcBlock">' +
+        '  <label class="form-label fw-bold">Server Toolchain</label>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scServerGrpc" ' +
+        '           id="scServerGrpcMsys2" value="msys2"' +
+                 (f.serverGrpcKind === 'msys2' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scServerGrpcMsys2">' +
+        '      <strong>MSYS2 prebuilt</strong>' +
+        '      <span class="text-muted ms-1">&mdash; Google grpc++ from MSYS2 (default). Build via <code>build_deploy_msys2.bat</code>. No vcpkg required.</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scServerGrpc" ' +
+        '           id="scServerGrpcVcpkg" value="vcpkg"' +
+                 (f.serverGrpcKind === 'vcpkg' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scServerGrpcVcpkg">' +
+        '      <strong>vcpkg + Qt MinGW</strong>' +
+        '      <span class="text-muted ms-1">&mdash; Google grpc++ via vcpkg, built with the Qt-installer MinGW 13.1.0. Emits <code>build_qt_vcpkg.bat</code> + shared <code>triplets/</code> + <code>ports/</code>. Pick this for both client AND server to share one toolchain end-to-end.</span>' +
+        '    </label>' +
+        '  </div>' +
+        ((f.clientGrpcKind === 'google_vcpkg' && f.serverGrpcKind === 'msys2') ?
+          '<div class="alert alert-warning small mt-2 mb-0 py-2 px-3">' +
+          '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+          '  <strong>Mixed toolchains:</strong> client is <code>google_vcpkg</code> but server is <code>msys2</code>. ' +
+          '  Wire-protocol still works, but client + server use different libstdc++ ABIs. ' +
+          '  Pick <em>vcpkg + Qt MinGW</em> for the server too if you want a unified toolchain.' +
+          '</div>'
+          : '') +
+        ((f.clientGrpcKind !== 'google_vcpkg' && f.serverGrpcKind === 'vcpkg') ?
+          '<div class="alert alert-info small mt-2 mb-0 py-2 px-3">' +
+          '  <i class="bi bi-info-circle me-1"></i>' +
+          '  Server uses vcpkg, client does not. The vcpkg cache populated by ' +
+          '  <code>build_qt_vcpkg.bat</code> is reusable later if you switch the client to ' +
+          '  <code>google_vcpkg</code> &mdash; same triplet, same overlay-port.' +
+          '</div>'
+          : '') +
+        '</div>'
+        : '') +
+
       '</div>' +  // end col-md-6
 
       '<div class="col-md-6">' +
@@ -364,11 +492,38 @@
       });
     });
 
-    // Wire GUI type
+    // Wire GUI type — re-render so the Client-grpc block appears/disappears
+    // based on whether a GUI is selected.
     container.querySelectorAll('input[name="scGuiType"]').forEach(function (radio) {
       radio.addEventListener('change', function () {
         f.guiType = this.value;
         f.guiSupport = (this.value !== 'none');
+        if (this.value === 'none') f.clientGrpcKind = 'google';
+        _renderStepTechnology(container);
+      });
+    });
+
+    // Wire Client gRPC stack (only present when a C++ GUI is selected).
+    // Re-render so the version-support alert shows/hides immediately.
+    container.querySelectorAll('input[name="scClientGrpc"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.clientGrpcKind = this.value;
+        // Convenience: when user picks google_vcpkg for client, suggest
+        // vcpkg for server too (one toolchain).  User can still flip
+        // back manually.
+        if (this.value === 'google_vcpkg' && f.serverGrpcKind === 'msys2') {
+          f.serverGrpcKind = 'vcpkg';
+        }
+        _renderStepTechnology(container);
+      });
+    });
+
+    // Wire Server toolchain (present whenever language === 'cpp').
+    // Re-render so the mixed-toolchain alerts show/hide immediately.
+    container.querySelectorAll('input[name="scServerGrpc"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.serverGrpcKind = this.value;
+        _renderStepTechnology(container);
       });
     });
 
@@ -1799,6 +1954,33 @@
             _summaryRow('Language', '<span class="badge bg-primary">' + langLabel + '</span>') +
             _summaryRow('GUI', '<span class="badge ' +
               (d.guiType !== 'none' ? 'bg-info' : 'bg-secondary') + '">' + guiLabel + '</span>') +
+            (d.language === 'cpp' && d.guiType !== 'none'
+              ? _summaryRow('Client gRPC',
+                  (function () {
+                    var k = d.clientGrpcKind || 'google';
+                    var cls, label;
+                    if (k === 'qt') {
+                      cls = 'bg-warning text-dark';
+                      label = 'Qt6::Grpc (qt_client/)';
+                    } else if (k === 'google_vcpkg') {
+                      cls = 'bg-info text-dark';
+                      label = 'Google grpc++ via vcpkg + Qt MinGW (qt_client_grpcpp/)';
+                    } else {
+                      cls = 'bg-success';
+                      label = 'Google grpc++ MSYS2 (client/)';
+                    }
+                    return '<span class="badge ' + cls + '">' + label + '</span>';
+                  })())
+              : '') +
+            (d.language === 'cpp'
+              ? _summaryRow('Server toolchain',
+                  (function () {
+                    var k = d.serverGrpcKind || 'msys2';
+                    if (k === 'vcpkg')
+                      return '<span class="badge bg-info text-dark">vcpkg + Qt MinGW (build_qt_vcpkg.bat)</span>';
+                    return '<span class="badge bg-success">MSYS2 prebuilt (build_deploy_msys2.bat)</span>';
+                  })())
+              : '') +
             _summaryRow('Description', d.description ? _escapeHtml(d.description) : '<em class="text-muted">none</em>') +
             _summaryRow('Group', d.group ? _escapeHtml(d.group) : '<em class="text-muted">none</em>') +
             _summaryRow('Infrastructure', infraHtml || '<em class="text-muted">none</em>') +
@@ -2588,6 +2770,9 @@
       tag: d.tag,
       language: d.language || 'python',
       gui_type: d.guiType || 'none',
+      server_grpc_kind: (d.language === 'cpp') ? (d.serverGrpcKind || 'msys2') : 'msys2',
+      client_grpc_kind: (d.guiType && d.guiType !== 'none' && d.language === 'cpp')
+        ? (d.clientGrpcKind || 'google') : 'google',
       gen_nomad: d.genNomad !== false,
       gen_build_scripts: d.genBuildScripts !== false,
       gen_readme: d.genReadme !== false,

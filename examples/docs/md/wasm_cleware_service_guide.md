@@ -4,43 +4,65 @@ This guide walks through implementing a Cleware USB switch box service with a Qt
 WebAssembly UI and a C++ backend, following the patterns from
 `examples/qt_wasm_service_template` and `examples/cpp_qml_cleware_service`.
 
+> 📄 *Also available as HTML:* [`../html/wasm_cleware_service_guide.html`](../html/wasm_cleware_service_guide.html)
+>
+> Companion docs: [← Docs index](index.md) ·
+> [MinGW (MSYS2) setup](mingw_setup.md) ·
+> [Qt6::Grpc setup](qt_grpc_setup.md) ·
+> [Service creation](service_creation.md)
+
 ---
 
 ## Prerequisites — Tools to Install
 
 ### 1. Qt 6 (with WebAssembly + MSVC kits)
 Install via [Qt Online Installer](https://www.qt.io/download-qt-installer):
-- **Qt 6.7.1** (must match Emscripten version exactly)
-  - `MSVC 2019 64-bit` — needed for host tools (moc, uic, rcc) and desktop backend
-  - `WebAssembly (single-threaded)` — for browser GUI
-  - `Qt Quick Controls 2`, `Qt Widgets`
+- **Qt 6.7.3 or later (recommended)** — the Online Installer now ships
+  WebAssembly support and a matching Emscripten SDK as ordinary
+  components. No manual `emsdk` clone needed.
+- **Qt 6.7.2 or earlier** — WebAssembly isn't a first-class component;
+  you have to install Emscripten yourself (see [Step 2 — fallback for
+  Qt < 6.7.3](#2-emscripten-sdk-only-for-qt--673)).
+
+Components to tick in Maintenance Tool:
+- `MSVC 2019 64-bit` (or `MinGW 13.1.0 64-bit`) — needed for host tools (moc, uic, rcc) and desktop backend
+- `WebAssembly (single-threaded)` — for browser GUI
+- `Qt Quick Controls 2`, `Qt Widgets`
 - **Qt Creator** (latest)
-- **CMake** (bundled with Qt Tools)
-- **Ninja** (bundled with Qt Tools)
+- Qt → Tools → **CMake**, **Ninja**, and (for Qt 6.7.3+) **Emscripten** under the WebAssembly group
 
-Default install path: `C:\Qt\6.7.1\`
+Default install path: `C:\Qt\<version>\`.
 
-### 2. Emscripten SDK
-Install the SDK matching your Qt version (Qt 6.7.1 → Emscripten 3.1.50):
+### 2. Emscripten SDK *(only for Qt < 6.7.3)*
+
+> **Skip this step on Qt 6.7.3+** — the Online Installer ships a
+> matching Emscripten SDK and Qt Creator auto-discovers it.  The
+> instructions below apply only when Qt's Maintenance Tool doesn't
+> offer Emscripten as a tickable component.
+
+Install the SDK matching your Qt version (e.g. Qt 6.7.1 → Emscripten 3.1.50):
 ```bash
 cd D:\Project\robot\github
 git clone https://github.com/emscripten-core/emsdk.git
 cd emsdk
-emsdk install 3.1.50    # MUST match Qt 6.7.1
+emsdk install 3.1.50    # MUST match Qt's required Emscripten version
 emsdk activate 3.1.50
 ```
 
-**Configure Qt Creator to use Emscripten:**
+The required Emscripten version per Qt release is documented at
+<https://doc.qt.io/qt-6/wasm.html#installing-emscripten>.
+
+**Configure Qt Creator to use the manual Emscripten install:**
 1. Open Qt Creator → **Edit → Preferences → Devices → WebAssembly** (or
    **Tools → Options → Devices → WebAssembly** on older versions).
 2. Set **Emscripten SDK path** to `D:\Project\robot\github\emsdk`.
-3. Qt Creator validates the version and shows a green check if it matches the
-   Qt WebAssembly kit's required Emscripten version.
-4. Go to **Edit → Preferences → Kits**. Confirm a **Qt 6.7.1 WebAssembly
+3. Qt Creator validates the version and shows a green check if it matches
+   the Qt WebAssembly kit's required Emscripten version.
+4. Go to **Edit → Preferences → Kits**. Confirm a **Qt 6.x.x WebAssembly
    (single-threaded)** kit appears with no warnings.
 5. If the kit is missing, click **Add**, set:
    - **Compiler**: `Emscripten Compiler` (auto-detected from step 2)
-   - **Qt version**: `Qt 6.7.1 wasm_singlethread`
+   - **Qt version**: `Qt 6.x.x wasm_singlethread`
    - **CMake Tool**: the one bundled with Qt (`C:\Qt\Tools\CMake_64\bin\cmake.exe`)
    - **CMake generator**: `Ninja`
 

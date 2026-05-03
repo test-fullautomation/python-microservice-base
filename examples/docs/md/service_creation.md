@@ -1,5 +1,13 @@
 # Building a C++ gRPC Microservice — Step-by-Step Guide
 
+> 📄 *Also available as HTML:* [`../html/service_creation.html`](../html/service_creation.html)
+>
+> Companion docs: [← Docs index](index.md) ·
+> [MinGW (MSYS2) setup](mingw_setup.md) ·
+> [Qt6::Grpc setup](qt_grpc_setup.md) ·
+> [vcpkg + Qt MinGW setup](vcpkg_setup.md) ·
+> [WASM service](wasm_cleware_service_guide.md)
+
 This guide walks you through creating a C++ microservice from scratch using
 the MicroserviceBase runtime library.  By the end you will have:
 

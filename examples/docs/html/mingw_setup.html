@@ -257,10 +257,18 @@
   <div class="nav-group">Use</div>
   <a href="#step5">5. Point project at MSYS2</a>
   <a href="#step6">6. Build</a>
+  <a href="#qtcreator">7. Qt Creator kit</a>
 
   <div class="nav-group">Help</div>
   <a href="#troubleshooting">Troubleshooting</a>
   <a href="#uninstall">Uninstall / reset</a>
+
+  <div class="nav-group">Companion docs</div>
+  <a href="index.html">&larr; Docs index</a>
+  <a href="qt_grpc_setup.html">Qt6::Grpc client setup</a>
+  <a href="vcpkg_setup.html">vcpkg + Qt MinGW setup</a>
+  <a href="service_creation.html">Service creation guide</a>
+  <a href="wasm_cleware_service_guide.html">WASM service guide</a>
 </nav>
 
 <main>
@@ -276,6 +284,7 @@
 <pre><code># One-liner after MSYS2 is installed and updated:
 pacman -S --needed --noconfirm \
     mingw-w64-x86_64-gcc \
+    mingw-w64-x86_64-gdb \
     mingw-w64-x86_64-cmake \
     mingw-w64-x86_64-ninja \
     mingw-w64-x86_64-grpc \
@@ -485,6 +494,7 @@ pacman -S --needed --noconfirm \
 <p>Still inside the MSYS2 terminal:</p>
 <pre><code>pacman -S --needed --noconfirm \
     mingw-w64-x86_64-gcc \
+    mingw-w64-x86_64-gdb \
     mingw-w64-x86_64-cmake \
     mingw-w64-x86_64-ninja \
     mingw-w64-x86_64-grpc \
@@ -497,6 +507,7 @@ pacman -S --needed --noconfirm \
 <table>
   <tr><th>Package</th><th>Purpose</th></tr>
   <tr><td><code>mingw-w64-x86_64-gcc</code></td><td>The C++ compiler (<code>g++.exe</code>) + libstdc++</td></tr>
+  <tr><td><code>mingw-w64-x86_64-gdb</code></td><td>Debugger (<code>gdb.exe</code>) — used by Qt Creator's F5 debug and command-line crash traces</td></tr>
   <tr><td><code>mingw-w64-x86_64-cmake</code></td><td>Build-system generator</td></tr>
   <tr><td><code>mingw-w64-x86_64-ninja</code></td><td>Fast parallel build driver</td></tr>
   <tr><td><code>mingw-w64-x86_64-grpc</code></td><td>gRPC++ runtime + <code>grpc_cpp_plugin</code> for code generation</td></tr>
@@ -505,6 +516,13 @@ pacman -S --needed --noconfirm \
   <tr><td><code>mingw-w64-x86_64-qt6-base</code></td><td>Qt 6 Core / GUI / Widgets — for the Widgets GUI client</td></tr>
   <tr><td><code>mingw-w64-x86_64-qt6-tools</code></td><td>Qt tools (incl. <code>windeployqt-qt6.exe</code>) for packaging</td></tr>
 </table>
+
+<p class="note">
+  <strong>Tip:</strong> if you prefer a single command, <code>mingw-w64-x86_64-toolchain</code>
+  is a meta-package that pulls in <code>gcc</code>, <code>gdb</code>, <code>binutils</code>,
+  and the rest of the core toolchain at once.  It adds ~100 MB you probably won't use, so
+  the explicit list above is the lean option.
+</p>
 
 <div class="highlight-box">
   <strong>Expected time: 5&ndash;15 minutes.</strong>  Download size
@@ -524,12 +542,18 @@ pacman -S --needed --noconfirm \
   Run:
 </p>
 <pre><code>dir C:\msys64\mingw64\bin\g++.exe
+dir C:\msys64\mingw64\bin\gdb.exe
 dir C:\msys64\mingw64\bin\protoc.exe
 dir C:\msys64\mingw64\bin\grpc_cpp_plugin.exe
 dir C:\msys64\mingw64\share\grpc</code></pre>
 <p>
-  All four should list files (no <em>"File Not Found"</em>).  If they
-  do, your MinGW stack is ready.
+  All five should list files (no <em>"File Not Found"</em>).  If they
+  do, your MinGW stack is ready.  Check the debugger runs:
+</p>
+<pre><code>C:\msys64\mingw64\bin\gdb.exe --version</code></pre>
+<p>
+  Should print <code>GNU gdb (GDB) 14.x</code> or newer — that's the binary
+  Qt Creator's kit (step 7b) will point at for F5 debug.
 </p>
 <p>
   Optional — confirm the compiler version:
@@ -595,6 +619,159 @@ MSYS2 build complete.  Binaries + runtime DLLs collected in: ...\dist-msys2</cod
 <p>
   The folder is self-contained — copy it to another Windows machine and
   it runs without MSYS2 installed there.
+</p>
+</section>
+
+<!-- ========================= Qt Creator kit ========================= -->
+<section id="qtcreator">
+<h2><span class="step-num">7</span> Register MSYS2 MinGW64 as a Qt Creator kit</h2>
+
+<p>
+  If you use Qt Creator for day-to-day work, register the MSYS2 toolchain as
+  a kit.  You then get one-click build + F5 debug against the same
+  compiler, Qt, gRPC, and Protobuf that <code>build_deploy_msys2.bat</code>
+  uses on the command line — no switching between two worlds.
+</p>
+
+<p>
+  Open <strong>Tools → Options…</strong> (Preferences on Linux/macOS) and
+  select <strong>Kits</strong> in the left pane.  Across the top you'll
+  see five tabs: <em>Kits | Qt Versions | Compilers | Debuggers | CMake</em>.
+  Work through the other four tabs first; the <em>Kits</em> tab references
+  everything else.
+</p>
+
+<h3>7a. Compilers tab</h3>
+<p>Click <strong>Add → MinGW → C</strong> and fill in:</p>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Name</td><td><code>MinGW-w64 MSYS2 (x86_64) C</code></td></tr>
+  <tr><td>Compiler path</td><td><code>C:\msys64\mingw64\bin\gcc.exe</code></td></tr>
+  <tr><td>ABI</td><td>leave auto-detect (<code>x86-windows-msys-pe-64bit</code>)</td></tr>
+</table>
+<p>Click <strong>Apply</strong>, then <strong>Add → MinGW → C++</strong>:</p>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Name</td><td><code>MinGW-w64 MSYS2 (x86_64) C++</code></td></tr>
+  <tr><td>Compiler path</td><td><code>C:\msys64\mingw64\bin\g++.exe</code></td></tr>
+</table>
+
+<h3>7b. Debuggers tab</h3>
+<p>Click <strong>Add</strong>:</p>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Name</td><td><code>GDB (MSYS2 MinGW64)</code></td></tr>
+  <tr><td>Path</td><td><code>C:\msys64\mingw64\bin\gdb.exe</code></td></tr>
+  <tr><td>Type</td><td>auto-detected as <code>GDB</code></td></tr>
+</table>
+
+<h3>7c. Qt Versions tab</h3>
+<p>Click <strong>Add…</strong> and browse to:</p>
+<pre><code>C:\msys64\mingw64\bin\qmake6.exe</code></pre>
+<p>
+  Qt Creator runs <code>qmake6 -query</code> and auto-fills the fields.
+  Rename it to something recognisable: <code>Qt 6 (MSYS2 MinGW64)</code>.
+  If you see a warning triangle, the Qt install is incomplete — re-run
+  the <code>mingw-w64-x86_64-qt6-base</code> line from Step 3.
+</p>
+
+<h3>7d. CMake tab</h3>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Name</td><td><code>CMake (MSYS2 MinGW64)</code></td></tr>
+  <tr><td>Path</td><td><code>C:\msys64\mingw64\bin\cmake.exe</code></td></tr>
+  <tr><td>Version</td><td>should auto-detect to 3.25+</td></tr>
+</table>
+
+<h3>7e. Kits tab — assemble the kit</h3>
+<p>Click <strong>Add</strong> for a blank kit and fill in:</p>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Name</td><td><code>MSYS2 MinGW 64-bit</code></td></tr>
+  <tr><td>Device type</td><td><code>Desktop</code></td></tr>
+  <tr><td>Device</td><td><code>Local PC (Default)</code></td></tr>
+  <tr><td>Compiler — C</td><td><code>MinGW-w64 MSYS2 (x86_64) C</code></td></tr>
+  <tr><td>Compiler — C++</td><td><code>MinGW-w64 MSYS2 (x86_64) C++</code></td></tr>
+  <tr><td>Debugger</td><td><code>GDB (MSYS2 MinGW64)</code></td></tr>
+  <tr><td>Qt version</td><td><code>Qt 6 (MSYS2 MinGW64)</code></td></tr>
+  <tr><td>CMake Tool</td><td><code>CMake (MSYS2 MinGW64)</code></td></tr>
+  <tr><td>CMake generator</td><td>click <strong>Change…</strong> and pick <strong>Ninja</strong></td></tr>
+</table>
+
+<h3>7f. Environment — click <em>Change…</em> next to <em>Environment</em></h3>
+<p>Add these three lines (use the <strong>Append</strong>/<strong>Set</strong> action):</p>
+<pre><code>PATH=C:\msys64\mingw64\bin;${PATH}
+MSYSTEM=MINGW64
+CHERE_INVOKING=1</code></pre>
+<ul>
+  <li><code>PATH</code> makes <code>protoc</code>, DLLs, and <code>windeployqt</code> findable at build and run time.</li>
+  <li><code>MSYSTEM=MINGW64</code> tells MSYS-aware helpers (<code>pkg-config</code>, some <code>.sh</code> scripts) which subsystem is active.</li>
+  <li><code>CHERE_INVOKING</code> keeps MSYS2 bash scripts in the project dir instead of <code>/home/&lt;user&gt;</code>.</li>
+</ul>
+
+<h3>7g. CMake Configuration — click <em>Change…</em> next to <em>CMake Configuration</em></h3>
+<pre><code>CMAKE_PREFIX_PATH:PATH=%{Qt:QT_INSTALL_PREFIX};C:/msys64/mingw64
+CMAKE_BUILD_TYPE:STRING=Release</code></pre>
+<p>
+  The semicolon turns <code>CMAKE_PREFIX_PATH</code> into a two-entry
+  CMake list: Qt's own install first (so <code>find_package(Qt6)</code>
+  works), then MSYS2 (so <code>find_package(gRPC|Protobuf|absl)</code>
+  works).  Use forward slashes — CMake prefers them on Windows.
+</p>
+<p>Click the star next to the kit name to make it the default.</p>
+
+<h3>7h. Verify</h3>
+<p>
+  Open the project's <code>CMakeLists.txt</code>.  When prompted for a kit,
+  tick <strong>MSYS2 MinGW 64-bit</strong> and click <strong>Configure
+  Project</strong>.  The General Messages pane should include:
+</p>
+<pre><code>-- The CXX compiler identification is GNU 13.x.x
+-- Found Qt6:   ... C:/msys64/mingw64/lib/cmake/Qt6/Qt6Config.cmake
+-- Found gRPC: ... C:/msys64/mingw64/lib/cmake/grpc/gRPCConfig.cmake
+-- Found Protobuf: ... C:/msys64/mingw64/lib/cmake/protobuf
+-- Configuring done
+-- Generating done</code></pre>
+<p>
+  Ctrl+B builds; F5 launches under <code>gdb.exe</code> with stdout in the
+  Application Output pane and working breakpoints.
+</p>
+
+<h3>Qt Creator kit gotchas</h3>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr>
+    <td>Red triangle on kit: "No Qt version set"</td>
+    <td>Section <em>7c</em> didn't save — re-add <code>qmake6.exe</code> and click <strong>Apply</strong>.</td>
+  </tr>
+  <tr>
+    <td><code>find_package(gRPC)</code> fails inside Qt Creator but works on the command line</td>
+    <td><code>CMAKE_PREFIX_PATH</code> didn't save, or you deleted the existing <code>%{Qt:QT_INSTALL_PREFIX}</code> entry.  Re-edit <em>7g</em>, keep the semicolon-joined form.</td>
+  </tr>
+  <tr>
+    <td>Build succeeds but exe silent-dies when you press Run</td>
+    <td><code>PATH</code> in <em>7f</em> wasn't applied.  Re-open Environment, confirm the three lines survived a Qt Creator restart.</td>
+  </tr>
+  <tr>
+    <td>Clang code model squiggles on <code>&lt;grpcpp/grpcpp.h&gt;</code> even though builds pass</td>
+    <td>Edit → Preferences → C++ → Code Model → enable <em>Add project include paths</em>, then close + reopen the project.</td>
+  </tr>
+  <tr>
+    <td><code>fatal error: 'bits/c++config.h'</code> in the Issues pane</td>
+    <td>Clang code model is pointing at a non-MSYS2 compiler.  In the kit, confirm C++ compiler is <em>MinGW-w64 MSYS2 (x86_64) C++</em>.</td>
+  </tr>
+  <tr>
+    <td><code>windeployqt</code> missing when building the GUI target</td>
+    <td><code>pacman -S mingw-w64-x86_64-qt6-tools</code> — it's separate from <code>qt6-base</code>.</td>
+  </tr>
+</table>
+
+<p>
+  After this, everything <code>build_deploy_msys2.bat</code> does on the
+  command line — compile, link, stub generation via MSYS2
+  <code>protoc</code>, Qt deployment via <code>windeployqt</code> — works
+  inside Qt Creator with one-click build + F5 debug.  Same binaries,
+  same DLLs, no split toolchain.
 </p>
 </section>
 

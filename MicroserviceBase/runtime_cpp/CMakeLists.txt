@@ -26,10 +26,26 @@ target_include_directories(microservice_base_runtime
         $<INSTALL_INTERFACE:include>
 )
 
+# gRPC server reflection - both supported toolchains (MSYS2's stock
+# grpc, and our vcpkg overlay-port which forces gRPC_BUILD_CODEGEN=ON)
+# ship `grpc++_reflection`, so this branch is normally taken.  Kept as a
+# guard so non-default grpc distributions that omit reflection still
+# build (the Manager GUI then falls back to LocalProtoClient on the
+# bridge side - see MicroserviceBase/adapters/grpc_bridge/reflect_client.py).
+# When the target is present we define MB_HAVE_GRPC_REFLECTION=1 so
+# ServiceRunner.h / .cpp can guard the include + the InitProto... call.
+if(TARGET gRPC::grpc++_reflection)
+    set(_mb_grpc_refl gRPC::grpc++_reflection)
+    target_compile_definitions(microservice_base_runtime
+        PUBLIC MB_HAVE_GRPC_REFLECTION=1)
+else()
+    set(_mb_grpc_refl "")
+endif()
+
 target_link_libraries(microservice_base_runtime
     PUBLIC
         gRPC::grpc++
-        gRPC::grpc++_reflection
+        ${_mb_grpc_refl}
         protobuf::libprotobuf
     PRIVATE
         CURL::libcurl

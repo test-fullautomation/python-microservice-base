@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>vcpkg + Qt MinGW Setup &mdash; qt_client_grpcpp/ Build Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: var(--bg); color: var(--text); line-height: 1.7; }
+  header { background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 30px 20px 30px 280px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  .sidebar-nav { position: fixed; top: 0; left: 0; width: 250px; height: 100vh; background: #0b1220; border-right: 2px solid var(--border); overflow-y: auto; padding: 20px 0; z-index: 200; }
+  .sidebar-nav .nav-title { padding: 0 20px 14px; font-size: 0.82em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .sidebar-nav a { display: block; padding: 6px 20px; color: var(--muted); text-decoration: none; font-size: 0.88em; font-weight: 500; border-left: 3px solid transparent; transition: color 0.15s, border-color 0.15s, background-color 0.15s; }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav .nav-group { margin-top: 12px; padding: 0 20px 4px; font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(148,163,184,0.6); }
+
+  main { margin-left: 250px; padding: 30px 40px; max-width: 1100px; }
+  section { background: var(--panel); border-radius: 12px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-left: 4px solid var(--accent); }
+  section h2 { color: var(--accent); margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 10px; font-size: 1.4em; }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 14px; margin-bottom: 6px; font-size: 1em; }
+
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px; color: #fcd34d; font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: 0.88em; }
+  pre { background: #0b1220; padding: 16px; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: 0.85em; line-height: 1.5; }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9em; vertical-align: top; }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+
+  .step-num { display: inline-block; width: 32px; height: 32px; line-height: 32px; text-align: center; border-radius: 50%; background: var(--accent); color: #0f172a; font-weight: 700; font-size: 0.9em; margin-right: 10px; }
+  .highlight-box { background: rgba(16,185,129,0.08); border-left: 4px solid var(--green); padding: 12px 16px; border-radius: 6px; margin: 16px 0; font-size: 0.92em; }
+  .warn-box { background: rgba(251,191,36,0.08); border-left: 4px solid var(--amber); padding: 12px 16px; border-radius: 6px; margin: 16px 0; font-size: 0.92em; }
+  .danger-box { background: rgba(248,113,113,0.08); border-left: 4px solid var(--red); padding: 12px 16px; border-radius: 6px; margin: 16px 0; font-size: 0.92em; }
+  .tldr { font-size: 1.02em; background: #0b1220; border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin: 16px 0; }
+  .tldr strong { color: var(--accent); }
+
+  footer { text-align: center; padding: 30px; margin-left: 250px; color: var(--muted); font-size: 0.85em; }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>vcpkg + Qt MinGW Setup</h1>
+  <p>Building <code>qt_client_grpcpp/</code> + server with one toolchain via vcpkg</p>
+  <p style="margin-top: 12px; opacity: 0.95;">
+    <strong>Independent client + server toggles:</strong>
+    Wizard has two choices &mdash; <em>Client gRPC stack</em>
+    (<code>google</code> / <code>qt</code> / <code>google_vcpkg</code>)
+    and <em>Server toolchain</em> (<code>msys2</code> /
+    <code>vcpkg</code>). Pick any combination &mdash; wire format is
+    the same. Picking <code>vcpkg</code> for both sides is the "one
+    toolchain end-to-end" sweet spot.
+  </p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">vcpkg + Qt MinGW</div>
+  <a href="#why">When to pick this path</a>
+  <a href="#tldr">TL;DR</a>
+
+  <div class="nav-group">Setup</div>
+  <a href="#prereqs">Prerequisites</a>
+  <a href="#layout">What the scaffold emits</a>
+  <a href="#build">Build workflow</a>
+
+  <div class="nav-group">Internals</div>
+  <a href="#triplet">Why a custom triplet</a>
+  <a href="#ice-patch">gcc 13.1.0 ICE workaround</a>
+  <a href="#dlls">Output DLLs and deploy</a>
+  <a href="#share">Sharing build artifacts</a>
+
+  <div class="nav-group">Editor / IDE</div>
+  <a href="#qt-creator">Use with Qt Creator</a>
+  <a href="#other-compilers">Other Qt compilers</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Troubleshooting</a>
+  <a href="#anatomy">Anatomy of the infrastructure</a>
+
+  <div class="nav-group">Companion docs</div>
+  <a href="index.html">&larr; Docs index</a>
+  <a href="mingw_setup.html">MinGW (MSYS2) setup</a>
+  <a href="qt_grpc_setup.html">Qt6::Grpc setup</a>
+  <a href="service_creation.html">Service creation guide</a>
+  <a href="gui_wizard.html">Service Creator wizard</a>
+</nav>
+
+<main>
+
+<!-- =========================== Why ============================ -->
+<section id="why">
+<h2>When to pick this path</h2>
+<p>
+  The <code>google_vcpkg</code> client variant builds Google
+  <code>grpc++</code> from source via <strong>vcpkg</strong> using the
+  <strong>Qt-installer MinGW 13.1.0</strong> toolchain. Same gRPC C++
+  API as the MSYS2 variant, but compiled with Qt's gcc so client AND
+  server share one libstdc++ ABI end-to-end.
+</p>
+
+<table>
+  <tr><th></th><th><code>google</code> (MSYS2)</th><th><code>qt</code> (Qt6::Grpc)</th><th><code>google_vcpkg</code></th></tr>
+  <tr><td>Client toolchain</td>     <td>MSYS2 MinGW 14.x</td>            <td>Qt-installer MinGW 13.1.0</td>     <td><strong>Qt-installer MinGW 13.1.0</strong></td></tr>
+  <tr><td>Server toolchain</td>     <td>MSYS2 MinGW 14.x</td>            <td>MSYS2 MinGW 14.x</td>              <td><strong>Qt-installer MinGW 13.1.0</strong></td></tr>
+  <tr><td>gRPC stack (client)</td>  <td>Google grpc++</td>               <td>Qt6::Grpc + Qt6::Protobuf</td>     <td><strong>Google grpc++</strong></td></tr>
+  <tr><td>Built from source?</td>   <td>No (MSYS2 pacman)</td>           <td>No (Qt installer)</td>             <td><strong>Yes (vcpkg, ~30&ndash;60 min once)</strong></td></tr>
+  <tr><td>One toolchain everywhere</td><td>No</td>                       <td>No</td>                            <td><strong>Yes</strong></td></tr>
+  <tr><td>Qt signals/slots in RPC</td><td>No</td>                        <td>Yes</td>                           <td>No (use QtConcurrent worker)</td></tr>
+  <tr><td>Wire-protocol interop</td><td>&#10003;</td>                    <td>&#10003;</td>                      <td>&#10003;</td></tr>
+  <tr><td>Sample folder</td>        <td><code>client/</code></td>        <td><code>qt_client/</code></td>       <td><code>qt_client_grpcpp/</code></td></tr>
+</table>
+
+<div class="highlight-box">
+  <strong>Pick <code>google_vcpkg</code> when:</strong> you want one
+  compiler ABI for client + server (no MSYS2 / Qt MinGW split) and
+  you'd rather invest 30&ndash;60 min once in a vcpkg build than
+  maintain a parallel MSYS2 install.
+</div>
+<div class="highlight-box">
+  <strong>Pick <code>google</code> (MSYS2)</strong> when you already
+  have MSYS2 set up and don't want a long first-time vcpkg build.
+</div>
+<div class="highlight-box">
+  <strong>Pick <code>qt</code></strong> when you want Qt-native RPC
+  types (signals on responses, QFuture on calls) and don't need the
+  server's exact same toolchain.
+</div>
+</section>
+
+<!-- =========================== TL;DR ============================ -->
+<section id="tldr">
+<h2>TL;DR</h2>
+<div class="tldr">
+  <strong>Three things to install</strong>: Qt 6.x with MinGW 13.1.0 kit
+  + Tools (CMake, Ninja, MinGW), vcpkg cloned + bootstrapped, env vars
+  <code>VCPKG_ROOT</code> + <code>QT_DIR</code> + <code>QT_MINGW_BIN</code>.
+  Then run <code>qt_client_grpcpp/build_qt.bat</code> for client and
+  <code>build_qt_vcpkg.bat</code> for server.
+  <br><br>
+  <strong>First build is slow</strong>: ~30&ndash;60 min while vcpkg
+  compiles boringssl + abseil + protobuf + grpc with Qt's MinGW.
+  Subsequent runs hit the binary cache (~5 sec).
+  <br><br>
+  <strong>Sharing with teammates</strong>: <code>export_prebuilt.bat</code>
+  packages the vcpkg artifacts so other devs unzip + skip the cost.
+</div>
+</section>
+
+<!-- =========================== Prerequisites ============================ -->
+<section id="prereqs">
+<h2><span class="step-num">1</span> Prerequisites (one-time)</h2>
+
+<h3>Qt 6.x with MinGW 13.1.0</h3>
+<p>
+  Install via <a href="https://www.qt.io/download-qt-installer" target="_blank">Qt Online Installer</a>.
+  Required components:
+</p>
+<ul>
+  <li><strong>Qt 6.x &rarr; MinGW 13.1.0 64-bit</strong> &mdash; the actual Qt libraries (Core, Gui, Widgets, Network, Concurrent).</li>
+  <li><strong>Tools &rarr; MinGW 13.1.0 64-bit</strong> &mdash; the compiler. Lives at <code>C:\Qt\Tools\mingw1310_64\</code>.</li>
+  <li><strong>Tools &rarr; CMake</strong> + <strong>Tools &rarr; Ninja</strong> &mdash; build system.</li>
+</ul>
+<div class="highlight-box">
+  Other Qt versions are fine as long as the bundled MinGW is gcc 13.1.0.
+  If your Qt ships a different gcc, see
+  <a href="#other-compilers">Other Qt compilers</a>.
+</div>
+
+<h3>vcpkg</h3>
+<pre><code>git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+setx VCPKG_ROOT C:\vcpkg</code></pre>
+<p>Open a fresh terminal so <code>setx</code> takes effect.</p>
+
+<h3>Environment variables</h3>
+<pre><code>setx QT_DIR        C:\Qt\6.11.0\mingw_64
+setx QT_MINGW_BIN  C:\Qt\Tools\mingw1310_64\bin
+setx VCPKG_ROOT    C:\vcpkg</code></pre>
+<p>
+  <code>QT_MINGW_BIN</code> defaults to
+  <code>C:\Qt\Tools\mingw1310_64\bin</code> if unset &mdash; override
+  only if your Qt is installed elsewhere.
+</p>
+
+<h3>Windows 10 1803 or later</h3>
+<p>
+  The bundled <code>tar.exe</code>
+  (<code>%SystemRoot%\System32\tar.exe</code>) is needed by
+  <code>deploy_qt.bat</code> and <code>export_prebuilt.bat</code>.
+  All recent Windows 10/11 ship this.
+</p>
+</section>
+
+<!-- =========================== Layout ============================ -->
+<section id="layout">
+<h2><span class="step-num">2</span> What the scaffold emits</h2>
+<p>
+  Pick the third gRPC stack option in the wizard
+  (or <code>--client-grpc google_vcpkg</code> via CLI). The generator writes:
+</p>
+<pre><code>&lt;service&gt;/
+&#9500;&#9472;&#9472; CMakeLists.txt              &larr; server (already vcpkg-compatible)
+&#9500;&#9472;&#9472; build_qt_vcpkg.bat          &larr; server build with Qt MinGW + vcpkg
+&#9500;&#9472;&#9472; triplets/                   &larr; shared by server + client
+&#9474;   &#9500;&#9472;&#9472; x64-mingw-qt.cmake
+&#9474;   &#9492;&#9472;&#9472; qt-mingw-toolchain.cmake
+&#9500;&#9472;&#9472; ports/grpc/                 &larr; shared overlay-port (filled at first build)
+&#9474;   &#9492;&#9472;&#9472; 00018-gcc13-per-cpu-ice-workaround.patch
+&#9500;&#9472;&#9472; init_vcpkg_overlay.bat      &larr; one-shot bootstrap
+&#9500;&#9472;&#9472; (server src/, proto/, ...)
+&#9492;&#9472;&#9472; qt_client_grpcpp/
+    &#9500;&#9472;&#9472; CMakeLists.txt
+    &#9500;&#9472;&#9472; vcpkg.json              &larr; grpc + protobuf
+    &#9500;&#9472;&#9472; build_qt.bat
+    &#9500;&#9472;&#9472; deploy_qt.bat           &larr; bundle .exe + DLLs
+    &#9500;&#9472;&#9472; export_prebuilt.bat     &larr; package vcpkg artifacts
+    &#9500;&#9472;&#9472; README.md
+    &#9500;&#9472;&#9472; proto/&lt;svc&gt;.proto
+    &#9492;&#9472;&#9472; src/{main.cpp, MainWindow.{h,cpp,ui}}</code></pre>
+</section>
+
+<!-- =========================== Build ============================ -->
+<section id="build">
+<h2><span class="step-num">3</span> Build workflow</h2>
+
+<h3>First build (~30&ndash;60 min, mostly idle)</h3>
+<pre><code>cd &lt;service&gt;\qt_client_grpcpp
+build_qt.bat</code></pre>
+<p>What happens, in order:</p>
+<ol>
+  <li><code>init_vcpkg_overlay.bat</code> runs once if
+      <code>..\ports\grpc\portfile.cmake</code> doesn't exist.
+      Copies upstream grpc port from <code>%VCPKG_ROOT%\ports\grpc\</code>,
+      appends our gcc 13 ICE patch to the PATCHES list. Idempotent.</li>
+  <li><strong>vcpkg install</strong> (manifest mode) reads
+      <code>vcpkg.json</code>, downloads + builds: zlib, openssl, c-ares,
+      re2, abseil, protobuf, grpc &mdash; all pinned to Qt MinGW
+      13.1.0 via the custom <code>x64-mingw-qt</code> triplet.</li>
+  <li><strong>CMake configure</strong> with
+      <code>-DCMAKE_TOOLCHAIN_FILE=...vcpkg.cmake</code> so
+      <code>find_package(gRPC CONFIG REQUIRED)</code> resolves to the
+      just-built artifacts under
+      <code>build\vcpkg_installed\x64-mingw-qt\</code>.</li>
+  <li><strong>Ninja build</strong> compiles generated stubs +
+      <code>MainWindow.cpp</code> + <code>main.cpp</code> &rarr;
+      <code>build\&lt;service&gt;_qt_gui.exe</code>.</li>
+</ol>
+
+<h3>Subsequent builds</h3>
+<p>
+  vcpkg hits the binary cache
+  (<code>%LOCALAPPDATA%\vcpkg\archives\</code>) and restores the
+  install tree in seconds. CMake re-configure + ninja rebuild only
+  your code &rarr; ~15 sec total.
+</p>
+
+<h3>Server with the same toolchain</h3>
+<pre><code>cd &lt;service&gt;
+build_qt_vcpkg.bat</code></pre>
+<p>
+  Server uses the same <code>x64-mingw-qt</code> triplet and the same
+  overlay-port, so the <code>vcpkg install</code> step is essentially
+  free (cache hit from client's first build).
+</p>
+</section>
+
+<!-- =========================== Custom triplet ============================ -->
+<section id="triplet">
+<h2><span class="step-num">4</span> Why a custom triplet?</h2>
+<p>
+  vcpkg's stock <code>x64-mingw-dynamic</code> triplet picks up
+  whatever <code>gcc.exe</code> is first on <code>PATH</code>. If
+  MSYS2's bin is ahead of Qt's in your PATH, vcpkg silently builds
+  with MSYS2's gcc 14 &mdash; and the resulting grpc DLLs are
+  binary-incompatible with Qt 6.x (built with gcc 13.1.0).
+</p>
+<p>
+  The custom triplet <code>x64-mingw-qt</code> chainloads
+  <code>qt-mingw-toolchain.cmake</code>, which <strong>pins</strong>
+  the compiler:
+</p>
+<pre><code>set(CMAKE_C_COMPILER   "C:/Qt/Tools/mingw1310_64/bin/gcc.exe")
+set(CMAKE_CXX_COMPILER "C:/Qt/Tools/mingw1310_64/bin/g++.exe")</code></pre>
+<p>
+  Result: every port built with this triplet uses Qt's gcc, regardless
+  of PATH order. ABI matches Qt 6 binaries every time.
+</p>
+</section>
+
+<!-- =========================== ICE patch ============================ -->
+<section id="ice-patch">
+<h2><span class="step-num">5</span> The gcc 13.1.0 ICE workaround</h2>
+<p>
+  gcc 13.1.0 has an internal compiler error (segfault) when
+  instantiating this template in grpc 1.76's
+  <code>src/core/util/per_cpu.h</code>:
+</p>
+<pre><code>std::unique_ptr&lt;T[]&gt; data_{new T[shards_]};   // NSDMI brace-init</code></pre>
+<p>
+  Reproduces under both <code>-O0/-g</code> and <code>-O3/-DNDEBUG</code>.
+  Fixed in gcc 13.3+, but Qt's installer ships exactly 13.1.0 with no
+  easy override.
+</p>
+<p>
+  The patch (<code>ports/grpc/00018-gcc13-per-cpu-ice-workaround.patch</code>)
+  moves the array allocation from NSDMI into the constructor's
+  mem-initializer list &mdash; semantically identical, takes a
+  different front-end path that doesn't ICE:
+</p>
+<pre><code>PerCpu(PerCpuOptions options)
+    : shards_(options.Shards()),
+      data_(std::unique_ptr&lt;T[]&gt;(new T[shards_])) {}
+// ...
+std::unique_ptr&lt;T[]&gt; data_;   // declared, init'd in ctor body</code></pre>
+<p>
+  The overlay-port keeps the project self-contained: vcpkg's stock
+  grpc port is unchanged on disk; ours just adds one more patch in the
+  PATCHES list.
+</p>
+</section>
+
+<!-- =========================== DLLs ============================ -->
+<section id="dlls">
+<h2><span class="step-num">6</span> Output DLLs and what to deploy</h2>
+<p>
+  After build, <code>qt_client_grpcpp/build/vcpkg_installed/x64-mingw-qt/</code> has:
+</p>
+<ul>
+  <li><strong>bin/</strong> &mdash; runtime DLLs (protobuf, abseil,
+      openssl, c-ares, re2, zlib).  ~9 files.</li>
+  <li><strong>lib/</strong> &mdash; static <code>.a</code> libs
+      (grpc, gpr, upb, abseil submodules), plus import libs
+      <code>.dll.a</code> for the dynamic deps.</li>
+  <li><strong>include/</strong> &mdash; headers
+      (<code>grpcpp/</code>, <code>google/protobuf/</code>, ...).</li>
+  <li><strong>share/</strong> &mdash; CMake config files for
+      <code>find_package(gRPC CONFIG)</code>.</li>
+  <li><strong>tools/</strong> &mdash; <code>protoc.exe</code>,
+      <code>grpc_cpp_plugin.exe</code>.</li>
+</ul>
+<div class="warn-box">
+  <strong>grpc itself is static</strong> on Windows (vcpkg's grpc port
+  forces <code>vcpkg_check_linkage(ONLY_STATIC_LIBRARY)</code>).  The
+  <code>.exe</code> already contains <code>libgrpc++.a</code> baked
+  in; you don't need to ship <code>libgrpc++.dll</code> because there
+  isn't one.  The dynamic DLLs in <code>bin/</code> are grpc's
+  <em>dependencies</em>, which still need to travel with the binary.
+</div>
+<h3>Deploy to a clean PC</h3>
+<pre><code>deploy_qt.bat</code></pre>
+<p>Bundles into <code>deploy\</code>:</p>
+<ul>
+  <li>The <code>.exe</code></li>
+  <li>Qt6 runtime DLLs + <code>platforms\qwindows.dll</code> + plugins (via <code>windeployqt-qt6</code>)</li>
+  <li>MinGW runtime: <code>libstdc++-6.dll</code>, <code>libgcc_s_seh-1.dll</code>, <code>libwinpthread-1.dll</code></li>
+  <li>vcpkg runtime DLLs from <code>vcpkg_installed\x64-mingw-qt\bin\</code></li>
+</ul>
+<p>
+  Total ~80&ndash;120 MB. Zip + copy to any Windows x64 machine,
+  unzip, run. No Qt / no vcpkg / no MinGW needed on target.
+</p>
+</section>
+
+<!-- =========================== Share ============================ -->
+<section id="share">
+<h2><span class="step-num">7</span> Sharing build artifacts (skip 30&ndash;60 min on other dev PCs)</h2>
+<pre><code>export_prebuilt.bat</code></pre>
+<p>Produces two archives in <code>prebuilt\</code>:</p>
+<ul>
+  <li><strong><code>vcpkg_installed_x64-mingw-qt.zip</code></strong>
+      (~50&ndash;80 MB) &mdash; the full installed tree. Receiving PC:
+      unzip into <code>qt_client_grpcpp\build\vcpkg_installed\</code>
+      and run <code>build_qt.bat</code> &mdash; vcpkg sees "everything
+      installed" and skips the build step.</li>
+  <li><strong><code>vcpkg_binary_cache.zip</code></strong>
+      (~200&ndash;400 MB) &mdash; the vcpkg binary cache zips.
+      Receiving PC: unzip into <code>%LOCALAPPDATA%\vcpkg\</code> and
+      run <code>build_qt.bat</code> &mdash; vcpkg "Restored from cache"
+      for every port.</li>
+</ul>
+<h3>Team-wide setup: shared cache</h3>
+<pre><code>setx VCPKG_BINARY_SOURCES "files,\\fileserver\share\vcpkg-cache,readwrite"</code></pre>
+<p>
+  First dev to build a port populates the cache; everyone else hits it.
+</p>
+</section>
+
+<!-- =========================== Qt Creator ============================ -->
+<section id="qt-creator">
+<h2><span class="step-num">8</span> Use with Qt Creator</h2>
+<p>
+  Qt Creator is a frontend for cmake &mdash; it has no built-in vcpkg
+  knowledge, but cmake does. To make the project work in Qt Creator:
+</p>
+<ol>
+  <li>Open <code>qt_client_grpcpp/CMakeLists.txt</code> (or the parent
+      server's <code>CMakeLists.txt</code>) in Qt Creator.</li>
+  <li><em>Project &rarr; Build &rarr; CMake &rarr; Initial Configuration</em>, add:
+<pre><code>-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake
+-DVCPKG_TARGET_TRIPLET=x64-mingw-qt
+-DVCPKG_OVERLAY_TRIPLETS=%{sourceDir}/../triplets
+-DVCPKG_OVERLAY_PORTS=%{sourceDir}/../ports</code></pre>
+      For the server's CMakeLists, drop the <code>../</code> since
+      <code>triplets/</code> and <code>ports/</code> are siblings.</li>
+  <li><em>Configure</em> &rarr; vcpkg toolchain runs
+      <code>vcpkg install</code> automatically. Builds from source if
+      cache miss; restores from cache if hit.</li>
+</ol>
+<div class="highlight-box">
+  To skip the install entirely: drop a pre-built
+  <code>build/vcpkg_installed/x64-mingw-qt/</code> (from a teammate's
+  <code>export_prebuilt.bat</code>) into the build directory before
+  configuring. vcpkg sees "everything installed" and skips.
+</div>
+</section>
+
+<!-- =========================== Other compilers ============================ -->
+<section id="other-compilers">
+<h2><span class="step-num">9</span> Other Qt compilers</h2>
+<p>
+  The current triplet pins <code>mingw1310_64</code>. To support a
+  different Qt toolchain (e.g. Qt 6.9's gcc 14, or the optional
+  <code>llvm-mingw1706_64</code> clang kit), make a parallel triplet:
+</p>
+<pre><code>triplets/
+&#9500;&#9472;&#9472; x64-mingw-qt.cmake          &larr; current (gcc 13.1.0)
+&#9500;&#9472;&#9472; x64-mingw-qt-gcc14.cmake    &larr; new (gcc 14.x)
+&#9492;&#9472;&#9472; x64-mingw-qt-llvm17.cmake   &larr; new (clang via llvm-mingw)</code></pre>
+<p>
+  Each triplet sets <code>VCPKG_CHAINLOAD_TOOLCHAIN_FILE</code> to a
+  corresponding <code>*-toolchain.cmake</code> that pins compiler
+  paths. Pick one via
+  <code>-DVCPKG_TARGET_TRIPLET=x64-mingw-qt-gcc14</code>.
+</p>
+<table>
+  <tr><th>Compiler</th><th>Notes</th></tr>
+  <tr><td>gcc 14.x</td><td>ABI-compatible with gcc 13.x at libstdc++ level. Binaries link fine against Qt 6 built with 13.1.0. The grpc 1.76 ICE may not affect 14.x &mdash; try without the patch first.</td></tr>
+  <tr><td>llvm-mingw 17 (clang)</td><td>Uses libstdc++ (NOT libc++) when shipped with Qt, so ABI matches gcc-built Qt. Clang has no ICE on the grpc per_cpu.h pattern. Slightly different command-line conventions vs gcc.</td></tr>
+  <tr><td>MSVC</td><td>Different beast: needs <code>x64-windows</code> triplet (CRT instead of MSYS), Qt MSVC kit, vcpkg's stock port works without any patch.</td></tr>
+</table>
+</section>
+
+<!-- =========================== Troubleshooting ============================ -->
+<section id="troubleshooting">
+<h2>Troubleshooting</h2>
+
+<h3><code>... was unexpected at this time</code> from <code>.bat</code> scripts</h3>
+<p>
+  Windows codepage choking on non-ASCII characters in the script
+  (em-dash <code>&mdash;</code>, ellipsis <code>&hellip;</code>) or
+  LF-only line endings. The generator emits ASCII-only with CRLF
+  endings. If you edit a <code>.bat</code> in Notepad++ / VSCode, save
+  as <strong>CRLF + ANSI</strong> (or UTF-8 without BOM).
+</p>
+
+<h3><code>ninja: manifest 'build.ninja' still dirty after 100 tries</code></h3>
+<p>
+  vcpkg-built artifacts are fine; the loop comes from in-source
+  codegen output. Our generated CMakeLists.txt sets
+  <code>PROTOC_OUT_DIR=${CMAKE_BINARY_DIR}/grpc_gen</code> precisely
+  to avoid this. If you've manually changed it back to the source
+  tree, change it again.
+</p>
+
+<h3><code>Invalid character escape '\Q'</code> from CMake</h3>
+<p>
+  CMake stored a Windows backslash path in
+  <code>CMakeFiles\&lt;ver&gt;\CMakeCXXCompiler.cmake</code> and is now
+  re-parsing it as a script. The generated <code>build_qt.bat</code>
+  converts all paths to forward slashes (<code>%PATH:\=/%</code>)
+  precisely to avoid this. If you customise the script, do the same
+  for any new path arg.
+</p>
+
+<h3>vcpkg <code>BUILD_FAILED</code> for grpc</h3>
+<p>99% of the time this is the gcc 13.1.0 ICE in <code>per_cpu.h</code>. Verify the overlay-port has our patch:</p>
+<pre><code>type ports\grpc\portfile.cmake | findstr 00018</code></pre>
+<p>
+  Should output <code>00018-gcc13-per-cpu-ice-workaround.patch</code>.
+  If missing, delete <code>ports\grpc\</code> and re-run
+  <code>init_vcpkg_overlay.bat</code>.
+</p>
+<p>For other failures, full log is at:</p>
+<pre><code>%VCPKG_ROOT%\buildtrees\grpc\install-x64-mingw-qt-rel-out.log</code></pre>
+
+<h3><code>protoc not found</code> at CMake configure</h3>
+<p>
+  vcpkg's grpc port installs <code>protoc.exe</code> to
+  <code>build\vcpkg_installed\x64-mingw-qt\tools\protobuf\</code>.
+  The vcpkg toolchain file adds this to CMake's search path
+  automatically. If not found, you're probably configuring without the
+  toolchain file &mdash; check that
+  <code>-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake</code>
+  is in your CMake args.
+</p>
+
+<h3><code>Failed to find required Qt component "Widgets"</code> (or similar)</h3>
+<p>
+  <code>QT_DIR</code> not set, or pointing at the wrong prefix. Should
+  be <code>C:\Qt\6.x.y\mingw_64</code>, not <code>C:\Qt\Tools\&hellip;</code>.
+</p>
+</section>
+
+<!-- =========================== Anatomy ============================ -->
+<section id="anatomy">
+<h2>Anatomy of the build infrastructure</h2>
+<p>For the curious:</p>
+<ul>
+  <li><strong><code>triplets/x64-mingw-qt.cmake</code></strong>
+      &mdash; vcpkg triplet. Sets target arch / CRT / library
+      linkage, then chainloads
+      <code>qt-mingw-toolchain.cmake</code>. Also sets
+      <code>VCPKG_BUILD_TYPE release</code> to skip the Debug build
+      (halves time, dodges gcc 13.1.0 ICE that triggered with
+      <code>-O0</code> flags too).</li>
+  <li><strong><code>triplets/qt-mingw-toolchain.cmake</code></strong>
+      &mdash; CMake toolchain that pins
+      <code>CMAKE_C_COMPILER</code> /
+      <code>CMAKE_CXX_COMPILER</code> / etc to absolute paths inside
+      Qt's <code>mingw1310_64\bin</code>. Reads
+      <code>QT_MINGW_BIN</code> env var if set.</li>
+  <li><strong><code>ports/grpc/</code></strong> &mdash; vcpkg
+      overlay-port. Filled by <code>init_vcpkg_overlay.bat</code> on
+      first build. After init, contains: portfile.cmake, vcpkg.json,
+      00001..00017 patches from upstream, and our 00018 ICE
+      workaround.</li>
+  <li><strong><code>init_vcpkg_overlay.bat</code></strong> &mdash;
+      one-shot bootstrap. Idempotent: re-running is a no-op once
+      <code>ports/grpc/portfile.cmake</code> exists.</li>
+  <li><strong><code>build_qt.bat</code> (client)</strong> &mdash;
+      drives <code>vcpkg install</code> &rarr;
+      <code>cmake configure</code> &rarr; <code>ninja build</code>.
+      Quotes all paths, normalises backslashes, wipes stale
+      <code>CMakeFiles/</code>.</li>
+  <li><strong><code>build_qt_vcpkg.bat</code> (server)</strong>
+      &mdash; same workflow for the server's CMakeLists, using the
+      same triplet + overlay-port so cache is shared.</li>
+</ul>
+</section>
+
+</main>
+
+<footer>
+  <em>Docs source: <code>examples/docs/</code>.
+  Generator: <code>MicroserviceBase/adapters/scaffold/cpp_tmpl.py</code>.</em>
+</footer>
+
+</body>
+</html>
