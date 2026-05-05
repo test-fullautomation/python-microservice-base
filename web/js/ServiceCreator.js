@@ -920,11 +920,11 @@
                 '<input class="form-check-input" type="radio" name="svcLayout" ' +
                   'id="svcLayoutMonorepo" value="monorepo">' +
                 '<label class="form-check-label" for="svcLayoutMonorepo">' +
-                  '<strong>Single project (monorepo)</strong> (<em>C++ only, v1</em>)<br>' +
+                  '<strong>Single project (monorepo)</strong><br>' +
                   '<span class="text-muted small">' +
-                    'One folder, one CMakeLists, one build that produces ' +
-                    'N executables sharing the same .proto.  Good for cohesive ' +
-                    'systems of related services.' +
+                    'One project (one CMakeLists for C++, one pyproject.toml ' +
+                    'for Python) that produces N entry points sharing the ' +
+                    'same .proto.  Good for cohesive systems of related services.' +
                   '</span>' +
                 '</label>' +
               '</div>' +
