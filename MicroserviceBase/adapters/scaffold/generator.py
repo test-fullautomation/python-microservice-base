@@ -148,15 +148,16 @@ def generate_scaffold(spec: ScaffoldSpec) -> Dict[str, str]:
 
     Paths are relative to the project root (e.g. ``src/main.cpp``).
     """
-    # Monorepo path: one project folder, N executables sharing the proto.
-    # v1: C++ only.  Python monorepo is a straightforward follow-up.
+    # Monorepo path: one project folder, N executables / entry-points
+    # sharing the proto.
     if spec.services and len(spec.services) > 1:
-        if spec.language != "cpp":
-            raise NotImplementedError(
-                "Monorepo layout is C++ only in v1. "
-                "Use separate-folder layout for Python."
-            )
-        return cpp_tmpl.generate_monorepo(spec, spec.services)
+        if spec.language == "cpp":
+            return cpp_tmpl.generate_monorepo(spec, spec.services)
+        if spec.language == "python":
+            return python_tmpl.generate_monorepo(spec, spec.services)
+        raise NotImplementedError(
+            f"Monorepo layout not supported for language={spec.language!r}"
+        )
 
     files: Dict[str, str] = {}
 

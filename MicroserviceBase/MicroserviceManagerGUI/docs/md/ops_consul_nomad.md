@@ -10,7 +10,7 @@ on-ramp to:
 - Browse registered services, running jobs, and per-job logs in one
   place.
 - Generate new service scaffolds (the
-  [Service Creator wizard](gui_wizard.md) lives here too).
+  [Service Creator wizard](service_creator.md) lives here too).
 
 If you've been running `consul agent -dev` and `nomad agent -dev` by
 hand in two terminals, this guide replaces those steps.
@@ -56,7 +56,7 @@ The mode toggle in the navbar switches between:
 |---|---|
 | **Services** | Runtime management — view registered services, send test gRPC calls, watch real-time updates. |
 | **Service Network** | Operate the infrastructure — start/stop Consul + Nomad, view jobs, view nodes. **This guide focuses here.** |
-| **Service Creator** | Generate a new service scaffold via the 4-step wizard.  See [gui_wizard.md](gui_wizard.md). |
+| **Service Creator** | Generate a new service scaffold via the 4-step wizard.  See [service_creator.md](service_creator.md). |
 
 ---
 

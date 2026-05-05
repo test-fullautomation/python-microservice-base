@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Microservice Manager GUI</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --green: #10b981; --amber: #fbbf24; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0;
+         background: var(--bg); color: var(--text); line-height: 1.65; }
+  header { background: linear-gradient(135deg, #10b981, #0ea5e9); padding: 32px 30px;
+           box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p  { margin: 8px 0 0; opacity: 0.9; }
+  main { max-width: 1100px; margin: 0 auto; padding: 30px; }
+  section { background: var(--panel); border-radius: 12px; padding: 22px 26px;
+            margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border-left: 4px solid var(--green); }
+  section h2 { color: var(--green); margin-top: 0;
+               border-bottom: 1px solid var(--border); padding-bottom: 10px;
+               font-size: 1.3em; }
+  h3 { color: var(--amber); margin-top: 18px; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px; color: #fcd34d;
+         font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+         font-size: 0.9em; }
+  pre { background: #0b1220; padding: 14px; border-radius: 8px; overflow-x: auto;
+        border: 1px solid var(--border); font-size: 0.88em; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0;
+          background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+           font-size: 0.92em; vertical-align: top; }
+  th { background: #0b1220; color: var(--green); }
+  tr:last-child td { border-bottom: none; }
+  a { color: var(--accent); }
+  ul li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Microservice Manager GUI</h1>
+  <p>A Bootstrap-based desktop / web app that wraps the FastAPI bridge with a friendly UX.</p>
+</header>
+
+<main>
+
+<section>
+<h2>What you can do here</h2>
+<table>
+  <tr><th>Task</th><th>Where</th></tr>
+  <tr><td>Start / stop Consul + Nomad agents, inspect cluster state, submit jobs</td>
+      <td><strong>Service Network</strong> mode &rarr; see <a href="docs/html/ops_consul_nomad.html">Operating Consul + Nomad</a></td></tr>
+  <tr><td>Generate a new service scaffold (proto + domain + adapter + clients + Nomad HCL)</td>
+      <td><strong>Service Creator</strong> mode &rarr; see <a href="docs/html/service_creator.html">Service Creator wizard guide</a></td></tr>
+  <tr><td>Inspect a running service, browse its gRPC methods, send test calls</td>
+      <td><strong>Services</strong> mode (covered in the Operating doc above)</td></tr>
+  <tr><td>Use the in-app help (lighter, embedded inside the GUI itself)</td>
+      <td>Click the <strong>?</strong> in the navbar &mdash; renders <code>web/docs/help.html</code></td></tr>
+</table>
+<p>↑ Repo root: <a href="../../README.html">../../</a> &mdash; framework architecture lives in <a href="../../docs/">../../docs/</a>.</p>
+</section>
+
+<section>
+<h2>Two ways to launch</h2>
+<table>
+  <tr><th>Mode</th><th>Command</th><th>When</th></tr>
+  <tr><td><strong>Electron desktop</strong></td>
+      <td><code>npm start</code></td>
+      <td>Native window with system tray and bundled bridge auto-start</td></tr>
+  <tr><td><strong>Browser + Python bridge</strong></td>
+      <td><code>python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</code> then open <code>http://127.0.0.1:1112</code></td>
+      <td>Headless boxes, shared sessions, existing Python env</td></tr>
+</table>
+<p>
+  Both modes are fed by the same FastAPI bridge &mdash; what you do in
+  one is visible in the other.
+</p>
+</section>
+
+<section>
+<h2>Documentation map</h2>
+<pre><code>MicroserviceManagerGUI/
+├── README.md / README.html         ← you are here
+├── docs/                           ← long-form, GitHub-renderable
+│   ├── md/   index.md   ops_consul_nomad.md   service_creator.md
+│   ├── html/ index.html ops_consul_nomad.html service_creator.html
+│   └── img/  (18 screenshots used by the docs above)
+└── web/
+    └── docs/
+        ├── help.html               ← embedded in-app help (rendered
+        │                             inside the running GUI when the
+        │                             user clicks the ? button)
+        └── img/  (10 screenshots)</code></pre>
+<p>
+  The <strong>long-form docs</strong> in <code>docs/</code> are the
+  canonical reference &mdash; they render as standalone pages on GitHub,
+  link out to the rest of the repo, and cover material the in-app help
+  skips (CLI equivalents, REST API, troubleshooting depth).
+</p>
+<p>
+  The <strong>in-app help</strong> at <code>web/docs/help.html</code> is
+  intentionally smaller &mdash; it loads inside the running GUI so users
+  don&rsquo;t have to context-switch out to a browser tab.  It links to
+  the long-form docs for anything beyond a quick lookup.
+</p>
+</section>
+
+<section>
+<h2>Documentation entry points</h2>
+<ul>
+  <li><a href="docs/html/index.html"><strong>Doc index</strong></a> &mdash; landing page with all GUI guides</li>
+  <li><a href="docs/html/ops_consul_nomad.html"><strong>Operating Consul + Nomad</strong></a> &mdash; Service Network tab, agent lifecycle, jobs / nodes / services dashboards, REST API equivalents</li>
+  <li><a href="docs/html/service_creator.html"><strong>Service Creator wizard</strong></a> &mdash; the 4-step scaffold-generation wizard, with screenshots of each step</li>
+  <li><strong>Markdown twins</strong> &mdash; every <code>.html</code> has a <code>.md</code> sibling under <code>docs/md/</code> for terminal preview / <code>git grep</code></li>
+</ul>
+</section>
+
+<section>
+<h2>Source layout</h2>
+<table>
+  <tr><th>Path</th><th>What</th></tr>
+  <tr><td><code>web/</code></td><td>Browser-renderable assets (HTML / CSS / JS) &mdash; works in Electron and as a static site served by the bridge</td></tr>
+  <tr><td><code>web/index.html</code></td><td>Main shell (mode toggle, navbar, panels)</td></tr>
+  <tr><td><code>web/js/</code></td><td>App scripts &mdash; <code>app.js</code>, <code>GrpcClient.js</code>, <code>ConsulDashboard.js</code>, <code>NomadDashboard.js</code>, <code>ServiceCreator.js</code>, etc.</td></tr>
+  <tr><td><code>web/services/</code></td><td>Per-service GUI plugins loaded dynamically</td></tr>
+  <tr><td><code>web/docs/help.html</code></td><td>Embedded in-app help</td></tr>
+  <tr><td><code>electron/</code></td><td>Electron wrapper (preload, IPC)</td></tr>
+  <tr><td><code>dist/</code></td><td>Built Electron output (gitignored)</td></tr>
+  <tr><td><code>build.bat</code> / <code>build.sh</code></td><td>Bundle scripts</td></tr>
+</table>
+</section>
+
+<section>
+<h2>Architecture</h2>
+<p>
+  The GUI is a thin client over the FastAPI bridge at
+  <code>http://127.0.0.1:1112</code>.  Every action in the UI maps to a
+  bridge HTTP endpoint &mdash; see the <strong>CLI equivalents</strong>
+  table at the bottom of
+  <a href="docs/html/ops_consul_nomad.html">Operating Consul + Nomad</a>
+  for the full list.
+</p>
+<pre><code>┌─────────────────┐  HTTP/JSON   ┌──────────────────────┐  gRPC + Consul HTTP
+│  Manager GUI    │  ─────────→  │  FastAPI bridge      │  ────────────────────→ Services
+│  (Electron/web) │              │  (Python; in-process │                         (Consul-registered)
+│                 │              │   reflect_client +   │  ──→ Consul HTTP API
+│                 │              │   subprocess agents) │  ──→ Nomad HTTP API
+└─────────────────┘              └──────────────────────┘</code></pre>
+</section>
+
+</main>
+</body>
+</html>

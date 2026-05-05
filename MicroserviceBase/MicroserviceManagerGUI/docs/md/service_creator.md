@@ -4,12 +4,12 @@ Generate a complete service scaffold (proto + domain + adapter + build
 scripts + clients + Nomad spec) from the Manager GUI without writing
 any boilerplate yourself.
 
-> 📄 *Also available as HTML:* [`../html/gui_wizard.html`](../html/gui_wizard.html)
+> 📄 *Also available as HTML:* [`../html/service_creator.html`](../html/service_creator.html)
 >
-> Companion docs: [← Docs index](index.md) ·
-> [MinGW (MSYS2) setup](mingw_setup.md) ·
-> [Qt6::Grpc setup](qt_grpc_setup.md) ·
-> [Service creation tutorial (manual)](service_creation.md)
+> Companion docs: [← Docs index](../../../../examples/docs/md/index.md) ·
+> [MinGW (MSYS2) setup](../../../../examples/docs/md/mingw_setup.md) ·
+> [Qt6::Grpc setup](../../../../examples/docs/md/qt_grpc_setup.md) ·
+> [Service creation tutorial (manual)](../../../../examples/docs/md/service_creation.md)
 
 ---
 
@@ -21,7 +21,7 @@ any boilerplate yourself.
 | Import an existing `.proto` file and get a matching server + client | ✅ Yes — `Import .proto…` button on Step 3 |
 | Generate multiple services from one .proto (monorepo) | ✅ Yes — pick "Single project (monorepo)" on the import dialog |
 | Edit an *existing* service | ❌ No — edit the source files directly. Re-running the wizard would overwrite. |
-| Add a single new RPC to an existing service | ❌ No — easier to edit `.proto` + adapter by hand. See [service_creation.md](service_creation.md). |
+| Add a single new RPC to an existing service | ❌ No — easier to edit `.proto` + adapter by hand. See [service_creation.md](../../../../examples/docs/md/service_creation.md). |
 
 The wizard is equivalent to `mb-scaffold` (the
 [command-line tool](#alternative-the-mb-scaffold-cli)) — same generator
@@ -37,8 +37,8 @@ backend, just nicer to drive interactively.
    use start with
    `python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge`).
 3. *(For C++ scaffolds)* The toolchain you'll build with —
-   [MinGW (MSYS2)](mingw_setup.md) for Google grpc++ services or
-   [Qt-installer](qt_grpc_setup.md) for Qt-native clients.
+   [MinGW (MSYS2)](../../../../examples/docs/md/mingw_setup.md) for Google grpc++ services or
+   [Qt-installer](../../../../examples/docs/md/qt_grpc_setup.md) for Qt-native clients.
 
 ---
 
@@ -129,9 +129,9 @@ Pick the language, GUI variant, and infrastructure files to generate.
 |---|---|---|
 | **None** | Service-only, no UI | — |
 | **HTML / JS** *(Python only)* | Browser-based UI loaded by Manager GUI | — |
-| **Widget** *(C++)* | Native Qt Widgets desktop client | [MinGW setup](mingw_setup.md) |
-| **QML** *(C++)* | Qt Quick UI in C++ client | [MinGW setup](mingw_setup.md) |
-| **WASM** *(C++)* | Qt Widgets compiled to WebAssembly | [WASM service guide](wasm_cleware_service_guide.md) |
+| **Widget** *(C++)* | Native Qt Widgets desktop client | [MinGW setup](../../../../examples/docs/md/mingw_setup.md) |
+| **QML** *(C++)* | Qt Quick UI in C++ client | [MinGW setup](../../../../examples/docs/md/mingw_setup.md) |
+| **WASM** *(C++)* | Qt Widgets compiled to WebAssembly | [WASM service guide](../../../../examples/docs/md/wasm_cleware_service_guide.md) |
 
 ### Client gRPC Stack *(C++ only, when GUI ≠ None)*
 
@@ -141,8 +141,8 @@ with any server):
 | Choice | Where client lives | Toolchain | What you get |
 |---|---|---|---|
 | **Google grpc++** *(default)* | `client/` (next to server) | MSYS2 MinGW (same as server) | Console + optional Qt6 Widgets GUI from MSYS2's qt6-base. JSON-based dispatch via `google::protobuf::util::JsonStringToMessage`. |
-| **Qt6::Grpc + Qt6::Protobuf** | `qt_client/` (separate project) | Qt-installer MinGW (separate from server) | Qt-native RPC types with signal/slot integration. **Requires Qt 6.8+ with Qt GRPC + Qt Protobuf modules.** Server stays on MSYS2. See [Qt6::Grpc setup](qt_grpc_setup.md). |
-| **Google grpc++ via vcpkg + Qt MinGW** | `qt_client_grpcpp/` (separate project) | Qt-installer MinGW (same as server) | One toolchain end-to-end. vcpkg builds grpc/protobuf/abseil with Qt's MinGW. **First build ~30–60 min**; subsequent instant via cache. Also re-targets the server's CMakeLists to use vcpkg. See [vcpkg setup](vcpkg_setup.md). |
+| **Qt6::Grpc + Qt6::Protobuf** | `qt_client/` (separate project) | Qt-installer MinGW (separate from server) | Qt-native RPC types with signal/slot integration. **Requires Qt 6.8+ with Qt GRPC + Qt Protobuf modules.** Server stays on MSYS2. See [Qt6::Grpc setup](../../../../examples/docs/md/qt_grpc_setup.md). |
+| **Google grpc++ via vcpkg + Qt MinGW** | `qt_client_grpcpp/` (separate project) | Qt-installer MinGW (same as server) | One toolchain end-to-end. vcpkg builds grpc/protobuf/abseil with Qt's MinGW. **First build ~30–60 min**; subsequent instant via cache. Also re-targets the server's CMakeLists to use vcpkg. See [vcpkg setup](../../../../examples/docs/md/vcpkg_setup.md). |
 
 If you pick **Qt6::Grpc**, the wizard shows a yellow alert with the Qt
 version requirements — don't skip reading it; Qt 6.7 has the modules
@@ -167,7 +167,7 @@ appears below the radio:
 
 **With Google grpc++ via vcpkg + Qt MinGW selected** — emits
 `qt_client_grpcpp/` plus shared `triplets/` and `ports/` overlays at
-project root. See the [vcpkg setup guide](vcpkg_setup.md) for the
+project root. See the [vcpkg setup guide](../../../../examples/docs/md/vcpkg_setup.md) for the
 prerequisites and full workflow including the gcc 13.1.0 ICE
 workaround patch the generator emits automatically.
 
@@ -354,12 +354,12 @@ DemoService/
 
 For Qt6::Grpc client mode, you additionally get `qt_client/` (a
 parallel Qt-installer-toolchain project) — see
-[qt_grpc_setup.md](qt_grpc_setup.md) for its layout.
+[qt_grpc_setup.md](../../../../examples/docs/md/qt_grpc_setup.md) for its layout.
 
 For Google-grpc-via-vcpkg client mode, you additionally get
 `qt_client_grpcpp/` plus shared `triplets/`, `ports/grpc/`,
 `init_vcpkg_overlay.bat`, and `build_qt_vcpkg.bat` at project root.
-See [vcpkg_setup.md](vcpkg_setup.md) for the layout, build flow,
+See [vcpkg_setup.md](../../../../examples/docs/md/vcpkg_setup.md) for the layout, build flow,
 and the gcc 13.1.0 ICE workaround.
 
 For monorepo mode, you get one project folder with `src/<svc>/...`
@@ -370,9 +370,9 @@ per service and per-service `deploy/<svc>.nomad.hcl`.
 ## After generation
 
 1. **Build**:
-   - MSYS2: `build_deploy_msys2.bat` (see [mingw_setup.md](mingw_setup.md))
-   - Qt-installer + Qt6::Grpc: `qt_client/build_qt.bat` (see [qt_grpc_setup.md](qt_grpc_setup.md))
-   - Qt-installer + Google grpc++ (vcpkg): `qt_client_grpcpp/build_qt.bat` and `build_qt_vcpkg.bat` (server) (see [vcpkg_setup.md](vcpkg_setup.md))
+   - MSYS2: `build_deploy_msys2.bat` (see [mingw_setup.md](../../../../examples/docs/md/mingw_setup.md))
+   - Qt-installer + Qt6::Grpc: `qt_client/build_qt.bat` (see [qt_grpc_setup.md](../../../../examples/docs/md/qt_grpc_setup.md))
+   - Qt-installer + Google grpc++ (vcpkg): `qt_client_grpcpp/build_qt.bat` and `build_qt_vcpkg.bat` (server) (see [vcpkg_setup.md](../../../../examples/docs/md/vcpkg_setup.md))
 2. **Start Consul + Nomad** (one-time per session):
    ```cmd
    start /b consul agent -dev -client=0.0.0.0 -ui
@@ -394,7 +394,7 @@ per service and per-service `deploy/<svc>.nomad.hcl`.
    wire up your business logic / hardware access.
 
 For a worked walkthrough of editing the generated code, see
-[service_creation.md](service_creation.md).
+[service_creation.md](../../../../examples/docs/md/service_creation.md).
 
 ---
 

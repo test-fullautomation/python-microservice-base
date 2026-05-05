@@ -202,11 +202,11 @@
   <a href="#troubleshooting">Troubleshooting</a>
 
   <div class="nav-group">Companion docs</div>
-  <a href="index.html">&larr; Docs index</a>
-  <a href="mingw_setup.html">MinGW (MSYS2) setup</a>
-  <a href="qt_grpc_setup.html">Qt6::Grpc setup</a>
-  <a href="vcpkg_setup.html">vcpkg + Qt MinGW setup</a>
-  <a href="service_creation.html">Service creation tutorial</a>
+  <a href="../../../../examples/docs/html/index.html">&larr; Docs index</a>
+  <a href="../../../../examples/docs/html/mingw_setup.html">MinGW (MSYS2) setup</a>
+  <a href="../../../../examples/docs/html/qt_grpc_setup.html">Qt6::Grpc setup</a>
+  <a href="../../../../examples/docs/html/vcpkg_setup.html">vcpkg + Qt MinGW setup</a>
+  <a href="../../../../examples/docs/html/service_creation.html">Service creation tutorial</a>
 </nav>
 
 <main>
@@ -220,7 +220,7 @@
   <tr><td>Import an existing <code>.proto</code> file and get a matching server + client</td><td>✅ Yes — <em>Import .proto…</em> button on Step 3</td></tr>
   <tr><td>Generate multiple services from one .proto (monorepo)</td><td>✅ Yes — pick "Single project (monorepo)" on the import dialog</td></tr>
   <tr><td>Edit an <em>existing</em> service</td><td>❌ No — edit the source files directly. Re-running the wizard would overwrite.</td></tr>
-  <tr><td>Add a single new RPC to an existing service</td><td>❌ No — easier to edit <code>.proto</code> + adapter by hand. See <a href="service_creation.html">service_creation.html</a>.</td></tr>
+  <tr><td>Add a single new RPC to an existing service</td><td>❌ No — easier to edit <code>.proto</code> + adapter by hand. See <a href="../../../../examples/docs/html/service_creation.html">service_creation.html</a>.</td></tr>
 </table>
 <p>
   The wizard is equivalent to <code>mb-scaffold</code> (the
@@ -236,7 +236,7 @@
   <li><strong>MicroserviceBase Manager GUI</strong> running. See <a href="#start">Starting the Manager GUI</a> below.</li>
   <li><strong>Bridge</strong> running (the GUI launches it automatically; for headless use start with
       <code>python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</code>).</li>
-  <li><em>(For C++ scaffolds)</em> The toolchain you'll build with — <a href="mingw_setup.html">MinGW (MSYS2)</a> for Google grpc++ services or <a href="qt_grpc_setup.html">Qt-installer</a> for Qt-native clients.</li>
+  <li><em>(For C++ scaffolds)</em> The toolchain you'll build with — <a href="../../../../examples/docs/html/mingw_setup.html">MinGW (MSYS2)</a> for Google grpc++ services or <a href="../../../../examples/docs/html/qt_grpc_setup.html">Qt-installer</a> for Qt-native clients.</li>
 </ol>
 </section>
 
@@ -334,9 +334,9 @@ npm start</code></pre>
   <tr><th>Variant</th><th>Output</th><th>Toolchain doc</th></tr>
   <tr><td><strong>None</strong></td><td>Service-only, no UI</td><td>—</td></tr>
   <tr><td><strong>HTML / JS</strong> <em>(Python only)</em></td><td>Browser-based UI loaded by Manager GUI</td><td>—</td></tr>
-  <tr><td><strong>Widget</strong> <em>(C++)</em></td><td>Native Qt Widgets desktop client</td><td><a href="mingw_setup.html">MinGW</a></td></tr>
-  <tr><td><strong>QML</strong> <em>(C++)</em></td><td>Qt Quick UI in C++ client</td><td><a href="mingw_setup.html">MinGW</a></td></tr>
-  <tr><td><strong>WASM</strong> <em>(C++)</em></td><td>Qt Widgets compiled to WebAssembly</td><td><a href="wasm_cleware_service_guide.html">WASM</a></td></tr>
+  <tr><td><strong>Widget</strong> <em>(C++)</em></td><td>Native Qt Widgets desktop client</td><td><a href="../../../../examples/docs/html/mingw_setup.html">MinGW</a></td></tr>
+  <tr><td><strong>QML</strong> <em>(C++)</em></td><td>Qt Quick UI in C++ client</td><td><a href="../../../../examples/docs/html/mingw_setup.html">MinGW</a></td></tr>
+  <tr><td><strong>WASM</strong> <em>(C++)</em></td><td>Qt Widgets compiled to WebAssembly</td><td><a href="../../../../examples/docs/html/wasm_cleware_service_guide.html">WASM</a></td></tr>
 </table>
 
 <h3>Client gRPC Stack <em>(C++ only, when GUI ≠ None)</em></h3>
@@ -353,13 +353,13 @@ npm start</code></pre>
     <td><strong>Qt6::Grpc + Qt6::Protobuf</strong></td>
     <td><code>qt_client/</code> (separate project)</td>
     <td>Qt-installer MinGW (separate from server)</td>
-    <td>Qt-native RPC types with signal/slot integration. <strong>Requires Qt 6.8+ with Qt GRPC + Qt Protobuf modules.</strong> Server stays on MSYS2. See <a href="qt_grpc_setup.html">Qt6::Grpc setup</a>.</td>
+    <td>Qt-native RPC types with signal/slot integration. <strong>Requires Qt 6.8+ with Qt GRPC + Qt Protobuf modules.</strong> Server stays on MSYS2. See <a href="../../../../examples/docs/html/qt_grpc_setup.html">Qt6::Grpc setup</a>.</td>
   </tr>
   <tr>
     <td><strong>Google grpc++ via vcpkg + Qt MinGW</strong></td>
     <td><code>qt_client_grpcpp/</code> (separate project)</td>
     <td>Qt-installer MinGW (same as server)</td>
-    <td>One toolchain end-to-end. vcpkg builds grpc/protobuf/abseil with Qt's MinGW. <strong>First build ~30&ndash;60 min</strong>; subsequent instant via cache. Also re-targets the server's CMakeLists to use vcpkg. See <a href="vcpkg_setup.html">vcpkg setup</a>.</td>
+    <td>One toolchain end-to-end. vcpkg builds grpc/protobuf/abseil with Qt's MinGW. <strong>First build ~30&ndash;60 min</strong>; subsequent instant via cache. Also re-targets the server's CMakeLists to use vcpkg. See <a href="../../../../examples/docs/html/vcpkg_setup.html">vcpkg setup</a>.</td>
   </tr>
 </table>
 
@@ -391,7 +391,7 @@ npm start</code></pre>
   &mdash; emits <code>qt_client_grpcpp/</code> plus shared
   <code>triplets/</code> and <code>ports/</code> overlays at project
   root. See the
-  <a href="vcpkg_setup.html">vcpkg setup guide</a> for the
+  <a href="../../../../examples/docs/html/vcpkg_setup.html">vcpkg setup guide</a> for the
   prerequisites and full workflow including the gcc 13.1.0 ICE
   workaround patch the generator emits automatically.
 </p>
@@ -612,7 +612,7 @@ npm start</code></pre>
 <p>
   For Qt6::Grpc client mode, you additionally get <code>qt_client/</code>
   (a parallel Qt-installer-toolchain project) — see
-  <a href="qt_grpc_setup.html">qt_grpc_setup.html</a> for its layout.
+  <a href="../../../../examples/docs/html/qt_grpc_setup.html">qt_grpc_setup.html</a> for its layout.
 </p>
 
 <p>
@@ -620,7 +620,7 @@ npm start</code></pre>
   <code>qt_client_grpcpp/</code> plus shared <code>triplets/</code>,
   <code>ports/grpc/</code>, <code>init_vcpkg_overlay.bat</code>, and
   <code>build_qt_vcpkg.bat</code> at project root.  See
-  <a href="vcpkg_setup.html">vcpkg_setup.html</a> for the layout, build
+  <a href="../../../../examples/docs/html/vcpkg_setup.html">vcpkg_setup.html</a> for the layout, build
   flow, and the gcc 13.1.0 ICE workaround.
 </p>
 
@@ -638,9 +638,9 @@ npm start</code></pre>
 <ol>
   <li><strong>Build:</strong>
     <ul>
-      <li>MSYS2: <code>build_deploy_msys2.bat</code> (see <a href="mingw_setup.html">mingw_setup.html</a>)</li>
-      <li>Qt-installer + Qt6::Grpc: <code>qt_client/build_qt.bat</code> (see <a href="qt_grpc_setup.html">qt_grpc_setup.html</a>)</li>
-      <li>Qt-installer + Google grpc++ (vcpkg): <code>qt_client_grpcpp/build_qt.bat</code> and <code>build_qt_vcpkg.bat</code> (server) (see <a href="vcpkg_setup.html">vcpkg_setup.html</a>)</li>
+      <li>MSYS2: <code>build_deploy_msys2.bat</code> (see <a href="../../../../examples/docs/html/mingw_setup.html">mingw_setup.html</a>)</li>
+      <li>Qt-installer + Qt6::Grpc: <code>qt_client/build_qt.bat</code> (see <a href="../../../../examples/docs/html/qt_grpc_setup.html">qt_grpc_setup.html</a>)</li>
+      <li>Qt-installer + Google grpc++ (vcpkg): <code>qt_client_grpcpp/build_qt.bat</code> and <code>build_qt_vcpkg.bat</code> (server) (see <a href="../../../../examples/docs/html/vcpkg_setup.html">vcpkg_setup.html</a>)</li>
     </ul>
   </li>
   <li><strong>Start Consul + Nomad</strong> (one-time per session):
@@ -664,7 +664,7 @@ dist-msys2\run_&lt;service&gt;.bat</code></pre>
 
 <p>
   For a worked walkthrough of editing the generated code, see
-  <a href="service_creation.html">service_creation.html</a>.
+  <a href="../../../../examples/docs/html/service_creation.html">service_creation.html</a>.
 </p>
 </section>
 
@@ -875,8 +875,9 @@ services:                       # ← list of services instead of `methods`
 </main>
 
 <footer>
-  Companion to <a href="../md/gui_wizard.md">../md/gui_wizard.md</a> &mdash;
-  same content, different format.
+  Companion to <a href="../md/service_creator.md">../md/service_creator.md</a> &mdash;
+  same content, different format.  GUI doc index:
+  <a href="index.html">index.html</a>.
 </footer>
 
 </body>
