@@ -1,5 +1,4 @@
 @startuml sequence_gui_plugin_loading
-!theme plain
 title Service GUI Plugin Loading Sequence
 
 participant "User" as user

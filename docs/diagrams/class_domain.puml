@@ -1,175 +1,205 @@
 @startuml class_domain
-!theme plain
-title MicroserviceBase - Domain Layer Classes
+title MicroserviceBase — Class structure (post-migration, hexagonal)
 
-skinparam class {
-    BackgroundColor<<dataclass>> #CCFFCC
-    BackgroundColor<<enum>> #FFFFCC
-    BackgroundColor<<exception>> #FFCCCC
-    BackgroundColor<<service>> #CCE5FF
-}
+' Modeled on the TA reference's 02_class_diagram_service.puml
+' (https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal),
+' adapted to this repo's framework boundary.  MicroserviceBase ships
+' the base classes (Settings / ServiceRunner / ConsulRegistration /
+' ServiceClient); a concrete service composes them with its own
+' domain logic + adapters.
 
-package "domain.models" {
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
 
-    class MethodArgument <<dataclass>> {
-        +name: str
-        +condition: Optional[str]
-        +type: Optional[str]
-        +default: Optional[str]
-        +description: str
-        --
-        +to_dict(): dict
-        +{static} from_dict(data): MethodArgument
-    }
-
-    class ServiceMethod <<dataclass>> {
-        +name: str
-        +arguments: List[MethodArgument]
-        +return_type: Optional[str]
-        --
-        +to_dict(): dict
-        +{static} from_dict(name, data): ServiceMethod
-    }
-
-    class ServiceInfo <<dataclass>> {
-        +name: str
-        +description: str
-        +shortdesc: str
-        +group: str
-        +tag: str
-        +version: str = "1.0.0"
-        +routing_key: str
-        +gui_support: bool = False
-        +methods: List[str]
-        +methods_info: dict
-        --
-        +to_dict(): dict
-        +{static} from_dict(data): ServiceInfo
-    }
-
-    ServiceInfo --> "*" ServiceMethod : methods_info
-    ServiceMethod --> "*" MethodArgument : arguments
-}
-
-package "domain.messages" {
-
-    enum ResultType <<enum>> {
-        PASS = "pass"
-        FAIL = "fail"
-        EXCEPT = "exception"
-    }
-
-    class ServiceRequest <<dataclass>> {
-        +method: str
-        +args: Optional[List[Any]]
-        --
-        +to_dict(): dict
-        +{static} from_dict(data): ServiceRequest
-        +to_json(): str
-        +{static} from_json(json_str): ServiceRequest
-    }
-
-    class ServiceResponse <<dataclass>> {
-        +request: str
-        +result: str
-        +result_data: Any
-        --
-        +to_dict(): dict
-        +{static} from_dict(data): ServiceResponse
-        +to_json(): str
-        +{static} from_json(json_str): ServiceResponse
-        +get_json(): str
-        +get_data(): Any
-    }
-
-    class ServiceEvent <<dataclass>> {
+package "Configuration" #LightYellow {
+    class BaseServiceSettings <<pydantic / struct>> {
         +service_name: str
-        +state: str
-        +info: dict
+        +service_host: str = "0.0.0.0"
+        +grpc_port: int = 0
+        +advertise_addr: str
+        +consul_addr: str = "http://localhost:8500"
+        +consul_token: str
+        +log_level: str = "INFO"
         --
-        +to_dict(): dict
-        +{static} from_dict(data): ServiceEvent
-        +to_json(): str
-        +{static} from_json(json_str): ServiceEvent
+        Loaded from <PREFIX>_* env vars
+        +loadBaseFromEnv(prefix)  // C++
+        +readEnv(key, out)        // C++
     }
 
-    ServiceResponse --> ResultType : result
+    note right of BaseServiceSettings
+      Single class with two implementations:
+      ``runtime/settings.py`` (Pydantic) and
+      ``runtime_cpp/include/.../Settings.h``
+      (POD struct).  Each service subclasses
+      and adds its own typed fields with the
+      same env-prefix convention.
+    end note
 }
 
-package "domain.exceptions" {
-
-    class ServiceError <<exception>> {
-    }
-
-    class TransportError <<exception>> {
-    }
-
-    class ServiceNotFoundError <<exception>> {
-    }
-
-    class MethodNotFoundError <<exception>> {
-    }
-
-    TransportError --|> ServiceError
-    ServiceNotFoundError --|> ServiceError
-    MethodNotFoundError --|> ServiceError
-}
-
-package "domain.service_base" {
-
-    class ServiceBase <<service>> {
-        #_SERVICE_INFO: dict
-        #_SERVICE_REQUEST_EXCHANGE: str
-        -_transport: TransportPort
-        -_registry: ServiceRegistryPort
+package "Framework runtime (MicroserviceBase)" #LightCyan {
+    class ServiceRunner <<framework>> {
+        -m_settings: BaseServiceSettings
+        -m_services: list<ServiceEntry>
+        -m_server: grpc::Server / aio.Server
+        -m_consul: ConsulRegistration
+        -m_stopRequested: atomic<bool>
         --
-        +__init__(transport, registry)
-        +get_service_info(): ServiceInfo
-        +get_service_info_dict(): dict
-        +serve()
-        +register_service()
-        +unregister_service()
-        +request_service(data, exchange, key): dict
-        +close()
-        +dispatch_request(body): ServiceResponse
-        +on_request(ch, method, props, body)
-        #is_specific_request(request): bool
-        #on_specific_request(request, body): ServiceResponse
-        -get_svc_api_methods_dict(): dict
-        -get_svc_api_methods_info_dict(methods): dict
-        -{static} parse_docstring(docstring): dict
-        ..
-        +svc_api_get_version(): str
-        +svc_api_get_gui_files(): bytes
-    }
-}
-
-package "domain.service_registry" {
-
-    class ServiceRegistry <<service>> {
-        +services_information: dict
-        +realtime_update_exchange: str
-        -_alias_dict: dict
+        +ServiceRunner(settings, tags)
+        +addService(servicer, full_service_name)
+        +start(): int
+        +serveForever() / serve_forever()
+        +requestShutdown()
+        +boundPort(): int
         --
-        +handle_update(service_information)
-        +notify_updates()
-        +is_specific_request(request): bool
-        +handle_alias_request(body): ServiceResponse
-        ..
-        +svc_api_get_services_info(): str
-        +svc_api_get_realtime_update_exchange(): str
-        +svc_api_update_alias_conf(alias_string)
-        +svc_api_get_alias_conf(): str
+        ' Internal phases
+        -installSignalHandlers()
+        -gracefulShutdown()
     }
 
-    ServiceRegistry --|> ServiceBase : extends
+    class ConsulRegistration <<framework>> {
+        -m_name: str
+        -m_address: str
+        -m_port: int
+        -m_consulAddr: str
+        -m_tags: list<str>
+        -m_meta: map<str,str>
+        -m_serviceId: str
+        -m_registered: bool
+        --
+        +registerService(): bool
+        +deregisterService()
+        +serviceId(): str
+        +getLastError(): str
+        --
+        -buildRegistrationJson(): str
+        -httpPut(path, body): bool
+    }
+
+    class "ServiceClient<T>" as ServiceClient <<framework, template>> {
+        -m_serviceName: str
+        -m_consulAddr: str
+        -m_target: str
+        -m_channel: grpc::Channel
+        -m_stub: T::Stub
+        --
+        +ServiceClient(name, consulAddr="")
+        +ServiceClient(name, target, direct)
+        +stub(): T::Stub&
+        +reconnect()
+        +isConnected(): bool
+        +target(): str
+        --
+        +{static} fromConsul(name, addr): ServiceClient
+        +{static} fromDirect(name, target): ServiceClient
+        --
+        -resolve()
+        -connect(target)
+    }
+
+    class "detail::resolveConsul" as Resolver <<helper>> {
+        +resolveConsul(consulAddr, name): ResolvedEndpoint
+    }
+
+    ServiceRunner *--> ConsulRegistration : owns (RAII)
+    ServiceClient ..> Resolver : uses
 }
 
-' Cross-package relationships
-ServiceBase --> ServiceInfo : creates
-ServiceBase --> ServiceRequest : dispatches
-ServiceBase --> ServiceResponse : returns
-ServiceBase --> ServiceMethod : discovers
-ServiceRegistry --> ServiceEvent : handles
+package "Domain (per-service, pure logic)" #LightYellow {
+    interface "<<port>>\nServiceDomain" as Domain <<protocol>> {
+        ' Each service defines its own domain interface(s).
+        ' Example shapes from TA reference (PPSCapable,
+        ' RelayCapable, ...) — capability-style protocols.
+        +<service-specific methods>
+    }
+
+    interface "<<port>>\nDevicePort" as DevicePort <<protocol>> {
+        +connect()
+        +disconnect()
+        +probe()
+        +<hardware ops...>
+    }
+
+    class ConcreteDomainService <<service>> {
+        -_device: DevicePort
+        --
+        +<service-specific methods>
+    }
+
+    ConcreteDomainService ..|> Domain
+    ConcreteDomainService o--> DevicePort
+}
+
+package "Adapters - Driving (gRPC API)" #LightBlue {
+    class GrpcServiceAdapter <<adapter>> {
+        -_domain: ServiceDomain
+        --
+        +<RPC method bindings>
+        +Greet(ctx, req, resp)
+        ...
+    }
+
+    note right of GrpcServiceAdapter
+      Generated proto-stub subclass + thin glue
+      that converts protobuf messages to/from
+      domain calls.  Scaffold (cpp_tmpl.py /
+      python_tmpl.py) emits this.
+    end note
+
+    GrpcServiceAdapter o--> Domain : delegates
+}
+
+package "Adapters - Driven (Hardware / I/O)" #LightGreen {
+    class MockDeviceAdapter <<adapter>> {
+        +connect() / disconnect()
+        +probe()
+    }
+
+    class RealDeviceAdapter <<adapter>> {
+        -_serial: Serial / driver handle
+        +connect() / disconnect()
+        +probe()
+        +<vendor SDK calls>
+    }
+
+    MockDeviceAdapter ..|> DevicePort
+    RealDeviceAdapter ..|> DevicePort
+}
+
+package "Composition root" {
+    class "main.cpp / main.py" as Main <<entrypoint>> {
+        +main(argc, argv) / async main()
+    }
+
+    note right of Main
+      Per-service composition root:
+      1. Load Settings from env
+      2. Construct DevicePort impl (Mock or real)
+      3. Construct ConcreteDomainService(device)
+      4. Construct GrpcServiceAdapter(domain)
+      5. ServiceRunner runner(settings)
+      6. runner.addService(adapter, "pkg.Service")
+      7. runner.serveForever()
+    end note
+
+    Main ..> BaseServiceSettings : loads
+    Main ..> ConcreteDomainService : wires
+    Main ..> GrpcServiceAdapter : wires
+    Main ..> ServiceRunner : drives
+}
+
+' Cross-package wiring
+ServiceRunner --> GrpcServiceAdapter : addService(...)\nregisters with grpc::Server
+ServiceRunner ..> ConsulRegistration : creates on start()
+GrpcServiceAdapter ..> Domain : holds reference
+
+note as N1
+  **Reading guide**
+  - Yellow = configuration + domain (pure logic, no I/O)
+  - Cyan = framework code shipped by MicroserviceBase
+  - Blue = driving adapters (gRPC servicers — generated)
+  - Green = driven adapters (hardware / external systems)
+  - Composition root wires everything from env + factories
+  Direction: outer (adapters) → inner (domain) only.
+end note
 
 @enduml

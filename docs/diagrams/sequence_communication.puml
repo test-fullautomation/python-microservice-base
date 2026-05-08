@@ -1,111 +1,92 @@
 @startuml sequence_communication
-!theme plain
 skinparam defaultTextAlignment center
 skinparam sequenceMessageAlign center
 skinparam responseMessageBelowArrow true
 skinparam maxMessageSize 250
 
-title Service Communication Flow\n(Exchanges, Queues, and Routing Keys)
+title Service Communication Flow\n(gRPC over HTTP/2 + Consul service discovery)
 
-participant "Client\n(FastAPI Bridge\nor Service A)" as Client
-participant "RabbitMQ Broker" as Broker
-participant "ServiceRegistry" as Registry
-participant "MyService\n(ServiceBase)" as Service
+participant "Client\n(FastAPI bridge,\npeer service,\nor Robot Framework)" as Client
+participant "Consul agent" as Consul
+participant "Service A\n(ServiceRunner)" as Service
 
 == Phase 1: Service Registration ==
 
 note over Service
-  On startup, service discovers
-  its svc_api_* methods and builds
-  _SERVICE_INFO dict automatically
+  On startup, ServiceRunner reads
+  Settings (env-driven), wires up
+  the gRPC server, then registers
+  itself with the local Consul agent.
 end note
 
-Service -> Broker : **publish** to exchange\n**""service_information""** (topic)\nrouting_key = ""service.information""\nbody = { info: _SERVICE_INFO, state: ""on"" }
-
-note over Broker #fff3e0
-  Exchange: **service_information** (topic)
-  Queue: **service_infor_queue** (durable)
-  Binding: routing_key = ""service.information""
+Service -> Service : ServiceRunner::run()\n  bind gRPC port\n  start grpc::Server\n  enable reflection
+Service -> Consul : PUT /v1/agent/service/register\n{ id, name, address, port,\n  check: {grpc, interval=3s} }
+note over Consul #fff3e0
+  Consul catalog now lists service A
+  with a healthy gRPC TCP check.
 end note
 
-Broker -> Registry : deliver to **service_infor_queue**
-
-Registry -> Registry : handle_update()\nStore service in\nservices_information dict
-
-== Phase 2: Registry Broadcasts Update to All Subscribers ==
-
-Registry -> Broker : **publish** to exchange\n**""services_update""** (fanout)\nrouting_key = """"\nbody = { all services info }
-
-note over Broker #e0f7fa
-  Exchange: **services_update** (fanout)
-  Queues: exclusive auto-delete per subscriber
-  Routing: broadcast to ALL bound queues
-end note
-
-Broker -> Client : deliver to subscriber queue\n(FastAPI Bridge → WebSocket → GUI)
+== Phase 2: Discovery (Consul) ==
 
 note over Client
-  Client now knows MyService
-  is available with its methods
-  and routing_key
+  Whoever wants to call service A
+  asks Consul where it lives.  No
+  pre-shared host:port, no broker.
 end note
 
-== Phase 3: RPC Request / Response ==
+Client -> Consul : GET /v1/health/service/<name>?passing
+Consul --> Client : [ { Service: { Address, Port } } ]
 
-Client -> Client : Build request:\nServiceBase.create_request_data(\n  ""svc_api_add"", [3, 5])
-
-Client -> Broker : **publish** to exchange\n**""services_request""** (direct)\nrouting_key = ""service.myservice""\nreply_to = <exclusive callback queue>\ncorrelation_id = <uuid>
-
-note over Broker #fff3e0
-  Exchange: **services_request** (direct)
-  Queue: **MyService** (non-durable, purged on bind)
-  Binding: routing_key = ""service.myservice""
+note over Client
+  Client now has the address:port
+  for one (or more) healthy
+  instances of service A.
 end note
 
-Broker -> Service : deliver to **MyService** queue
+== Phase 3: gRPC call ==
 
-Service -> Service : dispatch_request()\nFind svc_api_add()\nCall with args [3, 5]\nBuild ServiceResponse
+Client -> Service : grpc::Channel(address:port)\nServiceStub::Method(req) over HTTP/2
+note over Service
+  No correlation_id, no reply queue.
+  HTTP/2 streams + protobuf framing
+  match request to response natively.
+end note
+Service -> Service : adapter dispatches to domain\nbuild Response message
+Service --> Client : Method response\n(unary or stream)
 
-Service -> Broker : **publish** to exchange\n**""""** (default direct)\nrouting_key = <reply_to queue name>\ncorrelation_id = <same uuid>
+== Phase 4: Method discovery (optional, via reflection) ==
 
-note over Broker #f5f5f5
-  Exchange: **""** (default direct)
-  Routes directly to reply_to queue
-  Matched by correlation_id
+note over Client
+  Manager GUI / grpcurl can list
+  methods at runtime without a
+  pre-shared .proto file.
 end note
 
-Broker -> Client : deliver to callback queue
+Client -> Service : grpc.reflection.v1alpha\n  ServerReflection.ServerReflectionInfo
+Service --> Client : file descriptors\n(services + methods + message types)
 
-Client -> Client : Match correlation_id\nParse ServiceResponse:\n{ request: ""svc_api_add"",\n  result: ""pass"",\n  result_data: 8 }
-
-== Phase 4: Service Shutdown ==
+== Phase 5: Shutdown ==
 
 note over Service
-  On shutdown (KeyboardInterrupt
-  or svc_api_shutdown RPC)
+  On SIGTERM / SIGBREAK, ServiceRunner
+  drains in-flight RPCs and tells
+  Consul to forget the instance.
 end note
 
-Service -> Service : unregister_service()\nstop_consuming()
+Service -> Service : Server::Shutdown(deadline)
+Service -> Consul : PUT /v1/agent/service/deregister/<id>
+Consul -> Consul : drop instance from catalog\n(any client doing the\nPhase 2 lookup now skips it)
 
-Service -> Broker : **publish** to exchange\n**""service_information""** (topic)\nrouting_key = ""service.information""\nbody = { info: _SERVICE_INFO, state: ""off"" }
-
-Broker -> Registry : deliver to **service_infor_queue**
-
-Registry -> Registry : handle_update()\nRemove service from\nservices_information dict
-
-Registry -> Broker : **publish** to exchange\n**""services_update""** (fanout)\nbody = { updated services\n+ ""__registry_shutdown__"" sentinel }
-
-Broker -> Client : deliver update\n(GUI removes service from list)
-
-== Exchange Summary ==
+== What replaced the broker ==
 
 note over Client, Service
-  **Exchanges used:**
-  | **Exchange** | **Type** | **Purpose** |
-  | ""services_request"" | Direct | RPC calls between services |
-  | ""service_information"" | Topic | Registration / unregistration events |
-  | ""services_update"" | Fanout | Broadcast service list to UI subscribers |
-  | """" (default) | Direct | RPC response routing via reply_to |
+  **No exchange / queue / routing key.**
+  | **Was (RabbitMQ era)** | **Is (gRPC era)** |
+  | services_request exchange | direct gRPC channel client→server |
+  | service_information topic | Consul catalog (HTTP API + TTL) |
+  | services_update fanout | Consul long-poll / GUI 1s refresh |
+  | reply_to + correlation_id | HTTP/2 stream framing |
+  | svc_api_* prefix | proto package.Service/Method |
 end note
 
 @enduml

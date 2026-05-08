@@ -9,19 +9,39 @@ For the Manager GUI specifically, see [`../MicroserviceBase/MicroserviceManagerG
 
 ## Where to start
 
+Grouped by intent.  Same content as the flat list before, just easier to scan when you know whether you want to *get oriented*, *operate*, *develop*, or *reference*.
+
+**Get oriented**
+
 | You want to… | Read |
 |---|---|
 | Get the 5-minute pitch | [Repo `README.md`](../README.md) |
 | Understand the architecture (layers, runtime, transport) | [`architecture.md`](architecture.md) |
 | Understand how a single service runs end-to-end | [`runtime_model.md`](runtime_model.md) |
 | Look up a term you don't know | [`concepts.md`](concepts.md) |
-| See what changed in the recent migration | [`changelog.md`](changelog.md) |
-| Diagnose a problem | [`troubleshooting.md`](troubleshooting.md) |
-| Find the rationale for a design choice | [`adr/`](adr/) — Architecture Decision Records |
+
+**Operate**
+
+| You want to… | Read |
+|---|---|
 | Read the Manager GUI guides | [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md) |
-| Set up a toolchain (MSYS2, Qt6::Grpc, vcpkg+QtMinGW) | [`../examples/docs/md/index.md`](../examples/docs/md/index.md) |
-| Walk through generating a service | [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) |
 | Run Consul + Nomad without two terminals | [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) |
+| Diagnose a problem | [`troubleshooting.md`](troubleshooting.md) |
+
+**Develop**
+
+| You want to… | Read |
+|---|---|
+| Walk through generating a service | [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) |
+| Set up a toolchain (MSYS2, Qt6::Grpc, vcpkg+QtMinGW) | [`../examples/docs/md/index.md`](../examples/docs/md/index.md) |
+| Install the C++ runtime as a CMake / vcpkg package | [`runtime_cpp_install.md`](runtime_cpp_install.md) |
+
+**Reference**
+
+| You want to… | Read |
+|---|---|
+| See what changed in the recent migration | [`changelog.md`](changelog.md) |
+| Find the rationale for a design choice | [`adr/`](adr/) — Architecture Decision Records |
 
 ## Repo-level docs in this folder
 

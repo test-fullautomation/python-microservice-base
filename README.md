@@ -5,6 +5,56 @@
 
 MicroserviceBase provides the foundation for creating microservices that communicate over gRPC, with a built-in **Manager GUI** for monitoring, **Consul-based service discovery** for dynamic registration, and **Nomad-based orchestration** for lifecycle management. Whether you're building test automation infrastructure, managing distributed services, or creating IoT device controllers, MicroserviceBase gives you the tools to develop and deploy microservices reliably.
 
+## Documentation map
+
+Quick jump to the doc you need.  Sections below this map go into more depth on each topic.
+
+**Get started**
+
+| I want to… | Go to |
+|---|---|
+| Get the 5-minute pitch | This page (continue scrolling, or jump to [Why MicroserviceBase?](#why-microservicebase)) |
+| Install Consul + Nomad | [Consul & Nomad install](#consul--nomad-install) below — download + PATH + verify |
+| Scaffold and run a first service end-to-end | [Quick Start](#quick-start) (5 numbered steps below) |
+
+**Manager GUI**
+
+| I want to… | Go to |
+|---|---|
+| Manager GUI overview & install | [`MicroserviceBase/MicroserviceManagerGUI/README.md`](MicroserviceBase/MicroserviceManagerGUI/README.md) |
+| All Manager GUI guides (long-form) | [`MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md) — index of GUI walkthroughs |
+| Operate Consul + Nomad from the GUI | [`ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) — one-click agent launch |
+| Walk through the Service Creator wizard | [`service_creator.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) — 4-step UI + YAML schema |
+
+**Examples**
+
+| I want to… | Go to |
+|---|---|
+| Canonical multi-service C++ example | [`examples/PowerDeviceService/`](examples/PowerDeviceService/README.md) — 6 services, Qt client, vcpkg + Qt MinGW |
+| Minimal single C++ service | [`examples/cpp_hello_service/`](examples/cpp_hello_service/README.md) |
+| Console + Qt-Widget client | [`examples/cpp_hello_client/`](examples/cpp_hello_client/README.md) |
+| Single Python service | [`examples/hello_service/`](examples/hello_service/README.md) |
+| Toolchain setup (MSYS2, Qt-installer MinGW, vcpkg + Qt) | [`examples/docs/`](examples/docs/README.md) |
+
+**Framework reference**
+
+| I want to… | Go to |
+|---|---|
+| Hexagonal layers, transport, Consul, Nomad — the big picture | [`docs/architecture.md`](docs/architecture.md) |
+| How a single service runs end-to-end (lifecycle, channel pooling, reflection) | [`docs/runtime_model.md`](docs/runtime_model.md) |
+| Look up a term (bridge, hub, runtime, port, adapter, scaffold…) | [`docs/concepts.md`](docs/concepts.md) |
+| Install the C++ runtime as a CMake / vcpkg package | [`docs/runtime_cpp_install.md`](docs/runtime_cpp_install.md) |
+| Migration history (RabbitMQ → gRPC, ProcessHub → Nomad, etc.) | [`docs/changelog.md`](docs/changelog.md) |
+| Diagnose a problem — symptom-indexed | [`docs/troubleshooting.md`](docs/troubleshooting.md) |
+| Architecture Decision Records (one per design choice) | [`docs/adr/`](docs/adr/README.md) |
+
+**Repo-level entry points**
+
+| I want to… | Go to |
+|---|---|
+| Repo docs index (everything in `docs/`) | [`docs/index.md`](docs/index.md) |
+| This page in HTML | [`README.html`](README.html) |
+
 ## Why MicroserviceBase?
 
 ### The Problem
@@ -33,25 +83,26 @@ Building the same scaffold     ──────►  Domain + adapter + main + 
 
 MicroserviceBase provides a complete framework:
 
+```mermaid
+flowchart LR
+    GUI["Manager GUI<br/>(Electron / Web)"] -->|HTTP/JSON| Bridge["FastAPI bridge<br/>(Python)"]
+    Bridge -->|Consul HTTP| Consul[("Consul agent")]
+    Bridge -->|Nomad HTTP| Nomad[("Nomad agent")]
+    Nomad -->|raw_exec| SvcA["Service A"]
+    Nomad -->|raw_exec| SvcB["Service B"]
+    SvcA -.registers.-> Consul
+    SvcB -.registers.-> Consul
+    Client(["Client<br/>(your code)"]) -->|"1. discover<br/>Consul HTTP"| Consul
+    Client ==>|"2. gRPC over HTTP/2<br/>(reflection or proto)"| SvcA
+    Client ==>|"2. gRPC over HTTP/2"| SvcB
 ```
-┌─────────────────────┐  HTTP/JSON   ┌───────────────────────┐  Consul HTTP   ┌──────────┐
-│   Manager GUI       │ ───────────→ │   FastAPI bridge      │ ─────────────→ │  Consul  │
-│   (Electron/web)    │              │   (Python)            │                │  agent   │
-└─────────────────────┘              │   ─ reflect_client    │  Nomad HTTP    ├──────────┤
-                                     │   ─ subprocess agents │ ─────────────→ │  Nomad   │
-                                     └───────────────────────┘                │  agent   │
-                                                                              └─────┬────┘
-                                                                                    │ raw_exec
-                                                                                    ▼
-            gRPC over HTTP/2                                            ┌───────────────┐
-   ┌──────────────────────────────────────────────────────────────────→ │  Service A    │
-   │                                                                    │  (registers   │
-   │   Client (gRPC reflection)                                         │   in Consul)  │
-   │                                                                    └───────────────┘
-   │                                                                    ┌───────────────┐
-   └──────────────────────────────────────────────────────────────────→ │  Service B    │
-                                                                        └───────────────┘
-```
+
+The **two-step client flow** (numbered edges in the diagram):
+
+1. **Discover** — client asks Consul "where is `ServiceA`?" via the Consul HTTP API (`/v1/health/service/<name>?passing`) and gets back a healthy `host:port`. Same lookup the Manager GUI uses.
+2. **Call** — client opens a gRPC channel to that `host:port` and invokes methods (with reflection if the server ships `grpc++_reflection`, or a local `.proto` via `LocalProtoClient`).
+
+Step 1 lets the client survive Nomad reschedules without restarting — the next Consul lookup returns the new `host:port`. No service-IP hardcoding anywhere.
 
 - **Service-to-service** uses gRPC over HTTP/2 — point-to-point, no central message broker
 - **Consul** is the canonical service catalog — services register on startup, deregister on shutdown, health-check every few seconds
@@ -174,26 +225,123 @@ pip install -e .
 - Python 3.10 or higher
 - gRPC + protobuf (`grpcio`, `grpcio-tools`, `protobuf` — pulled in by `pip install`)
 - FastAPI + uvicorn (for the bridge — also a transitive dep)
-- [Consul](https://developer.hashicorp.com/consul/install) binary on `%PATH%` (or use the Manager GUI to launch / connect)
-- [Nomad](https://developer.hashicorp.com/nomad/install) binary on `%PATH%` (same)
+- **Consul** + **Nomad** binaries on `%PATH%` — see the dedicated section below for download + setup steps
 - Node.js + npm (for GUI development / Electron build)
 - For C++ services: a toolchain — pick one of MSYS2, Qt-installer MinGW, or vcpkg + Qt MinGW (see [`examples/docs/`](examples/docs/README.md))
 
-### Consul + Nomad Setup
+### Consul & Nomad install
 
-The Manager GUI's **Service Network** tab can launch both agents in dev mode with one click each — no CLI needed. See [`MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
+Both are single-binary downloads from HashiCorp.  Pick a method:
 
-If you'd rather start them from a terminal:
+#### A. Manual download (~5 min, no admin rights needed)
 
-```bash
-# Consul (single-node, in-memory dev mode)
-consul agent -dev -client=0.0.0.0 -ui
+1. Download the binaries (Windows AMD64):
+   - [Consul releases](https://developer.hashicorp.com/consul/install) — pick "Windows / AMD64", save `consul.exe`
+   - [Nomad releases](https://developer.hashicorp.com/nomad/install) — same, save `nomad.exe`
+2. Move both `.exe` files into a stable folder, e.g. `C:\Tools\hashicorp\`:
 
-# Nomad (raw_exec enabled — needed for Windows-host services)
-nomad agent -dev -config=/path/to/dev.hcl
+   ```cmd
+   mkdir C:\Tools\hashicorp
+   move %USERPROFILE%\Downloads\consul.exe C:\Tools\hashicorp\
+   move %USERPROFILE%\Downloads\nomad.exe  C:\Tools\hashicorp\
+   ```
+3. Add the folder to your user `PATH` permanently:
+
+   ```cmd
+   setx PATH "%PATH%;C:\Tools\hashicorp"
+   ```
+
+   *Open a NEW terminal after `setx` — the current shell doesn't inherit the change.*
+4. Verify in the new terminal:
+
+   ```cmd
+   consul --version
+   nomad --version
+   ```
+
+   Both should print a version string (Consul 1.17+ / Nomad 1.7+ recommended).
+
+#### B. `winget` (Windows 10/11 with App Installer)
+
+```cmd
+winget install --id HashiCorp.Consul -e
+winget install --id HashiCorp.Nomad  -e
 ```
 
-UIs at <http://127.0.0.1:8500> (Consul) and <http://127.0.0.1:4646> (Nomad).
+`winget` adds them to `%PATH%` automatically.
+
+#### C. Chocolatey (admin shell)
+
+```cmd
+choco install consul nomad -y
+```
+
+#### D. Linux / macOS
+
+```bash
+# Linux (Debian/Ubuntu)
+wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+    https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update
+sudo apt install consul nomad
+
+# macOS (Homebrew)
+brew tap hashicorp/tap
+brew install hashicorp/tap/consul hashicorp/tap/nomad
+```
+
+### Consul + Nomad Setup
+
+The Manager GUI's **Service Network** tab can launch both agents in dev mode with one click each — no CLI needed. Walkthrough: [`ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
+
+If you prefer the terminal:
+
+#### 1. Start Consul (single-node, in-memory dev mode)
+
+```bash
+consul agent -dev -client=0.0.0.0 -ui
+```
+
+Leaves a leader running on `127.0.0.1:8500` with the web UI at <http://127.0.0.1:8500/ui>.
+
+#### 2. Start Nomad (raw_exec enabled, needed for Windows-host services)
+
+Save this minimal dev config to `C:\Tools\hashicorp\dev.hcl` (or any path):
+
+```hcl
+data_dir = "C:/Tools/hashicorp/nomad-data"
+
+client {
+  enabled = true
+}
+
+plugin "raw_exec" {
+  config { enabled = true }
+}
+
+consul {
+  address = "127.0.0.1:8500"
+}
+```
+
+Then start the agent (in a second terminal — Consul stays in the first):
+
+```bash
+nomad agent -dev -config=C:\Tools\hashicorp\dev.hcl
+```
+
+UI at <http://127.0.0.1:4646/ui>. Nomad auto-registers itself with the Consul agent above.
+
+#### 3. Verify both are healthy
+
+```bash
+consul members
+nomad node status
+```
+
+You should see one alive node from each. Once both are running, the Manager GUI's Service Network tab will connect to them automatically (default URLs: Consul `http://127.0.0.1:8500`, Nomad `http://127.0.0.1:4646`).
 
 ## Quick Start
 
@@ -354,21 +502,24 @@ Architecture diagrams are available in `docs/diagrams/` in PlantUML format:
 
 | Diagram | Description |
 |---------|-------------|
-| `architecture.puml` | Overall hexagonal architecture |
-| `architecture_overview.puml` | High-level runtime stack (GUI + bridge + Consul + Nomad + services) |
-| `component.puml` | Component dependencies |
-| `class_domain.puml` | Domain layer classes |
-| `class_ports.puml` | Port interfaces |
-| `class_adapters.puml` | Adapter implementations |
-| `gui_architecture.puml` | GUI dual-host architecture |
-| `sequence_communication.puml` | gRPC call sequence |
-| `sequence_alias.puml` | Legacy alias-routing flow (kept for fork maintainers) |
-| `component_local_hub.puml` | Pre-Nomad local-hub components (kept for fork maintainers) |
-| `component_fleet.puml` | Pre-Nomad fleet view (kept for fork maintainers) |
-| `flow_gui_loading_tiers.puml` | GUI plugin loading flow |
+| `00_canonical_architecture.puml` | **Top-level topology** — multi-node Consul + Nomad cluster, wrapper, gRPC + Kafka |
+| `component.puml` | Component diagram for one workload (framework + service process + clients) |
+| `class_domain.puml` | Hexagonal class structure (Settings / ServiceRunner / domain / adapters) |
+| `class_ports.puml` | Port interfaces (HubManagerPort, UIBridgePort, legacy TransportPort) |
+| `class_adapters.puml` | Adapter implementations (NomadHubAdapter, GrpcReflectClient, FastAPIBridge, scaffold) |
+| `gui_architecture.puml` | Manager GUI dual-host architecture (Consul + Nomad + gRPC) |
+| `sequence_communication.puml` | End-to-end gRPC call sequence |
+| `sequence_rpc.puml` | Unary + server-streaming RPC with Consul-resolver channel pool |
+| `sequence_registration.puml` | Service registration (Nomad raw_exec → wrapper → ServiceRunner → Consul) |
+| `sequence_shutdown.puml` | Graceful shutdown (Nomad signals → drain → Consul deregister) |
+| `state_process_lifecycle.puml` | Service lifecycle state machine |
+| `flow_gui_loading_tiers.puml` | GUI plugin loading flow (multi-tier detection) |
 | `qml-shell-lifecycle.md` | QML shell lifecycle notes |
+| `_archive/` | Pre-migration diagrams (RabbitMQ / Fleet / LocalHub) — see `_archive/README.md` |
 
-Render with any PlantUML tool (`plantuml architecture.puml`, the VS Code extension, or [PlantUML web server](https://www.plantuml.com/plantuml/uml/)).
+See [`docs/diagrams/AUDIT.md`](docs/diagrams/AUDIT.md) for the full diagram triage.
+
+Render with any PlantUML tool (`plantuml 00_canonical_architecture.puml`, the VS Code extension, or [PlantUML web server](https://www.plantuml.com/plantuml/uml/)).
 
 ## Troubleshooting Guide
 

@@ -155,4 +155,4 @@ Deferred because:
 
 - [Hexagonal Architecture (Alistair Cockburn)](https://alistair.cockburn.us/hexagonal-architecture/)
 - Source: `MicroserviceBase/domain/`, `MicroserviceBase/ports/`, `MicroserviceBase/adapters/`
-- Diagram: `docs/diagrams/architecture.puml`
+- Diagram: [`docs/diagrams/class_domain.puml`](../diagrams/class_domain.puml) (hexagonal class structure) and [`docs/diagrams/00_canonical_architecture.puml`](../diagrams/00_canonical_architecture.puml) (cluster topology). The original `architecture.puml` was archived in 2026-05 — see [`docs/diagrams/_archive/README.md`](../diagrams/_archive/README.md).

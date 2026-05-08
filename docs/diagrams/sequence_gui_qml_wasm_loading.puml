@@ -1,5 +1,4 @@
 @startuml sequence_gui_qml_wasm_loading
-!theme plain
 title Service GUI Loading — QML & WASM Services
 footer Covers Tier 1a/1c (QML Shell) and Tier 2 (per-service WASM)
 

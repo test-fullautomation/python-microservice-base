@@ -7,10 +7,35 @@
   :root {
     --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
     --accent: #38bdf8; --green: #10b981; --amber: #fbbf24; --border: #334155;
+    --sidebar-w: 260px;
   }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0;
          background: var(--bg); color: var(--text); line-height: 1.65; }
+
+  /* ---- Left sidebar TOC ---- */
+  .sidebar { position: fixed; left: 0; top: 0; width: var(--sidebar-w);
+              height: 100vh; overflow-y: auto; background: #0b1220;
+              border-right: 1px solid var(--border);
+              padding: 18px 0; z-index: 10; }
+  .sidebar .toc-title { font-size: 0.95em; color: var(--accent); font-weight: 600;
+                         padding: 0 18px 10px; margin: 0;
+                         border-bottom: 1px solid var(--border); }
+  .sidebar .toc-sub { font-size: 0.7em; color: var(--muted); text-transform: uppercase;
+                       letter-spacing: 0.6px; padding: 14px 18px 4px; margin: 0; }
+  .sidebar a { color: var(--muted); display: block; padding: 5px 18px;
+                text-decoration: none; font-size: 0.86em;
+                border-left: 3px solid transparent;
+                transition: color 0.15s, border-color 0.15s, background 0.15s; }
+  .sidebar a:hover { color: var(--text); background: rgba(56,189,248,0.06); }
+  .sidebar a.active { color: var(--accent); border-left-color: var(--accent);
+                       background: rgba(56,189,248,0.10); }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+  /* ---- Layout offset ---- */
+  .layout { margin-left: var(--sidebar-w); }
+
   header { background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 32px 30px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
   header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
@@ -18,22 +43,70 @@
   main { max-width: 1100px; margin: 0 auto; padding: 30px; }
   section { background: var(--panel); border-radius: 12px; padding: 22px 26px;
              margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-             border-left: 4px solid var(--accent); }
+             border-left: 4px solid var(--accent); scroll-margin-top: 20px; }
   section h2 { color: var(--accent); margin-top: 0;
                 border-bottom: 1px solid var(--border); padding-bottom: 10px;
                 font-size: 1.3em; }
   code { background: #0b1220; padding: 2px 6px; border-radius: 4px; color: #fcd34d;
           font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: 0.9em; }
+  pre { background: #0b1220; padding: 14px; border-radius: 8px; overflow-x: auto;
+         border: 1px solid var(--border); font-size: 0.88em; position: relative; }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  /* ---- Copy-button on every <pre> ---- */
+  .copy-btn { position: absolute; top: 6px; right: 6px; padding: 3px 10px;
+               background: #1e293b; color: var(--accent);
+               border: 1px solid var(--border); border-radius: 4px;
+               cursor: pointer; font-size: 0.78em; font-family: inherit;
+               opacity: 0.55; transition: opacity 0.18s, color 0.18s; }
+  .copy-btn:hover { opacity: 1; }
+  .copy-btn.copied { color: var(--green); border-color: var(--green); opacity: 1; }
+
   table { width: 100%; border-collapse: collapse; margin: 12px 0;
            background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
   th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
             font-size: 0.92em; vertical-align: top; }
   th { background: #0b1220; color: var(--accent); }
   tr:last-child td { border-bottom: none; }
+  /* Group headers inside tables — separates "Get oriented / Operate / Develop / ..." */
+  td.group-row { background: #0b1220; color: var(--accent); font-size: 0.78em;
+                  text-transform: uppercase; letter-spacing: 0.6px; padding: 8px 12px; }
   a { color: var(--accent); }
+
+  /* Responsive: collapse sidebar to a top bar on narrow screens */
+  @media (max-width: 900px) {
+    .sidebar { position: relative; width: 100%; height: auto; max-height: 240px;
+                border-right: none; border-bottom: 1px solid var(--border); }
+    .layout { margin-left: 0; }
+  }
 </style>
 </head>
 <body>
+
+<nav class="sidebar">
+  <h2 class="toc-title">Repo docs</h2>
+
+  <p class="toc-sub">Map</p>
+  <a href="#where-to-start">Where to start</a>
+  <a href="#repo-docs">Repo-level docs</a>
+  <a href="#reading-paths">Reading paths</a>
+
+  <p class="toc-sub">Up one level</p>
+  <a href="../README.html">Repo README</a>
+  <a href="../MicroserviceBase/MicroserviceManagerGUI/README.html">Manager GUI</a>
+  <a href="../examples/docs/html/index.html">Examples docs</a>
+
+  <p class="toc-sub">Direct links</p>
+  <a href="architecture.html">architecture.html</a>
+  <a href="runtime_model.html">runtime_model.html</a>
+  <a href="concepts.html">concepts.html</a>
+  <a href="runtime_cpp_install.html">runtime_cpp_install.html</a>
+  <a href="changelog.html">changelog.html</a>
+  <a href="troubleshooting.html">troubleshooting.html</a>
+  <a href="adr/">adr/</a>
+</nav>
+
+<div class="layout">
 
 <header>
   <h1>MicroserviceBase repo docs</h1>
@@ -51,25 +124,34 @@
 </p>
 </section>
 
-<section>
+<section id="where-to-start">
 <h2>Where to start</h2>
 <table>
   <tr><th>You want to&hellip;</th><th>Read</th></tr>
+
+  <tr><td colspan="2" class="group-row">Get oriented</td></tr>
   <tr><td>Get the 5-minute pitch</td><td><a href="../README.html">Repo README</a></td></tr>
   <tr><td>Understand the architecture (layers, runtime, transport)</td><td><a href="architecture.html">architecture.html</a></td></tr>
   <tr><td>Understand how a single service runs end-to-end</td><td><a href="runtime_model.html">runtime_model.html</a></td></tr>
   <tr><td>Look up a term you don't know</td><td><a href="concepts.html">concepts.html</a></td></tr>
-  <tr><td>See what changed in the recent migration</td><td><a href="changelog.html">changelog.html</a></td></tr>
-  <tr><td>Diagnose a problem</td><td><a href="troubleshooting.html">troubleshooting.html</a></td></tr>
-  <tr><td>Find the rationale for a design choice</td><td><a href="adr/">adr/</a> &mdash; Architecture Decision Records</td></tr>
+
+  <tr><td colspan="2" class="group-row">Operate</td></tr>
   <tr><td>Read the Manager GUI guides</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html">MicroserviceManagerGUI/docs/</a></td></tr>
-  <tr><td>Set up a toolchain (MSYS2, Qt6::Grpc, vcpkg+QtMinGW)</td><td><a href="../examples/docs/html/index.html">examples/docs/</a></td></tr>
-  <tr><td>Walk through generating a service</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html">service_creator.html</a></td></tr>
   <tr><td>Run Consul + Nomad without two terminals</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html">ops_consul_nomad.html</a></td></tr>
+  <tr><td>Diagnose a problem</td><td><a href="troubleshooting.html">troubleshooting.html</a></td></tr>
+
+  <tr><td colspan="2" class="group-row">Develop</td></tr>
+  <tr><td>Walk through generating a service</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html">service_creator.html</a></td></tr>
+  <tr><td>Set up a toolchain (MSYS2, Qt6::Grpc, vcpkg+QtMinGW)</td><td><a href="../examples/docs/html/index.html">examples/docs/</a></td></tr>
+  <tr><td>Install the C++ runtime as a CMake / vcpkg package</td><td><a href="runtime_cpp_install.html">runtime_cpp_install.html</a></td></tr>
+
+  <tr><td colspan="2" class="group-row">Reference</td></tr>
+  <tr><td>See what changed in the recent migration</td><td><a href="changelog.html">changelog.html</a></td></tr>
+  <tr><td>Find the rationale for a design choice</td><td><a href="adr/">adr/</a> &mdash; Architecture Decision Records</td></tr>
 </table>
 </section>
 
-<section>
+<section id="repo-docs">
 <h2>Repo-level docs in this folder</h2>
 <table>
   <tr><th>File</th><th>What</th></tr>
@@ -98,7 +180,7 @@
 </table>
 </section>
 
-<section>
+<section id="reading-paths">
 <h2>Reading paths</h2>
 <p><strong>For a new contributor</strong>: <a href="../README.html">Repo README</a> &rarr; <a href="architecture.html">architecture</a> &rarr; <a href="runtime_model.html">runtime_model</a> &rarr; walk an example (<a href="../examples/PowerDeviceService/README.html">examples/PowerDeviceService/</a>) while the Manager GUI runs in another window.</p>
 <p><strong>For someone migrating a downstream fork</strong>: <a href="changelog.html">changelog</a> first, then <a href="_legacy/CONCEPT.md">_legacy/CONCEPT.md</a> ↔ <a href="concepts.html">concepts</a> side-by-side to map old terms onto new.</p>
@@ -106,5 +188,68 @@
 </section>
 
 </main>
+</div>  <!-- /.layout -->
+
+<!-- Copy button on every <pre>.  Mostly future-proofing here since
+     index.html doesn't currently emit any code blocks, but keeps the
+     pattern consistent across READMEs. -->
+<script>
+  document.querySelectorAll('main pre').forEach(function (pre) {
+    var code = pre.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      var text = code.textContent.replace(/ /g, ' ').trimEnd();
+      var ok = function () {
+        btn.textContent = 'copied!';
+        btn.classList.add('copied');
+        setTimeout(function () {
+          btn.textContent = 'copy';
+          btn.classList.remove('copied');
+        }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok).catch(fallback);
+      } else { fallback(); }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) { /* give up */ }
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  });
+</script>
+
+<!-- Active sidebar link tracker -->
+<script>
+  (function () {
+    var watched = Array.prototype.slice.call(
+      document.querySelectorAll('main section[id]'));
+    if (!watched.length || !('IntersectionObserver' in window)) return;
+    var links = {};
+    document.querySelectorAll('.sidebar a[href^="#"]').forEach(function (a) {
+      links[a.getAttribute('href').slice(1)] = a;
+    });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var link = links[e.target.id];
+        if (!link) return;
+        if (e.isIntersecting) {
+          Object.values(links).forEach(function (a) { a.classList.remove('active'); });
+          link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+    watched.forEach(function (h) { observer.observe(h); });
+  })();
+</script>
+
 </body>
 </html>

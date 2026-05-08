@@ -1,151 +1,139 @@
 @startuml component
-!theme plain
-title MicroserviceBase - Component Diagram
+title MicroserviceBase — Component diagram (one workload, post-migration)
 
-skinparam component {
-    BackgroundColor<<domain>> #e8f5e9
-    BackgroundColor<<port>> #e3f2fd
-    BackgroundColor<<adapter>> #fff3e0
-    BackgroundColor<<factory>> #f3e5f5
-    BackgroundColor<<gui>> #fce4ec
-    BackgroundColor<<hub>> #e0f7fa
+' Modeled on the TA reference's 01_component_diagram.puml
+' (https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal),
+' adapted to this repo.  Sibling of 00_canonical_architecture.puml:
+'   - 00_canonical_architecture.puml = full cluster topology (3 of each)
+'   - component.puml (this file)     = one workload, vertically arranged
+
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 12
+skinparam ranksep 18
+
+top to bottom direction
+
+' ================================================================
+' Row 1 — Operator + Tester + Developer entry points
+' ================================================================
+together {
+    actor Operator
+    actor Tester
+    actor "Service\ndev" as Dev
 }
 
-' ============================================================================
-' Domain Components
-' ============================================================================
-
-package "Domain" <<domain>> {
-    [ServiceBase] as SB <<domain>>
-    [ServiceRegistry] as SR <<domain>>
-    [Models\n(ServiceInfo, ServiceMethod,\nMethodArgument)] as Models <<domain>>
-    [Messages\n(ServiceRequest, ServiceResponse,\nServiceEvent, ResultType)] as Msgs <<domain>>
-    [Exceptions\n(ServiceError, TransportError,\nNotFoundErrors)] as Exc <<domain>>
-
-    SR --> SB : extends
-    SB --> Models : uses
-    SB --> Msgs : uses
-    SB --> Exc : raises
+' ================================================================
+' Row 2 — Manager GUI + FastAPI bridge (admin plane)
+' ================================================================
+package "Admin plane" #LightPink {
+    [Manager GUI\n(Electron / web)] as GUI
+    [FastAPI bridge] as Bridge
+    [GrpcReflectClient] as ReflectClient
+    [NomadHubAdapter] as NomadHub
 }
 
-' ============================================================================
-' Port Interfaces
-' ============================================================================
+GUI <--> Bridge
+Bridge --> ReflectClient
+Bridge --> NomadHub
 
-package "Ports" <<port>> {
-    interface "TransportPort" as TP <<port>>
-    interface "ServiceRegistryPort" as RP <<port>>
-    interface "UIBridgePort" as UP <<port>>
-}
-
-SB --> TP : depends on
-SB --> RP : depends on
-
-' ============================================================================
-' Adapter Components
-' ============================================================================
-
-package "Adapters" <<adapter>> {
-
-    package "RabbitMQ Stack" {
-        [RabbitMQConfig] as RMQCfg <<adapter>>
-        [RabbitMQTransportAdapter] as RMQT <<adapter>>
-        [AMQPRegistryAdapter] as AMQPR <<adapter>>
+' ================================================================
+' Row 3 — Cluster control planes (narrow, side-by-side)
+' ================================================================
+together {
+    package "Orchestration" #LightYellow {
+        [Nomad server\n:4646] as NomadServer
+        [Nomad client\n(× N)] as NomadC
+        NomadC --> NomadServer : heartbeat
     }
 
-    package "EventBus Stack" {
-        [EventBusConfig] as EBCfg <<adapter>>
-        [EventBusTransportAdapter] as EBT <<adapter>>
-        [EventBusRegistryAdapter] as EBR <<adapter>>
-    }
-
-    package "UI Stack" {
-        [FastAPIBridge\n(REST + WebSocket)] as FAB <<adapter>>
-    }
-
-    package "Local Hub Stack" <<hub>> {
-        [LocalHubManager\n(ProcessHub Integration)] as LHM <<hub>>
-        [ServiceExecutor\n(RPC + Signal Shutdown)] as SE <<hub>>
-        [ServiceImporter\n(ZIP/Folder + AST Validation)] as SI <<hub>>
+    package "Service discovery" #LightBlue {
+        [Consul agent\n(× N, gossip)] as Consul
     }
 }
 
-RMQT ..|> TP : implements
-EBT ..|> TP : implements
-AMQPR ..|> RP : implements
-EBR ..|> RP : implements
-FAB ..|> UP : implements
+NomadHub --> NomadServer : HTTP API
+Bridge ..> Consul : /api/consul/*
+NomadC ..> Consul : pairs with\nlocal agent
 
-RMQT --> RMQCfg : uses
-AMQPR --> RMQCfg : uses
-EBT --> EBCfg : uses
-EBR --> EBCfg : uses
+' ================================================================
+' Row 4 — Workload (one service, hexagonal layers visible)
+' ================================================================
+package "Workload (raw_exec on a Nomad client)" #LightGreen {
+    [wrapper.bat / .sh\n(PATH + venv)] as Wrapper
 
-LHM --> SE : manages
-LHM --> SI : imports via
-
-' ============================================================================
-' Factory
-' ============================================================================
-
-package "Factory" <<factory>> {
-    [create_transport()] as CT <<factory>>
-    [create_registry()] as CR <<factory>>
-    [create_ui_bridge()] as CU <<factory>>
-}
-
-CT --> RMQT : creates
-CT --> EBT : creates
-CR --> AMQPR : creates
-CR --> EBR : creates
-CU --> FAB : creates
-
-' ============================================================================
-' GUI (Dual-Host Architecture)
-' ============================================================================
-
-package "MicroserviceManagerGUI" <<gui>> {
-
-    package "web/ (Pure Browser)" <<gui>> {
-        [app.js\n(Main App)] as AppJS <<gui>>
-        [ServiceClient.js\n(RPC Client)] as SC <<gui>>
-        [LocalHubClient.js\n(Hub REST Client)] as LHC <<gui>>
-        [LocalHubDashboard.js\n(Process Manager UI)] as LHD <<gui>>
-
-        AppJS --> SC : uses
-        AppJS --> LHC : uses
-        LHD --> LHC : uses
-    }
-
-    package "electron/ (Desktop Wrapper)" <<gui>> {
-        [main.js\n(BrowserWindow)] as MainJS <<gui>>
-        [preload.js\n(contextBridge\n+ Bridge Lifecycle)] as Preload <<gui>>
+    package "Service process" {
+        [main\n(composition root)] as Main
+        [BaseServiceSettings] as Settings
+        [ServiceRunner] as Runner
+        [ConsulRegistration] as Reg
+        [GrpcServiceAdapter] as Adapter
+        [Domain service] as Domain
+        [DevicePort impl] as Device
+        [gRPC server\n+reflection +health] as GrpcServer
     }
 }
 
-' ============================================================================
-' External Systems
-' ============================================================================
+NomadC --> Wrapper : raw_exec spawns
+Wrapper --> Main : exec child
 
-cloud "RabbitMQ Broker(s)" as RMQ
-database "alias.json" as Alias
-database "hub_processes.json\n(${python} placeholders)" as HubCfg
-actor "Browser" as Browser
-actor "Electron" as Electron
+Main --> Settings : load env
+Main --> Domain : wire
+Main --> Adapter : wire
+Main --> Runner : addService + serve
 
-RMQT --> RMQ : AMQP
-EBT --> RMQ : AMQP
-AMQPR --> RMQ : AMQP
-EBR --> RMQ : AMQP
-SC --> FAB : HTTP/WS
-LHC --> FAB : REST
-SR --> Alias : loads
-LHM --> HubCfg : reads/writes
-FAB --> Browser : HTTP/WS
-Preload --> FAB : spawns/reconnects
-MainJS --> Electron : renders
+Runner --> GrpcServer : BuildAndStart
+Runner --> Reg : register
+Adapter --> GrpcServer : servicer
+Adapter --> Domain : delegates
+Domain --> Device : DevicePort calls
 
-' Multi-broker: GUI connects to multiple brokers
-FAB --> RMQ : AMQP\n(multi-broker)
+Reg ..> Consul : PUT /v1/agent/service/register
+Consul ..> GrpcServer : gRPC health check (3s)
+
+' ================================================================
+' Row 5 — External clients (testers + peers)
+' ================================================================
+together {
+    package "Test client" #LightCyan {
+        [Robot Framework] as Robot
+        [grpcurl] as Grpcurl
+    }
+
+    package "Peer service" #LightCyan {
+        [ServiceClient<T>] as Peer
+    }
+}
+
+Robot ..> Consul : lookup
+Robot --> GrpcServer : gRPC
+Grpcurl --> GrpcServer : reflection + invoke
+Peer ..> Consul : lookup
+Peer --> GrpcServer : gRPC over HTTP/2
+
+' ================================================================
+' Actor wiring (kept terse)
+' ================================================================
+Operator --> GUI
+Tester --> Robot
+Tester --> Grpcurl
+Dev --> GUI : Service Creator
+ReflectClient --> GrpcServer : reflection RPC
+
+note bottom of GrpcServer
+  Three things share the gRPC server port:
+  1. The service's business RPCs (via Adapter)
+  2. ``grpc.reflection.v1alpha.ServerReflection``
+  3. ``grpc.health.v1.Health``
+end note
+
+note as N1
+  **Reading guide**
+  Top → bottom flow:
+  Actors → Admin plane → Cluster planes → Workload → Test/peer clients
+  The cluster planes (Nomad + Consul) collapse "× N" — see
+  ``00_canonical_architecture.puml`` for the full multi-node picture.
+end note
 
 @enduml

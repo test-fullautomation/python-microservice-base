@@ -1,5 +1,4 @@
 @startuml component_qt_template_wasm
-!theme plain
 title WASM Service Template (Standalone) -- Architecture
 footer Per-Service Binary  |  Full Qt Runtime  |  ~13 MB per service
 

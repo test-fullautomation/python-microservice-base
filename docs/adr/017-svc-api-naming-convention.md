@@ -1,5 +1,12 @@
 # ADR-017: svc_api_ Naming Convention for Method Discovery
 
+> **⚠ Superseded** — 2026-05-07.  Pre-migration decision; no longer
+> applies to the gRPC + Consul + Nomad architecture.  See the existing
+> Status note below for the immediate successor, and
+> [`docs/changelog.md`](../changelog.md) +
+> [`docs/adr/AUDIT.md`](AUDIT.md) for the full triage.  Kept here for
+> git archaeology.
+
 ## Status
 
 Superseded — gRPC service+method names are explicit in `.proto`, so the `svc_api_` prefix convention (used to auto-discover callable methods on RabbitMQ-era services) is no longer needed. Generated scaffolds use plain method names matching the `.proto`.

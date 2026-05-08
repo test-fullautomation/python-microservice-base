@@ -1,5 +1,4 @@
 @startuml sequence_qml_service_call
-!theme plain
 title QML Service Call — Runtime Interaction Sequence
 
 participant "User" as user
@@ -7,69 +6,74 @@ participant "QML UI\n(ServiceUI.qml)" as qml
 participant "ServiceBridge\n(C++ Singleton)" as bridge
 participant "QtShellMgr\n(JS Bridge)" as mgr
 participant "ServiceClient\n(MM.requestService)" as client
-participant "FastAPI Bridge\n(/api/request)" as api
-participant "RabbitMQ\n(Broker)" as broker
-participant "C++ Backend\n(ServiceBase)" as backend
+participant "FastAPI Bridge\n(/api/grpc/<svc>/<method>)" as api
+participant "GrpcReflectClient\n(or LocalProtoClient)" as reflect
+participant "Consul agent" as consul
+participant "C++ gRPC server\n(ServiceRunner)" as backend
 
 == User Interacts with QML UI ==
 
 user -> qml : Click "Say Hello" button
 activate qml
 
-qml -> bridge : ServiceBridge.callService(\n"MyQMLService",\n"svc_api_hello",\n["World"])
+qml -> bridge : ServiceBridge.callService(\n"MyQMLService",\n"Greet",\n{"name": "World"})
 activate bridge
 
 == WASM → JS Bridge (fire-and-forget) ==
 
 bridge -> bridge : EM_ASM {\n  var svc = UTF8ToString($0);\n  var method = UTF8ToString($1);\n  var args = JSON.parse(\n    UTF8ToString($2));\n  window.callMicroservice(\n    svc, method, args);\n}
 
-bridge -> mgr : window.callMicroservice(\n"MyQMLService", "svc_api_hello", ["World"])
+bridge -> mgr : window.callMicroservice(\n"MyQMLService", "Greet", {"name": "World"})
 activate mgr
 deactivate bridge
 
-mgr -> mgr : Lookup MM.servicesInfor["MyQMLService"]\n→ routing_key
+mgr -> mgr : Lookup MM.servicesInfor["MyQMLService"]\n→ full_service_name (pkg.Service)
 
-mgr -> client : MM.requestService(\n{method: "svc_api_hello",\n args: ["World"]},\n"services_request",\nroutingKey)
+mgr -> client : MM.requestService(\n{method: "Greet",\n args: {"name": "World"}},\nfullServiceName)
 activate client
 
-== Browser → FastAPI → RabbitMQ ==
+== Browser → FastAPI → gRPC (via Consul) ==
 
-client -> api : POST /api/request\n{method, args,\n exchange, routing_key,\n broker_url}
+client -> api : POST /api/grpc/<svc>/Greet\n{json_payload, consul_addr}
 activate api
 
-api -> broker : rpc_call(request_data,\nexchange, routing_key)
-activate broker
+api -> reflect : call_unary(svc, "Greet", json)
+activate reflect
 
-broker -> backend : AMQP deliver
+reflect -> consul : GET /v1/health/service/<svc>?passing
+activate consul
+consul --> reflect : [{address, port}]
+deactivate consul
+
+reflect -> backend : gRPC HTTP/2 call\nGreet(GreetRequest{name="World"})
 activate backend
 
-== C++ Backend Dispatch ==
+== ServiceRunner / Adapter dispatch ==
 
-backend -> backend : ConsumeOne() receives message
-backend -> backend : ServiceRequest::from_message(body)
-backend -> backend : dispatchRequest(req)\n→ find "svc_api_hello" in m_apiMethods
-backend -> backend : svc_api_hello(["World"])\n→ "Hello, World!"
-backend -> backend : ServiceResponse::pass(\n"svc_api_hello",\n"Hello, World!")
+backend -> backend : grpc::Server routes by\nfull_service_name + method
+backend -> backend : MyQMLService::Greet(ctx, req, resp)
+backend -> backend : domain.greet("World")\n→ "Hello, World!"
+backend -> backend : resp.set_message("Hello, World!")
 
 == Response Path ==
 
-backend -> broker : Publish to default exchange\nrouting_key = reply_to\nbody = {"request":"svc_api_hello",\n"result":"pass",\n"result_data":"Hello, World!"}
+backend --> reflect : gRPC OK\nGreetResponse{message}
 deactivate backend
 
-broker -> api : Reply on callback queue
-deactivate broker
+reflect --> api : MessageToDict(resp)\n→ {"message": "Hello, World!"}
+deactivate reflect
 
-api --> client : {request, result, result_data}
+api --> client : 200 OK + JSON body
 deactivate api
 
-client --> mgr : Promise.resolve(\n{result_data: "Hello, World!"})
+client --> mgr : Promise.resolve(\n{message: "Hello, World!"})
 deactivate client
 
 == JS → WASM Callback (via _allocUTF8) ==
 
 mgr -> mgr : Promise.then():\n_callbackResponse(\n  method, resultData)
 
-mgr -> mgr : mPtr = _allocUTF8("svc_api_hello")\nrPtr = _allocUTF8("Hello, World!")
+mgr -> mgr : mPtr = _allocUTF8("Greet")\nrPtr = _allocUTF8("Hello, World!")
 note right
   Manual UTF-8 marshaling
   (Qt strips _malloc/_free/ccall):
@@ -85,7 +89,7 @@ mgr -> mgr : _qtshell_free(mPtr)\n_qtshell_free(rPtr)
 deactivate mgr
 
 bridge -> bridge : handleResponse(method, result)
-bridge -> qml : emit responseReceived(\n"svc_api_hello",\n"Hello, World!")
+bridge -> qml : emit responseReceived(\n"Greet",\n"Hello, World!")
 deactivate bridge
 
 == QML UI Update ==
@@ -96,11 +100,12 @@ qml --> user : Display "Hello, World!"
 deactivate qml
 
 note over user, backend
-  **Error path:** If the backend throws an exception,
-  the response has result="exception".
-  The JS .catch() calls _callbackError(),
-  which routes via _qtshell_onError() → handleError()
-  → emit errorOccurred() to the QML Connections handler.
+  **Error path:** If the gRPC call returns a non-OK status
+  (or the bridge can't reach Consul / can't resolve the service),
+  the bridge response includes the gRPC status code + message.
+  The JS .catch() calls _callbackError(), which routes via
+  _qtshell_onError() → handleError() → emit errorOccurred()
+  to the QML Connections handler.
 end note
 
 @enduml

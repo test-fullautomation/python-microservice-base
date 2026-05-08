@@ -1,0 +1,108 @@
+@startuml 00_canonical_architecture
+title MicroserviceBase — Canonical architecture (post-migration, multi-node cluster)
+
+' Adapted from the TA architecture-proposal design (component diagram
+' + sequence diagrams in a working copy that pre-dated the reference
+' repo's first push).  Reference repo:
+'   https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal
+' This diagram matches this repo's terminology (ServiceRunner, Manager
+' GUI, scaffold generator) on top of that design.
+'
+' Use this as the single source of truth; archive/replace older
+' top-level diagrams (architecture.puml, architecture_overview.puml,
+' overview.puml).
+
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam defaultFontName "Cascadia Code"
+
+package "Orchestration layer" #LightYellow {
+    [Nomad server\n:4646] as NomadServer
+    [Nomad client 1\n:5656] as NomadC1
+    [Nomad client 2\n:5657] as NomadC2
+    [Nomad client 3\n:5658] as NomadC3
+}
+
+package "Service-discovery layer" #LightBlue {
+    [Consul agent 1\n:8500] as Consul1
+    [Consul agent 2\n:8501] as Consul2
+    [Consul agent 3\n:8502] as Consul3
+}
+
+package "Workload (raw_exec on Nomad client 1)" #LightGreen {
+    [wrapper.bat / wrapper.py\n(PATH + venv setup)] as Wrapper
+    package "Service process" {
+        [main.cpp / main.py] as Main
+        [ServiceRunner\n(framework)] as Runner
+        [GrpcAdapter] as GrpcAdapter
+        [Domain\n(business logic)] as Domain
+        [HardwarePort impl\n(or Mock)] as Hw
+        [gRPC server\n:NOMAD_PORT_grpc] as GrpcServer
+    }
+}
+
+package "Operator + clients" #LightPink {
+    [Manager GUI\n(Electron / web)] as GUI
+    [FastAPI bridge\n(Python)] as Bridge
+    [Robot Framework\n(grpc_api_keywords.py)] as Robot
+    [grpcurl] as Grpcurl
+    [Other services\n(client-side ServiceClient)] as PeerSvc
+}
+
+actor Operator
+actor Tester
+
+' ----- Cluster topology -----
+NomadC1 --> NomadServer : register / heartbeat
+NomadC2 --> NomadServer
+NomadC3 --> NomadServer
+
+Consul2 <--> Consul1 : serf gossip
+Consul3 <--> Consul1
+Consul2 <--> Consul3
+
+' Each Nomad client paired with a local Consul agent (catalog read +
+' job-emitted service registration writes go through here).
+NomadC1 ..> Consul1 : reads catalog\n+ writes registrations
+NomadC2 ..> Consul2
+NomadC3 ..> Consul3
+
+' ----- Workload launch -----
+NomadC1 --> Wrapper : raw_exec spawns
+Wrapper --> Main : starts child\n(uv run / direct exec)
+
+' ----- Service-internal wiring (hexagonal) -----
+Main --> Runner : ServiceRunner.run()
+Runner --> Domain : injects (via factory)
+Runner --> Hw : injects
+Runner --> GrpcAdapter : adds service
+GrpcAdapter --> GrpcServer : registers servicers
+Domain --> Hw : HardwarePort calls
+
+' ----- Service registration + health -----
+Runner ..> Consul1 : ServiceRunner registers\n(direct HTTP /v1/agent/service/register)
+Consul1 ..> GrpcServer : gRPC health check\n(every 3s)
+
+' ----- Operator path: Manager GUI -----
+Operator --> GUI : opens
+GUI <--> Bridge : HTTP / JSON\n(/api/grpc, /api/consul, /api/nomad, /api/scaffold)
+Bridge --> Consul3 : list services / health
+Bridge --> NomadServer : submit / stop jobs
+Bridge --> GrpcServer : reflection RPC + invoke
+
+' ----- Tester path: Robot Framework -----
+Tester --> Robot : robot run
+Robot ..> Consul3 : /v1/health/service/&lt;name&gt;?passing
+Consul3 --> Robot : address : port
+Robot --> GrpcServer : gRPC call
+
+' ----- Quick CLI test -----
+Tester --> Grpcurl : grpcurl &lt;host:port&gt; list / call
+Grpcurl --> GrpcServer : gRPC
+
+' ----- Service-to-service -----
+PeerSvc ..> Consul2 : Consul lookup
+Consul2 --> PeerSvc : address : port
+PeerSvc --> GrpcServer : gRPC over HTTP/2
+
+@enduml

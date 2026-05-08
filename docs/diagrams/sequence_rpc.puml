@@ -1,59 +1,76 @@
 @startuml sequence_rpc
-!theme plain
-title RPC Request-Response Sequence
+title gRPC Request-Response Sequence (unary + server-streaming)
 
-participant "Caller\n(Client / Service)" as caller
-participant "TransportPort\n(Adapter)" as transport
-participant "RabbitMQ\n(Broker)" as broker
-participant "Target Service\n(ServiceBase)" as target
+participant "Caller\n(client / peer service)" as caller
+participant "ServiceClient<T>\n(channel pool +\nConsul resolver)" as client
+participant "Consul agent" as consul
+participant "Target Service\n(grpc::Server)" as target
+participant "Domain\n(business logic)" as domain
 
-== RPC Call ==
+== Discovery (cached, fast path) ==
 
-caller -> transport : rpc_call(request_data,\nexchange_name, routing_key)
+caller -> client : Method(request)
 activate caller
-activate transport
+activate client
 
-transport -> transport : Generate correlation_id
-transport -> transport : Create reply queue\n(exclusive, auto-delete)
-
-transport -> broker : publish(\nexchange=services_request,\nrouting_key=service.target,\nprops={reply_to, correlation_id},\nbody={"method": "svc_api_add",\n      "args": [3, 5]})
-activate broker
-
-broker -> target : deliver message
-activate target
-
-== Request Dispatch ==
-
-target -> target : on_request(ch, method, props, body)
-target -> target : dispatch_request(body)
-
-alt method found
-    target -> target : Call svc_api_add(3, 5)
-    target -> target : Build ServiceResponse(\n  request="svc_api_add",\n  result="pass",\n  result_data=8)
-else method not found
-    target -> target : Build ServiceResponse(\n  request="svc_api_add",\n  result="exception",\n  result_data="Method not found")
+alt no cached channel for target
+    client -> consul : GET /v1/health/service/<name>?passing
+    consul --> client : [{ Address, Port }]
+    client -> client : grpc::CreateChannel(addr:port)\n+ store in pool keyed by service name
 end
 
-== Reply ==
+== Unary RPC ==
 
-target -> broker : basic_publish(\nexchange="",\nrouting_key=reply_to,\nprops={correlation_id},\nbody=response.to_json())
+client -> target : HTTP/2 stream\nPOST /<package>.<Service>/<Method>\nbody = protobuf-encoded request
+activate target
+
+target -> target : adapter receives Request*\nresp = Response()
+target -> domain : domain method call
+activate domain
+domain --> target : domain result
+deactivate domain
+target -> target : adapter populates resp from result
+
+target --> client : HTTP/2 stream:\n  trailers (Status::OK)\n  body = protobuf-encoded response
 deactivate target
 
-broker -> transport : deliver reply\n(matched by correlation_id)
-deactivate broker
-
-transport -> transport : Parse response
-transport --> caller : return response dict
-deactivate transport
+client --> caller : Response message
+deactivate client
 deactivate caller
 
-note over caller, target
-  **Wire Format:**
-  Request:  {"method": "svc_api_add", "args": [3, 5]}
-  Response: {"request": "svc_api_add", "result": "pass", "result_data": 8}
+== Server-streaming RPC ==
 
-  The correlation_id ensures the reply matches the original request,
-  even when multiple RPC calls are in flight concurrently.
+caller -> client : MethodStream(request)
+activate caller
+activate client
+client -> target : HTTP/2 stream\n  POST /<package>.<Service>/<Method>
+activate target
+
+loop while data available
+    target -> target : writer->Write(msg_n)
+    target --> client : message frame (DATA)
+    client --> caller : yield message
+end
+
+target -> target : reach end-of-stream
+target --> client : trailers (Status::OK)
+deactivate target
+
+client --> caller : iteration ends
+deactivate client
+deactivate caller
+
+== Errors ==
+
+note over caller, target
+  No correlation_id needed — HTTP/2 streams
+  match responses to requests natively.
+
+  Errors propagate as gRPC Status:
+  • OK              — success
+  • UNIMPLEMENTED   — method not registered
+  • UNAVAILABLE     — channel down (triggers Consul re-resolve)
+  • DEADLINE_EXCEEDED — client-side timeout
 end note
 
 @enduml

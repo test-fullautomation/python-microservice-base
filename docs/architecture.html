@@ -5,10 +5,33 @@
 <title>Architecture</title>
 <style>
   :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
-          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155;
+          --sidebar-w:260px; }
   *{box-sizing:border-box;}
   body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
        background:var(--bg);color:var(--text);line-height:1.65;}
+
+  /* ---- Left sidebar TOC ---- */
+  .sidebar{position:fixed;left:0;top:0;width:var(--sidebar-w);height:100vh;
+           overflow-y:auto;background:#0b1220;border-right:1px solid var(--border);
+           padding:18px 0;z-index:10;}
+  .sidebar .toc-title{font-size:0.95em;color:var(--accent);font-weight:600;
+                       padding:0 18px 10px;margin:0;border-bottom:1px solid var(--border);}
+  .sidebar .toc-sub{font-size:0.7em;color:var(--muted);text-transform:uppercase;
+                     letter-spacing:0.6px;padding:14px 18px 4px;margin:0;}
+  .sidebar a{color:var(--muted);display:block;padding:5px 18px;
+              text-decoration:none;font-size:0.86em;
+              border-left:3px solid transparent;
+              transition:color 0.15s,border-color 0.15s,background 0.15s;}
+  .sidebar a:hover{color:var(--text);background:rgba(56,189,248,0.06);}
+  .sidebar a.active{color:var(--accent);border-left-color:var(--accent);
+                     background:rgba(56,189,248,0.10);}
+  .sidebar::-webkit-scrollbar{width:6px;}
+  .sidebar::-webkit-scrollbar-thumb{background:#334155;border-radius:3px;}
+
+  /* ---- Layout offset ---- */
+  .layout{margin-left:var(--sidebar-w);}
+
   header{background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:30px;
          box-shadow:0 4px 20px rgba(0,0,0,0.5);}
   header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
@@ -16,15 +39,31 @@
   main{max-width:1100px;margin:0 auto;padding:30px;}
   h1,h2,h3,h4{color:var(--accent);}
   h1{font-size:1.9em;border-bottom:1px solid var(--border);padding-bottom:8px;}
-  h2{margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
-  h3{color:var(--amber);margin-top:22px;}
+  h2{margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;
+     scroll-margin-top:20px;}
+  h3{color:var(--amber);margin-top:22px;scroll-margin-top:20px;}
   h4{color:var(--text);margin-top:18px;font-size:1em;}
   p{margin:10px 0;}
   code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
        font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
   pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
-      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;
+      position:relative;}
   pre code{background:none;padding:0;color:var(--text);}
+
+  /* ---- Copy-button on every <pre> ---- */
+  .copy-btn{position:absolute;top:6px;right:6px;padding:3px 10px;
+             background:#1e293b;color:var(--accent);
+             border:1px solid var(--border);border-radius:4px;
+             cursor:pointer;font-size:0.78em;font-family:inherit;
+             opacity:0.55;transition:opacity 0.18s,color 0.18s;}
+  .copy-btn:hover{opacity:1;}
+  .copy-btn.copied{color:var(--green);border-color:var(--green);opacity:1;}
+
+  /* ---- Mermaid container ---- */
+  .mermaid{background:#0f172a;border:1px solid var(--border);border-radius:8px;
+            padding:16px;margin:16px 0;overflow-x:auto;text-align:center;}
+
   table{width:100%;border-collapse:collapse;margin:12px 0;
         background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
   th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
@@ -36,9 +75,42 @@
   blockquote p{margin:6px 0;}
   ul li{margin-bottom:4px;}
   a{color:var(--accent);}
+
+  /* Responsive: collapse sidebar to a top bar on narrow screens */
+  @media (max-width: 900px){
+    .sidebar{position:relative;width:100%;height:auto;max-height:240px;
+              border-right:none;border-bottom:1px solid var(--border);}
+    .layout{margin-left:0;}
+  }
 </style>
 </head>
 <body>
+
+<nav class="sidebar">
+  <h2 class="toc-title">Architecture</h2>
+  <a href="#high-level-picture">High-level picture</a>
+  <a href="#the-hexagonal-layers">Hexagonal layers</a>
+  <a href="#service-discovery-consul">Service discovery: Consul</a>
+  <a href="#orchestration-nomad">Orchestration: Nomad</a>
+  <a href="#method-discovery-grpc-server-reflection">Method discovery: reflection</a>
+  <a href="#the-fastapi-bridge">FastAPI bridge</a>
+  <a href="#the-scaffold-generator">Scaffold generator</a>
+  <a href="#why-these-choices">Why these choices</a>
+  <a href="#where-things-live">Where things live</a>
+  <a href="#see-also">See also</a>
+
+  <p class="toc-sub">Up one level</p>
+  <a href="index.html">Repo docs index</a>
+  <a href="../README.html">Repo README</a>
+
+  <p class="toc-sub">Related</p>
+  <a href="runtime_model.html">runtime_model.html</a>
+  <a href="concepts.html">concepts.html</a>
+  <a href="changelog.html">changelog.html</a>
+</nav>
+
+<div class="layout">
+
 <header>
   <h1>Architecture</h1>
 </header>
@@ -49,53 +121,58 @@
 
 <p>A walk through the major pieces of MicroserviceBase, what they do, and how they connect. For the lifecycle of a single running service, see <a href="runtime_model.html"><code>runtime_model.md</code></a>. For a glossary of unfamiliar terms, see <a href="concepts.html"><code>concepts.md</code></a>.</p>
 
+<blockquote>
+  <p><strong>Canonical diagram</strong>: the multi-node Consul + Nomad
+  cluster topology with the wrapper layer is in
+  <a href="diagrams/00_canonical_architecture.puml"><code>diagrams/00_canonical_architecture.puml</code></a>
+  (single source of truth, adapted from the TA reference architecture).
+  The simplified Mermaid below shows the same shape inline; for the
+  deeper component view (Nomad server + 3 clients, Consul gossip ring,
+  Robot Framework / grpcurl test paths), open the PUML.</p>
+  <p>Audit status of all ADRs and diagrams during the post-migration
+  alignment pass:
+  <a href="adr/AUDIT.md"><code>adr/AUDIT.md</code></a> and
+  <a href="diagrams/AUDIT.md"><code>diagrams/AUDIT.md</code></a>.</p>
+</blockquote>
+
 <h2 id="high-level-picture">High-level picture</h2>
 
-<pre><code>┌──────────────────────────────────────────────────────────────────────────┐
-│  Developer machine                                                       │
-│                                                                          │
-│   ┌─────────────────────┐    HTTP/JSON    ┌──────────────────────────┐   │
-│   │   Manager GUI       │ ──────────────→ │   FastAPI bridge         │   │
-│   │  (Electron/web)     │                 │   (Python; one process)  │   │
-│   │                     │ ←──────────────  │                          │   │
-│   └─────────────────────┘                 │   ─ /api/grpc/...        │   │
-│                                           │   ─ /api/consul/...      │   │
-│                                           │   ─ /api/nomad/...       │   │
-│                                           │   ─ /api/scaffold/...    │   │
-│                                           └────────────┬─────────────┘   │
-│                                                        │                 │
-│              ┌─────────────────────────────────────────┤                 │
-│              │                                         │                 │
-│        Consul HTTP API                          Nomad HTTP API           │
-│              │                                         │                 │
-│              ▼                                         ▼                 │
-│      ┌──────────────┐                          ┌──────────────┐          │
-│      │   Consul     │ ←───── service           │   Nomad      │          │
-│      │   agent      │       registration       │   agent      │          │
-│      │   :8500      │                          │   :4646      │          │
-│      └──────┬───────┘                          └──────┬───────┘          │
-│             │                                         │ raw_exec         │
-│             │                                         ▼                  │
-│             │                                  ┌─────────────────┐       │
-│             │  health probes,                  │   Service A     │       │
-│             ├─────────────────────────────────→│   (gRPC :NNNNN) │       │
-│             │  service catalog                 │   ↑ registers   │       │
-│             │                                  └─────────────────┘       │
-│             │                                  ┌─────────────────┐       │
-│             ├─────────────────────────────────→│   Service B     │       │
-│             │                                  │   (gRPC :NNNNN) │       │
-│             │                                  └─────────────────┘       │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-                                                            ▲
-                                                            │ gRPC over HTTP/2
-                                                            │ (clients reach via Consul lookup)
-                                                  ┌─────────┴─────────┐
-                                                  │   Other clients   │
-                                                  │   (CLI, Qt GUI,   │
-                                                  │   another service)│
-                                                  └───────────────────┘
-</code></pre>
+<div class="mermaid">
+flowchart TB
+    subgraph dev["Developer machine"]
+        GUI["Manager GUI<br/>(Electron / Web)"]
+        Bridge["FastAPI bridge<br/>(Python, one process)<br/>/api/grpc · /api/consul ·<br/>/api/nomad · /api/scaffold"]
+        Consul[("Consul agent<br/>:8500")]
+        Nomad[("Nomad agent<br/>:4646")]
+        SvcA["Service A<br/>(gRPC :NNNNN)"]
+        SvcB["Service B<br/>(gRPC :NNNNN)"]
+    end
+    Client["Other clients<br/>(CLI, Qt GUI,<br/>another service)"]
+
+    GUI <-->|HTTP / JSON| Bridge
+    Bridge -->|Consul HTTP API| Consul
+    Bridge -->|Nomad HTTP API| Nomad
+    Nomad -->|raw_exec| SvcA
+    Nomad -->|raw_exec| SvcB
+    SvcA -.registers.-> Consul
+    SvcB -.registers.-> Consul
+    Consul -.health probes.-> SvcA
+    Consul -.health probes.-> SvcB
+    Client -->|"discover<br/>(Consul HTTP)"| Consul
+    Client ==>|gRPC over HTTP/2| SvcA
+    Client ==>|gRPC over HTTP/2| SvcB
+
+    classDef gui fill:#3b0764,stroke:#a855f7,color:#f5f3ff
+    classDef bri fill:#1e293b,stroke:#38bdf8,color:#e2e8f0
+    classDef inf fill:#1e293b,stroke:#0ea5e9,color:#e2e8f0
+    classDef svc fill:#064e3b,stroke:#10b981,color:#ecfdf5
+    classDef cli fill:#3b0764,stroke:#a855f7,color:#f5f3ff
+    class GUI gui
+    class Bridge bri
+    class Consul,Nomad inf
+    class SvcA,SvcB svc
+    class Client cli
+</div>
 
 <p>Three independent runtime processes (Consul agent, Nomad agent, the service binary) plus the FastAPI bridge that ties them together for the GUI. Service binaries are launched by Nomad as child processes under <code>raw_exec</code>; they register in Consul on startup and deregister on clean shutdown.</p>
 
@@ -103,35 +180,38 @@
 
 <p>Inside any one service binary or the framework itself:</p>
 
-<pre><code>┌───────────────────────────────────────────────────────────────┐
-│  Adapters                                                     │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐ │
-│  │ gRPC adapter    │  │ Consul adapter  │  │ scaffold       │ │
-│  │ (api/...)       │  │ (registration   │  │ generator      │ │
-│  │                 │  │   + discovery)  │  │ (cpp_tmpl.py)  │ │
-│  └─────────────────┘  └─────────────────┘  └────────────────┘ │
-│  ┌─────────────────┐  ┌─────────────────┐                     │
-│  │ FastAPI bridge  │  │ Nomad           │      …              │
-│  │ (REST front)    │  │ subprocess mgr  │                     │
-│  └─────────────────┘  └─────────────────┘                     │
-└───────────────────────────────┬───────────────────────────────┘
-                                │ talks via
-                                ▼
-┌───────────────────────────────────────────────────────────────┐
-│  Ports (interfaces / protocols)                               │
-│   - service registry port  - process lifecycle port           │
-│   - serialization port     - subprocess port                  │
-└───────────────────────────────┬───────────────────────────────┘
-                                │ implemented by adapters,
-                                │ consumed by domain
-                                ▼
-┌───────────────────────────────────────────────────────────────┐
-│  Domain (zero-deps)                                           │
-│   Service business logic.  No imports from grpc, fastapi,     │
-│   consul, nomad, qt — anything infra.  Plain functions and    │
-│   value types.  Unit-testable in isolation.                   │
-└───────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+flowchart TB
+    subgraph adapters["<b>Adapters</b><br/>(infra-aware)"]
+        AGrpc["gRPC adapter<br/>(api/...)"]
+        AConsul["Consul adapter<br/>(registration<br/>+ discovery)"]
+        AScaffold["scaffold generator<br/>(cpp_tmpl.py)"]
+        ABridge["FastAPI bridge<br/>(REST front)"]
+        ANomad["Nomad subprocess<br/>manager"]
+    end
+
+    subgraph ports["<b>Ports</b> &mdash; interfaces / protocols"]
+        Pregistry["service registry port"]
+        Plife["process lifecycle port"]
+        Pserial["serialization port"]
+        Pproc["subprocess port"]
+    end
+
+    subgraph domain["<b>Domain</b> &mdash; zero-deps"]
+        D["Service business logic<br/>plain functions + value types<br/>no grpc / fastapi / consul / nomad / qt<br/>unit-testable in isolation"]
+    end
+
+    adapters -->|"talks via"| ports
+    ports -->|"consumed by"| domain
+    domain -.->|"never reaches up"| adapters
+
+    classDef ad fill:#1e293b,stroke:#38bdf8,color:#e2e8f0
+    classDef po fill:#3b0764,stroke:#a855f7,color:#f5f3ff
+    classDef dm fill:#064e3b,stroke:#10b981,color:#ecfdf5
+    class AGrpc,AConsul,AScaffold,ABridge,ANomad ad
+    class Pregistry,Plife,Pserial,Pproc po
+    class D dm
+</div>
 
 <table>
   <tr><th>Layer</th><th>Lives in</th><th>Imports</th><th>Imported by</th></tr>
@@ -176,21 +256,21 @@
 
 <p>Servers built with our scaffold include <code>grpc++_reflection</code> (vcpkg overlay-port forces it on; see <a href="changelog.html"><code>changelog.md</code></a>) and call <code>grpc::reflection::InitProtoReflectionServerBuilderPlugin()</code> at startup. Clients can then enumerate services + methods + message schemas at runtime without any <code>.proto</code> file:</p>
 
-<pre><code>Manager GUI                  Bridge                  Service
-    │                          │                       │
-    │  GET /api/grpc/services/&lt;name&gt;                  │
-    │ ───────────────────────→ │                       │
-    │                          │  Consul lookup       │
-    │                          │ ─→ host:port         │
-    │                          │                       │
-    │                          │  reflection RPC       │
-    │                          │ ────────────────────→ │
-    │                          │                       │
-    │                          │ ←─── descriptors ──── │
-    │                          │                       │
-    │     methods + schemas    │                       │
-    │ ←─────────────────────── │                       │
-</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant GUI as Manager GUI
+    participant Bridge as FastAPI bridge
+    participant Consul as Consul agent
+    participant Svc as Service
+
+    GUI->>Bridge: GET /api/grpc/services/&lt;name&gt;
+    Bridge->>Consul: lookup &lt;name&gt; (HTTP)
+    Consul-->>Bridge: host : port
+    Bridge->>Svc: gRPC reflection (ServerReflectionInfo)
+    Svc-->>Bridge: file descriptors<br/>(services, methods, message schemas)
+    Bridge-->>GUI: methods + schemas (JSON)
+</div>
 
 <p>Fallback: when reflection isn't available (older servers, custom builds), the bridge can compile local <code>.proto</code> files via <code>grpc_tools.protoc</code> and use the descriptors that way. See the <code>LocalProtoClient</code> in <code>MicroserviceBase/adapters/grpc_bridge/reflect_client.py</code>.</p>
 
@@ -215,25 +295,24 @@
 
 <p><code>mb-scaffold</code> (<code>python -m MicroserviceBase.tools.scaffold_cli</code>) emits a complete service project from a small spec:</p>
 
-<pre><code>spec (CLI flags or YAML)         emitter
-       │                            │
-       ▼                            ▼
-┌──────────────┐    POST /api/scaffold/generate-v2     ┌─────────────────┐
-│  CLI / GUI   │ ───────────────────────────────────→ │   Bridge        │
-│  wizard      │                                      │   ↓ delegates   │
-└──────────────┘                                      │  cpp_tmpl.py    │
-                                                      └────────┬────────┘
-                                                               │ writes
-                                                               ▼
-                                                       ┌──────────────┐
-                                                       │  out/&lt;svc&gt;/  │
-                                                       │  ├─ proto/   │
-                                                       │  ├─ src/     │
-                                                       │  ├─ deploy/  │
-                                                       │  ├─ build_*  │
-                                                       │  └─ README   │
-                                                       └──────────────┘
-</code></pre>
+<div class="mermaid">
+flowchart LR
+    Spec["spec<br/>(CLI flags or YAML)"]
+    UI["CLI / GUI wizard"]
+    Bridge["FastAPI bridge<br/>delegates to<br/><code>cpp_tmpl.py</code>"]
+    Out["out/&lt;svc&gt;/<br/>proto/ &nbsp; src/ &nbsp; deploy/<br/>build_*.bat &nbsp; README"]
+
+    Spec --> UI
+    UI -->|"POST /api/scaffold/generate-v2"| Bridge
+    Bridge -->|writes files| Out
+
+    classDef in fill:#1e293b,stroke:#fbbf24,color:#fef3c7
+    classDef proc fill:#3b0764,stroke:#a855f7,color:#f5f3ff
+    classDef out fill:#064e3b,stroke:#10b981,color:#ecfdf5
+    class Spec,UI in
+    class Bridge proc
+    class Out out
+</div>
 
 <p>Source: <code>MicroserviceBase/adapters/scaffold/cpp_tmpl.py</code> (~7000 lines of templated emitters — one function per output file). The same code backs both the GUI wizard and the CLI.</p>
 
@@ -277,5 +356,78 @@
 </ul>
 
 </main>
+</div>  <!-- /.layout -->
+
+<!-- Mermaid: client-side diagram rendering.  Local copy at js/mermaid.min.js. -->
+<script src="js/mermaid.min.js"></script>
+<script>
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({
+      startOnLoad: true, theme: 'dark', securityLevel: 'loose',
+      flowchart: { htmlLabels: true, useMaxWidth: true },
+      sequence:  { useMaxWidth: true, mirrorActors: false }
+    });
+  }
+</script>
+
+<!-- Copy button on every <pre>. -->
+<script>
+  document.querySelectorAll('main pre').forEach(function (pre) {
+    var code = pre.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      var text = code.textContent.replace(/ /g, ' ').trimEnd();
+      var ok = function () {
+        btn.textContent = 'copied!';
+        btn.classList.add('copied');
+        setTimeout(function () {
+          btn.textContent = 'copy';
+          btn.classList.remove('copied');
+        }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok).catch(fallback);
+      } else { fallback(); }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) { /* give up */ }
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  });
+</script>
+
+<!-- Active sidebar link tracker -->
+<script>
+  (function () {
+    var watched = Array.prototype.slice.call(
+      document.querySelectorAll('main h2[id], main h3[id]'));
+    if (!watched.length || !('IntersectionObserver' in window)) return;
+    var links = {};
+    document.querySelectorAll('.sidebar a[href^="#"]').forEach(function (a) {
+      links[a.getAttribute('href').slice(1)] = a;
+    });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var link = links[e.target.id];
+        if (!link) return;
+        if (e.isIntersecting) {
+          Object.values(links).forEach(function (a) { a.classList.remove('active'); });
+          link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+    watched.forEach(function (h) { observer.observe(h); });
+  })();
+</script>
+
 </body>
 </html>

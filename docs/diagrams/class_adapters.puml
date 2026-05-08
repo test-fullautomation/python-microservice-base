@@ -1,6 +1,5 @@
 @startuml class_adapters
-!theme plain
-title MicroserviceBase - Adapter Classes
+title MicroserviceBase - Adapter Classes (post-migration, 2026-05-07)
 
 skinparam class {
     BackgroundColor<<abstract>> #CCCCFF
@@ -8,28 +7,35 @@ skinparam class {
     BackgroundColor<<config>> #CCFFCC
     BackgroundColor<<proxy>> #E0E0E0
     BackgroundColor<<hub>> #B2EBF2
+    BackgroundColor<<grpc>> #C5E1A5
+    BackgroundColor<<scaffold>> #FFCC80
+    BackgroundColor<<legacy>> #DDDDDD
 }
+
+note as N1
+  **Architecture status**
+  Highlights = current architecture (ADRs 022-029):
+  - **NomadHubAdapter / NomadClient** implement HubManagerPort over the Nomad HTTP API
+  - **GrpcReflectClient** powers the GUI's API Explorer + dynamic clients
+  - **FastAPIBridge** is the canonical UI bridge (browser + Electron)
+  - **scaffold.generator** emits services with C++ ServiceRunner / Python gRPC servers + wrapper scripts
+  Legacy = broker-era code retained for incremental migration.
+end note
 
 ' ============================================================================
 ' Port Interfaces (shown for context)
 ' ============================================================================
 
 package "ports" {
-    abstract class TransportPort <<abstract>> {
-        {abstract} +connect()
-        {abstract} +disconnect()
-        {abstract} +consume(service_name, routing_key, exchange, handler)
-        {abstract} +rpc_call(request_data, exchange_name, routing_key): dict
-        {abstract} +publish(exchange, routing_key, body, properties)
-    }
-
-    abstract class ServiceRegistryPort <<abstract>> {
-        {abstract} +register(service_info)
-        {abstract} +unregister(service_info)
-        {abstract} +subscribe_to_events(handler)
-        {abstract} +notify_update(services_info)
-        {abstract} +get_update_channel_name(): str
-        {abstract} +cleanup()
+    abstract class HubManagerPort <<abstract>> {
+        {abstract} +start_hub(mode, **kwargs): dict
+        {abstract} +stop_hub(): dict
+        {abstract} +get_status(): dict
+        {abstract} +start_processes(names): dict
+        {abstract} +stop_processes(names, force): dict
+        {abstract} +get_config(): dict
+        {abstract} +import_service(...)
+        {abstract} +remove_service(name): dict
     }
 
     abstract class UIBridgePort <<abstract>> {
@@ -37,110 +43,105 @@ package "ports" {
         {abstract} +stop()
         {abstract} +broadcast_update(services_info)
     }
-}
 
-' ============================================================================
-' Config Classes
-' ============================================================================
-
-package "adapters.config" {
-    class RabbitMQConfig <<config>> {
-        +host: str = "localhost"
-        +port: int = 5672
-        +username: str = "guest"
-        +password: str = "guest"
-        --
-        +{static} from_cmd_args(args, service_name): RabbitMQConfig
+    abstract class TransportPort <<legacy>> {
+        {abstract} +consume(...)
+        {abstract} +rpc_call(...)
+        {abstract} +publish(...)
     }
 
-    class EventBusConfig <<config>> {
-        +config_path: str
-        --
-        +load_config(): dict
-        +to_config_source(**overrides): dict
+    abstract class ServiceRegistryPort <<legacy>> {
+        {abstract} +register(service_info)
+        {abstract} +unregister(service_info)
+        {abstract} +subscribe_to_events(handler)
     }
 }
 
 ' ============================================================================
-' RabbitMQ Adapters
+' Current adapters — Nomad / gRPC / FastAPI / Scaffold
 ' ============================================================================
 
-package "adapters.transport" {
-    class RabbitMQTransportAdapter <<adapter>> {
-        -_config: RabbitMQConfig
-        -_connection: BlockingConnection
-        -_channel: BlockingChannel
-        -_consuming: bool
+package "adapters.nomad_hub" {
+    class NomadHubAdapter <<hub>> {
+        -_client: NomadClient
+        -_datacenter: str
+        -_running: bool
+        -_configs: dict
+        -_poll_thread: Thread
+        -_on_status_change: callable
         --
-        +connect()
-        +disconnect()
-        +consume(service_name, routing_key, exchange, handler)
-        +rpc_call(request_data, exchange_name, routing_key): dict
-        +publish(exchange, routing_key, body, properties)
-        +stop_consuming()
+        +start_hub(mode, **kwargs): dict
+        +stop_hub(): dict
+        +get_status(): dict
+        +start_processes(names): dict
+        +stop_processes(names, force): dict
+        +import_service(...)
+        +remove_service(name): dict
+        -_poll_loop()
+        -_job_spec_for(name, config): dict
     }
 
-    class EventBusTransportAdapter <<adapter>> {
-        -_config: EventBusConfig
-        -_client: EventBusClient
-        -_stop_event: threading.Event
+    class NomadClient <<hub>> {
+        -_address: str
+        -_token: str
+        -_namespace: str
         --
-        +connect()
-        +disconnect()
-        +consume(service_name, routing_key, exchange, handler)
-        +rpc_call(request_data, exchange_name, routing_key): dict
-        +publish(exchange, routing_key, body, properties)
+        +agent_self(): dict
+        +list_jobs(): list
+        +read_job(id): dict
+        +submit_job(spec): dict
+        +deregister_job(id, purge): dict
+        +read_alloc(id): dict
+        +allocations_for_job(id): list
     }
+
+    class NomadAPIError <<hub>> {
+        +status: int
+        +body: str
+    }
+
+    NomadHubAdapter --> NomadClient : _client
+    NomadClient ..> NomadAPIError : raises
 }
 
-package "adapters.transport (proxies)" {
-    class _ChannelProxy <<proxy>> {
-        -_client: EventBusClient
-        +basic_publish(exchange, routing_key, properties, body)
-        +basic_ack(delivery_tag)
-    }
-
-    class _MethodProxy <<proxy>> {
-        +delivery_tag: int
-    }
-
-    class _PropertiesProxy <<proxy>> {
-        +reply_to: str
-        +correlation_id: str
-        +__call__(correlation_id): _PropertiesProxy
-    }
-}
-
-package "adapters.registry" {
-    class AMQPRegistryAdapter <<adapter>> {
-        -_config: RabbitMQConfig
-        -_connection: BlockingConnection
-        -_channel: BlockingChannel
-        -_update_exchange_name: str
+package "adapters.grpc_bridge" {
+    class GrpcReflectClient <<grpc>> {
+        -_target: str
+        -_channel: grpc.Channel
+        -_pool: DescriptorPool
         --
-        +register(service_info)
-        +unregister(service_info)
-        +subscribe_to_events(handler)
-        +notify_update(services_info)
-        +get_update_channel_name(): str
-        +cleanup()
+        +list_services(): list
+        +list_methods(service): list
+        +describe_message(name): dict
+        +call_unary(service, method, json_payload): dict
+        +close()
     }
 
-    class EventBusRegistryAdapter <<adapter>> {
-        -_config: EventBusConfig
-        -_registry_client: EventBusClient
-        -_update_client: EventBusClient
-        -_update_exchange_name: str
-        --
-        +register(service_info)
-        +unregister(service_info)
-        +subscribe_to_events(handler)
-        +notify_update(services_info)
-        +get_update_channel_name(): str
-        +cleanup()
-        -_get_registry_client(): EventBusClient
-        -_get_update_client(): EventBusClient
+    class GrpcReflectError <<grpc>> {
+        +is_unimplemented: bool
     }
+
+    class LocalProtoClient <<grpc>> {
+        -_proto_dir: str
+        -_target: str
+        -_channel: grpc.Channel
+        --
+        +list_services(): list
+        +list_methods(service): list
+        +call_unary(service, method, json_payload): dict
+    }
+
+    GrpcReflectClient ..> GrpcReflectError : raises
+
+    note bottom of GrpcReflectClient
+      Built on grpc-reflection's
+      ServerReflection RPC.  When a server
+      ships without grpc++_reflection
+      (e.g. vcpkg-built C++ services),
+      callers fall back to LocalProtoClient
+      which compiles .proto files via
+      grpc_tools.protoc.
+    end note
 }
 
 package "adapters.ui_bridge" {
@@ -148,126 +149,178 @@ package "adapters.ui_bridge" {
         -_host: str
         -_port: int
         -_app: FastAPI
+        -_request_handler: callable
+        -_services_info_provider: callable
         --
         +start(request_handler, services_info_provider)
         +stop()
         +broadcast_update(services_info)
+        ..
+        +/api/services
+        +/api/consul/health/<svc>
+        +/api/nomad/jobs
+        +/api/grpc/<svc>/<method>
+        +/ws (services + log stream)
     }
 }
 
+package "adapters.scaffold" {
+    class Generator <<scaffold>> {
+        +generate_python_service(spec): Path
+        +generate_cpp_service(spec): Path
+        +generate_qt_client(spec): Path
+        +generate_multi_proto_workspace(spec): Path
+    }
+
+    class CppTemplate <<scaffold>> {
+        +emit_main_cpp(svc): str
+        +emit_cmake_lists(svc): str
+        +emit_run_wrapper(svc): str
+        +emit_nomad_hcl(svc): str
+        +emit_readme_html(svc): str
+    }
+
+    class PythonTemplate <<scaffold>> {
+        +emit_main_py(svc): str
+        +emit_pyproject_toml(svc): str
+        +emit_run_wrapper(svc): str
+        +emit_nomad_hcl(svc): str
+    }
+
+    class SharedHelpers <<scaffold>> {
+        +gen_readme(svc, fmt): str
+        +sanitize_name(name): str
+        +render_mermaid_topology(svc): str
+    }
+
+    Generator --> CppTemplate
+    Generator --> PythonTemplate
+    Generator --> SharedHelpers
+}
+
 ' ============================================================================
-' Local Hub Adapter Classes
+' Legacy adapters — RabbitMQ + Local Hub (retained for migration)
 ' ============================================================================
 
-package "adapters.local_hub" {
-    class LocalHubManager <<hub>> {
+package "adapters.config  <<legacy>>" {
+    class RabbitMQConfig <<legacy>> {
+        +host: str
+        +port: int
+        +username: str
+        +password: str
+        --
+        +{static} from_cmd_args(args, service_name): RabbitMQConfig
+    }
+
+    class EventBusConfig <<legacy>> {
+        +config_path: str
+        --
+        +load_config(): dict
+        +to_config_source(**overrides): dict
+    }
+}
+
+package "adapters.transport  <<legacy>>" {
+    class RabbitMQTransportAdapter <<legacy>> {
+        -_config: RabbitMQConfig
+        -_connection: BlockingConnection
+        -_channel: BlockingChannel
+        --
+        +consume(...)
+        +rpc_call(...)
+        +publish(...)
+    }
+
+    class EventBusTransportAdapter <<legacy>> {
+        -_config: EventBusConfig
+        -_client: EventBusClient
+        --
+        +consume(...)
+        +rpc_call(...)
+        +publish(...)
+    }
+}
+
+package "adapters.registry  <<legacy>>" {
+    class AMQPRegistryAdapter <<legacy>> {
+        -_config: RabbitMQConfig
+        --
+        +register(service_info)
+        +unregister(service_info)
+        +subscribe_to_events(handler)
+        +notify_update(services_info)
+    }
+
+    class EventBusRegistryAdapter <<legacy>> {
+        -_config: EventBusConfig
+        --
+        +register(service_info)
+        +unregister(service_info)
+        +subscribe_to_events(handler)
+        +notify_update(services_info)
+    }
+}
+
+package "adapters.local_hub  <<legacy>>" {
+    class LocalHubManager <<legacy>> {
         -_server: ProcessHubServer
         -_executor: ServiceExecutor
         -_running: bool
-        -_mode: str
         -_process_config: dict
         -_raw_config: dict
         -_config_path: str
-        -_lock: threading.Lock
         --
-        +start_hub(mode, xpub_port, xsub_port, ...): dict
-        +stop_hub(): dict
-        +get_status(): dict
-        +start_processes(names): dict
-        +stop_processes(names, force): dict
-        +get_config(): dict
-        +add_config(name, config): dict
-        +update_config(name, config): dict
-        +remove_config(name): dict
-        +remove_service(name): dict
-        +import_service(name, source_path, zip_data, wait_time): dict
-        +get_service_log(name, tail): dict
-        +get_services_dir(): str
-        +reset(): dict
-        -_validate_service_structure(service_dir): dict
-        -_resolve_placeholders(value, config_dir)
-        -_load_config_file()
-        -_save_config_file()
-        -_tick_loop()
+        +start_hub(...)
+        +stop_hub()
+        +start_processes(names)
+        +stop_processes(names, force)
+        +import_service(...)
+        +remove_service(name)
     }
 
-    class ServiceExecutor <<hub>> {
+    class ServiceExecutor <<legacy>> {
         -_broker_host: str
         -_broker_port: int
         -_shutdown_timeout: float
-        -_log_dir: str
-        -_log_handles: dict
-        -_configs: dict
-        -_delegate: SimpleExecutor
         --
         +start(name, config)
         +stop(name, force): bool
         +is_running(name): bool
-        +get_pid(name): int
-        +get_log_path(name): str
-        +read_log(name, tail): str
-        -_start_logged(name, config)
-        -_start_with_cwd(name, config, cwd)
-        -_try_rpc_shutdown(process_name): bool
-        -_close_log(name)
-        -_read_log_tail(name, max_lines): str
     }
+
+    LocalHubManager --> ServiceExecutor : _executor
 }
 
 ' ============================================================================
 ' Inheritance (implements port)
 ' ============================================================================
 
+NomadHubAdapter ..|> HubManagerPort
+LocalHubManager ..|> HubManagerPort
+FastAPIBridge ..|> UIBridgePort
 RabbitMQTransportAdapter ..|> TransportPort
 EventBusTransportAdapter ..|> TransportPort
 AMQPRegistryAdapter ..|> ServiceRegistryPort
 EventBusRegistryAdapter ..|> ServiceRegistryPort
-FastAPIBridge ..|> UIBridgePort
 
 ' ============================================================================
-' Composition
+' Composition / dependencies
 ' ============================================================================
 
-RabbitMQTransportAdapter --> RabbitMQConfig : uses
-EventBusTransportAdapter --> EventBusConfig : uses
-EventBusTransportAdapter --> _ChannelProxy : creates
-EventBusTransportAdapter --> _MethodProxy : creates
-EventBusTransportAdapter --> _PropertiesProxy : creates
-AMQPRegistryAdapter --> RabbitMQConfig : uses
-EventBusRegistryAdapter --> EventBusConfig : uses
-LocalHubManager --> ServiceExecutor : _executor
+RabbitMQTransportAdapter --> RabbitMQConfig
+EventBusTransportAdapter --> EventBusConfig
+AMQPRegistryAdapter --> RabbitMQConfig
+EventBusRegistryAdapter --> EventBusConfig
+FastAPIBridge ..> GrpcReflectClient : delegates /api/grpc/*
+FastAPIBridge ..> NomadHubAdapter : delegates /api/nomad/*
 
-note bottom of _ChannelProxy
-  Proxy objects adapt EventBusClient
-  callbacks to the pika-style handler
-  signature (ch, method, props, body)
-  expected by the domain layer.
-end note
-
-note right of EventBusRegistryAdapter
-  Creates two lazy EventBusClient instances:
-  - Registry client (TopicExchangeHandler)
-  - Update client (FanoutExchangeHandler)
-  Both share the same base JSONP config
-  with exchange overrides via to_config_source().
-end note
-
-note right of LocalHubManager
-  **Config Persistence:**
-  _raw_config preserves ${python}
-  and ${config_dir} placeholders.
-  _process_config has resolved paths.
-  Only _raw_config is saved to disk.
-end note
-
-note bottom of ServiceExecutor
-  **Two-Phase Shutdown:**
-  1. RPC: publish svc_api_shutdown
-     to service's queue name
-  2. Fallback: CTRL_BREAK_EVENT (Win)
-     or SIGTERM (Linux)
-  **service_name** field in config
-  resolves queue name mismatch.
+note bottom of FastAPIBridge
+  **Bridge API surface** (post-migration):
+  - /api/consul/* — service discovery (Consul HTTP)
+  - /api/nomad/*  — orchestration (Nomad HTTP via NomadClient)
+  - /api/grpc/*   — dynamic gRPC calls (GrpcReflectClient)
+  - /api/services — legacy aggregated view (back-compat)
+  - /ws           — push notifications (services + logs)
 end note
 
 @enduml

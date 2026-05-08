@@ -7,53 +7,44 @@ how they connect. For the lifecycle of a single running service, see
 [`runtime_model.md`](runtime_model.md). For a glossary of unfamiliar
 terms, see [`concepts.md`](concepts.md).
 
+> **Canonical diagram**: the multi-node Consul + Nomad cluster topology
+> with the wrapper layer is in
+> [`diagrams/00_canonical_architecture.puml`](diagrams/00_canonical_architecture.puml)
+> (single source of truth, adapted from the TA reference architecture).
+> The simplified Mermaid below shows the same shape inline; for the
+> deeper component view (Nomad server + 3 clients, Consul gossip ring,
+> Robot Framework / grpcurl test paths), open the PUML.
+>
+> Audit status of all ADRs and diagrams during the post-migration
+> alignment pass: [`adr/AUDIT.md`](adr/AUDIT.md) and
+> [`diagrams/AUDIT.md`](diagrams/AUDIT.md).
+
 ## High-level picture
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Developer machine                                                       │
-│                                                                          │
-│   ┌─────────────────────┐    HTTP/JSON    ┌──────────────────────────┐   │
-│   │   Manager GUI       │ ──────────────→ │   FastAPI bridge         │   │
-│   │  (Electron/web)     │                 │   (Python; one process)  │   │
-│   │                     │ ←──────────────  │                          │   │
-│   └─────────────────────┘                 │   ─ /api/grpc/...        │   │
-│                                           │   ─ /api/consul/...      │   │
-│                                           │   ─ /api/nomad/...       │   │
-│                                           │   ─ /api/scaffold/...    │   │
-│                                           └────────────┬─────────────┘   │
-│                                                        │                 │
-│              ┌─────────────────────────────────────────┤                 │
-│              │                                         │                 │
-│        Consul HTTP API                          Nomad HTTP API           │
-│              │                                         │                 │
-│              ▼                                         ▼                 │
-│      ┌──────────────┐                          ┌──────────────┐          │
-│      │   Consul     │ ←───── service           │   Nomad      │          │
-│      │   agent      │       registration       │   agent      │          │
-│      │   :8500      │                          │   :4646      │          │
-│      └──────┬───────┘                          └──────┬───────┘          │
-│             │                                         │ raw_exec         │
-│             │                                         ▼                  │
-│             │                                  ┌─────────────────┐       │
-│             │  health probes,                  │   Service A     │       │
-│             ├─────────────────────────────────→│   (gRPC :NNNNN) │       │
-│             │  service catalog                 │   ↑ registers   │       │
-│             │                                  └─────────────────┘       │
-│             │                                  ┌─────────────────┐       │
-│             ├─────────────────────────────────→│   Service B     │       │
-│             │                                  │   (gRPC :NNNNN) │       │
-│             │                                  └─────────────────┘       │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-                                                            ▲
-                                                            │ gRPC over HTTP/2
-                                                            │ (clients reach via Consul lookup)
-                                                  ┌─────────┴─────────┐
-                                                  │   Other clients   │
-                                                  │   (CLI, Qt GUI,   │
-                                                  │   another service)│
-                                                  └───────────────────┘
+```mermaid
+flowchart TB
+    subgraph dev["Developer machine"]
+        GUI["Manager GUI<br/>(Electron / Web)"]
+        Bridge["FastAPI bridge<br/>(Python, one process)<br/>/api/grpc · /api/consul ·<br/>/api/nomad · /api/scaffold"]
+        Consul[("Consul agent<br/>:8500")]
+        Nomad[("Nomad agent<br/>:4646")]
+        SvcA["Service A<br/>(gRPC :NNNNN)"]
+        SvcB["Service B<br/>(gRPC :NNNNN)"]
+    end
+    Client["Other clients<br/>(CLI, Qt GUI,<br/>another service)"]
+
+    GUI <-->|HTTP / JSON| Bridge
+    Bridge -->|Consul HTTP API| Consul
+    Bridge -->|Nomad HTTP API| Nomad
+    Nomad -->|raw_exec| SvcA
+    Nomad -->|raw_exec| SvcB
+    SvcA -.registers.-> Consul
+    SvcB -.registers.-> Consul
+    Consul -.health probes.-> SvcA
+    Consul -.health probes.-> SvcB
+    Client -->|"discover (Consul HTTP)"| Consul
+    Client ==>|gRPC over HTTP/2| SvcA
+    Client ==>|gRPC over HTTP/2| SvcB
 ```
 
 Three independent runtime processes (Consul agent, Nomad agent, the
@@ -66,35 +57,30 @@ clean shutdown.
 
 Inside any one service binary or the framework itself:
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│  Adapters                                                     │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐ │
-│  │ gRPC adapter    │  │ Consul adapter  │  │ scaffold       │ │
-│  │ (api/...)       │  │ (registration   │  │ generator      │ │
-│  │                 │  │   + discovery)  │  │ (cpp_tmpl.py)  │ │
-│  └─────────────────┘  └─────────────────┘  └────────────────┘ │
-│  ┌─────────────────┐  ┌─────────────────┐                     │
-│  │ FastAPI bridge  │  │ Nomad           │      …              │
-│  │ (REST front)    │  │ subprocess mgr  │                     │
-│  └─────────────────┘  └─────────────────┘                     │
-└───────────────────────────────┬───────────────────────────────┘
-                                │ talks via
-                                ▼
-┌───────────────────────────────────────────────────────────────┐
-│  Ports (interfaces / protocols)                               │
-│   - service registry port  - process lifecycle port           │
-│   - serialization port     - subprocess port                  │
-└───────────────────────────────┬───────────────────────────────┘
-                                │ implemented by adapters,
-                                │ consumed by domain
-                                ▼
-┌───────────────────────────────────────────────────────────────┐
-│  Domain (zero-deps)                                           │
-│   Service business logic.  No imports from grpc, fastapi,     │
-│   consul, nomad, qt — anything infra.  Plain functions and    │
-│   value types.  Unit-testable in isolation.                   │
-└───────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph adapters["<b>Adapters</b> — infra-aware"]
+        AGrpc["gRPC adapter<br/>(api/...)"]
+        AConsul["Consul adapter<br/>(registration + discovery)"]
+        AScaffold["scaffold generator<br/>(cpp_tmpl.py)"]
+        ABridge["FastAPI bridge<br/>(REST front)"]
+        ANomad["Nomad subprocess manager"]
+    end
+
+    subgraph ports["<b>Ports</b> — interfaces / protocols"]
+        Pregistry["service registry port"]
+        Plife["process lifecycle port"]
+        Pserial["serialization port"]
+        Pproc["subprocess port"]
+    end
+
+    subgraph domain["<b>Domain</b> — zero-deps"]
+        D["Service business logic<br/>plain functions + value types<br/>no grpc / fastapi / consul / nomad / qt<br/>unit-testable in isolation"]
+    end
+
+    adapters -->|"talks via"| ports
+    ports -->|"consumed by"| domain
+    domain -.->|"never reaches up"| adapters
 ```
 
 | Layer | Lives in | Imports | Imported by |
@@ -153,21 +139,20 @@ Servers built with our scaffold include
 startup. Clients can then enumerate services + methods + message
 schemas at runtime without any `.proto` file:
 
-```
-Manager GUI                  Bridge                  Service
-    │                          │                       │
-    │  GET /api/grpc/services/<name>                  │
-    │ ───────────────────────→ │                       │
-    │                          │  Consul lookup       │
-    │                          │ ─→ host:port         │
-    │                          │                       │
-    │                          │  reflection RPC       │
-    │                          │ ────────────────────→ │
-    │                          │                       │
-    │                          │ ←─── descriptors ──── │
-    │                          │                       │
-    │     methods + schemas    │                       │
-    │ ←─────────────────────── │                       │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GUI as Manager GUI
+    participant Bridge as FastAPI bridge
+    participant Consul as Consul agent
+    participant Svc as Service
+
+    GUI->>Bridge: GET /api/grpc/services/<name>
+    Bridge->>Consul: lookup <name> (HTTP)
+    Consul-->>Bridge: host : port
+    Bridge->>Svc: gRPC reflection (ServerReflectionInfo)
+    Svc-->>Bridge: file descriptors<br/>(services, methods, message schemas)
+    Bridge-->>GUI: methods + schemas (JSON)
 ```
 
 Fallback: when reflection isn't available (older servers, custom
@@ -200,25 +185,16 @@ endpoint list: see "CLI equivalents" in
 `mb-scaffold` (`python -m MicroserviceBase.tools.scaffold_cli`) emits
 a complete service project from a small spec:
 
-```
-spec (CLI flags or YAML)         emitter
-       │                            │
-       ▼                            ▼
-┌──────────────┐    POST /api/scaffold/generate-v2     ┌─────────────────┐
-│  CLI / GUI   │ ───────────────────────────────────→ │   Bridge        │
-│  wizard      │                                      │   ↓ delegates   │
-└──────────────┘                                      │  cpp_tmpl.py    │
-                                                      └────────┬────────┘
-                                                               │ writes
-                                                               ▼
-                                                       ┌──────────────┐
-                                                       │  out/<svc>/  │
-                                                       │  ├─ proto/   │
-                                                       │  ├─ src/     │
-                                                       │  ├─ deploy/  │
-                                                       │  ├─ build_*  │
-                                                       │  └─ README   │
-                                                       └──────────────┘
+```mermaid
+flowchart LR
+    Spec["spec<br/>(CLI flags or YAML)"]
+    UI["CLI / GUI wizard"]
+    Bridge["FastAPI bridge<br/>delegates to cpp_tmpl.py"]
+    Out["out/&lt;svc&gt;/<br/>proto/  src/  deploy/<br/>build_*.bat  README"]
+
+    Spec --> UI
+    UI -->|"POST /api/scaffold/generate-v2"| Bridge
+    Bridge -->|writes files| Out
 ```
 
 Source: `MicroserviceBase/adapters/scaffold/cpp_tmpl.py` (~7000 lines

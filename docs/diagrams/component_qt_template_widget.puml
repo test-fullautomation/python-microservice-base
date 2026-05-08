@@ -1,5 +1,4 @@
 @startuml component_qt_template_widget
-!theme plain
 title Widget Service Template -- Architecture
 footer Shared Widget Shell  |  Auto-Wired UI  |  ~3 KB per service switch
 

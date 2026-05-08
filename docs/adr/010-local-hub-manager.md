@@ -1,5 +1,12 @@
 # ADR-010: Local Hub Manager for ProcessHub Integration
 
+> **⚠ Superseded** — 2026-05-07.  Pre-migration decision; no longer
+> applies to the gRPC + Consul + Nomad architecture.  See the existing
+> Status note below for the immediate successor, and
+> [`docs/changelog.md`](../changelog.md) +
+> [`docs/adr/AUDIT.md`](AUDIT.md) for the full triage.  Kept here for
+> git archaeology.
+
 ## Status
 
 Superseded by [ADR-022 Nomad Orchestrator Integration](022-nomad-orchestrator-integration.md). The Local Hub process supervisor was replaced by Nomad `raw_exec` jobs; lifecycle management moved out of the GUI process and into the Nomad agent.

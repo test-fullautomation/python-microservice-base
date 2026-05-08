@@ -1,84 +1,79 @@
 @startuml sequence_registration
-!theme plain
-title Service Registration Sequence
+title Service Registration Sequence (Nomad raw_exec → ServiceRunner → Consul)
 
-participant "MyService\n(ServiceBase)" as service
-participant "TransportPort" as transport
-participant "ServiceRegistryPort" as registry_port
-participant "RabbitMQ\n(Broker)" as broker
-participant "ServiceRegistry\n(Discovery Hub)" as registry
+participant "Nomad client" as nomad
+participant "wrapper.bat / wrapper.py" as wrapper
+participant "Service process\n(main.cpp / main.py)" as main
+participant "ServiceRunner\n(framework)" as runner
+participant "grpc::Server" as grpc
+participant "Consul agent\n(local to this Nomad client)" as consul
+participant "Manager GUI\n(via FastAPI bridge)" as gui
 
-== Service Initialization ==
+== Phase 1: Spawn ==
 
-service -> service : __init__(transport, registry)
-activate service
+nomad -> wrapper : raw_exec\n  cmd.exe /c run_<svc>.bat\n  with NOMAD_PORT_grpc env var
+activate wrapper
 
-service -> service : get_svc_api_methods_dict()
-note right of service
-  Discovers all methods
-  prefixed with svc_api_*
+wrapper -> wrapper : set PATH (vcpkg DLLs,\nMinGW runtime, uv venv)
+wrapper -> main : exec child process
+activate main
+
+== Phase 2: Service initialisation ==
+
+main -> main : Settings settings;\n  load <PREFIX>_GRPC_PORT,\n  load <PREFIX>_CONSUL_ADDR,\n  load <PREFIX>_ADVERTISE_ADDR
+
+main -> runner : ServiceRunner runner(settings)\nrunner.addService(adapter, "pkg.Service")
+activate runner
+
+== Phase 3: gRPC server boot ==
+
+runner -> grpc : ServerBuilder builder
+runner -> grpc : builder.AddListeningPort(\n  bind_addr:NOMAD_PORT_grpc,\n  InsecureServerCredentials)
+runner -> grpc : builder.RegisterService(adapter)
+runner -> grpc : reflection::InitProtoReflectionServerBuilderPlugin()
+runner -> grpc : server = builder.BuildAndStart()
+activate grpc
+
+note right of grpc
+  gRPC server now accepting
+  HTTP/2 connections on the
+  Nomad-allocated port.
 end note
 
-service -> service : get_svc_api_methods_info_dict()
-note right of service
-  Parses docstrings to extract
-  argument types, conditions,
-  and descriptions
+== Phase 4: Consul registration ==
+
+runner -> consul : PUT /v1/agent/service/register\n{\n  "ID":      "<svc>-<random>",\n  "Name":    "<svc_snake>",\n  "Address": <ADVERTISE_ADDR>,\n  "Port":    NOMAD_PORT_grpc,\n  "Check":   { "GRPC": "host:port", "Interval": "3s" }\n}
+activate consul
+
+consul -> consul : add to catalog\nschedule first health check
+note over consul
+  3 seconds later: TCP probe
+  to NOMAD_PORT_grpc; passes ⇒
+  marks instance healthy.
 end note
 
-service -> service : Build _SERVICE_INFO
-note right of service
-  Populates 'methods' and
-  'methods_info' fields
+consul --> runner : 200 OK
+deactivate consul
+deactivate runner
+
+== Phase 5: GUI / clients see the new instance ==
+
+gui -> consul : GET /v1/health/service/<svc>?passing\n(every ~1s while open)
+consul --> gui : [{ Address, Port, Tags, Status: passing }]
+
+note over gui
+  Sidebar refreshes; user can
+  click into the service detail
+  panel and invoke methods via
+  reflection.
 end note
 
-== Service Registration ==
+== Steady state ==
 
-service -> registry_port : register(service_info_dict)
-activate registry_port
-
-registry_port -> broker : publish(service_information,\nrouting_key=service.information,\nbody={info: ..., state: "on"})
-activate broker
-
-broker -> registry : deliver event
-activate registry
-
-registry -> registry : handle_update(service_information)
-note right of registry
-  Stores service info in
-  services_information dict
-  keyed by service name
-end note
-
-registry -> registry : notify_updates()
-registry -> registry_port : notify_update(services_info)
-registry_port -> broker : publish(fanout exchange,\nbody=all_services_info)
-broker -> broker : broadcast to all\nsubscribed UI clients
-
-deactivate registry
-deactivate broker
-deactivate registry_port
-
-== Service Consumption ==
-
-service -> transport : serve() -> consume(service_name,\nrouting_key, exchange, on_request)
-activate transport
-
-transport -> broker : declare exchange\nbind queue\nstart consuming
-note right of transport
-  Blocks the calling thread.
-  Incoming messages dispatched
-  to on_request callback.
-end note
-
-deactivate transport
-deactivate service
-
-note over service, registry
-  After registration, the service is:
-  1. Visible in the Registry's services_information dict
-  2. Discoverable by any UI client via realtime updates
-  3. Ready to handle RPC requests on its routing key
+note over wrapper, consul
+  Wrapper stays alive as PID 1 of the Nomad task
+  (exit propagates up to Nomad).  ServiceRunner
+  blocks on server->Wait() until SIGTERM.
 end note
 
 @enduml
