@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded — gRPC has no exchanges. Service-to-service is point-to-point over HTTP/2; service discovery is via Consul; method discovery is via gRPC reflection. The exchange-topology decision is no longer load-bearing.
 
 ## Date
 

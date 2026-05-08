@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded — Consul deregistration on graceful shutdown handles this case. `ServiceRunner` calls `DELETE /v1/agent/service/deregister/<id>` in its shutdown handler; Consul propagates removal to subscribed clients within ~1s.
 
 ## Date
 

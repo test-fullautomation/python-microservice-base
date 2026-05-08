@@ -406,39 +406,39 @@ plain dicts, not pickled objects.
 
 ## Recommended Diagrams
 
-All diagrams are in [`docs/diagrams/`](diagrams/) in PlantUML format.
+All diagrams are in [`docs/diagrams/`](../diagrams/) in PlantUML format.
 
 ### For Understanding the System
 
 | Purpose | File |
 |---------|------|
-| Big picture — all major components | [`overview.puml`](diagrams/overview.puml) |
-| Hexagonal architecture layers | [`architecture.puml`](diagrams/architecture.puml) |
-| Component wiring and dependencies | [`component.puml`](diagrams/component.puml) |
-| GUI dual-host architecture | [`gui_architecture.puml`](diagrams/gui_architecture.puml) |
-| Local Hub components | [`component_local_hub.puml`](diagrams/component_local_hub.puml) |
-| Fleet orchestrator components | [`component_fleet.puml`](diagrams/component_fleet.puml) |
+| Big picture — all major components | [`overview.puml`](../diagrams/overview.puml) |
+| Hexagonal architecture layers | [`architecture.puml`](../diagrams/architecture.puml) |
+| Component wiring and dependencies | [`component.puml`](../diagrams/component.puml) |
+| GUI dual-host architecture | [`gui_architecture.puml`](../diagrams/gui_architecture.puml) |
+| Local Hub components | [`component_local_hub.puml`](../diagrams/component_local_hub.puml) |
+| Fleet orchestrator components | [`component_fleet.puml`](../diagrams/component_fleet.puml) |
 
 ### For Understanding Behavior
 
 | Purpose | File |
 |---------|------|
-| Service registration flow | [`sequence_registration.puml`](diagrams/sequence_registration.puml) |
-| RPC request-response flow | [`sequence_rpc.puml`](diagrams/sequence_rpc.puml) |
-| Alias routing flow | [`sequence_alias.puml`](diagrams/sequence_alias.puml) |
-| Two-phase graceful shutdown | [`sequence_shutdown.puml`](diagrams/sequence_shutdown.puml) |
-| Service import flow | [`sequence_service_import.puml`](diagrams/sequence_service_import.puml) |
-| Real-time update broadcast | [`sequence_realtime_update.puml`](diagrams/sequence_realtime_update.puml) |
-| GUI plugin loading | [`sequence_gui_plugin_loading.puml`](diagrams/sequence_gui_plugin_loading.puml) |
-| Process lifecycle state machine | [`state_process_lifecycle.puml`](diagrams/state_process_lifecycle.puml) |
+| Service registration flow | [`sequence_registration.puml`](../diagrams/sequence_registration.puml) |
+| RPC request-response flow | [`sequence_rpc.puml`](../diagrams/sequence_rpc.puml) |
+| Alias routing flow | [`sequence_alias.puml`](../diagrams/sequence_alias.puml) |
+| Two-phase graceful shutdown | [`sequence_shutdown.puml`](../diagrams/sequence_shutdown.puml) |
+| Service import flow | [`sequence_service_import.puml`](../diagrams/sequence_service_import.puml) |
+| Real-time update broadcast | [`sequence_realtime_update.puml`](../diagrams/sequence_realtime_update.puml) |
+| GUI plugin loading | [`sequence_gui_plugin_loading.puml`](../diagrams/sequence_gui_plugin_loading.puml) |
+| Process lifecycle state machine | [`state_process_lifecycle.puml`](../diagrams/state_process_lifecycle.puml) |
 
 ### For Understanding Code
 
 | Purpose | File |
 |---------|------|
-| Domain layer classes | [`class_domain.puml`](diagrams/class_domain.puml) |
-| Port interfaces | [`class_ports.puml`](diagrams/class_ports.puml) |
-| Adapter implementations | [`class_adapters.puml`](diagrams/class_adapters.puml) |
+| Domain layer classes | [`class_domain.puml`](../diagrams/class_domain.puml) |
+| Port interfaces | [`class_ports.puml`](../diagrams/class_ports.puml) |
+| Adapter implementations | [`class_adapters.puml`](../diagrams/class_adapters.puml) |
 
 ### For Troubleshooting
 

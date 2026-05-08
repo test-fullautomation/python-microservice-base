@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Changelog</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+  header{background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1,h2,h3,h4{color:var(--accent);}
+  h1{display:none;}
+  h2{margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  h3{color:var(--amber);margin-top:22px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+  pre code{background:none;padding:0;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--accent);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header><h1 style="display:block;">Changelog</h1></header>
+<main>
+<h1 id="changelog">Changelog</h1>
+
+<blockquote><p>📄 <em>Also available as HTML:</em> <a href="changelog.html"><code>changelog.html</code></a></p></blockquote>
+
+<p>Significant changes since the framework's RabbitMQ-era origins. Architectural records (one file per decision) live in <a href="adr/"><code>adr/</code></a>; this is the chronological summary.</p>
+
+<h2 id="2026-current">2026 (current)</h2>
+
+<h3 id="c-runtime-now-installable-as-a-standalone-cmake--vcpkg-package">C++ runtime now installable as a standalone CMake / vcpkg package</h3>
+<ul>
+<li><code>runtime_cpp/CMakeLists.txt</code> now exports <code>MicroserviceBaseConfig.cmake</code></li>
+</ul>
+<p>  + <code>MicroserviceBaseTargets.cmake</code> via <code>install(TARGETS … EXPORT)</code> +   <code>CMakePackageConfigHelpers</code>.  After <code>cmake --install</code>, generated   services can <code>find_package(MicroserviceBase CONFIG REQUIRED)</code> and   link against <code>microservice_base::runtime</code> from anywhere on the disk.</p>
+<ul>
+<li>New vcpkg overlay-port at <code>ports/microservice-base/</code> so vcpkg-using</li>
+</ul>
+<p>  consumers add <code>"microservice-base"</code> to their <code>vcpkg.json</code> and the   same find_package call resolves through the vcpkg toolchain.</p>
+<ul>
+<li>Generator (<code>cpp_tmpl.py</code>) now emits a hybrid CMake block: tries</li>
+</ul>
+<p>  <code>find_package(MicroserviceBase CONFIG QUIET)</code> first, falls back to   <code>add_subdirectory(.../runtime_cpp)</code> when the relative path resolves   (i.e. the service lives inside <code>&lt;framework&gt;/examples/</code>).  Means   generated services are truly standalone — no longer assume the   framework repo is at <code>../../MicroserviceBase/</code> on disk.</p>
+<ul>
+<li>Three target names exported for back-compat: <code>microservice_base::runtime</code></li>
+</ul>
+<p>  (modern alias), <code>microservice_base::microservice_base_runtime</code> (default   vcpkg-style), <code>microservice_base_runtime</code> (legacy bare name).</p>
+<ul>
+<li>New doc: <a href="runtime_cpp_install.html"><code>runtime_cpp_install.md</code></a>.</li>
+</ul>
+
+<h3 id="python-monorepo-support-added-to-scaffold-generator">Python monorepo support added to scaffold generator</h3>
+<ul>
+<li><code>python_tmpl.generate_monorepo()</code> mirrors the C++ monorepo emitter:</li>
+</ul>
+<p>  one project, N service modules sharing a single <code>.proto</code>, one   <code>pyproject.toml</code> registering each service as a <code>[project.scripts]</code>   entry point.</p>
+<ul>
+<li>Service Creator wizard's monorepo radio drops the "(C++ only, v1)"</li>
+</ul>
+<p>  label — now valid for both languages.</p>
+
+<h3 id="manager-gui-in-app-help-modernised">Manager GUI in-app help modernised</h3>
+<ul>
+<li><code>web/docs/help.html</code> got a "this in-app help is being modernised"</li>
+</ul>
+<p>  banner pointing readers to the long-form docs in   <code>MicroserviceManagerGUI/docs/</code>.  Full RabbitMQ → gRPC content   rewrite is queued.</p>
+
+<h3 id="documentation-restructure">Documentation restructure</h3>
+<ul>
+<li><code>docs/</code> now contains framework-level reference (architecture,</li>
+</ul>
+<p>  runtime model, concepts, troubleshooting, changelog).</p>
+<ul>
+<li>Manager GUI docs live next to the GUI at</li>
+</ul>
+<p>  <code>MicroserviceBase/MicroserviceManagerGUI/docs/</code>.</p>
+<ul>
+<li>Per-example tutorials live at <code>examples/docs/</code>.</li>
+<li>Legacy examples (RabbitMQ-era <code>01_…08_<em>.py</code>, <code>cpp_</em>_template/</code>,</li>
+</ul>
+<p>  <code>fleet_demo/</code>, etc.) moved to <code>examples/_legacy/</code>.</p>
+<ul>
+<li>Legacy framework docs (<code>CONCEPT.md</code>, <code>troubleshooting-guide.md</code>)</li>
+</ul>
+<p>  moved to <code>docs/_legacy/</code>.</p>
+
+<h3 id="manager-gui-proto-path-fallback-for-servers-without-reflection">Manager GUI: proto-path fallback for servers without reflection</h3>
+<ul>
+<li>Bridge endpoints accept an optional <code>proto_path</code> so the GUI can</li>
+</ul>
+<p>  point <code>LocalProtoClient</code> at a folder of <code>.proto</code> files when the   server doesn't ship <code>grpc++_reflection</code>.</p>
+<ul>
+<li>New input field appears in the service detail panel when reflection</li>
+</ul>
+<p>  + the env-var search paths both fail; persisted per-service in   <code>sessionStorage</code>.</p>
+
+<h3 id="vcpkg-overlay-port-forces-grpc_build_codegenon">vcpkg overlay-port forces <code>gRPC_BUILD_CODEGEN=ON</code></h3>
+<ul>
+<li>Root cause: vcpkg's manifest-mode feature selection was dropping</li>
+</ul>
+<p>  the <code>codegen</code> feature for the target triplet, which gates   upstream's <code>add_library(grpc++_reflection ...)</code> block.  Result:   generated services returned <code>UNIMPLEMENTED</code> to every Manager-GUI   reflection RPC.</p>
+<ul>
+<li>Fix: <code>init_vcpkg_overlay.bat</code> now patches upstream's <code>portfile.cmake</code></li>
+</ul>
+<p>  to drop the <code>codegen</code> row from <code>vcpkg_check_features</code> and force   <code>set(gRPC_BUILD_CODEGEN ON)</code> + <code>-DgRPC_BUILD_CODEGEN=ON</code> in   <code>vcpkg_cmake_configure</code>.</p>
+<ul>
+<li>Idempotent flags added: <code>--upgrade</code> (re-apply patches in place),</li>
+</ul>
+<p>  <code>--reinit</code> (wipe + re-copy + re-patch from upstream).</p>
+<ul>
+<li>Also fixed: blank context lines in <code>00018-gcc13-per-cpu-ice-workaround.patch</code></li>
+</ul>
+<p>  were zero-byte and rejected by <code>git apply</code>.  Now use a <code>{SP}</code>   placeholder substituted at emit-time so editors don't strip them.</p>
+
+<h3 id="localprotoclient-added-to-reflect_clientpy"><code>LocalProtoClient</code> added to <code>reflect_client.py</code></h3>
+<ul>
+<li>Same public API as <code>GrpcReflectClient</code> (<code>list_services</code>,</li>
+</ul>
+<p>  <code>list_methods</code>, <code>call_method</code>) but builds the descriptor pool from   local <code>.proto</code> files via <code>grpc_tools.protoc</code> instead of reflection.</p>
+<ul>
+<li>Used by the bridge as a fallback when reflection returns</li>
+</ul>
+<p>  <code>UNIMPLEMENTED</code>.</p>
+
+<h2 id="2025">2025</h2>
+
+<h3 id="migration-to-grpc--consul--nomad-the-big-one">Migration to gRPC + Consul + Nomad (the "big one")</h3>
+
+<p>The framework was originally built around RabbitMQ for service-to-service communication, an in-process <strong>ServiceRegistry</strong> for discovery, and a <strong>Local Process Hub</strong> (custom Python supervisor) for lifecycle management.  All three were replaced:</p>
+
+<table>
+  <tr><th>Old</th><th>New</th></tr>
+  <tr><td>RabbitMQ + custom request/response framing</td><td>gRPC over HTTP/2 + protobuf</td></tr>
+  <tr><td>ServiceRegistry (in-process, broker-coupled)</td><td>Consul service catalog (<code>/v1/health/service/...</code>)</td></tr>
+  <tr><td>Routing keys + alias routing</td><td>Fully-qualified gRPC service + method names</td></tr>
+  <tr><td>Local Process Hub (Python subprocess management)</td><td>Nomad <code>raw_exec</code> jobs + agent supervisor</td></tr>
+  <tr><td><code>hub_processes.json</code> config</td><td>per-service <code>deploy/&lt;svc&gt;.nomad.hcl</code></td></tr>
+  <tr><td>Fleet Web API + hub fleet view</td><td>Consul + Nomad UIs (<code>:8500/ui</code> and <code>:4646/ui</code>) + the GUI's Service Network tab</td></tr>
+  <tr><td><code>eventbus</code> transport adapter</td><td>(dropped — no broker means no transport adapter)</td></tr>
+</table>
+
+<p>The rationale per piece is in the ADRs (especially ADRs 016 and 018, both flagged "superseded" — see ADR audit list at the bottom).</p>
+
+<p>The hexagonal architecture itself didn't change — the migration swapped adapters, not domain code. Services that had domain logic written for the RabbitMQ-era framework needed minor adjustments (method signatures became <code>(request_msg, response_msg)</code> instead of <code>svc_api_X(arg1, arg2)</code>), but the business logic was portable.</p>
+
+<h3 id="manager-gui-rewrite-v20">Manager GUI rewrite (v2.0)</h3>
+<ul>
+<li>Pure browser-compatible HTML/CSS/JS (no Node.js deps in <code>web/</code>).</li>
+<li>Dual hosting: Electron wrapper + Python web mode (FastAPI bridge).</li>
+<li>Bootstrap 5 from CDN, no <code>node_modules/</code> for the web UI.</li>
+<li><code>window.MicroserviceManager</code> namespace (alias <code>MM</code>) for everything.</li>
+<li>Per-service GUI plugins loaded dynamically from <code>web/services/</code>.</li>
+<li>Login replaced with Bootstrap modal (no separate Electron popup</li>
+</ul>
+<p>  window).</p>
+
+<h3 id="multi-broker--multi-consul-v21">Multi-broker → multi-Consul (v2.1)</h3>
+<ul>
+<li>The "connect to multiple brokers" feature became "connect to</li>
+</ul>
+<p>  multiple Consul clusters."</p>
+<ul>
+<li><code>MM.connections</code> map keyed by <code>host:port</code>.</li>
+<li>Sidebar groups services by which Consul cluster they came from.</li>
+<li>Session persistence in <code>sessionStorage.mm_connections</code>.</li>
+</ul>
+
+<h3 id="windows-process-shutdown-reliability">Windows process shutdown reliability</h3>
+<ul>
+<li><code>proc.terminate()</code> on Windows calls <code>TerminateProcess</code> — no cleanup,</li>
+</ul>
+<p>  no finally blocks.  Switched to <code>CTRL_BREAK_EVENT</code> for graceful   shutdown.</p>
+<ul>
+<li><code>signal.signal(signal.SIGBREAK, signal.default_int_handler)</code> so</li>
+</ul>
+<p>  SIGBREAK becomes <code>KeyboardInterrupt</code> and Python <code>finally</code> runs.</p>
+<ul>
+<li>Replaced <code>pika.start_consuming()</code> (blocks forever, ignores Python</li>
+</ul>
+<p>  interrupts) with <code>process_data_events(time_limit=1)</code> loop.</p>
+
+<h3 id="subprocesspipe-blocking-fix"><code>subprocess.PIPE</code> blocking fix</h3>
+<ul>
+<li>ProcessHub's executor used <code>stdout=subprocess.PIPE</code> but never read</li>
+</ul>
+<p>  the pipe → on Windows, ~4KB buffer fills, child process blocks on   next <code>print()</code>, hangs the whole logging system.</p>
+<ul>
+<li>Fix: only attach a <code>StreamHandler</code> to the root logger when</li>
+</ul>
+<p>  <code>sys.stdout.isatty()</code>.  Always use <code>FileHandler</code> for subprocess   logging.</p>
+
+<h3 id="processhub-config-persistence">ProcessHub config persistence</h3>
+<ul>
+<li><code>hub_processes.json</code> uses <code>${python}</code> and <code>${config_dir}</code></li>
+</ul>
+<p>  placeholders, resolved at runtime.</p>
+<ul>
+<li><code>_raw_config</code> dict preserves originals for round-tripping so the</li>
+</ul>
+<p>  saved file doesn't have absolute paths baked in.</p>
+
+<p>(ProcessHub itself is now legacy — see migration above. These fixes were made before the Nomad transition; documenting here for git archaeology.)</p>
+
+<h2 id="adr-audit-list">ADR audit list</h2>
+
+<p>These ADRs predate the gRPC migration and either need an "Superseded by ADR-NNN" header or a wholesale rewrite. Until that audit happens, read them with the migration in mind.</p>
+
+<table>
+  <tr><th>ADR</th><th>Status hint</th></tr>
+  <tr><td>003 — Service registry over Zookeeper</td><td>Superseded — Consul replaces both</td></tr>
+  <tr><td>010 — Local Hub Manager</td><td>Superseded — Nomad replaces</td></tr>
+  <tr><td>011 — Service Import with module execution</td><td>Likely deprecated (Nomad jobs replace runtime "import")</td></tr>
+  <tr><td>012 — Registry shutdown notification</td><td>Superseded — Consul deregistration handles this</td></tr>
+  <tr><td>015 — Fleet Orchestrator architecture</td><td>Superseded — Nomad replaces</td></tr>
+  <tr><td>016 — RabbitMQ as message broker</td><td><strong>Superseded</strong> — gRPC replaces broker entirely</td></tr>
+  <tr><td>017 — <code>svc_api_*</code> naming convention</td><td>Superseded — gRPC method names are explicit</td></tr>
+  <tr><td>018 — Alias routing design</td><td>Superseded — no broker, no aliasing layer</td></tr>
+</table>
+
+<p>A full ADR refresh is queued; in the meantime, <a href="concepts.html"><code>concepts.md</code></a> has a side-by-side "old term → new term" mapping table.</p>
+
+<h2 id="see-also">See also</h2>
+
+<ul>
+<li><a href="architecture.html"><code>architecture.md</code></a> — current shape</li>
+<li><a href="concepts.html"><code>concepts.md</code></a> — current terminology</li>
+<li><a href="adr/"><code>adr/</code></a> — per-decision rationale</li>
+<li><a href="_legacy/CONCEPT.md"><code>_legacy/CONCEPT.md</code></a> — pre-migration architecture in detail</li>
+</ul>
+
+</main>
+</body>
+</html>

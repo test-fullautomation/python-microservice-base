@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded — alias routing was a workaround for RabbitMQ's lack of structured method names. With gRPC, every method has a fully-qualified name (`<package>.<service>/<method>`); no aliasing layer required. Generated services do not include an `alias.json`.
 
 ## Date
 

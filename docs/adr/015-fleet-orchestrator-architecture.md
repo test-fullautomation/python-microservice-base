@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-022 Nomad Orchestrator Integration](022-nomad-orchestrator-integration.md). The custom Fleet Orchestrator was replaced by a Nomad cluster — same multi-node coverage, mature scheduler, and a battle-tested HTTP API the Manager GUI consumes via `/api/nomad/...` endpoints.
 
 ## Date
 

@@ -37,10 +37,27 @@ class MethodSpec:
 
 @dataclass
 class ServiceBlock:
-    """One service inside a monorepo scaffold (single .proto, multiple
-    executables sharing the same project tree)."""
+    """One gRPC service entry inside a multi-service scaffold.
+
+    Used by two layouts:
+      * ``monorepo``     - N services share ONE .proto, each builds its own
+                           executable.  proto_file is ignored; the project's
+                           main .proto holds all services.
+      * ``multi_proto``  - N services come from N separate .protos but compile
+                           into ONE executable that registers them all on the
+                           same grpc::ServerBuilder.  Each service carries its
+                           own ``proto_file`` (defaults to ``<snake_name>.proto``
+                           when empty).
+    """
     name: str
     methods: List[MethodSpec] = field(default_factory=list)
+    # multi_proto layout only: filename inside proto/ for this service's
+    # .proto.  Empty = derive ``<snake(name)>.proto`` from the service name.
+    proto_file: str = ""
+    # multi_proto layout only: optional verbatim .proto text (e.g. when the
+    # user imported a hand-written .proto via the wizard).  Empty = generate
+    # from ``methods`` using the same template as single-service mode.
+    proto_content: str = ""
 
 
 @dataclass
@@ -111,10 +128,24 @@ class ScaffoldSpec:
     # Empty string = fall back to the computed `<snake_name>.v1`.
     proto_package_override: str = ""
 
-    # Monorepo mode: when non-empty, emit a single project folder with N
-    # executables (one per service) sharing one .proto + one CMakeLists.
-    # `service_name` then acts as the *project* folder name.
+    # Multi-service mode: when non-empty, emit a single project folder
+    # holding N gRPC services.  ``service_name`` then acts as the
+    # *project* folder name.  How they're laid out depends on ``layout``:
     services: List[ServiceBlock] = field(default_factory=list)
+
+    # Project layout selector.  Three values:
+    #   "single"      - one .proto, one gRPC service, one binary.
+    #                   Uses ``methods`` (services list ignored).
+    #   "monorepo"    - N services from one shared .proto, each in its own
+    #                   binary.  Uses ``services``.  (DEFAULT for back-compat:
+    #                   pre-existing scaffolds with a populated services list
+    #                   continue to behave as monorepo.)
+    #   "multi_proto" - N services from N separate .protos, all hosted in
+    #                   ONE binary registering them on the same
+    #                   grpc::ServerBuilder (vehicle-example pattern).
+    #                   Each ServiceBlock carries its own proto_file.
+    # When ``services`` is empty the value is ignored and "single" applies.
+    layout: str = "monorepo"
 
     # Derived helpers
     @property
@@ -148,9 +179,19 @@ def generate_scaffold(spec: ScaffoldSpec) -> Dict[str, str]:
 
     Paths are relative to the project root (e.g. ``src/main.cpp``).
     """
-    # Monorepo path: one project folder, N executables / entry-points
-    # sharing the proto.
+    # Multi-service path: one project folder, N gRPC services.  Layout
+    # decides whether they share a process (multi_proto) or each get
+    # their own (monorepo).
     if spec.services and len(spec.services) > 1:
+        layout = spec.layout or "monorepo"
+        if layout == "multi_proto":
+            if spec.language == "cpp":
+                return cpp_tmpl.generate_multi_proto(spec, spec.services)
+            raise NotImplementedError(
+                f"multi_proto layout not yet supported for language={spec.language!r} "
+                "(cpp only in this release)"
+            )
+        # Default / explicit monorepo:
         if spec.language == "cpp":
             return cpp_tmpl.generate_monorepo(spec, spec.services)
         if spec.language == "python":

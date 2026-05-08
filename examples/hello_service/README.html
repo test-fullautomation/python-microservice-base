@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>hello_service</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+  header{background:linear-gradient(135deg,#10b981,#0ea5e9);padding:30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1{display:none;}
+  h2{color:var(--green);margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  h3{color:var(--amber);margin-top:22px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+  pre code{background:none;padding:0;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--green);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header><h1 style="display:block;">hello_service</h1></header>
+<main>
+<h1 id="hello_service">hello_service</h1>
+
+<blockquote><p>↑ <a href="../README.html">Examples index</a> · 📄 <a href="README.html">HTML version</a> · ⚙️ <a href="../cpp_hello_service/README.html">C++ equivalent</a></p></blockquote>
+
+<p>Minimal Python demo microservice for the MicroserviceBase runtime. Smallest working scaffold — copy as a starting point for your own Python service.</p>
+
+<p>Demonstrates:</p>
+<ul>
+<li>Hexagonal layout (<code>domain/</code>, <code>adapters/</code>, <code>context.py</code>, <code>main.py</code>)</li>
+<li><code>ServiceRunner</code> with async gRPC server</li>
+<li>Consul registration + gRPC health check</li>
+<li>gRPC reflection (so <code>grpcurl</code> and the <a href="../../MicroserviceBase/MicroserviceManagerGUI/README.html">Manager GUI</a> can enumerate methods)</li>
+<li>Dynamic port allocation (<code>HELLO_GRPC_PORT=0</code>)</li>
+<li>Three RPCs: unary (<code>Greet</code>), unary (<code>Echo</code>), server streaming (<code>Tick</code>)</li>
+</ul>
+
+<h2 id="layout">Layout</h2>
+
+<pre><code>hello_service/
+├── main.py                      # Entry point — asyncio.run(amain())
+├── config.py                    # Pydantic Settings (HELLO_* env vars)
+├── context.py                   # DI factory — wires domain + adapter
+├── pyproject.toml
+├── hello.nomad.hcl              # Nomad job spec for raw_exec deployment
+│
+├── proto/
+│   ├── hello.proto              # Service definition
+│   ├── hello_pb2.py             # GENERATED — do not edit
+│   └── hello_pb2_grpc.py        # GENERATED — do not edit
+│
+├── domain/
+│   └── hello_service.py         # Pure business logic, no gRPC/Consul
+│
+├── adapters/
+│   └── api/
+│       └── grpc_adapter.py      # Wires generated stubs to domain object
+│
+└── scripts/
+    └── generate_protos.py       # Regenerate stubs after editing .proto
+</code></pre>
+
+<p>The hexagonal split — <code>domain/</code> is pure Python with zero gRPC / Consul imports; <code>adapters/api/</code> is where gRPC enters the building. See <a href="../../docs/architecture.html"><code>../../docs/architecture.md</code></a> for the framework-level rationale.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<ul>
+<li>Python 3.10+</li>
+<li>MicroserviceBase installed (<code>pip install -e ..</code> from repo root)</li>
+<li>Consul agent running locally — <code>consul agent -dev</code> or via the</li>
+</ul>
+<p>  <a href="../../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html">Manager GUI Service Network tab</a></p>
+
+<h2 id="first-run">First run</h2>
+
+<pre><code>cd examples/hello_service
+
+# Generate protobuf Python stubs
+python scripts/generate_protos.py
+
+# Start the service
+python main.py
+</code></pre>
+
+<p>You should see:</p>
+
+<pre><code>INFO MicroserviceBase.runtime.server: gRPC server listening on 0.0.0.0:&lt;port&gt;
+INFO MicroserviceBase.runtime.consul: Registering service hello (id=hello-xxxxxxxx) with Consul at &lt;ip&gt;:&lt;port&gt;
+INFO MicroserviceBase.runtime.server: Service hello ready.
+</code></pre>
+
+<h2 id="run-via-nomad-the-supervised-path">Run via Nomad (the supervised path)</h2>
+
+<p>The folder ships a <code>hello.nomad.hcl</code>:</p>
+
+<pre><code>nomad job run hello.nomad.hcl
+</code></pre>
+
+<p>Or <strong>Submit Job</strong> in the Manager GUI's Nomad tab. See <a href="../../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md</code></a>.</p>
+
+<h2 id="verify">Verify</h2>
+
+<p>Find the service address from Consul:</p>
+
+<pre><code>curl -s http://localhost:8500/v1/health/service/hello?passing=true | jq '.[0].Service | {Address, Port}'
+</code></pre>
+
+<p>Then:</p>
+
+<pre><code># List services exposed by the server (via reflection)
+grpcurl -plaintext &lt;addr&gt;:&lt;port&gt; list
+
+# Describe one service
+grpcurl -plaintext &lt;addr&gt;:&lt;port&gt; describe hello.v1.HelloService
+
+# Unary call
+grpcurl -plaintext -d '{"name": "Cuong"}' &lt;addr&gt;:&lt;port&gt; hello.v1.HelloService/Greet
+# -&gt; {"message": "Hello, Cuong!"}
+
+# Server streaming
+grpcurl -plaintext -d '{"count": 5, "interval_ms": 500}' &lt;addr&gt;:&lt;port&gt; hello.v1.HelloService/Tick
+</code></pre>
+
+<p><code>grpcurl</code> uses the server's gRPC reflection to discover the schema — no local <code>.proto</code> needed.</p>
+
+<h3 id="or-invoke-via-the-manager-gui">Or invoke via the Manager GUI</h3>
+
+<p>1. Launch the GUI (<code>cd MicroserviceBase/MicroserviceManagerGUI &amp;&amp; npm start</code>) 2. <strong>Service Network → Consul → Start Agent</strong> (Dev Mode) 3. Switch to <strong>Services</strong> mode → click <code>hello</code> → invoke methods    interactively (the panel uses the same gRPC reflection that    <code>grpcurl</code> does)</p>
+
+<h2 id="environment-variables">Environment variables</h2>
+
+<table>
+  <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>HELLO_GRPC_PORT</code></td><td><code>0</code></td><td>gRPC port. <code>0</code> = OS-assigned (dynamic).</td></tr>
+  <tr><td><code>HELLO_SERVICE_HOST</code></td><td><code>0.0.0.0</code></td><td>Bind address</td></tr>
+  <tr><td><code>HELLO_ADVERTISE_ADDR</code></td><td>(hostname)</td><td>Address announced to Consul</td></tr>
+  <tr><td><code>HELLO_CONSUL_ADDR</code></td><td><code>http://localhost:8500</code></td><td>Consul HTTP API endpoint</td></tr>
+  <tr><td><code>HELLO_CONSUL_TOKEN</code></td><td>``</td><td>Optional Consul ACL token</td></tr>
+  <tr><td><code>HELLO_GREETING</code></td><td><code>Hello</code></td><td>Greeting prefix used by <code>Greet</code></td></tr>
+  <tr><td><code>HELLO_LOG_LEVEL</code></td><td><code>INFO</code></td><td>Python logging level</td></tr>
+</table>
+
+<h2 id="cross-references">Cross-references</h2>
+
+<ul>
+<li><a href="../cpp_hello_service/README.html"><code>../cpp_hello_service/README.md</code></a> — C++ equivalent (same <code>.proto</code>)</li>
+<li><a href="../cpp_hello_client/README.html"><code>../cpp_hello_client/README.md</code></a> — typed C++ client that talks to either equivalent</li>
+<li><a href="../../docs/runtime_model.html"><code>../../docs/runtime_model.md</code></a> — what <code>ServiceRunner</code> does end-to-end</li>
+<li><a href="../../docs/architecture.html"><code>../../docs/architecture.md</code></a> — hexagonal layers + Consul + Nomad + gRPC reflection</li>
+<li><a href="../../docs/troubleshooting.html"><code>../../docs/troubleshooting.md</code></a> — symptom-indexed problem fixes</li>
+</ul>
+
+</main>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+**Superseded** — replaced by direct gRPC over HTTP/2 with Consul-based service discovery. See [`docs/changelog.md`](../changelog.md) for the migration rationale and [`docs/architecture.md`](../architecture.md) for the current shape. RabbitMQ + the broker-coupled `ServiceRegistry` are gone; service-to-service traffic is now point-to-point.
 
 ## Date
 

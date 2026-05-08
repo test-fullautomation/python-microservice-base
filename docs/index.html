@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MicroserviceBase repo docs</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --green: #10b981; --amber: #fbbf24; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0;
+         background: var(--bg); color: var(--text); line-height: 1.65; }
+  header { background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 32px 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 8px 0 0; opacity: 0.92; }
+  main { max-width: 1100px; margin: 0 auto; padding: 30px; }
+  section { background: var(--panel); border-radius: 12px; padding: 22px 26px;
+             margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+             border-left: 4px solid var(--accent); }
+  section h2 { color: var(--accent); margin-top: 0;
+                border-bottom: 1px solid var(--border); padding-bottom: 10px;
+                font-size: 1.3em; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px; color: #fcd34d;
+          font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: 0.9em; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0;
+           background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+            font-size: 0.92em; vertical-align: top; }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MicroserviceBase repo docs</h1>
+  <p>Framework-level reference: how MicroserviceBase is structured, what each piece does, and how the runtime fits together.</p>
+</header>
+
+<main>
+
+<section>
+<p>
+  For toolchain setup or per-example walkthroughs, see
+  <a href="../examples/docs/html/index.html">examples/docs/</a>.
+  For the Manager GUI specifically, see
+  <a href="../MicroserviceBase/MicroserviceManagerGUI/README.html">MicroserviceManagerGUI/</a>.
+</p>
+</section>
+
+<section>
+<h2>Where to start</h2>
+<table>
+  <tr><th>You want to&hellip;</th><th>Read</th></tr>
+  <tr><td>Get the 5-minute pitch</td><td><a href="../README.html">Repo README</a></td></tr>
+  <tr><td>Understand the architecture (layers, runtime, transport)</td><td><a href="architecture.html">architecture.html</a></td></tr>
+  <tr><td>Understand how a single service runs end-to-end</td><td><a href="runtime_model.html">runtime_model.html</a></td></tr>
+  <tr><td>Look up a term you don't know</td><td><a href="concepts.html">concepts.html</a></td></tr>
+  <tr><td>See what changed in the recent migration</td><td><a href="changelog.html">changelog.html</a></td></tr>
+  <tr><td>Diagnose a problem</td><td><a href="troubleshooting.html">troubleshooting.html</a></td></tr>
+  <tr><td>Find the rationale for a design choice</td><td><a href="adr/">adr/</a> &mdash; Architecture Decision Records</td></tr>
+  <tr><td>Read the Manager GUI guides</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html">MicroserviceManagerGUI/docs/</a></td></tr>
+  <tr><td>Set up a toolchain (MSYS2, Qt6::Grpc, vcpkg+QtMinGW)</td><td><a href="../examples/docs/html/index.html">examples/docs/</a></td></tr>
+  <tr><td>Walk through generating a service</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html">service_creator.html</a></td></tr>
+  <tr><td>Run Consul + Nomad without two terminals</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html">ops_consul_nomad.html</a></td></tr>
+</table>
+</section>
+
+<section>
+<h2>Repo-level docs in this folder</h2>
+<table>
+  <tr><th>File</th><th>What</th></tr>
+  <tr><td><a href="architecture.html">architecture.html</a></td>
+      <td>Hexagonal layers (domain/ports/adapters), Consul service discovery, Nomad orchestration, gRPC reflection, the FastAPI bridge &mdash; where each piece lives and why</td></tr>
+  <tr><td><a href="runtime_model.html">runtime_model.html</a></td>
+      <td><code>ServiceRunner</code> lifecycle (boot → register → serve → graceful shutdown), <code>ServiceClient</code> discovery flow, channel pooling, dynamic invocation via reflection</td></tr>
+  <tr><td><a href="concepts.html">concepts.html</a></td>
+      <td>Glossary of terms: bridge, hub (legacy), runtime, port, adapter, scaffold, etc.  Modernised from <code>_legacy/CONCEPT.md</code></td></tr>
+  <tr><td><a href="changelog.html">changelog.html</a></td>
+      <td>Migration history &mdash; RabbitMQ → gRPC, ServiceRegistry → Consul, ProcessHub → Nomad, prebuilt vcpkg, Manager GUI rewrite</td></tr>
+  <tr><td><a href="troubleshooting.html">troubleshooting.html</a></td>
+      <td>Cross-cutting symptoms keyed to current architecture (gRPC errors, Consul/Nomad agent issues, GUI bridge connectivity, vcpkg/MinGW build problems)</td></tr>
+  <tr><td><a href="runtime_cpp_install.html">runtime_cpp_install.html</a></td>
+      <td>How to install the C++ runtime as a CMake / vcpkg package so generated services can <code>find_package(MicroserviceBase)</code> from outside this repo</td></tr>
+  <tr><td><a href="adr/">adr/</a></td>
+      <td>Architecture Decision Records &mdash; one file per significant choice, dated, marked Active / Superseded / Deprecated</td></tr>
+  <tr><td><a href="diagrams/">diagrams/</a></td>
+      <td><code>.drawio</code> source + rendered PNGs of the architecture diagrams referenced from <code>architecture.html</code></td></tr>
+  <tr><td><a href="imgs/">imgs/</a></td>
+      <td>Other screenshots / illustrations</td></tr>
+  <tr><td><a href="plans/">plans/</a></td>
+      <td>Forward-looking plans (under audit; some pre-date the migration)</td></tr>
+  <tr><td><a href="_legacy/">_legacy/</a></td>
+      <td>Pre-migration <code>CONCEPT.md</code> and <code>troubleshooting-guide.md</code> &mdash; kept for reference</td></tr>
+</table>
+</section>
+
+<section>
+<h2>Reading paths</h2>
+<p><strong>For a new contributor</strong>: <a href="../README.html">Repo README</a> &rarr; <a href="architecture.html">architecture</a> &rarr; <a href="runtime_model.html">runtime_model</a> &rarr; walk an example (<a href="../examples/PowerDeviceService/README.html">examples/PowerDeviceService/</a>) while the Manager GUI runs in another window.</p>
+<p><strong>For someone migrating a downstream fork</strong>: <a href="changelog.html">changelog</a> first, then <a href="_legacy/CONCEPT.md">_legacy/CONCEPT.md</a> ↔ <a href="concepts.html">concepts</a> side-by-side to map old terms onto new.</p>
+<p><strong>For an operator who just needs to run things</strong>: <a href="../MicroserviceBase/MicroserviceManagerGUI/README.html">MicroserviceManagerGUI/README</a> &rarr; <a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html">ops_consul_nomad</a> (the GUI-driven path replaces all CLI ops).</p>
+</section>
+
+</main>
+</body>
+</html>

@@ -34,9 +34,9 @@
         long-form docs:
       </p>
       <ul style="margin: 8px 0 0 18px;">
-        <li><a href="../../docs/html/index.html" target="_blank">Manager GUI doc index</a></li>
-        <li><a href="../../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; full Service Network walkthrough with screenshots</li>
-        <li><a href="../../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; per-step screenshots + YAML config schema</li>
+        <li><a href="../docs/html/index.html" target="_blank">Manager GUI doc index</a></li>
+        <li><a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; full Service Network walkthrough with screenshots</li>
+        <li><a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; per-step screenshots + YAML config schema</li>
       </ul>
     </div>
 
@@ -120,8 +120,8 @@
         bridge, and gives you three top-level workspaces.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/navbar-overview.png" alt="Application overview showing navbar, sidebar, and content area">
-        <figcaption>Main layout &mdash; navbar with mode toggles and infra-status pills, sidebar with service list, content area on the right.</figcaption>
+        <img src="docs/img/gui_overview.png" alt="Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar">
+        <figcaption>Main layout &mdash; navbar with mode toggle and Bridge / Consul / Nomad LEDs, services sidebar on the left, content area on the right.</figcaption>
       </figure>
 
       <h3>Dual Hosting</h3>
@@ -161,8 +161,8 @@
         <code>nomad agent -dev</code> workflow.  Two sub-tabs:
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/fleet-dashboard.png" alt="Service Network sub-tabs (Nomad / Consul) with the Nomad dashboard visible">
-        <figcaption>Service Network mode &mdash; two sub-tabs (Nomad and Consul); each has its own setup form and connected dashboard.</figcaption>
+        <img src="docs/img/nomad_dashboard.png" alt="Nomad Cluster connected dashboard showing job count, nodes ready, and a Jobs table with a running service">
+        <figcaption>Nomad sub-tab &mdash; connected dashboard with job/node counts and the Jobs table.  The Consul sub-tab has the same shape (registered services + leader address).</figcaption>
       </figure>
 
       <h3>Consul tab</h3>
@@ -201,8 +201,8 @@
         Click a service to load its panel in the content area.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/services-sidebar.png" alt="Services sidebar with connected Consul cluster, service list, and a service GUI panel">
-        <figcaption>Services mode &mdash; sidebar shows services from one or more connected Consul clusters; clicking a service loads its panel.</figcaption>
+        <img src="docs/img/gui_overview.png" alt="Manager GUI overview with the services sidebar visible on the left">
+        <figcaption>Services mode &mdash; sidebar (left) shows services from one or more connected Consul clusters; clicking a service loads its panel in the content area.</figcaption>
       </figure>
 
       <h3>Sidebar Navigation</h3>
@@ -222,7 +222,7 @@
       </p>
       <figure class="docs-figure">
         <img src="docs/img/api-explorer.png" alt="Service detail panel showing methods discovered via reflection with JSON request textareas">
-        <figcaption>Service detail panel &mdash; methods discovered via reflection; pre-filled JSON skeleton + Call button per method.</figcaption>
+        <figcaption>Service detail panel &mdash; methods discovered via reflection; pre-filled JSON skeleton + Call button per method.  <em>(Screenshot pending refresh &mdash; UI is current; image is from an earlier theme.)</em></figcaption>
       </figure>
 
       <h3>Reflection-not-available fallback</h3>
@@ -257,8 +257,8 @@
         adapter + clients + Nomad HCL) without writing boilerplate.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/service-creator.png" alt="Service Creator wizard showing Step 1 — Basic Information">
-        <figcaption>Service Creator wizard &mdash; Step 1 (Basic Info), 2 (Technology), 3 (Methods, with .proto import), 4 (Review & Generate).</figcaption>
+        <img src="docs/img/gui_wizard_03.png" alt="Service Creator wizard — Step 1 Basic Information filled in">
+        <figcaption>Service Creator wizard &mdash; Step 1 Basic Info shown.  Wizard has 4 steps: Basic Info, Technology, Methods (with .proto import), Review &amp; Generate.</figcaption>
       </figure>
 
       <h3>The four steps</h3>
@@ -296,7 +296,7 @@
       <h2><i class="bi bi-gear"></i>Settings</h2>
       <figure class="docs-figure">
         <img src="docs/img/settings-dialog.png" alt="Settings dialog with Bridge URL, Consul URL, theme toggle">
-        <figcaption>Settings dialog &mdash; bridge URL, default Consul URL, theme.</figcaption>
+        <figcaption>Settings dialog &mdash; bridge URL, default Consul URL, theme.  <em>(Screenshot pending refresh.)</em></figcaption>
       </figure>
       <ul>
         <li><strong>Bridge URL</strong> &mdash; where the FastAPI bridge runs (default <code>http://127.0.0.1:1112</code>).  Override via the <code>MB_BRIDGE_URL</code> env var.</li>
@@ -329,14 +329,17 @@
     <!-- More -->
     <section class="docs-section" id="more">
       <h2><i class="bi bi-three-dots"></i>More</h2>
+      <!-- NOTE: help.html is fetch'd and innerHTML'd into web/index.html,
+           so relative paths resolve from web/index.html (NOT this file).
+           Use one fewer "../" than the on-disk depth would suggest. -->
       <ul>
-        <li><a href="../../docs/html/index.html" target="_blank">Manager GUI doc index</a> &mdash; canonical reference, broken into focused guides</li>
-        <li><a href="../../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; the long-form Service Network walkthrough</li>
-        <li><a href="../../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; step-by-step with screenshots</li>
-        <li><a href="../../../../docs/architecture.html" target="_blank">Architecture</a> &mdash; hexagonal layers, Consul, Nomad, gRPC reflection</li>
-        <li><a href="../../../../docs/runtime_model.html" target="_blank">Runtime model</a> &mdash; <code>ServiceRunner</code> lifecycle and dynamic invocation flow</li>
-        <li><a href="../../../../docs/changelog.html" target="_blank">Changelog</a> &mdash; what changed (RabbitMQ → gRPC, ProcessHub → Nomad, etc.)</li>
-        <li><a href="../../../../examples/PowerDeviceService/README.html" target="_blank">PowerDeviceService example</a> &mdash; canonical multi-service C++ monorepo with Qt client</li>
+        <li><a href="../docs/html/index.html" target="_blank">Manager GUI doc index</a> &mdash; canonical reference, broken into focused guides</li>
+        <li><a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; the long-form Service Network walkthrough</li>
+        <li><a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; step-by-step with screenshots</li>
+        <li><a href="../../../docs/architecture.html" target="_blank">Architecture</a> &mdash; hexagonal layers, Consul, Nomad, gRPC reflection</li>
+        <li><a href="../../../docs/runtime_model.html" target="_blank">Runtime model</a> &mdash; <code>ServiceRunner</code> lifecycle and dynamic invocation flow</li>
+        <li><a href="../../../docs/changelog.html" target="_blank">Changelog</a> &mdash; what changed (RabbitMQ → gRPC, ProcessHub → Nomad, etc.)</li>
+        <li><a href="../../../examples/PowerDeviceService/README.html" target="_blank">PowerDeviceService example</a> &mdash; canonical multi-service C++ monorepo with Qt client</li>
       </ul>
     </section>
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded — Nomad jobs (`deploy/<svc>.nomad.hcl`) replace runtime "service import". Generated services ship their own `.hcl`; `nomad job run` (or the Manager GUI Submit Job dialog) replaces the old `import-service` REST endpoint.
 
 ## Date
 

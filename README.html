@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MicroserviceBase</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155;
+          --sidebar-w:260px; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+
+  /* ---- Left sidebar TOC ---- */
+  .sidebar{position:fixed;left:0;top:0;width:var(--sidebar-w);height:100vh;
+           overflow-y:auto;background:#0b1220;border-right:1px solid var(--border);
+           padding:18px 0;z-index:10;}
+  .sidebar .toc-title{font-size:0.95em;color:var(--accent);font-weight:600;
+                       padding:0 18px 10px;margin:0;border-bottom:1px solid var(--border);}
+  .sidebar .toc-sub{font-size:0.7em;color:var(--muted);text-transform:uppercase;
+                     letter-spacing:0.6px;padding:14px 18px 4px;margin:0;}
+  .sidebar a{color:var(--muted);display:block;padding:5px 18px;
+              text-decoration:none;font-size:0.86em;
+              border-left:3px solid transparent;
+              transition:color 0.15s,border-color 0.15s,background 0.15s;}
+  .sidebar a:hover{color:var(--text);background:rgba(56,189,248,0.06);}
+  .sidebar a.active{color:var(--accent);border-left-color:var(--accent);
+                     background:rgba(56,189,248,0.10);}
+  .sidebar a.indent{padding-left:34px;}
+  .sidebar::-webkit-scrollbar{width:6px;}
+  .sidebar::-webkit-scrollbar-thumb{background:#334155;border-radius:3px;}
+
+  /* ---- Layout offset for sidebar ---- */
+  .layout{margin-left:var(--sidebar-w);}
+
+  header{background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:36px 30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:2.2em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  header p{margin:10px 0 0;opacity:0.92;}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1,h2,h3,h4{color:var(--accent);}
+  h1{display:none;}                              /* the hero takes the place of h1 */
+  h2{margin-top:36px;border-bottom:1px solid var(--border);padding-bottom:6px;font-size:1.5em;
+     scroll-margin-top:20px;}
+  h3{color:var(--amber);margin-top:22px;scroll-margin-top:20px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;
+      position:relative;}
+  pre code{background:none;padding:0;color:var(--text);}
+
+  /* ---- Copy-button on every <pre> ---- */
+  .copy-btn{position:absolute;top:6px;right:6px;padding:3px 10px;
+             background:#1e293b;color:var(--accent);
+             border:1px solid var(--border);border-radius:4px;
+             cursor:pointer;font-size:0.78em;font-family:inherit;
+             opacity:0.55;transition:opacity 0.18s,color 0.18s;}
+  .copy-btn:hover{opacity:1;}
+  .copy-btn.copied{color:var(--green);border-color:var(--green);opacity:1;}
+
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--accent);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+  .badge{background:#0b1220;padding:2px 10px;border-radius:12px;font-size:0.8em;
+         color:var(--muted);border:1px solid var(--border);margin-right:6px;}
+
+  /* Responsive: collapse sidebar to a top bar on narrow screens */
+  @media (max-width: 900px){
+    .sidebar{position:relative;width:100%;height:auto;max-height:240px;
+              border-right:none;border-bottom:1px solid var(--border);}
+    .layout{margin-left:0;}
+  }
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <h2 class="toc-title">MicroserviceBase</h2>
+  <a href="#docs-map">📖 Documentation map</a>
+  <p class="toc-sub">Why &amp; how</p>
+  <a href="#why-microservicebase">Why MicroserviceBase?</a>
+  <a href="#the-problem" class="indent">The Problem</a>
+  <a href="#the-solution" class="indent">The Solution</a>
+  <a href="#key-features">Key Features</a>
+
+  <p class="toc-sub">Architecture</p>
+  <a href="#architecture">Architecture</a>
+  <a href="#project-structure" class="indent">Project Structure</a>
+
+  <p class="toc-sub">Get started</p>
+  <a href="#installation">Installation</a>
+  <a href="#prerequisites" class="indent">Prerequisites</a>
+  <a href="#consul-nomad-install" class="indent">Consul &amp; Nomad install</a>
+  <a href="#consul--nomad-setup" class="indent">Consul + Nomad setup</a>
+  <a href="#quick-start">Quick Start</a>
+  <a href="#1-scaffold-a-service" class="indent">1. Scaffold a service</a>
+  <a href="#2-build-the-service" class="indent">2. Build the service</a>
+  <a href="#3-start-consul--nomad" class="indent">3. Start Consul + Nomad</a>
+  <a href="#4-deploy-and-run" class="indent">4. Deploy and run</a>
+  <a href="#5-launch-the-manager-gui" class="indent">5. Launch the Manager GUI</a>
+
+  <p class="toc-sub">GUI &amp; tools</p>
+  <a href="#manager-gui">Manager GUI</a>
+  <a href="#service-orchestration-with-nomad">Nomad orchestration</a>
+
+  <p class="toc-sub">Reference</p>
+  <a href="#examples">Examples</a>
+  <a href="#diagrams">Diagrams</a>
+  <a href="#troubleshooting-guide">Troubleshooting</a>
+  <a href="#architecture-decision-records-adrs">ADRs</a>
+  <a href="#package-documentation">Package Documentation</a>
+
+  <p class="toc-sub">Project</p>
+  <a href="#feedback">Feedback</a>
+  <a href="#maintainers">Maintainers</a>
+  <a href="#contributors">Contributors</a>
+  <a href="#license">License</a>
+</nav>
+
+<div class="layout">
+<header>
+  <h1 style="display:block;">MicroserviceBase</h1>
+  <p>A Python + C++ framework for building, registering, discovering, and orchestrating gRPC microservices on Consul and Nomad.</p>
+  <p style="font-size:0.9em;margin-top:14px;">
+    <span class="badge">Apache 2.0</span>
+    📄 <a href="README.md">Markdown version</a> &middot;
+    📚 <a href="docs/index.html">Repo docs index</a>
+  </p>
+</header>
+<main>
+
+<p>MicroserviceBase provides the foundation for creating microservices that communicate over gRPC, with a built-in <strong>Manager GUI</strong> for monitoring, <strong>Consul-based service discovery</strong> for dynamic registration, and <strong>Nomad-based orchestration</strong> for lifecycle management. Whether you're building test automation infrastructure, managing distributed services, or creating IoT device controllers, MicroserviceBase gives you the tools to develop and deploy microservices reliably.</p>
+
+<h2 id="docs-map">Documentation map</h2>
+
+<p>Quick jump to the doc you need.  Sections below this map go into more depth on each topic, but if you're looking for a specific guide this is the fastest path:</p>
+
+<table>
+  <tr><th>I want to&hellip;</th><th>Go to</th></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Get started</td></tr>
+  <tr><td>Get the 5-minute pitch</td><td>This page (continue scrolling, or jump to <a href="#why-microservicebase">Why MicroserviceBase?</a>)</td></tr>
+  <tr><td>Install Consul + Nomad</td><td><a href="#consul-nomad-install">Consul &amp; Nomad install</a> (above) &mdash; download + PATH + verify</td></tr>
+  <tr><td>Scaffold and run a first service end-to-end</td><td><a href="#quick-start">Quick Start</a> (5 numbered steps below)</td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Manager GUI</td></tr>
+  <tr><td>Manager GUI overview &amp; install</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/README.html"><code>MicroserviceManagerGUI/README.html</code></a></td></tr>
+  <tr><td>All Manager GUI guides (long-form)</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html"><code>MicroserviceManagerGUI/docs/</code></a> &mdash; index of GUI walkthroughs</td></tr>
+  <tr><td>Operate Consul + Nomad from the GUI</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> &mdash; one-click agent launch + service network tab</td></tr>
+  <tr><td>Walk through the Service Creator wizard</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html"><code>service_creator.html</code></a> &mdash; 4-step UI + YAML schema</td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Examples</td></tr>
+  <tr><td>Canonical multi-service C++ example</td><td><a href="examples/PowerDeviceService/README.html"><code>examples/PowerDeviceService/</code></a> &mdash; 6 services, Qt client, vcpkg + Qt MinGW</td></tr>
+  <tr><td>Minimal single C++ service</td><td><a href="examples/cpp_hello_service/README.html"><code>examples/cpp_hello_service/</code></a></td></tr>
+  <tr><td>Console + Qt-Widget client (matches the C++ service)</td><td><a href="examples/cpp_hello_client/README.html"><code>examples/cpp_hello_client/</code></a></td></tr>
+  <tr><td>Single Python service</td><td><a href="examples/hello_service/README.html"><code>examples/hello_service/</code></a></td></tr>
+  <tr><td>Toolchain setup (MSYS2, Qt-installer MinGW, vcpkg + Qt)</td><td><a href="examples/docs/html/index.html"><code>examples/docs/</code></a></td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Framework reference</td></tr>
+  <tr><td>Hexagonal layers, transport, Consul, Nomad &mdash; the big picture</td><td><a href="docs/architecture.html"><code>docs/architecture.html</code></a></td></tr>
+  <tr><td>How a single service runs end-to-end (lifecycle, channel pooling, reflection)</td><td><a href="docs/runtime_model.html"><code>docs/runtime_model.html</code></a></td></tr>
+  <tr><td>Look up a term (bridge, hub, runtime, port, adapter, scaffold&hellip;)</td><td><a href="docs/concepts.html"><code>docs/concepts.html</code></a></td></tr>
+  <tr><td>Install the C++ runtime as a CMake / vcpkg package (so generated services can <code>find_package(MicroserviceBase)</code>)</td><td><a href="docs/runtime_cpp_install.html"><code>docs/runtime_cpp_install.html</code></a></td></tr>
+  <tr><td>Migration history (RabbitMQ &rarr; gRPC, ProcessHub &rarr; Nomad, etc.)</td><td><a href="docs/changelog.html"><code>docs/changelog.html</code></a></td></tr>
+  <tr><td>Diagnose a problem &mdash; symptom-indexed</td><td><a href="docs/troubleshooting.html"><code>docs/troubleshooting.html</code></a></td></tr>
+  <tr><td>Architecture Decision Records (one per design choice)</td><td><a href="docs/adr/README.md"><code>docs/adr/</code></a> &mdash; markdown only for now</td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Repo-level entry points</td></tr>
+  <tr><td>Repo docs index (everything in <code>docs/</code>)</td><td><a href="docs/index.html"><code>docs/index.html</code></a></td></tr>
+  <tr><td>This page in Markdown</td><td><a href="README.md"><code>README.md</code></a></td></tr>
+</table>
+
+<h2 id="why-microservicebase">Why MicroserviceBase?</h2>
+
+<h3 id="the-problem">The Problem</h3>
+
+<p>In a typical distributed test-automation or service-oriented environment:</p>
+
+<table class="diagram-table">
+  <thead>
+    <tr><th>Scenario</th><th>Consequence (without a framework)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Developer A builds Service X</td><td>Hardcoded gRPC channels everywhere</td></tr>
+    <tr><td>Developer B builds Service Y</td><td>Different proto schema, incompatible</td></tr>
+    <tr><td>Operator wants to see services</td><td>No central view, manual discovery</td></tr>
+    <tr><td>User wants to call a service</td><td>Must know exact host:port + method names</td></tr>
+    <tr><td>Service X changes its API</td><td>All callers break silently</td></tr>
+    <tr><td>A service crashes</td><td>No supervisor, no auto-restart</td></tr>
+    <tr><td>Building the same scaffold</td><td>Domain + adapter + main + Nomad HCL by hand each time</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Common issues:</strong></p>
+<ul>
+<li><strong>Tight coupling</strong> — services hardcode connection strings, message formats, and routing</li>
+<li><strong>No discovery</strong> — callers must know the exact host:port of every service</li>
+<li><strong>No API introspection</strong> — no way to discover what methods a service offers without reading the .proto</li>
+<li><strong>Incompatible messages</strong> — each service invents its own request/response schema</li>
+<li><strong>No central visibility</strong> — no dashboard to see what services are running</li>
+<li><strong>Lifecycle by hand</strong> — no supervisor, manual restart on crash, port conflicts</li>
+</ul>
+
+<h3 id="the-solution">The Solution</h3>
+
+<p>MicroserviceBase provides a complete framework:</p>
+
+<div class="mermaid">
+flowchart LR
+    GUI["Manager GUI<br/>(Electron / Web)"] -->|HTTP/JSON| Bridge["FastAPI bridge<br/>(Python)"]
+    Bridge -->|Consul HTTP| Consul[("Consul agent")]
+    Bridge -->|Nomad HTTP| Nomad[("Nomad agent")]
+    Nomad -->|raw_exec| SvcA["Service A"]
+    Nomad -->|raw_exec| SvcB["Service B"]
+    SvcA -.registers.-> Consul
+    SvcB -.registers.-> Consul
+    Client(["Client<br/>(your code)"]) -->|"1. discover<br/>Consul HTTP"| Consul
+    Client ==>|"2. gRPC over HTTP/2<br/>(reflection or proto)"| SvcA
+    Client ==>|"2. gRPC over HTTP/2"| SvcB
+
+    classDef infra fill:#1e293b,stroke:#38bdf8,color:#e2e8f0
+    classDef svc fill:#064e3b,stroke:#10b981,color:#ecfdf5
+    classDef client fill:#3b0764,stroke:#a855f7,color:#f5f3ff
+    class Consul,Nomad infra
+    class SvcA,SvcB svc
+    class Client,GUI client
+</div>
+
+<p>The <strong>two-step client flow</strong> (numbered edges in the diagram):</p>
+<ol>
+  <li><strong>Discover</strong> — client asks Consul "where is <code>ServiceA</code>?" via the Consul HTTP API (<code>/v1/health/service/&lt;name&gt;?passing</code>) and gets back a healthy <code>host:port</code>.  Same lookup the Manager GUI uses.</li>
+  <li><strong>Call</strong> — client opens a gRPC channel to that <code>host:port</code> and invokes methods (with reflection if the server ships <code>grpc++_reflection</code>, or a local <code>.proto</code> via <code>LocalProtoClient</code>).</li>
+</ol>
+<p>Step 1 lets the client survive Nomad reschedules without restarting — the next Consul lookup returns the new <code>host:port</code>.  No service-IP hardcoding anywhere.</p>
+
+<ul>
+<li><strong>Service-to-service</strong> uses gRPC over HTTP/2 — point-to-point, no central message broker</li>
+<li><strong>Consul</strong> is the canonical service catalog — services register on startup, deregister on shutdown, health-check every few seconds</li>
+<li><strong>Nomad</strong> runs services as <code>raw_exec</code> jobs (Windows + Linux) with dynamic port allocation</li>
+<li><strong>Method discovery</strong> is automatic via gRPC server reflection — clients enumerate services + methods at runtime, no <code>.proto</code> needed on the caller side</li>
+<li><strong>Hexagonal architecture</strong> keeps business logic free of infrastructure dependencies</li>
+<li><strong>Manager GUI</strong> + <strong><code>mb-scaffold</code></strong> generator make it visual and scriptable</li>
+</ul>
+
+<h2 id="key-features">Key Features</h2>
+
+<ul>
+<li><strong>Microservice Framework</strong> — <code>ServiceRunner</code> (C++ + Python) for boot/register/serve/shutdown lifecycle; <code>ServiceClient</code> for outbound calls</li>
+<li><strong>Service Discovery</strong> — Consul service catalog with TCP health checks; multi-cluster aware in the GUI</li>
+<li><strong>Orchestration</strong> — Nomad <code>raw_exec</code> jobs (Windows + Linux) with dynamic port allocation</li>
+<li><strong>Method Discovery</strong> — gRPC server reflection at runtime; no <code>.proto</code> files needed on the caller side. Local-<code>.proto</code> fallback (<code>LocalProtoClient</code>) for servers that don't ship reflection</li>
+<li><strong>Manager GUI</strong> — Electron + browser-based dashboard for managing Consul + Nomad agents, browsing services, invoking methods, and generating new services</li>
+<li><strong>Service Creator wizard</strong> — 4-step UI to scaffold a full service project (or use the <code>mb-scaffold</code> CLI for the same job from a YAML spec)</li>
+<li><strong>Hexagonal Architecture</strong> — clean separation via ports and adapters pattern; swapping a transport doesn't touch domain code</li>
+<li><strong>Multi-toolchain build support</strong> — generated services build under MSYS2, Qt-installer MinGW, or vcpkg + Qt MinGW (with a custom triplet that pins gcc 13.1.0 + grpc++_reflection)</li>
+<li><strong>Prebuilt artifact sharing</strong> — <code>export_prebuilt.bat</code> / <code>import_prebuilt.bat</code> to share vcpkg-compiled grpc/protobuf via SharePoint and skip the 30-60 min first build</li>
+<li><strong>Standalone Installer</strong> — package the Manager GUI as a Windows desktop application via Electron</li>
+</ul>
+
+<h2 id="architecture">Architecture</h2>
+
+<p>MicroserviceBase follows hexagonal (ports &amp; adapters) architecture:</p>
+
+<div class="mermaid">
+flowchart TB
+    GUI["<b>GUI Layer</b><br/>Electron App &nbsp;·&nbsp; Web Browser &nbsp;·&nbsp; Service Plugins"]
+    Bridge["<b>FastAPI Bridge</b><br/>REST API &nbsp;·&nbsp; Consul / Nomad supervisor &nbsp;·&nbsp; Reflection"]
+    Domain["<b>Domain Layer</b><br/>ServiceRunner &nbsp;·&nbsp; ServiceClient &nbsp;·&nbsp; Settings &nbsp;·&nbsp; Factory"]
+    Ports["<b>Ports (Interfaces)</b><br/>TransportPort &nbsp;·&nbsp; RegistryPort &nbsp;·&nbsp; LifecyclePort"]
+    Adapters["<b>Adapters (Implementations)</b><br/>gRPC Transport &nbsp;·&nbsp; Consul Registry &nbsp;·&nbsp; Nomad subprocess<br/>FastAPI Bridge &nbsp;·&nbsp; Scaffold Generator"]
+    GUI --> Bridge --> Domain --> Ports --> Adapters
+
+    classDef layer fill:#1e293b,stroke:#38bdf8,color:#e2e8f0,text-align:left
+    class GUI,Bridge,Domain,Ports,Adapters layer
+</div>
+
+<p>Detailed write-ups in <a href="docs/architecture.html"><code>docs/architecture.html</code></a> and <a href="docs/runtime_model.html"><code>docs/runtime_model.html</code></a>.</p>
+
+<h3 id="project-structure">Project Structure</h3>
+
+<pre><code>microsoft-base-develop/
++-- MicroserviceBase/
+|   +-- __init__.py
+|   +-- factory.py                  # Factory for creating components
+|   +-- domain/                     # Zero-dependency domain types
+|   +-- ports/                      # Protocol abstractions
+|   +-- adapters/
+|   |   +-- grpc_bridge/            # reflect_client, LocalProtoClient
+|   |   +-- ui_bridge/
+|   |   |   +-- fastapi_bridge.py   # FastAPI REST front + agent supervisor
+|   |   +-- scaffold/
+|   |       +-- cpp_tmpl.py         # The scaffold generator (~7000 LoC)
+|   +-- runtime/                    # Python ServiceRunner + ServiceClient
+|   +-- runtime_cpp/                # C++ ServiceRunner (header library + CMake)
+|   +-- tools/
+|   |   +-- scaffold_cli.py         # mb-scaffold (CLI front-end to the generator)
+|   +-- MicroserviceManagerGUI/
+|       +-- README.md               # GUI overview + entry-point
+|       +-- docs/                   # Long-form GUI guides
+|       +-- electron/               # Electron wrapper
+|       +-- web/                    # Browser-compatible HTML/CSS/JS
+|       |   +-- js/                 # App logic, dashboards, clients
+|       |   +-- css/                # Styles
+|       |   +-- services/           # Dynamically loaded service plugins
+|       |   +-- docs/help.html      # Embedded in-app help
+|       +-- build.bat / build.sh    # Bundle scripts
++-- examples/
+|   +-- PowerDeviceService/         # Multi-service C++ monorepo (canonical)
+|   +-- cpp_hello_service/          # Single C++ service
+|   +-- cpp_hello_client/           # Matching console + Qt client
+|   +-- hello_service/              # Single Python service
+|   +-- docs/                       # Toolchain setup + tutorials
+|   +-- _legacy/                    # Pre-gRPC-migration examples
++-- docs/
+|   +-- index.md                    # Repo docs landing
+|   +-- architecture.md             # Hexagonal layers + Consul + Nomad + reflection
+|   +-- runtime_model.md            # ServiceRunner lifecycle + dynamic invoke
+|   +-- concepts.md                 # Glossary
+|   +-- changelog.md                # Migration history
+|   +-- troubleshooting.md          # Symptom-indexed problems + fixes
+|   +-- adr/                        # Architecture Decision Records
+|   +-- diagrams/                   # PlantUML diagrams
+|   +-- _legacy/                    # Pre-gRPC-migration docs (CONCEPT.md etc.)
++-- SampleServices/                 # Framework-shipped reference monorepo
++-- pyproject.toml
+</code></pre>
+
+<h2 id="installation">Installation</h2>
+
+<pre><code># From source (recommended for developers)
+git clone https://github.com/test-fullautomation/python-microservice-base.git
+cd python-microservice-base
+pip install .
+
+# Development mode
+pip install -e .
+</code></pre>
+
+<h3 id="prerequisites">Prerequisites</h3>
+
+<ul>
+<li>Python 3.10 or higher</li>
+<li>gRPC + protobuf (<code>grpcio</code>, <code>grpcio-tools</code>, <code>protobuf</code> — pulled in by <code>pip install</code>)</li>
+<li>FastAPI + uvicorn (for the bridge — also a transitive dep)</li>
+<li><strong>Consul</strong> + <strong>Nomad</strong> binaries on <code>%PATH%</code> — see the dedicated section below for download + setup steps</li>
+<li>Node.js + npm (for GUI development / Electron build)</li>
+<li>For C++ services: a toolchain — pick one of MSYS2, Qt-installer MinGW, or vcpkg + Qt MinGW (see <a href="examples/docs/README.md"><code>examples/docs/</code></a>)</li>
+</ul>
+
+<h3 id="consul-nomad-install">Consul &amp; Nomad install</h3>
+
+<p>Both are single-binary downloads from HashiCorp.  Pick a method:</p>
+
+<h4>A. Manual download (~5 min, no admin rights needed)</h4>
+
+<ol>
+  <li>Download the binaries (Windows AMD64):
+    <ul>
+      <li><a href="https://developer.hashicorp.com/consul/install" target="_blank">Consul releases</a> &mdash;
+          pick &ldquo;Windows / AMD64&rdquo;, save <code>consul.exe</code></li>
+      <li><a href="https://developer.hashicorp.com/nomad/install" target="_blank">Nomad releases</a> &mdash;
+          same, save <code>nomad.exe</code></li>
+    </ul>
+  </li>
+  <li>Move both <code>.exe</code> files into a stable folder, e.g. <code>C:\Tools\hashicorp\</code>:
+<pre><code>:: PowerShell or CMD
+mkdir C:\Tools\hashicorp
+move %USERPROFILE%\Downloads\consul.exe C:\Tools\hashicorp\
+move %USERPROFILE%\Downloads\nomad.exe  C:\Tools\hashicorp\</code></pre>
+  </li>
+  <li>Add the folder to your user <code>PATH</code> permanently:
+<pre><code>setx PATH "%PATH%;C:\Tools\hashicorp"</code></pre>
+    <em>Open a NEW terminal after <code>setx</code> &mdash; the current shell doesn&rsquo;t inherit the change.</em>
+  </li>
+  <li>Verify in the new terminal:
+<pre><code>consul --version
+nomad --version</code></pre>
+    Both should print a version string (Consul 1.17+ / Nomad 1.7+ recommended).
+  </li>
+</ol>
+
+<h4>B. <code>winget</code> (Windows 10/11 with App Installer)</h4>
+
+<pre><code>winget install --id HashiCorp.Consul -e
+winget install --id HashiCorp.Nomad  -e</code></pre>
+
+<p><code>winget</code> adds them to <code>%PATH%</code> automatically.  Verify with the same <code>consul --version</code> / <code>nomad --version</code> commands above.</p>
+
+<h4>C. Chocolatey (admin shell)</h4>
+
+<pre><code>choco install consul nomad -y</code></pre>
+
+<h4>D. Linux / macOS</h4>
+
+<pre><code># Linux (Debian/Ubuntu)
+wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+    https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update
+sudo apt install consul nomad
+
+# macOS (Homebrew)
+brew tap hashicorp/tap
+brew install hashicorp/tap/consul hashicorp/tap/nomad</code></pre>
+
+<h3 id="consul--nomad-setup">Consul + Nomad Setup</h3>
+
+<p>The Manager GUI&rsquo;s <strong>Service Network</strong> tab can launch both agents in dev mode with one click each &mdash; no CLI needed.  Walkthrough:
+<a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a>
+(or the <a href="MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md">Markdown version</a>).</p>
+
+<p>If you prefer the terminal:</p>
+
+<h4>1. Start Consul (single-node, in-memory dev mode)</h4>
+
+<pre><code>consul agent -dev -client=0.0.0.0 -ui</code></pre>
+
+<p>Leaves a leader running on <code>127.0.0.1:8500</code> with the web UI at <a href="http://127.0.0.1:8500/ui" target="_blank">http://127.0.0.1:8500/ui</a>.</p>
+
+<h4>2. Start Nomad (raw_exec enabled, needed for Windows-host services)</h4>
+
+<p>Save this minimal dev config to <code>C:\Tools\hashicorp\dev.hcl</code> (or any path):</p>
+
+<pre><code>data_dir = "C:/Tools/hashicorp/nomad-data"
+
+client {
+  enabled = true
+}
+
+plugin "raw_exec" {
+  config { enabled = true }
+}
+
+consul {
+  address = "127.0.0.1:8500"
+}</code></pre>
+
+<p>Then start the agent (in a second terminal — Consul stays in the first):</p>
+
+<pre><code>nomad agent -dev -config=C:\Tools\hashicorp\dev.hcl</code></pre>
+
+<p>UI at <a href="http://127.0.0.1:4646/ui" target="_blank">http://127.0.0.1:4646/ui</a>.  Nomad auto-registers itself with the Consul agent above.</p>
+
+<h4>3. Verify both are healthy</h4>
+
+<pre><code>consul members
+nomad node status</code></pre>
+
+<p>You should see one alive node from each.  Once both are running, the Manager GUI&rsquo;s Service Network tab will connect to them automatically (default URLs: Consul <code>http://127.0.0.1:8500</code>, Nomad <code>http://127.0.0.1:4646</code>).</p>
+
+<h2 id="quick-start">Quick Start</h2>
+
+<h3 id="1-scaffold-a-service">1. Scaffold a service</h3>
+
+<pre><code>python -m MicroserviceBase.tools.scaffold_cli \
+    --name HelloService --language cpp --gui widget --output ./out
+</code></pre>
+
+<p>Generates a complete project with <code>proto/</code>, <code>src/</code>, <code>deploy/&lt;svc&gt;.nomad.hcl</code>, build scripts, and a matching client. See <a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html"><code>service_creator.html</code></a> for the GUI wizard equivalent and the YAML config schema.</p>
+
+<h3 id="2-build-the-service">2. Build the service</h3>
+
+<pre><code>cd out/HelloService
+build_deploy_msys2.bat        # MSYS2 toolchain (default for new services)
+# or:
+build_qt_vcpkg.bat            # vcpkg + Qt MinGW (recommended for new teams)
+</code></pre>
+
+<h3 id="3-start-consul--nomad">3. Start Consul + Nomad</h3>
+
+<p>Either click <strong>Start Agent</strong> in the Manager GUI's Service Network tab, or:</p>
+
+<pre><code>consul agent -dev -client=0.0.0.0 -ui &amp;
+nomad agent -dev -config=dev.hcl &amp;
+</code></pre>
+
+<h3 id="4-deploy-and-run">4. Deploy and run</h3>
+
+<pre><code>nomad job run deploy/hello_service.nomad.hcl
+</code></pre>
+
+<p>The service registers in Consul on startup. Verify:</p>
+
+<pre><code>curl http://127.0.0.1:8500/v1/health/service/hello_service?passing=true
+</code></pre>
+
+<h3 id="5-launch-the-manager-gui">5. Launch the Manager GUI</h3>
+
+<pre><code>cd MicroserviceBase/MicroserviceManagerGUI
+npm install
+npm start
+</code></pre>
+
+<p>In <strong>Services</strong> mode, click <code>hello_service</code> to browse its methods and send test calls — gRPC reflection enumerates the API automatically.</p>
+
+<p>A complete worked example is at <a href="examples/PowerDeviceService/README.html"><code>examples/PowerDeviceService/</code></a> (multi-service C++ monorepo with Qt client, vcpkg toolchain, prebuilt zip workflow).</p>
+
+<h2 id="manager-gui">Manager GUI</h2>
+
+<p>The MicroserviceManagerGUI provides a desktop application for monitoring and controlling microservices.</p>
+
+<h3 id="features">Features</h3>
+
+<ul>
+<li><strong>Services Mode</strong> — sidebar list of all Consul-registered services; click to invoke methods via gRPC reflection</li>
+<li><strong>Service Network Mode</strong> — start/stop Consul + Nomad agents, browse the service catalog, view jobs, submit new jobs from a file picker</li>
+<li><strong>Service Creator Mode</strong> — 4-step wizard to generate a new service scaffold (proto + domain + adapter + clients + Nomad HCL)</li>
+<li><strong>Multi-Cluster</strong> — connect to multiple Consul clusters simultaneously</li>
+<li><strong>Live Infra Status</strong> — green/amber/red LEDs in the navbar for Bridge, Consul, and Nomad health</li>
+<li><strong>Service GUI Plugins</strong> — services can ship their own custom HTML+JS panel (loaded dynamically from <code>web/services/&lt;ServiceName&gt;/</code>)</li>
+<li><strong>Embedded Help</strong> — click the <strong>?</strong> in the navbar for the in-app help; long-form docs at <code>docs/</code></li>
+</ul>
+
+<h3 id="dual-hosting">Dual Hosting</h3>
+
+<p>The GUI runs in two modes:</p>
+<ul>
+<li><strong>Electron</strong> — Desktop application with native window, system tray, auto-launch of the FastAPI bridge</li>
+<li><strong>Browser</strong> — Open <code>http://127.0.0.1:1112</code> after starting the FastAPI bridge with <code>python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</code></li>
+</ul>
+
+<p>Both modes share the same web front-end and connect to the same FastAPI bridge.</p>
+
+<h3 id="standalone-installer">Standalone Installer</h3>
+
+<p>Package the GUI as a standalone Windows application:</p>
+
+<pre><code>cd MicroserviceBase/MicroserviceManagerGUI
+
+# Build installer
+build.bat
+
+# Or build unpacked (for testing)
+build.bat --pack
+</code></pre>
+
+<p>The installer creates a desktop application at <code>C:\Program Files\MicroserviceManager\</code> with user data at <code>%APPDATA%\microservice-manager\</code> (settings, config, service plugins).</p>
+
+<h2 id="service-orchestration-with-nomad">Service Orchestration with Nomad</h2>
+
+<p>Each generated service ships a <code>deploy/&lt;service&gt;.nomad.hcl</code> job spec:</p>
+
+<pre><code>job "hello_service" {
+    datacenters = ["dc1"]
+    type        = "service"
+
+    group "hello_service" {
+        network {
+            port "grpc" {}    # Nomad allocates a free port; exported as ${NOMAD_PORT_grpc}
+        }
+
+        task "server" {
+            driver = "raw_exec"
+            config {
+                command = "C:/path/to/HelloService/run_hello_service.bat"
+            }
+            env {
+                CONSUL_ADDR = "http://127.0.0.1:8500"
+                HELLO_SERVICE_GRPC_PORT = "${NOMAD_PORT_grpc}"
+            }
+        }
+    }
+}
+</code></pre>
+
+<p>Submit with <code>nomad job run deploy/hello_service.nomad.hcl</code> (or via the Manager GUI's <strong>Submit Job</strong> dialog).</p>
+
+<p><code>raw_exec</code> runs the process directly (no container) — same <code>.hcl</code> works on Windows + Linux without Docker / cgroups setup. For production, swap to <code>exec</code> (Linux) or <code>docker</code> without changing the framework.</p>
+
+<p>Bridge endpoints to manage Nomad jobs:</p>
+
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td><code>/api/nomad/agent/start</code></td><td>POST</td><td>Start a Nomad agent (dev / config / connect-to-existing)</td></tr>
+  <tr><td><code>/api/nomad/agent/stop</code></td><td>POST</td><td>Stop the agent</td></tr>
+  <tr><td><code>/api/nomad/agent/status</code></td><td>GET</td><td>Agent status + version</td></tr>
+  <tr><td><code>/api/nomad/jobs</code></td><td>GET</td><td>List all jobs</td></tr>
+  <tr><td><code>/api/nomad/jobs/{id}</code></td><td>GET</td><td>Job details</td></tr>
+  <tr><td><code>/api/nomad/jobs/{id}/allocations</code></td><td>GET</td><td>Per-job allocation list</td></tr>
+  <tr><td><code>/api/nomad/jobs/{id}/start</code></td><td>POST</td><td>Start a stopped job</td></tr>
+  <tr><td><code>/api/nomad/jobs/{id}/stop</code></td><td>POST</td><td>Stop a running job</td></tr>
+  <tr><td><code>/api/nomad/jobs/{id}/logs</code></td><td>GET</td><td>Tail allocation logs</td></tr>
+  <tr><td><code>/api/nomad/jobs/submit</code></td><td>POST</td><td>Submit a new HCL job</td></tr>
+</table>
+
+<p>Same set exists for Consul under <code>/api/consul/...</code>. Full list in <a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> (or the <a href="MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md">Markdown version</a>).</p>
+
+<h2 id="examples">Examples</h2>
+
+<p>The <code>examples/</code> directory contains the modern (Consul + Nomad + gRPC) examples:</p>
+
+<table>
+  <tr><th>Example</th><th>Description</th></tr>
+  <tr><td><a href="examples/PowerDeviceService/README.html"><code>PowerDeviceService/</code></a></td><td>Multi-service C++ monorepo (6 services in one project), Qt client, vcpkg + Qt MinGW toolchain — the <strong>canonical reference</strong></td></tr>
+  <tr><td><a href="examples/cpp_hello_service/README.html"><code>cpp_hello_service/</code></a></td><td>Single C++ service — minimal walkthrough</td></tr>
+  <tr><td><a href="examples/cpp_hello_client/README.html"><code>cpp_hello_client/</code></a></td><td>Console + Qt-Widget client matched to the C++ service</td></tr>
+  <tr><td><a href="examples/hello_service/README.html"><code>hello_service/</code></a></td><td>Single Python service equivalent</td></tr>
+</table>
+
+<p>Pre-migration examples (RabbitMQ-era — <code>01_basic_service.py</code> … <code>08_fleet_demo.py</code>, <code>cpp_qml_service_template/</code>, <code>fleet_demo/</code>, etc.) live at <a href="examples/_legacy/README.md"><code>examples/_legacy/</code></a> for reference only — not maintained.</p>
+
+<h2 id="diagrams">Diagrams</h2>
+
+<p>Architecture diagrams are available in <code>docs/diagrams/</code> in PlantUML format:</p>
+
+<table>
+  <tr><th>Diagram</th><th>Description</th></tr>
+  <tr><td><code>architecture.puml</code></td><td>Overall hexagonal architecture</td></tr>
+  <tr><td><code>architecture_overview.puml</code></td><td>High-level runtime stack (GUI + bridge + Consul + Nomad + services)</td></tr>
+  <tr><td><code>component.puml</code></td><td>Component dependencies</td></tr>
+  <tr><td><code>class_domain.puml</code></td><td>Domain layer classes</td></tr>
+  <tr><td><code>class_ports.puml</code></td><td>Port interfaces</td></tr>
+  <tr><td><code>class_adapters.puml</code></td><td>Adapter implementations</td></tr>
+  <tr><td><code>gui_architecture.puml</code></td><td>GUI dual-host architecture</td></tr>
+  <tr><td><code>sequence_communication.puml</code></td><td>gRPC call sequence</td></tr>
+  <tr><td><code>sequence_alias.puml</code></td><td>Legacy alias-routing flow (kept for fork maintainers)</td></tr>
+  <tr><td><code>component_local_hub.puml</code></td><td>Pre-Nomad local-hub components (kept for fork maintainers)</td></tr>
+  <tr><td><code>component_fleet.puml</code></td><td>Pre-Nomad fleet view (kept for fork maintainers)</td></tr>
+  <tr><td><code>flow_gui_loading_tiers.puml</code></td><td>GUI plugin loading flow</td></tr>
+  <tr><td><code>qml-shell-lifecycle.md</code></td><td>QML shell lifecycle notes</td></tr>
+</table>
+
+<p>Render with any PlantUML tool (<code>plantuml architecture.puml</code>, the VS Code extension, or <a href="https://www.plantuml.com/plantuml/uml/">PlantUML web server</a>).</p>
+
+<h2 id="troubleshooting-guide">Troubleshooting Guide</h2>
+
+<p>A symptom-indexed reference for current-stack problems (gRPC, Consul, Nomad, vcpkg/MinGW builds, Manager GUI bridge): <strong><a href="docs/troubleshooting.html">Troubleshooting Guide</a></strong>.</p>
+
+<p>The pre-migration symptoms (RabbitMQ, ServiceRegistry, ProcessHub, Fleet hubs) are preserved at <a href="docs/_legacy/troubleshooting-guide.md"><code>docs/_legacy/troubleshooting-guide.md</code></a> for fork maintainers.</p>
+
+<h2 id="architecture-decision-records-adrs">Architecture Decision Records (ADRs)</h2>
+
+<p>Design decisions are documented in <a href="docs/adr/README.md"><code>docs/adr/</code></a>, organized by topic. Items marked <strong>Superseded</strong> were valid choices in the pre-gRPC-migration runtime; see the <a href="docs/changelog.html">changelog</a> for what replaced each one.</p>
+
+<p><strong>Core Architecture</strong></p>
+
+<table>
+  <tr><th>ADR</th><th>Title</th><th>Status</th></tr>
+  <tr><td><a href="docs/adr/001-hexagonal-architecture.md">ADR-001</a></td><td>Hexagonal Architecture (Ports and Adapters)</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/002-factory-pattern-dependency-injection.md">ADR-002</a></td><td>Factory Pattern for Dependency Injection</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/003-service-registry-over-zookeeper.md">ADR-003</a></td><td>Custom Service Registry over ZooKeeper</td><td>Superseded — Consul replaces</td></tr>
+</table>
+
+<p><strong>Service API &amp; Communication</strong></p>
+
+<table>
+  <tr><th>ADR</th><th>Title</th><th>Status</th></tr>
+  <tr><td><a href="docs/adr/016-rabbitmq-as-message-broker.md">ADR-016</a></td><td>RabbitMQ as Message Broker</td><td><strong>Superseded</strong> — gRPC replaces</td></tr>
+  <tr><td><a href="docs/adr/017-svc-api-naming-convention.md">ADR-017</a></td><td><code>svc_api_</code> Naming Convention for Method Discovery</td><td>Superseded — gRPC method names are explicit</td></tr>
+  <tr><td><a href="docs/adr/018-alias-routing-design.md">ADR-018</a></td><td>Alias Routing via Service Registry</td><td>Superseded — no broker, no aliasing layer</td></tr>
+  <tr><td><a href="docs/adr/020-exchange-topology-design.md">ADR-020</a></td><td>Exchange Topology Design</td><td>Superseded — no exchanges in gRPC</td></tr>
+  <tr><td><a href="docs/adr/022-nomad-orchestrator-integration.md">ADR-022</a></td><td>Nomad Orchestrator Integration</td><td>Active</td></tr>
+</table>
+
+<p><strong>GUI Framework &amp; Architecture</strong></p>
+
+<table>
+  <tr><th>ADR</th><th>Title</th><th>Status</th></tr>
+  <tr><td><a href="docs/adr/004-electron-over-qt-for-gui-framework.md">ADR-004</a></td><td>Electron over Qt for GUI Framework</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/005-dual-host-gui-architecture.md">ADR-005</a></td><td>Dual-Host GUI Architecture (Electron + Browser)</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/006-fastapi-bridge-for-browser-gui.md">ADR-006</a></td><td>FastAPI Bridge for Browser GUI</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/007-multi-broker-connection-architecture.md">ADR-007</a></td><td>Multi-Broker Connection Architecture</td><td>Updated — applies to multi-Consul-cluster now</td></tr>
+  <tr><td><a href="docs/adr/008-electron-bridge-lifecycle-decoupling.md">ADR-008</a></td><td>Electron Bridge Lifecycle Decoupling</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/019-service-delivered-gui-plugins.md">ADR-019</a></td><td>Service-Delivered GUI Plugin Architecture</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/021-schema-driven-ui-builder.md">ADR-021</a></td><td>Schema-Driven UI Builder</td><td>Active</td></tr>
+</table>
+
+<p><strong>Process Management</strong></p>
+
+<table>
+  <tr><th>ADR</th><th>Title</th><th>Status</th></tr>
+  <tr><td><a href="docs/adr/009-service-executor-with-rpc-shutdown.md">ADR-009</a></td><td>Service Executor with RPC Graceful Shutdown</td><td>Updated — applies to gRPC ServiceRunner</td></tr>
+  <tr><td><a href="docs/adr/010-local-hub-manager.md">ADR-010</a></td><td>Local Hub Manager for ProcessHub Integration</td><td>Superseded — Nomad replaces</td></tr>
+  <tr><td><a href="docs/adr/011-service-import-with-module-execution.md">ADR-011</a></td><td>Service Import with Module Execution Pattern</td><td>Superseded — Nomad jobs replace</td></tr>
+  <tr><td><a href="docs/adr/015-fleet-orchestrator-architecture.md">ADR-015</a></td><td>Fleet Orchestrator for Multi-Hub Process Management</td><td>Superseded — Nomad replaces</td></tr>
+</table>
+
+<p><strong>Operational Resilience</strong></p>
+
+<table>
+  <tr><th>ADR</th><th>Title</th><th>Status</th></tr>
+  <tr><td><a href="docs/adr/012-registry-shutdown-notification.md">ADR-012</a></td><td>Registry Shutdown Notification to GUI</td><td>Superseded — Consul deregistration handles this</td></tr>
+  <tr><td><a href="docs/adr/013-windows-process-lifecycle-fixes.md">ADR-013</a></td><td>Windows Process Lifecycle Fixes</td><td>Active</td></tr>
+  <tr><td><a href="docs/adr/014-config-placeholder-persistence.md">ADR-014</a></td><td>Config Placeholder Persistence</td><td>Active (used by Nomad HCL prep)</td></tr>
+</table>
+
+<h2 id="package-documentation">Package Documentation</h2>
+
+<p>A detailed documentation of <strong>MicroserviceBase</strong> can be found here: <a href="MicroserviceBase/MicroserviceBase.pdf">MicroserviceBase.pdf</a></p>
+
+<h2 id="feedback">Feedback</h2>
+
+<p>To give us a feedback, you can send an email to <a href="mailto:Cuong.NguyenHuynhTri@vn.bosch.com">Nguyen Huynh Tri Cuong</a> or <a href="mailto:Thomas.Pollerspoeck@de.bosch.com">Thomas Pollerspoeck</a></p>
+
+<p>In case you want to report a bug or request any interesting feature, please don't hesitate to raise a ticket.</p>
+
+<h2 id="maintainers">Maintainers</h2>
+
+<p><a href="mailto:Cuong.NguyenHuynhTri@vn.bosch.com">Nguyen Huynh Tri Cuong</a></p>
+
+<h2 id="contributors">Contributors</h2>
+
+<p><a href="mailto:Cuong.NguyenHuynhTri@vn.bosch.com">Nguyen Huynh Tri Cuong</a></p>
+
+<p><a href="mailto:Thomas.Pollerspoeck@de.bosch.com">Thomas Pollerspoeck</a></p>
+
+<h2 id="license">License</h2>
+
+<p>Copyright 2020-2026 Robert Bosch GmbH</p>
+
+<p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at</p>
+
+<p>http://www.apache.org/licenses/LICENSE-2.0</p>
+
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.</p>
+
+</main>
+</div>  <!-- /.layout -->
+
+<style>
+  /* Diagram-table styling — used for the cause/effect block in
+     "What Problem Does This Solve" since it's a 2-column comparison
+     rather than a real diagram. */
+  .diagram-table { width: 100%; border-collapse: collapse; margin: 12px 0;
+                    background: #0b1220; border-radius: 8px; overflow: hidden; }
+  .diagram-table th, .diagram-table td {
+                    padding: 10px 14px; text-align: left;
+                    border-bottom: 1px solid #334155; font-size: 0.92em; }
+  .diagram-table th { background: #0f172a; color: #38bdf8; font-weight: 600; }
+  .diagram-table tr:last-child td { border-bottom: none; }
+  /* Mermaid containers — give them breathing room and a subtle frame so
+     they read as figures, not floating text. */
+  .mermaid { background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+              padding: 16px; margin: 16px 0; overflow-x: auto; text-align: center; }
+</style>
+
+<!-- Mermaid: client-side diagram rendering.  Local copy at docs/js/mermaid.min.js
+     so README.html works offline; ~3.3 MB one-time fetch via cntlm. -->
+<script src="docs/js/mermaid.min.js"></script>
+<script>
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      securityLevel: 'loose',
+      flowchart: { htmlLabels: true, useMaxWidth: true }
+    });
+  }
+</script>
+
+<!-- Copy button on every <pre>.  Uses navigator.clipboard so requires
+     either http:// or file:// (works for both local-file open + bridge). -->
+<script>
+  document.querySelectorAll('main pre').forEach(function (pre) {
+    var code = pre.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      var text = code.textContent.replace(/ /g, ' ').trimEnd();
+      var ok = function () {
+        btn.textContent = 'copied!';
+        btn.classList.add('copied');
+        setTimeout(function () {
+          btn.textContent = 'copy';
+          btn.classList.remove('copied');
+        }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok).catch(function () {
+          /* clipboard API blocked in some file:// contexts; fall back below */
+          fallback();
+        });
+      } else {
+        fallback();
+      }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) { /* give up */ }
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  });
+</script>
+
+<!-- TOC active-section highlight — IntersectionObserver tracks which
+     section is in view and highlights its sidebar link. -->
+<script>
+  (function () {
+    var headings = Array.prototype.slice.call(
+      document.querySelectorAll('main h2[id], main h3[id]'));
+    if (!headings.length || !('IntersectionObserver' in window)) return;
+    var links = {};
+    document.querySelectorAll('.sidebar a[href^="#"]').forEach(function (a) {
+      links[a.getAttribute('href').slice(1)] = a;
+    });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var link = links[e.target.id];
+        if (!link) return;
+        if (e.isIntersecting) {
+          // clear all, set this one
+          Object.values(links).forEach(function (a) { a.classList.remove('active'); });
+          link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+    headings.forEach(function (h) { observer.observe(h); });
+  })();
+</script>
+
+</body>
+</html>

@@ -132,4 +132,4 @@ PlantUML diagrams are maintained in [`docs/diagrams/`](../diagrams/). Each diagr
 
 - [ADR GitHub Organization](https://adr.github.io/)
 - [Michael Nygard's ADR Article](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)
-- [MicroserviceBase Concept Document](../CONCEPT.md)
+- [MicroserviceBase Concept Document](../_legacy/CONCEPT.md)

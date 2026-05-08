@@ -14,6 +14,79 @@ if TYPE_CHECKING:
     from .generator import ScaffoldSpec
 
 
+# Reusable CMake function emitted into every top-level CMakeLists.txt.
+# Copies vcpkg DLLs + MinGW runtime + (optionally) windeployqt output
+# next to each .exe on every successful build, so Qt Creator F5 / Run
+# works without manual PATH or pre-running deploy_qt_vcpkg.bat.
+# Disable per-build with -DMB_DEPLOY_RUNTIME_DEPS=OFF.
+# This is a Python-level constant interpolated as `{_MB_DEPLOY_RUNTIME_BLOCK}`
+# inside f-string templates -- the f-string substitutes the literal text
+# without re-formatting it, so single-brace CMake syntax stays intact.
+_MB_DEPLOY_RUNTIME_BLOCK = '''# ---- Auto-deploy runtime DLLs (POST_BUILD) ----
+# Copies vcpkg DLLs + MinGW runtime + (optional) Qt deploy next to each
+# .exe so Qt Creator's F5 (Run/Debug) works without manual PATH manipulation
+# or pre-running deploy_qt_vcpkg.bat.  Disable with
+# -DMB_DEPLOY_RUNTIME_DEPS=OFF (e.g. for CI builds).
+option(MB_DEPLOY_RUNTIME_DEPS "Auto-copy runtime DLLs next to each .exe on build" ON)
+
+function(mb_deploy_runtime target)
+    if(NOT MB_DEPLOY_RUNTIME_DEPS OR NOT WIN32)
+        return()
+    endif()
+    cmake_parse_arguments(MBD "QT_APP" "" "" ${ARGN})
+
+    set(_dest "$<TARGET_FILE_DIR:${target}>")
+
+    # 1. vcpkg runtime DLLs.  Glob at configure time -- new DLLs require a
+    #    CMake re-configure (vcpkg manifest install triggers one anyway).
+    set(_vcpkg_bin
+        "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin")
+    if(EXISTS "${_vcpkg_bin}")
+        file(GLOB _vcpkg_dlls "${_vcpkg_bin}/*.dll")
+        if(_vcpkg_dlls)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${_vcpkg_dlls} "${_dest}"
+                COMMENT "[mb-deploy] vcpkg DLLs -> $<TARGET_FILE_DIR:${target}>"
+                VERBATIM)
+        endif()
+    endif()
+
+    # 2. MinGW runtime DLLs (libstdc++-6, libgcc_s_seh-1, libwinpthread-1).
+    if(DEFINED ENV{QT_MINGW_BIN})
+        set(_mingw_dlls "")
+        foreach(_d libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
+            if(EXISTS "$ENV{QT_MINGW_BIN}/${_d}")
+                list(APPEND _mingw_dlls "$ENV{QT_MINGW_BIN}/${_d}")
+            endif()
+        endforeach()
+        if(_mingw_dlls)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${_mingw_dlls} "${_dest}"
+                COMMENT "[mb-deploy] MinGW runtime -> $<TARGET_FILE_DIR:${target}>"
+                VERBATIM)
+        endif()
+    endif()
+
+    # 3. Qt deployment (Qt6Core/Gui DLLs + plugins) -- Qt apps only.
+    if(MBD_QT_APP AND DEFINED ENV{QT_DIR})
+        find_program(MB_WINDEPLOYQT_EXE
+            NAMES windeployqt-qt6.exe windeployqt6.exe windeployqt.exe
+            HINTS "$ENV{QT_DIR}/bin")
+        if(MB_WINDEPLOYQT_EXE)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND "${MB_WINDEPLOYQT_EXE}" --no-translations
+                        --no-system-d3d-compiler --no-opengl-sw
+                        "$<TARGET_FILE:${target}>"
+                COMMENT "[mb-deploy] windeployqt ${target}"
+                VERBATIM)
+        endif()
+    endif()
+endfunction()
+'''
+
+
 def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
     files: Dict[str, str] = {}
 
@@ -242,7 +315,8 @@ target_link_libraries({sn} PRIVATE
     gRPC::grpc++
     ${{GRPC_REFL_LIB}}
     protobuf::libprotobuf
-)'''
+)
+mb_deploy_runtime({sn})'''
 
     return f'''cmake_minimum_required(VERSION 3.16)
 
@@ -337,26 +411,48 @@ else()
     set(GRPC_REFL_LIB "")
 endif()
 
-# MicroserviceBase C++ runtime — find via installed CMake package, or
-# fall back to add_subdirectory for in-tree development (when this
-# project lives under <framework-repo>/examples/).  See
-# docs/runtime_cpp_install.md in the framework repo for install steps.
+# MicroserviceBase C++ runtime — three resolution paths:
+#   1. find_package() via CMake install or vcpkg overlay-port
+#      (also picks up MicroserviceBase_ROOT env var natively)
+#   2. MICROSERVICEBASE_DIR env var pointing at a framework checkout —
+#      lets you set the path once (setx MICROSERVICEBASE_DIR <path>)
+#      and use this scaffold from any directory.  Accepts the
+#      framework root, the runtime_cpp parent, or runtime_cpp itself.
+#   3. ../../MicroserviceBase/runtime_cpp — in-tree fallback for
+#      scaffolds living under <framework>/examples/<svc>/.
+# See docs/runtime_cpp_install.md for full install/setup details.
 find_package(MicroserviceBase CONFIG QUIET)
 if(NOT MicroserviceBase_FOUND)
-    set(_mb_in_tree "${{CMAKE_CURRENT_SOURCE_DIR}}/../../MicroserviceBase/runtime_cpp")
-    if(EXISTS "${{_mb_in_tree}}/CMakeLists.txt")
+    set(_mb_candidates "")
+    if(DEFINED ENV{{MICROSERVICEBASE_DIR}})
+        list(APPEND _mb_candidates
+            "$ENV{{MICROSERVICEBASE_DIR}}/MicroserviceBase/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}")
+    endif()
+    list(APPEND _mb_candidates
+        "${{CMAKE_CURRENT_SOURCE_DIR}}/../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${{_p}}/CMakeLists.txt")
+            set(_mb_in_tree "${{_p}}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
         message(STATUS "MicroserviceBase: using in-tree runtime at ${{_mb_in_tree}}")
         add_subdirectory("${{_mb_in_tree}}"
                          "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
     else()
         message(FATAL_ERROR
-            "MicroserviceBase runtime not found.  Install it via:\n"
-            "  cmake -S <framework>/MicroserviceBase/runtime_cpp -B build/mb-runtime "
-            "-DCMAKE_INSTALL_PREFIX=<PREFIX>\n"
-            "  cmake --build build/mb-runtime --target install\n"
-            "Then add <PREFIX> to CMAKE_PREFIX_PATH (or set MicroserviceBase_DIR).")
+            "MicroserviceBase runtime not found.  Either:\n"
+            "  - set env var MICROSERVICEBASE_DIR to your framework checkout root\n"
+            "    e.g.  setx MICROSERVICEBASE_DIR D:\\workspace\\python-microservice-base\n"
+            "  - or install + set CMAKE_PREFIX_PATH / MicroserviceBase_ROOT\n"
+            "    (see docs/runtime_cpp_install.md in the framework repo).")
     endif()
 endif()
+{_MB_DEPLOY_RUNTIME_BLOCK}
 {proto_block}
 
 # Service executable
@@ -2051,7 +2147,8 @@ target_link_libraries({sn}_gui PRIVATE
 set_target_properties({sn}_gui PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE    ON
-)'''
+)
+mb_deploy_runtime({sn}_gui QT_APP)'''
 
     return {
         "client/CMakeLists.txt": f'''cmake_minimum_required(VERSION 3.16)
@@ -2119,18 +2216,36 @@ endif()
 find_package(gRPC     CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 
-# MicroserviceBase runtime — provides ServiceClient<T>.  Find via
-# installed CMake package, fall back to add_subdirectory for in-tree
-# dev (when this client lives under <framework>/examples/<svc>/client/).
+# MicroserviceBase runtime — provides ServiceClient<T>.  Resolution order:
+#   1. find_package() — installed package or vcpkg overlay
+#   2. MICROSERVICEBASE_DIR env var (set once, works from any location)
+#   3. ../../../MicroserviceBase/runtime_cpp — in-tree fallback for
+#      <framework>/examples/<svc>/client/.
 find_package(MicroserviceBase CONFIG QUIET)
 if(NOT MicroserviceBase_FOUND)
-    set(_mb_in_tree "${{CMAKE_CURRENT_SOURCE_DIR}}/../../../MicroserviceBase/runtime_cpp")
-    if(EXISTS "${{_mb_in_tree}}/CMakeLists.txt")
+    set(_mb_candidates "")
+    if(DEFINED ENV{{MICROSERVICEBASE_DIR}})
+        list(APPEND _mb_candidates
+            "$ENV{{MICROSERVICEBASE_DIR}}/MicroserviceBase/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}")
+    endif()
+    list(APPEND _mb_candidates
+        "${{CMAKE_CURRENT_SOURCE_DIR}}/../../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${{_p}}/CMakeLists.txt")
+            set(_mb_in_tree "${{_p}}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
         add_subdirectory("${{_mb_in_tree}}"
                          "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
     else()
         message(FATAL_ERROR
-            "MicroserviceBase runtime not found.  Install + add to CMAKE_PREFIX_PATH "
+            "MicroserviceBase runtime not found.  Set MICROSERVICEBASE_DIR env var "
+            "to your framework checkout, or install + add to CMAKE_PREFIX_PATH "
             "(see docs/runtime_cpp_install.md in the framework repo).")
     endif()
 endif()
@@ -2183,6 +2298,7 @@ else()
         COMMENT "Auto-generating gRPC stubs into ${{GEN_DIR}}")
 endif()
 
+{_MB_DEPLOY_RUNTIME_BLOCK}
 add_executable({sn}_client
     src/client.cpp
     ${{STUB_SRCS}}
@@ -2197,7 +2313,8 @@ target_link_libraries({sn}_client PRIVATE
     microservice_base::runtime
     gRPC::grpc++
     protobuf::libprotobuf
-){gui_block}
+)
+mb_deploy_runtime({sn}_client){gui_block}
 ''',
 
         "client/src/client.cpp": f'''// client.cpp — gRPC client for {svc} using ServiceClient<T>.
@@ -2473,6 +2590,7 @@ target_link_libraries({svc_snake} PRIVATE
     gRPC::grpc++ ${{GRPC_REFL_LIB}}
     protobuf::libprotobuf
 )
+mb_deploy_runtime({svc_snake})
 '''.rstrip())
 
     exe_joined = '\n'.join(exe_blocks)
@@ -2549,22 +2667,41 @@ else()
     set(GRPC_REFL_LIB "")
 endif()
 
-# Shared MicroserviceBase runtime — find via installed CMake package,
-# fall back to add_subdirectory for in-tree dev (when this monorepo
-# lives under <framework>/examples/).
+# Shared MicroserviceBase runtime — resolution order:
+#   1. find_package() — installed package or vcpkg overlay-port
+#   2. MICROSERVICEBASE_DIR env var pointing at framework checkout
+#   3. ../../MicroserviceBase/runtime_cpp — in-tree fallback for monorepos
+#      living at <framework>/examples/<monorepo>/.
 find_package(MicroserviceBase CONFIG QUIET)
 if(NOT MicroserviceBase_FOUND)
-    set(_mb_in_tree "${{CMAKE_CURRENT_SOURCE_DIR}}/../../MicroserviceBase/runtime_cpp")
-    if(EXISTS "${{_mb_in_tree}}/CMakeLists.txt")
+    set(_mb_candidates "")
+    if(DEFINED ENV{{MICROSERVICEBASE_DIR}})
+        list(APPEND _mb_candidates
+            "$ENV{{MICROSERVICEBASE_DIR}}/MicroserviceBase/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}")
+    endif()
+    list(APPEND _mb_candidates
+        "${{CMAKE_CURRENT_SOURCE_DIR}}/../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${{_p}}/CMakeLists.txt")
+            set(_mb_in_tree "${{_p}}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
         add_subdirectory("${{_mb_in_tree}}"
                          "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
     else()
         message(FATAL_ERROR
-            "MicroserviceBase runtime not found.  Install + add to "
-            "CMAKE_PREFIX_PATH (see docs/runtime_cpp_install.md).")
+            "MicroserviceBase runtime not found.  Set MICROSERVICEBASE_DIR env "
+            "var to your framework checkout, or install + add to CMAKE_PREFIX_PATH "
+            "(see docs/runtime_cpp_install.md).")
     endif()
 endif()
 
+{_MB_DEPLOY_RUNTIME_BLOCK}
 # ---- Proto stubs (shared by every service in this project) ----
 set(PROTO_DIR "${{CMAKE_CURRENT_SOURCE_DIR}}/proto")
 if(EXISTS "${{PROTO_DIR}}/{sn}.pb.h")
@@ -3880,6 +4017,30 @@ dist-qt-vcpkg\\run_&lt;service&gt;.bat</code></pre>
         f'<code>{_mono_snake(services[0].name).upper()}_GRPC_PORT</code>).  '
         'Nomad sets it from <code>${NOMAD_PORT_grpc}</code>; for direct launch, '
         'export the env var manually.'))
+    trouble_items.append((
+        'Qt Creator: <em>The ABI of the selected debugger does not match the toolchain ABI</em>',
+        '<p>CMakePresets can pin compiler paths but has no field for a '
+        'debugger.  Qt Creator&rsquo;s auto-imported preset kit pairs the '
+        'MinGW compiler with whatever debugger it auto-detects (often MSVC '
+        '<code>cdb.exe</code> or a system <code>gdb</code> with a different '
+        'ABI), hence the warning.</p>'
+        '<p><strong>One-time fix</strong> (per machine, not per project):</p>'
+        '<ol>'
+        '<li><em>Edit &rarr; Preferences &rarr; Kits &rarr; Debuggers</em> &mdash; '
+        'verify there&rsquo;s an entry for '
+        '<code>C:\\Qt\\Tools\\mingw1310_64\\bin\\gdb.exe</code>.  '
+        'If not: <em>Add</em> &rarr; <em>Path</em> = that path, '
+        '<em>Name</em> = <code>MinGW gdb (Qt 6.11)</code>.  <em>Apply</em>.</li>'
+        '<li><em>Kits</em> tab &rarr; select the auto-imported kit named '
+        'after the preset (e.g. <code>vcpkg + Qt MinGW 13.1.0 (Release)</code>) '
+        '&rarr; set <em>Debugger</em> to the entry from step 1.  '
+        '<em>Apply</em> + <em>OK</em>.</li>'
+        '</ol>'
+        '<p>The fix sticks across project re-imports because Qt Creator '
+        'stores it in the kit, not the preset.  If Qt&rsquo;s installer '
+        'already registered the bundled gdb (sometimes as '
+        '<code>MinGW Debugger</code>), step 1 is unnecessary &mdash; pick '
+        'the existing entry in step 2.</p>'))
     trouble_html = "\n".join(
         # Wrap simple text bodies in <p>; leave bodies that already start with a
         # block element (<p>, <pre>, <ol>, <ul>) alone so we don't nest them.
@@ -4039,7 +4200,10 @@ dist-qt-vcpkg\\run_&lt;service&gt;.bat</code></pre>
   <div class="nav-title">{proj}</div>
   <a href="#overview">Project at a glance</a>
   <a href="#quick-ref">Quick reference</a>
+  <a href="#folder-structure">Folder structure</a>
+  <a href="#flow">Build &amp; run flow</a>
   <a href="#prereqs">Prerequisites</a>
+  <a href="#framework-dep">Framework dependency (MicroserviceBase)</a>
 
   <div class="nav-group">Setup</div>
   <a href="#env-setup">Environment setup</a>
@@ -4078,6 +4242,60 @@ dist-qt-vcpkg\\run_&lt;service&gt;.bat</code></pre>
     </table>
   </section>
 
+  <section id="folder-structure">
+    <h2>Folder structure</h2>
+    <p><code>[edit]</code> marks files you'll write business logic into.
+       Everything else is scaffolding regenerated by <code>mb-scaffold</code>
+       &mdash; safe to leave alone.</p>
+    <pre><code>{proj}/
+&#9500;&#9472;&#9472; proto/{spec.snake_name}.proto     # one shared .proto for all services
+&#9500;&#9472;&#9472; src/&lt;service_snake&gt;/              # one folder per service
+&#9474;   &#9500;&#9472;&#9472; main.cpp                      # ServiceRunner entry-point
+&#9474;   &#9500;&#9472;&#9472; domain/&lt;Service&gt;.{{h,cpp}}      # [edit] business logic (pure C++)
+&#9474;   &#9492;&#9472;&#9472; adapters/api/&lt;Service&gt;GrpcAdapter.{{h,cpp}}  # [edit] proto&lt;-&gt;domain wrapper
+&#9500;&#9472;&#9472; deploy/&lt;service_snake&gt;.nomad.hcl  # one Nomad job per service
+&#9500;&#9472;&#9472; client/                           # console client subproject
+&#9500;&#9472;&#9472; CMakeLists.txt                    # single project, N add_executable() calls
+&#9500;&#9472;&#9472; build_deploy.bat / .sh            # one-shot build for all services
+&#9500;&#9472;&#9472; set_env*.bat / .sh                # toolchain env (VCPKG_ROOT, QT_DIR, ...)
+&#9492;&#9472;&#9472; dist/                             # output: N .exe&#39;s + shared DLLs</code></pre>
+  </section>
+
+  <section id="flow">
+    <h2>Build &amp; run flow</h2>
+    <p>Pick a toolchain on first build; subsequent rebuilds skip the
+       slow vcpkg compile (cache hit ~1&ndash;3 min).  See the
+       &quot;Use prebuilt libraries&quot; section if a teammate already
+       compiled the deps and shared a zip.</p>
+    <div class="mermaid">
+flowchart TD
+    Start([Start])
+    Setup["1\. One-time setup<br/>setx VCPKG_ROOT, QT_DIR, QT_MINGW_BIN"]
+    Choose{{"Toolchain?"}}
+    Prebuilt{{"Have prebuilt zip?"}}
+    Import["import_prebuilt.bat &lt;zip&gt;<br/>~30 seconds"]
+    BuildVcpkg["build_qt_vcpkg.bat<br/>(or Qt Creator F5)"]
+    BuildMSYS2["build_deploy_msys2.bat"]
+    BuildResult["build*/&lt;service&gt;.exe<br/>(N executables) + DLLs"]
+    LocalRun["Run any service:<br/>./&lt;service&gt;.exe"]
+    Pkg["deploy_qt_vcpkg.bat<br/>&rarr; dist-qt-vcpkg/"]
+    NomadRun["nomad job run<br/>deploy/&lt;svc&gt;.nomad.hcl<br/>(per-service jobs)"]
+    Discover["Clients discover via Consul<br/>(one entry per service)"]
+
+    Start --> Setup --> Choose
+    Choose -->|"Qt MinGW + vcpkg<br/>(recommended)"| Prebuilt
+    Choose -->|MSYS2| BuildMSYS2 --> BuildResult
+    Prebuilt -->|"Yes (~2 min total)"| Import --> BuildVcpkg
+    Prebuilt -->|"No (first build ~30-60 min)"| BuildVcpkg
+    BuildVcpkg --> BuildResult
+    BuildResult --> LocalRun
+    BuildResult -->|For sharing| Pkg
+    LocalRun --> NomadRun
+    Pkg --> NomadRun
+    NomadRun --> Discover
+    </div>
+  </section>
+
 {full_kit_walkthrough_html}
 
   <section id="prereqs">
@@ -4085,6 +4303,77 @@ dist-qt-vcpkg\\run_&lt;service&gt;.bat</code></pre>
     <ul>
 {prereq_html}
     </ul>
+  </section>
+
+  <section id="framework-dep">
+    <h2>Framework dependency (MicroserviceBase)</h2>
+    <p>
+      This service depends on the <strong>MicroserviceBase</strong> runtime
+      (C++ library + CMake package).  <code>CMakeLists.txt</code> calls
+      <code>find_package(MicroserviceBase CONFIG)</code> first and falls
+      back to <code>add_subdirectory(.../MicroserviceBase/runtime_cpp)</code>
+      for in-tree builds.  Pick one of three setups (any satisfies the
+      dependency):
+    </p>
+    <table>
+      <tr><th>Setup</th><th>When to use</th><th>One-time steps</th></tr>
+      <tr>
+        <td><strong>A. In-tree (zero install)</strong></td>
+        <td>You&rsquo;re working inside the framework checkout</td>
+        <td>Clone the framework so this scaffold sits at
+            <code>&lt;framework&gt;/examples/&lt;svc&gt;/</code> &mdash;
+            the relative path
+            <code>../../MicroserviceBase/runtime_cpp</code> resolves
+            automatically.</td>
+      </tr>
+      <tr>
+        <td><strong>A2. <code>MICROSERVICEBASE_DIR</code> env var</strong></td>
+        <td>Scaffold lives anywhere outside <code>examples/</code></td>
+        <td><code>setx MICROSERVICEBASE_DIR D:\\workspace\\python-microservice-base</code>
+            (accepts the framework root, the <code>runtime_cpp</code> parent,
+            or <code>runtime_cpp</code> itself).  Qt Creator inherits user
+            env so it picks this up automatically &mdash; close + reopen
+            Qt Creator after <code>setx</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>B. CMake install</strong></td>
+        <td>Standalone service, no vcpkg</td>
+        <td><code>cmake -S &lt;framework&gt;/MicroserviceBase/runtime_cpp -B build/mb &amp;&amp; cmake --build build/mb &amp;&amp; cmake --install build/mb --prefix $HOME/.local/microservice-base</code>,
+            then pass
+            <code>-DCMAKE_PREFIX_PATH=$HOME/.local/microservice-base</code>
+            on configure.</td>
+      </tr>
+      <tr>
+        <td><strong>C. vcpkg overlay-port</strong></td>
+        <td>Already using vcpkg (the Qt+vcpkg path)</td>
+        <td>Add <code>microservice-base</code> to your
+            <code>vcpkg.json</code> <code>dependencies</code> and pass
+            <code>-DVCPKG_OVERLAY_PORTS=&lt;framework&gt;/ports</code>.</td>
+      </tr>
+    </table>
+    <p>
+      <strong>Get the framework</strong> &mdash; branch
+      <code>ugc1hc/feat/migrate_to_ta_architecture</code> is the current
+      TA-architecture line (gRPC + Consul + Nomad runtime this scaffold
+      targets):
+    </p>
+    <pre><code>git clone -b ugc1hc/feat/migrate_to_ta_architecture ^
+    https://github.com/test-fullautomation/python-microservice-base.git</code></pre>
+    <p>What you get:</p>
+    <ul>
+      <li><code>MicroserviceBase/runtime_cpp/</code> &mdash; C++ runtime,
+          used by setups A, B, C.</li>
+      <li><code>ports/microservice-base/</code> &mdash; vcpkg overlay-port
+          for setup C.</li>
+      <li><code>docs/runtime_cpp_install.md</code> &mdash; full instructions
+          for each setup.</li>
+    </ul>
+    <p>
+      If <code>cmake -S .</code> fails with
+      <code>MicroserviceBase runtime not found.  Install + add to
+      CMAKE_PREFIX_PATH</code>, that&rsquo;s this dependency missing &mdash;
+      pick a setup above.
+    </p>
   </section>
 
   <section id="env-setup">
@@ -4139,6 +4428,20 @@ dist-qt-vcpkg\\run_&lt;service&gt;.bat</code></pre>
   </section>
 
 </main>
+
+<!-- Mermaid for the build/run flow diagram in #flow.  Loaded from the
+     framework-level docs/js/mermaid.min.js if available (zero-cost when
+     missing -- diagrams just render as their source code instead). -->
+<script src="../../docs/js/mermaid.min.js"></script>
+<script>
+  if (typeof mermaid !== 'undefined') {{
+    mermaid.initialize({{
+      startOnLoad: true, theme: 'dark', securityLevel: 'loose',
+      flowchart: {{ htmlLabels: true, useMaxWidth: true }}
+    }});
+  }}
+</script>
+
 </body>
 </html>
 '''
@@ -4463,16 +4766,54 @@ Monorepo containing {len(services)} gRPC services that share a single
 
 {svc_lines}
 
-## Layout
+## Folder structure
+
+`[edit]` marks files you'll write business logic into.  Everything else
+is scaffolding regenerated by `mb-scaffold` — safe to leave alone.
 
 ```
 {spec.service_name}/
-├── proto/{spec.snake_name}.proto     Shared API definition
-├── src/<service>/                    One folder per service
-├── deploy/<service>.nomad.hcl        One Nomad job per service
-├── CMakeLists.txt                    Single CMake project
-├── build_deploy.bat / .sh            One command builds all services
-└── dist/                             Output: N .exe's + shared DLLs
+├── proto/{spec.snake_name}.proto     # one shared .proto for all services
+├── src/<service_snake>/              # one folder per service
+│   ├── main.cpp                      # ServiceRunner entry-point
+│   ├── domain/<Service>.{{h,cpp}}      # [edit] business logic (pure C++)
+│   └── adapters/api/<Service>GrpcAdapter.{{h,cpp}}  # [edit] proto<->domain wrapper
+├── deploy/<service_snake>.nomad.hcl  # one Nomad job per service
+├── client/                           # console client subproject (one .exe per service)
+├── CMakeLists.txt                    # single project, N add_executable() calls
+├── build_deploy.bat / .sh            # one-shot build for all services
+├── set_env*.bat / .sh                # toolchain env (VCPKG_ROOT, QT_DIR, ...)
+└── dist/                             # output: N .exe's + shared DLLs
+```
+
+## Build & run flow
+
+```mermaid
+flowchart TD
+    Start([Start])
+    Setup["1\\. One-time setup<br/>setx VCPKG_ROOT, QT_DIR, QT_MINGW_BIN"]
+    Choose{{"Toolchain?"}}
+    Prebuilt{{"Have prebuilt zip?"}}
+    Import["import_prebuilt.bat &lt;zip&gt;<br/>~30 seconds"]
+    BuildVcpkg["build_qt_vcpkg.bat<br/>(or Qt Creator F5)"]
+    BuildMSYS2["build_deploy_msys2.bat"]
+    BuildResult["build*/<service>.exe<br/>(N executables) + DLLs"]
+    LocalRun["Run any service:<br/>./<service>.exe"]
+    Pkg["deploy_qt_vcpkg.bat<br/>→ dist-qt-vcpkg/"]
+    NomadRun["nomad job run<br/>deploy/&lt;svc&gt;.nomad.hcl<br/>(per-service jobs)"]
+    Discover["Clients discover via Consul<br/>(one entry per service)"]
+
+    Start --> Setup --> Choose
+    Choose -->|"Qt MinGW + vcpkg<br/>(recommended)"| Prebuilt
+    Choose -->|MSYS2| BuildMSYS2 --> BuildResult
+    Prebuilt -->|"Yes (~2 min total)"| Import --> BuildVcpkg
+    Prebuilt -->|"No (first build ~30-60 min)"| BuildVcpkg
+    BuildVcpkg --> BuildResult
+    BuildResult --> LocalRun
+    BuildResult -->|For sharing| Pkg
+    LocalRun --> NomadRun
+    Pkg --> NomadRun
+    NomadRun --> Discover
 ```
 
 ## Prerequisites
@@ -4487,13 +4828,17 @@ Pick one of three setups (any of them satisfies the dependency):
 | Setup | When to use | One-time steps |
 |---|---|---|
 | **A. In-tree (zero install)** | You're working inside the framework checkout | Clone framework so this scaffold sits at `<framework>/examples/<svc>/` — the relative path `../../MicroserviceBase/runtime_cpp` resolves automatically |
+| **A2. `MICROSERVICEBASE_DIR` env var** | Scaffold lives anywhere outside `examples/` | `setx MICROSERVICEBASE_DIR D:\workspace\python-microservice-base` (the framework root, the runtime_cpp parent, or runtime_cpp itself — all three are accepted).  Qt Creator inherits user env, so it picks this up too. |
 | **B. CMake install** | Standalone service, no vcpkg | `cmake -S <framework>/MicroserviceBase/runtime_cpp -B build/mb && cmake --build build/mb && cmake --install build/mb --prefix $HOME/.local/microservice-base`, then `-DCMAKE_PREFIX_PATH=$HOME/.local/microservice-base` on configure |
 | **C. vcpkg overlay-port** | Already using vcpkg (the Qt+vcpkg path below) | Add `microservice-base` to your `vcpkg.json` `dependencies` and pass `-DVCPKG_OVERLAY_PORTS=<framework>/ports` |
 
-**Get the framework**:
+**Get the framework** (branch `ugc1hc/feat/migrate_to_ta_architecture` is
+the current TA-architecture line — the gRPC + Consul + Nomad runtime
+this scaffold targets):
 
 ```cmd
-git clone https://github.com/test-fullautomation/python-microservice-base.git
+git clone -b ugc1hc/feat/migrate_to_ta_architecture ^
+    https://github.com/test-fullautomation/python-microservice-base.git
 :: → MicroserviceBase/runtime_cpp/  (C++ runtime, used by all three setups above)
 :: → ports/microservice-base/       (vcpkg overlay-port for setup C)
 :: → docs/runtime_cpp_install.md    (full instructions for each setup)
@@ -4941,6 +5286,8 @@ target_link_libraries({project_snake}_gui PRIVATE
 set_target_properties({project_snake}_gui PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE    ON)
+
+mb_deploy_runtime({project_snake}_gui QT_APP)
 '''
     elif ui_kind == "qml":
         gui_block = f'''
@@ -4979,6 +5326,8 @@ target_link_libraries({project_snake}_gui PRIVATE
     protobuf::libprotobuf
     Qt6::Quick
     Qt6::Qml)
+
+mb_deploy_runtime({project_snake}_gui QT_APP)
 '''
 
     return f'''cmake_minimum_required(VERSION 3.16)
@@ -5039,19 +5388,37 @@ endif()
 find_package(gRPC     CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 
-# MicroserviceBase runtime — find via installed package, fall back
-# to add_subdirectory for in-tree dev (when this client lives under
-# <framework>/examples/<svc>/qt_client_grpcpp/).
+# MicroserviceBase runtime — resolution order:
+#   1. find_package() — installed package or vcpkg overlay
+#   2. MICROSERVICEBASE_DIR env var (set once, works from any location)
+#   3. ../../../MicroserviceBase/runtime_cpp — in-tree fallback for
+#      <framework>/examples/<svc>/qt_client_grpcpp/.
 find_package(MicroserviceBase CONFIG QUIET)
 if(NOT MicroserviceBase_FOUND)
-    set(_mb_in_tree "${{CMAKE_CURRENT_SOURCE_DIR}}/../../../MicroserviceBase/runtime_cpp")
-    if(EXISTS "${{_mb_in_tree}}/CMakeLists.txt")
+    set(_mb_candidates "")
+    if(DEFINED ENV{{MICROSERVICEBASE_DIR}})
+        list(APPEND _mb_candidates
+            "$ENV{{MICROSERVICEBASE_DIR}}/MicroserviceBase/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}")
+    endif()
+    list(APPEND _mb_candidates
+        "${{CMAKE_CURRENT_SOURCE_DIR}}/../../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${{_p}}/CMakeLists.txt")
+            set(_mb_in_tree "${{_p}}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
         add_subdirectory("${{_mb_in_tree}}"
                          "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
     else()
         message(FATAL_ERROR
-            "MicroserviceBase runtime not found.  Install + add to "
-            "CMAKE_PREFIX_PATH (see docs/runtime_cpp_install.md).")
+            "MicroserviceBase runtime not found.  Set MICROSERVICEBASE_DIR env "
+            "var to your framework checkout, or install + add to CMAKE_PREFIX_PATH "
+            "(see docs/runtime_cpp_install.md).")
     endif()
 endif()
 
@@ -5100,6 +5467,7 @@ else()
         COMMENT "Auto-generating gRPC stubs into ${{GEN_DIR}}")
 endif()
 
+{_MB_DEPLOY_RUNTIME_BLOCK}
 # ---- Console client ----------------------------------------------------
 add_executable({project_snake}_client
     src/client.cpp
@@ -5113,6 +5481,7 @@ target_include_directories({project_snake}_client PRIVATE
 target_link_libraries({project_snake}_client PRIVATE
     microservice_base::runtime
     gRPC::grpc++ protobuf::libprotobuf)
+mb_deploy_runtime({project_snake}_client)
 {gui_block}'''
 
 
@@ -6092,6 +6461,1413 @@ void run() {{
 
 
 # =======================================================================
+# Multi-proto mode — N gRPC services hosted in ONE binary.
+# =======================================================================
+#
+# Vehicle-example pattern: one project, N .proto files (each declaring
+# its own service + messages), one main.cpp that calls
+# ServiceRunner::addService() N times so all services register on the
+# same grpc::ServerBuilder and share one Consul registration / one port.
+#
+# Layout:
+#   <project>/
+#   ├── proto/<svc1_snake>.proto       (or whatever .proto file user named)
+#   ├── proto/<svc2_snake>.proto
+#   ├── src/main.cpp                   (registers ALL services)
+#   ├── src/Settings.h                 (shared)
+#   ├── src/<svc1_snake>/
+#   │   ├── domain/<Svc1>.{h,cpp}
+#   │   └── adapters/api/<Svc1>GrpcAdapter.{h,cpp}
+#   ├── src/<svc2_snake>/
+#   │   └── ... same pattern ...
+#   ├── deploy/<project_snake>.nomad.hcl   (one job, one .exe)
+#   ├── CMakeLists.txt                  (N codegens, 1 add_executable)
+#   └── README.md
+#
+# Each service has its OWN proto package (defaults to <svc_snake>.v1)
+# so message names from different services don't collide.
+
+def _mp_proto_filename(svc) -> str:
+    """Service's .proto filename inside proto/ — respects ServiceBlock.proto_file
+    when set, otherwise derives <svc_snake>.proto from the service name."""
+    return svc.proto_file or f"{_mono_snake(svc.name)}.proto"
+
+
+def _mp_proto_package(svc) -> str:
+    """Per-service proto package.
+
+    When the service carries verbatim .proto content (imported by the
+    user), parse the `package X;` declaration from it -- the generated
+    C++ stubs use that exact package as the namespace, so we MUST match
+    it in the adapter code or every type reference fails.
+
+    Fallback when proto_content is empty (auto-generated proto): use
+    `<snake>.v1` to keep versioning consistent with single-service mode.
+    """
+    if getattr(svc, "proto_content", None):
+        m = re.search(r"^\s*package\s+([\w.]+)\s*;",
+                      svc.proto_content, re.MULTILINE)
+        if m:
+            return m.group(1)
+    return f"{_mono_snake(svc.name)}.v1"
+
+
+def _mp_proto_namespace(svc) -> str:
+    return _mp_proto_package(svc).replace(".", "::")
+
+
+def _mp_proto_basename(svc) -> str:
+    """Strip .proto so we can compose <basename>.pb.h / .grpc.pb.h."""
+    fn = _mp_proto_filename(svc)
+    return fn[:-6] if fn.endswith(".proto") else fn
+
+
+def generate_multi_proto(spec: "ScaffoldSpec", services) -> Dict[str, str]:
+    """Emit a multi-proto / single-binary scaffold (vehicle-example pattern).
+
+    Each service in ``services`` becomes:
+      * its own ``.proto`` file under ``proto/`` (with its own package),
+      * its own ``domain/`` + ``adapters/api/`` source folder,
+    and ALL services are registered on one grpc::ServerBuilder by the
+    project's single ``src/main.cpp``.
+
+    v1: C++ only.  Borrows monorepo CMake auto-detection +
+    set_env / build script infrastructure unchanged.
+    """
+    files: Dict[str, str] = {}
+
+    # ---- N proto files (one per service) ----
+    for svc in services:
+        proto_path = f"proto/{_mp_proto_filename(svc)}"
+        if svc.proto_content:
+            files[proto_path] = svc.proto_content
+        else:
+            files[proto_path] = _mp_gen_proto(svc)
+
+    # Stub-generation helper: same script as monorepo, but it walks all
+    # .proto files in proto/ rather than a single one.
+    files["proto/generate_stubs.bat"] = _mp_gen_stubs_bat(spec, services)
+    files["proto/generate_stubs.sh"] = _mp_gen_stubs_sh(spec, services)
+
+    # ---- Shared env scripts (reused from monorepo / single-service) ----
+    files["set_env.bat"] = _set_env_bat(spec)
+    files["set_env.sh"] = _set_env_sh(spec)
+    files["set_env_mingw.bat"] = _set_env_mingw_bat(spec)
+    files["set_env_msys2.bat"] = _set_env_msys2_bat(spec)
+
+    # ---- Root CMakeLists ----
+    files["CMakeLists.txt"] = _mp_cmake(spec, services)
+
+    # ---- One main.cpp + one Settings.h at src/ root ----
+    files["src/main.cpp"] = _mp_main_cpp(spec, services)
+    files["src/Settings.h"] = _mp_settings_h(spec)
+
+    # ---- Per-service domain + adapter ----
+    for svc in services:
+        svc_snake = _mono_snake(svc.name)
+        svc_pascal = svc.name
+        files[f"src/{svc_snake}/domain/{svc_pascal}.h"]   = _mp_domain_h(spec, svc)
+        files[f"src/{svc_snake}/domain/{svc_pascal}.cpp"] = _mp_domain_cpp(spec, svc)
+        files[f"src/{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.h"]   = _mp_adapter_h(spec, svc)
+        files[f"src/{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.cpp"] = _mp_adapter_cpp(spec, svc)
+
+    # ---- Single Nomad job ----
+    if spec.gen_nomad:
+        files[f"deploy/{spec.snake_name}.nomad.hcl"] = _mp_nomad(spec, services)
+
+    # ---- Console client subproject ----
+    # Standalone CMake project under client/ that connects to the multi-
+    # service binary's Consul registration (one host:port for all services)
+    # and exposes a service -> method picker.  Each per-service proto stub
+    # uses its own namespace; the client links them all.
+    files.update(_mp_client_files(spec, services))
+
+    # ---- Optional Qt-native client in qt_client_grpcpp/ (Google grpc++ via vcpkg) ----
+    # Same trigger as the single-service path: requires gui_type != "none"
+    # AND client_grpc_kind == "google_vcpkg".  Adapted for multi_proto:
+    # writes each service's .proto verbatim, emits N protoc codegens, links
+    # the union of stubs into one Qt Widgets exe.
+    client_uses_vcpkg = (spec.gui_type != "none"
+                        and spec.client_grpc_kind == "google_vcpkg")
+    if client_uses_vcpkg:
+        files.update(_mp_qt_client_grpcpp_files(spec, services))
+
+    # ---- Server vcpkg path (Google grpc++ via vcpkg + Qt MinGW) ----
+    server_uses_vcpkg = spec.server_grpc_kind == "vcpkg"
+    if server_uses_vcpkg:
+        files["vcpkg.json"] = _server_vcpkg_json(spec)
+        if spec.gen_build_scripts:
+            files["build_qt_vcpkg.bat"]  = _server_build_qt_vcpkg_bat(spec)
+            files["deploy_qt_vcpkg.bat"] = _server_deploy_qt_vcpkg_bat(spec)
+
+    # ---- Shared vcpkg infrastructure (triplets/ + ports/ + init script) ----
+    # Emit once if EITHER side uses vcpkg.  Both sides share triplet,
+    # overlay-port, binary cache.
+    if client_uses_vcpkg or server_uses_vcpkg:
+        files.update(_vcpkg_shared_files(spec))
+
+    # ---- Build scripts (reuse monorepo's — they call cmake against the
+    # single CMakeLists, which doesn't care how many services it builds) ----
+    if spec.gen_build_scripts:
+        files["build_deploy.bat"] = _mp_build_bat(spec)
+        files["build_deploy.sh"] = _mp_build_sh(spec)
+
+    # ---- README ----
+    # Markdown is multi_proto-specific; HTML reuses the monorepo emitter
+    # for now (it covers the same Qt Creator + vcpkg flow, with mostly
+    # identical troubleshooting and quick-reference content; "monorepo"
+    # wording in a few places vs. "multi_proto" is the only mismatch).
+    # A dedicated _mp_readme_html() can come later if needed.
+    if spec.gen_readme:
+        files["README.md"]   = _mp_readme(spec, services)
+        files["README.html"] = _mono_readme_html(spec, services)
+
+    return files
+
+
+# ---- Console client for multi_proto ---------------------------------
+def _mp_client_files(spec, services) -> Dict[str, str]:
+    """Standalone client subproject under client/.
+
+    One CMake project, one .exe, links in every service's stubs from the
+    parent project's proto/ folder and connects to the parent's Consul
+    registration (single host:port).  Discovery uses the project's
+    snake_name as the Consul service name.
+
+    Stays minimal: console-only menu, no UI variants (the monorepo client
+    family has those if a user wants to upgrade later).
+    """
+    sn = spec.snake_name
+    project_name = spec.service_name
+    files = {}
+
+    files["client/CMakeLists.txt"]  = _mp_client_cmake(spec, services)
+    files["client/src/client.cpp"]  = _mp_client_main_cpp(spec, services)
+    files["client/README.md"]       = _mp_client_readme(spec, services)
+    return files
+
+
+def _mp_client_cmake(spec, services) -> str:
+    sn = spec.snake_name
+    project_name = spec.service_name
+
+    # Each service's .proto is in ../proto/<file>.proto.  We invoke protoc
+    # at configure time to generate stubs into the build dir, then list
+    # them as sources to add_executable.
+    proto_blocks = []
+    src_lists = []
+    seen = set()
+    for svc in services:
+        basename = _mp_proto_basename(svc)
+        if basename in seen:
+            continue
+        seen.add(basename)
+        var = basename.upper() + "_SRCS"
+        proto_filename = _mp_proto_filename(svc)
+        src_lists.append(f"${{{var}}}")
+        # VERBATIM-quoting note: see _mp_proto_codegen_block — drop the
+        # inner quotes so protoc doesn't get them as part of the path.
+        proto_blocks.append(f'''add_custom_command(
+    OUTPUT
+        "${{GEN_DIR}}/{basename}.pb.cc"  "${{GEN_DIR}}/{basename}.pb.h"
+        "${{GEN_DIR}}/{basename}.grpc.pb.cc" "${{GEN_DIR}}/{basename}.grpc.pb.h"
+    COMMAND ${{_protoc}}
+        --proto_path=${{PROTO_DIR}}
+        --cpp_out=${{GEN_DIR}}
+        --grpc_out=${{GEN_DIR}}
+        --plugin=protoc-gen-grpc=${{_grpc_cpp}}
+        ${{PROTO_DIR}}/{proto_filename}
+    DEPENDS "${{PROTO_DIR}}/{proto_filename}"
+    COMMENT "Generating gRPC stubs for {proto_filename} (client)"
+    VERBATIM)
+set({var}
+    "${{GEN_DIR}}/{basename}.pb.cc"
+    "${{GEN_DIR}}/{basename}.grpc.pb.cc")''')
+
+    proto_codegen = '\n'.join(proto_blocks)
+    src_var_uses = '\n    '.join(src_lists)
+
+    return f'''cmake_minimum_required(VERSION 3.16)
+
+# vcpkg auto-detection BEFORE project() so the toolchain loads correctly.
+# Mirrors the parent CMakeLists; overlays come from the parent project
+# (../triplets, ../ports).
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{{VCPKG_ROOT}})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{{VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected)")
+endif()
+if(EXISTS "${{CMAKE_CURRENT_SOURCE_DIR}}/../triplets/x64-mingw-qt.cmake")
+    if(NOT VCPKG_TARGET_TRIPLET)
+        set(VCPKG_TARGET_TRIPLET "x64-mingw-qt"
+            CACHE STRING "vcpkg triplet (parent overlay)")
+    endif()
+    if(NOT VCPKG_OVERLAY_TRIPLETS)
+        set(VCPKG_OVERLAY_TRIPLETS "${{CMAKE_CURRENT_SOURCE_DIR}}/../triplets"
+            CACHE PATH "vcpkg overlay triplets")
+    endif()
+    if(NOT VCPKG_OVERLAY_PORTS AND EXISTS "${{CMAKE_CURRENT_SOURCE_DIR}}/../ports")
+        set(VCPKG_OVERLAY_PORTS "${{CMAKE_CURRENT_SOURCE_DIR}}/../ports"
+            CACHE PATH "vcpkg overlay ports")
+    endif()
+endif()
+
+project({project_name}Client VERSION {spec.version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Manifest-mode fallback for prebuilt vcpkg_installed/.
+if(EXISTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/share")
+    list(APPEND CMAKE_PREFIX_PATH "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt")
+endif()
+if(NOT Protobuf_PROTOC_EXECUTABLE
+   AND EXISTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe")
+    set(Protobuf_PROTOC_EXECUTABLE
+        "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe"
+        CACHE FILEPATH "protoc")
+endif()
+
+find_package(gRPC     CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(CURL     CONFIG REQUIRED)
+
+# MicroserviceBase runtime — provides ServiceClient<T>.  Find via
+# installed package, env var, or in-tree fallback.
+find_package(MicroserviceBase CONFIG QUIET)
+if(NOT MicroserviceBase_FOUND)
+    set(_mb_candidates "")
+    if(DEFINED ENV{{MICROSERVICEBASE_DIR}})
+        list(APPEND _mb_candidates
+            "$ENV{{MICROSERVICEBASE_DIR}}/MicroserviceBase/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}")
+    endif()
+    list(APPEND _mb_candidates
+        "${{CMAKE_CURRENT_SOURCE_DIR}}/../../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${{_p}}/CMakeLists.txt")
+            set(_mb_in_tree "${{_p}}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
+        add_subdirectory("${{_mb_in_tree}}"
+                         "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
+    else()
+        message(FATAL_ERROR
+            "MicroserviceBase runtime not found.  Set MICROSERVICEBASE_DIR or "
+            "install + add to CMAKE_PREFIX_PATH (see docs/runtime_cpp_install.md).")
+    endif()
+endif()
+
+{_MB_DEPLOY_RUNTIME_BLOCK}
+
+# ---- Proto stubs (shared with the parent server, regenerated here) ---
+set(PROTO_DIR "${{CMAKE_CURRENT_SOURCE_DIR}}/../proto")
+set(GEN_DIR "${{CMAKE_CURRENT_BINARY_DIR}}/gen")
+file(MAKE_DIRECTORY "${{GEN_DIR}}")
+if(TARGET protobuf::protoc)
+    get_target_property(_protoc protobuf::protoc LOCATION)
+else()
+    find_program(_protoc NAMES protoc protoc.exe
+        HINTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-windows/tools/protobuf"
+              "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf"
+        REQUIRED)
+endif()
+if(TARGET gRPC::grpc_cpp_plugin)
+    get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin LOCATION)
+else()
+    find_program(_grpc_cpp NAMES grpc_cpp_plugin grpc_cpp_plugin.exe
+        HINTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-windows/tools/grpc"
+              "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/grpc"
+        REQUIRED)
+endif()
+
+{proto_codegen}
+
+# ---- Console client executable ---------------------------------------
+add_executable({sn}_client
+    src/client.cpp
+    {src_var_uses}
+)
+
+target_include_directories({sn}_client PRIVATE
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/src"
+    "${{GEN_DIR}}"
+)
+
+target_link_libraries({sn}_client PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++
+    protobuf::libprotobuf
+)
+mb_deploy_runtime({sn}_client)
+'''
+
+
+def _mp_client_main_cpp(spec, services) -> str:
+    """Console client.
+
+    Connects via Consul (looks up the parent project's service name) OR
+    --direct host:port; instantiates every service's stub on the same
+    channel; offers an interactive service -> method picker.
+
+    Method-level invocation is a stub for v1 — the user fills in
+    request fields per their proto.  The framework hands back a working
+    channel + stub for each service so they don't write the connection
+    plumbing.
+    """
+    sn = spec.snake_name
+    project_name = spec.service_name
+
+    includes = []
+    stubs = []
+    list_lines = []
+    for svc in services:
+        basename = _mp_proto_basename(svc)
+        ns = _mp_proto_namespace(svc)
+        svc_pascal = svc.name
+        if f'#include "{basename}.grpc.pb.h"' not in includes:
+            includes.append(f'#include "{basename}.grpc.pb.h"')
+        stubs.append(
+            f'        auto {_mono_snake(svc.name)}_stub = '
+            f'::{ns}::{svc_pascal}::NewStub(channel);'
+        )
+        method_names = ", ".join(m.name for m in svc.methods) if svc.methods else "(no methods)"
+        list_lines.append(
+            f'        std::cout << "  {svc_pascal}: {method_names}" << std::endl;'
+        )
+
+    inc_block = '\n'.join(includes)
+    stub_block = '\n'.join(stubs)
+    list_block = '\n'.join(list_lines)
+
+    return f'''// Console client for {project_name} (multi-proto).
+//
+// All services are hosted by ONE binary on ONE port, so we make ONE
+// channel and instantiate all per-service stubs on it.
+//
+// Usage:
+//   {sn}_client                    # discover host:port via Consul (default)
+//   {sn}_client --direct HOST:PORT # bypass Consul, connect directly
+
+#include <iostream>
+#include <memory>
+#include <string>
+
+#include <grpcpp/grpcpp.h>
+#include "MicroserviceBase/ServiceClient.h"
+
+{inc_block}
+
+int main(int argc, char** argv) {{
+    std::string target;
+    bool direct = false;
+    for (int i = 1; i < argc; ++i) {{
+        std::string a(argv[i]);
+        if (a == "--direct" && i + 1 < argc) {{
+            target = argv[++i];
+            direct = true;
+        }}
+    }}
+
+    if (!direct) {{
+        // Discover the multi-service binary via Consul.  All hosted services
+        // share ONE registration named after the project's snake_name, so
+        // one lookup yields the host:port for every service.
+        const char* consul_addr_env = std::getenv("{sn.upper()}_CONSUL_ADDR");
+        std::string consul_addr = consul_addr_env
+            ? consul_addr_env : "http://127.0.0.1:8500";
+        microservice_base::ConsulResolver resolver(consul_addr);
+        auto endpoint = resolver.resolve("{sn}");
+        if (endpoint.empty()) {{
+            std::cerr << "Consul lookup for '{sn}' returned no instances. "
+                      << "Pass --direct HOST:PORT to bypass." << std::endl;
+            return 1;
+        }}
+        target = endpoint;
+    }}
+
+    std::cout << "Connecting to {project_name} @ " << target << std::endl;
+    auto channel = grpc::CreateChannel(target, grpc::InsecureChannelCredentials());
+
+    try {{
+{stub_block}
+
+        std::cout << "\\nHosted services + methods:" << std::endl;
+{list_block}
+        std::cout << std::endl;
+        std::cout << "TODO: replace this scaffold with your own RPC calls." << std::endl;
+        std::cout << "Each *_stub above is ready to use, e.g.:" << std::endl;
+        std::cout << "  grpc::ClientContext ctx;" << std::endl;
+        std::cout << "  ::ns::FooRequest req;  ::ns::FooResponse resp;" << std::endl;
+        std::cout << "  auto status = your_stub->FooMethod(&ctx, req, &resp);" << std::endl;
+    }} catch (const std::exception& e) {{
+        std::cerr << "Client error: " << e.what() << std::endl;
+        return 1;
+    }}
+    return 0;
+}}
+'''
+
+
+def _mp_client_readme(spec, services) -> str:
+    sn = spec.snake_name
+    svc_lines = "\n".join(
+        f"- **{svc.name}** (proto package `{_mp_proto_package(svc)}`)"
+        for svc in services
+    )
+    return f'''# {spec.service_name} — Console client
+
+Connects to the multi-proto server (one Consul registration for the
+whole project, one port for all services).
+
+## Hosted services
+
+{svc_lines}
+
+## Build
+
+The client is its own CMake project under `client/`.  Build it
+independently of the server:
+
+```cmd
+cd client
+mkdir build && cd build
+cmake -G Ninja ..
+cmake --build . --config Release
+```
+
+The generated `{sn}_client.exe` discovers the server via Consul
+(default `http://127.0.0.1:8500`, override with `{sn.upper()}_CONSUL_ADDR`)
+or skip Consul with `--direct HOST:PORT`.
+
+## What the scaffold gives you
+
+For each hosted service it instantiates a ready-to-use gRPC stub:
+
+```cpp
+auto svc_a_stub = ::pkg_a::v1::ServiceA::NewStub(channel);
+auto svc_b_stub = ::pkg_b::v1::ServiceB::NewStub(channel);
+// ... call methods on whichever stub you need
+```
+
+The stubs share ONE channel because all services live in one binary
+on one port — you don't need separate Consul lookups per service.
+
+## Customising
+
+Edit `src/client.cpp` to build request messages for your real RPC
+methods; the comment block at the bottom of `main()` shows the shape.
+'''
+
+
+# ---- Qt Widgets client for multi_proto (qt_client_grpcpp/) ----------
+# Triggered when spec.gui_type != "none" AND
+# spec.client_grpc_kind == "google_vcpkg".  Mirrors the single-service
+# qt_client_grpcpp emitter but writes per-service .proto files and a
+# multi-codegen CMakeLists.
+
+def _mp_qt_client_grpcpp_files(spec, services) -> Dict[str, str]:
+    files: Dict[str, str] = {}
+
+    # Per-service .proto files (verbatim user-imported text, or generated
+    # from spec methods as a fallback).  Dedup by filename so single-file
+    # multi-service multi_proto (all share one .proto) writes once.
+    seen_proto = set()
+    for svc in services:
+        proto_filename = _mp_proto_filename(svc)
+        if proto_filename in seen_proto:
+            continue
+        seen_proto.add(proto_filename)
+        path = f"qt_client_grpcpp/proto/{proto_filename}"
+        files[path] = svc.proto_content or _mp_gen_proto(svc)
+
+    # CMakeLists is multi_proto-aware (PROTOS list expands to N files).
+    files["qt_client_grpcpp/CMakeLists.txt"]    = _mp_qt_client_grpcpp_cmake(spec, services)
+    files["qt_client_grpcpp/CMakePresets.json"] = _qt_client_grpcpp_cmake_presets()
+    files["qt_client_grpcpp/vcpkg.json"]        = _qt_client_grpcpp_vcpkg_json(spec)
+
+    # Reuse single-service Qt UI / build / deploy machinery — these are
+    # mostly proto-agnostic.  MainWindow is a placeholder UI; user fills
+    # in the per-service buttons / forms after generation.
+    files["qt_client_grpcpp/src/main.cpp"]        = _qt_client_grpcpp_main_cpp(spec)
+    files["qt_client_grpcpp/src/MainWindow.h"]    = _qt_client_grpcpp_mainwindow_h(spec, services)
+    files["qt_client_grpcpp/src/MainWindow.cpp"]  = _qt_client_grpcpp_mainwindow_cpp(spec, services)
+    files["qt_client_grpcpp/src/MainWindow.ui"]   = _qt_client_mainwindow_ui(spec)
+    files["qt_client_grpcpp/build_qt.bat"]        = _qt_client_grpcpp_build_qt_bat(spec)
+    files["qt_client_grpcpp/deploy_qt.bat"]       = _qt_client_grpcpp_deploy_qt_bat(spec)
+    files["qt_client_grpcpp/export_prebuilt.bat"] = _qt_client_grpcpp_export_prebuilt_bat(spec)
+    files["qt_client_grpcpp/README.md"]           = _qt_client_grpcpp_readme(spec)
+    files["qt_client_grpcpp/.gitignore"]          = "build/\nprebuilt/\ndeploy/\n*.user\n"
+    return files
+
+
+def _mp_qt_client_grpcpp_cmake(spec, services) -> str:
+    """qt_client_grpcpp/CMakeLists.txt for multi_proto layout.
+
+    Identical to the single-service version EXCEPT the ``_proto_files``
+    list expands to every distinct .proto file (deduped by filename, so
+    single-file multi-service shares one entry).  protobuf_generate +
+    grpc codegen handle CMake lists natively.
+    """
+    sn = spec.snake_name
+
+    # Build the deduped proto-files list.
+    seen = set()
+    proto_lines = []
+    for svc in services:
+        fn = _mp_proto_filename(svc)
+        if fn in seen:
+            continue
+        seen.add(fn)
+        proto_lines.append(f'    "${{_proto_path}}/{fn}"')
+    proto_files_block = '\n'.join(proto_lines) if proto_lines else '    # no .proto files'
+
+    return f'''cmake_minimum_required(VERSION 3.20)
+
+# vcpkg auto-detection BEFORE project() so the toolchain loads correctly.
+# Mirrors the parent server CMakeLists; overlays live in the PARENT project.
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{{VCPKG_ROOT}})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{{VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected from VCPKG_ROOT env var)")
+elseif(NOT CMAKE_TOOLCHAIN_FILE)
+    message(WARNING
+        "qt_client_grpcpp: VCPKG_ROOT not set + CMAKE_TOOLCHAIN_FILE missing - "
+        "find_package will likely fail.")
+endif()
+if(EXISTS "${{CMAKE_CURRENT_SOURCE_DIR}}/../triplets/x64-mingw-qt.cmake")
+    if(NOT VCPKG_TARGET_TRIPLET)
+        set(VCPKG_TARGET_TRIPLET "x64-mingw-qt"
+            CACHE STRING "vcpkg triplet (parent overlay)")
+    endif()
+    if(NOT VCPKG_OVERLAY_TRIPLETS)
+        set(VCPKG_OVERLAY_TRIPLETS "${{CMAKE_CURRENT_SOURCE_DIR}}/../triplets"
+            CACHE PATH "vcpkg overlay triplets")
+    endif()
+    if(NOT VCPKG_OVERLAY_PORTS AND EXISTS "${{CMAKE_CURRENT_SOURCE_DIR}}/../ports")
+        set(VCPKG_OVERLAY_PORTS "${{CMAKE_CURRENT_SOURCE_DIR}}/../ports"
+            CACHE PATH "vcpkg overlay ports")
+    endif()
+endif()
+if(NOT DEFINED QT_CREATOR_SKIP_VCPKG_SETUP)
+    set(QT_CREATOR_SKIP_VCPKG_SETUP ON CACHE BOOL "")
+endif()
+if(NOT CMAKE_MAKE_PROGRAM)
+    set(_ninja_candidates "C:/Qt/Tools/Ninja/ninja.exe" "C:/Qt/Tools/Ninja_64/ninja.exe")
+    if(DEFINED ENV{{VCPKG_ROOT}})
+        file(GLOB _vcpkg_ninja "$ENV{{VCPKG_ROOT}}/downloads/tools/ninja-*/ninja.exe")
+        list(APPEND _ninja_candidates ${{_vcpkg_ninja}})
+    endif()
+    foreach(_n IN LISTS _ninja_candidates)
+        if(EXISTS "${{_n}}")
+            set(CMAKE_MAKE_PROGRAM "${{_n}}" CACHE FILEPATH "Ninja (auto-detected)")
+            break()
+        endif()
+    endforeach()
+endif()
+
+project({spec.service_name}QtClientGrpcpp VERSION {spec.version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{{Qt6_DIR}})
+    set(Qt6_DIR "$ENV{{Qt6_DIR}}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{{QT_DIR}} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{{QT_DIR}}")
+endif()
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Concurrent)
+
+if(EXISTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/share")
+    list(APPEND CMAKE_PREFIX_PATH "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt")
+endif()
+if(NOT Protobuf_PROTOC_EXECUTABLE
+   AND EXISTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe")
+    set(Protobuf_PROTOC_EXECUTABLE
+        "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe"
+        CACHE FILEPATH "protoc")
+endif()
+
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC     CONFIG REQUIRED)
+
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+
+# Generate stubs into the build tree for ALL .proto files (multi_proto).
+# protobuf_generate accepts a CMake list of .proto sources and produces
+# stubs for every one in a single invocation.
+set(_proto_path "${{CMAKE_CURRENT_SOURCE_DIR}}/proto")
+set(_gen_dir    "${{CMAKE_CURRENT_BINARY_DIR}}/grpc_gen")
+file(MAKE_DIRECTORY "${{_gen_dir}}")
+
+set(_proto_files
+{proto_files_block})
+
+protobuf_generate(
+    LANGUAGE       cpp
+    OUT_VAR        PROTO_SRCS
+    PROTOS         ${{_proto_files}}
+    PROTOC_OUT_DIR "${{_gen_dir}}"
+    IMPORT_DIRS    "${{_proto_path}}")
+
+protobuf_generate(
+    LANGUAGE             grpc
+    OUT_VAR              GRPC_SRCS
+    PROTOS               ${{_proto_files}}
+    PROTOC_OUT_DIR       "${{_gen_dir}}"
+    IMPORT_DIRS          "${{_proto_path}}"
+    GENERATE_EXTENSIONS  .grpc.pb.h .grpc.pb.cc
+    PLUGIN               "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>")
+
+qt_add_executable({sn}_qt_gui
+    src/main.cpp
+    src/MainWindow.cpp
+    src/MainWindow.h
+    src/MainWindow.ui
+    ${{PROTO_SRCS}}
+    ${{GRPC_SRCS}})
+
+set(CMAKE_AUTOUIC_SEARCH_PATHS "${{CMAKE_CURRENT_SOURCE_DIR}}/src")
+
+target_include_directories({sn}_qt_gui PRIVATE
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/src"
+    "${{_gen_dir}}")
+
+target_link_libraries({sn}_qt_gui PRIVATE
+    Qt6::Widgets Qt6::Network Qt6::Concurrent
+    protobuf::libprotobuf
+    gRPC::grpc++)
+
+set_target_properties({sn}_qt_gui PROPERTIES
+    WIN32_EXECUTABLE ON MACOSX_BUNDLE ON)
+
+{_MB_DEPLOY_RUNTIME_BLOCK}
+mb_deploy_runtime({sn}_qt_gui QT_APP)
+'''
+
+
+# -------- Per-service .proto generator (multi_proto fallback) --------
+def _mp_gen_proto(svc) -> str:
+    """Generate a single .proto for one service when the user didn't
+    import a hand-written one.  Same shape as the single-service
+    fallback but parameterised on per-service proto package."""
+    pkg = _mp_proto_package(svc)
+    type_map = {'string': 'string', 'int32': 'int32', 'int64': 'int64',
+                'bool': 'bool', 'float': 'float', 'double': 'double',
+                'bytes': 'bytes'}
+    lines = [
+        'syntax = "proto3";',
+        '',
+        f'package {pkg};',
+        '',
+        f'service {svc.name} {{',
+    ]
+    for m in svc.methods:
+        stream = "stream " if m.server_streaming else ""
+        lines.append(f'  rpc {m.name} ({m.name}Request) returns ({stream}{m.name}Response);')
+    lines.append('}')
+    lines.append('')
+    for m in svc.methods:
+        lines.append(f'message {m.name}Request {{')
+        for i, p in enumerate(m.params, 1):
+            t = type_map.get((p.type or 'string').lower(), 'string')
+            lines.append(f'  {t} {p.name} = {i};')
+        if not m.params:
+            lines.append('  // no parameters')
+        lines.append('}')
+        lines.append('')
+        rt = type_map.get((m.return_type or 'string').lower(), 'string')
+        lines.append(f'message {m.name}Response {{')
+        lines.append(f'  {rt} value = 1;')
+        lines.append('}')
+        lines.append('')
+    return '\n'.join(lines)
+
+
+# -------- Settings (shared by all services in this binary) --------
+def _mp_settings_h(spec) -> str:
+    sn = spec.snake_name
+    prefix = sn.upper() + "_"
+    return f'''#pragma once
+
+#include "MicroserviceBase/Settings.h"
+
+// Shared settings for the {spec.service_name} multi-service binary.
+// All hosted gRPC services use ONE Consul registration, ONE port, ONE
+// service name (read from env via the {prefix} prefix).
+
+namespace {sn} {{
+
+struct Settings : public microservice_base::BaseServiceSettings {{
+    Settings() {{
+        service_name = "{sn}";
+        loadBaseFromEnv("{prefix}");
+    }}
+}};
+
+}}  // namespace {sn}
+'''
+
+
+# -------- main.cpp registers ALL services on one ServerBuilder --------
+def _mp_main_cpp(spec, services) -> str:
+    sn = spec.snake_name
+    includes = []
+    instances = []
+    adapters = []
+    add_calls = []
+    for svc in services:
+        svc_snake = _mono_snake(svc.name)
+        svc_pascal = svc.name
+        ns = _mp_proto_namespace(svc)
+        pkg = _mp_proto_package(svc)
+        includes.append(f'#include "{svc_snake}/domain/{svc_pascal}.h"')
+        includes.append(f'#include "{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.h"')
+        instances.append(
+            f'        {svc_snake}::{svc_pascal} {svc_snake}Domain;'
+        )
+        adapters.append(
+            f'        {svc_snake}::{svc_pascal}GrpcAdapter '
+            f'{svc_snake}Adapter({svc_snake}Domain);'
+        )
+        add_calls.append(
+            f'        runner.addService(&{svc_snake}Adapter, '
+            f'"{pkg}.{svc_pascal}");'
+        )
+
+    inc_block = '\n'.join(includes)
+    inst_block = '\n'.join(instances)
+    adapt_block = '\n'.join(adapters)
+    add_block = '\n'.join(add_calls)
+
+    return f'''#include <iostream>
+#include "MicroserviceBase/ServiceRunner.h"
+
+#include "Settings.h"
+{inc_block}
+
+// Multi-proto / single-binary entry point.  This process hosts
+// {len(services)} gRPC services on one port, with one Consul
+// registration.  Shutdown signals deregister all services together.
+
+int main() {{
+    try {{
+        {sn}::Settings settings;
+
+        // Domain instances (pure business logic, no gRPC dependency).
+{inst_block}
+
+        // Adapter instances (gRPC service implementations wrapping domain).
+{adapt_block}
+
+        microservice_base::ServiceRunner runner(settings, {{"v1"}});
+{add_block}
+        runner.serveForever();
+    }} catch (const std::exception& e) {{
+        std::cerr << "FATAL: " << e.what() << std::endl;
+        return 1;
+    }}
+    return 0;
+}}
+'''
+
+
+# -------- Per-service domain --------
+def _mp_domain_h(spec, svc) -> str:
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    method_hints = "\n".join(
+        f"    // rpc {m.name}(...)  -  wire in adapters/api/{svc_pascal}GrpcAdapter.cpp"
+        for m in svc.methods
+    ) or "    // (no methods declared in proto yet)"
+    return f'''#pragma once
+
+// Domain layer for {svc.name}.
+// Pure C++ — no gRPC, no Consul.
+
+#include <string>
+
+namespace {svc_snake} {{
+
+class {svc_pascal} {{
+public:
+    // TODO: add your methods here.  Expected API surface:
+{method_hints}
+}};
+
+}}  // namespace {svc_snake}
+'''
+
+
+def _mp_domain_cpp(spec, svc) -> str:
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    return f'''#include "{svc_pascal}.h"
+
+namespace {svc_snake} {{
+
+// TODO: implement your domain methods here.
+// (Empty body — class is currently a placeholder.)
+
+}}  // namespace {svc_snake}
+'''
+
+
+# -------- Per-service gRPC adapter --------
+def _mp_input_cpp_type(m, ns_fallback: str) -> str:
+    """C++ fully-qualified request type for an RPC method.
+
+    Imported .protos pre-populate ``m.input_type`` with the FQ proto type
+    name (e.g. ``Com_Setup_Device.InterfaceTypeRequest``) -- convert dots
+    to ``::`` and prefix ``::`` so it's anchored at the global ns.
+
+    When ``input_type`` is empty (wizard-defined methods, no .proto
+    import), fall back to the ``<MethodName>Request`` convention used
+    by the auto-generated _mp_gen_proto fallback.
+    """
+    if getattr(m, "input_type", "") and m.input_type.strip():
+        return "::" + m.input_type.strip().replace(".", "::")
+    return f"::{ns_fallback}::{m.name}Request"
+
+
+def _mp_output_cpp_type(m, ns_fallback: str) -> str:
+    if getattr(m, "output_type", "") and m.output_type.strip():
+        return "::" + m.output_type.strip().replace(".", "::")
+    return f"::{ns_fallback}::{m.name}Response"
+
+
+def _mp_adapter_h(spec, svc) -> str:
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    basename = _mp_proto_basename(svc)
+    ns = _mp_proto_namespace(svc)
+    method_decls = "\n".join(
+        f'    grpc::Status {m.name}(grpc::ServerContext* ctx,\n'
+        f'        const {_mp_input_cpp_type(m, ns)}* request,\n'
+        f'        {_mp_output_cpp_type(m, ns)}* response) override;'
+        for m in svc.methods
+    )
+    return f'''#pragma once
+
+#include "{basename}.grpc.pb.h"
+#include "../../domain/{svc_pascal}.h"
+
+namespace {svc_snake} {{
+
+// gRPC adapter: thin wrapper translating proto messages <-> domain calls.
+class {svc_pascal}GrpcAdapter final
+    : public ::{ns}::{svc_pascal}::Service {{
+public:
+    explicit {svc_pascal}GrpcAdapter({svc_pascal}& domain) : m_domain(domain) {{}}
+
+{method_decls}
+
+private:
+    {svc_pascal}& m_domain;
+}};
+
+}}  // namespace {svc_snake}
+'''
+
+
+def _mp_adapter_cpp(spec, svc) -> str:
+    svc_snake = _mono_snake(svc.name)
+    svc_pascal = svc.name
+    ns = _mp_proto_namespace(svc)
+    method_impls = "\n\n".join(
+        f'grpc::Status {svc_pascal}GrpcAdapter::{m.name}(\n'
+        f'    grpc::ServerContext* /*ctx*/,\n'
+        f'    const {_mp_input_cpp_type(m, ns)}* /*request*/,\n'
+        f'    {_mp_output_cpp_type(m, ns)}* /*response*/) {{\n'
+        f'    // TODO: read fields from `request`, call m_domain, populate `response`.\n'
+        f'    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TODO: implement {m.name}");\n'
+        f'}}'
+        for m in svc.methods
+    )
+    return f'''#include "{svc_pascal}GrpcAdapter.h"
+
+namespace {svc_snake} {{
+
+{method_impls}
+
+}}  // namespace {svc_snake}
+'''
+
+
+# -------- CMakeLists: N proto codegens + 1 add_executable --------
+def _mp_cmake(spec, services) -> str:
+    sn = spec.snake_name
+    project_name = spec.service_name
+
+    # Build the per-proto codegen blocks (auto-generated mode) and the
+    # source-list expansion for the single executable.  Dedup by basename
+    # so single-file multi-service multi_proto (all services share one
+    # .proto) doesn't emit duplicate add_custom_command -> same outputs,
+    # which CMake rejects.
+    codegen_blocks = []
+    proto_src_lists = []
+    proto_inc_dirs = set()
+    seen_basenames = set()
+    for svc in services:
+        basename = _mp_proto_basename(svc)
+        if basename in seen_basenames:
+            continue
+        seen_basenames.add(basename)
+        proto_filename = _mp_proto_filename(svc)
+        var = basename.upper() + "_SRCS"
+        proto_src_lists.append(f"${{{var}}}")
+        codegen_blocks.append(_mp_proto_codegen_block(proto_filename, basename, var))
+    codegen_joined = '\n'.join(codegen_blocks)
+    proto_srcs_var_uses = '\n    '.join(proto_src_lists)
+
+    # Per-service source list.  Include .h files alongside .cpp so they
+    # appear in Qt Creator's project view -- CMake's project model only
+    # surfaces files listed as target sources, so headers omitted here
+    # are invisible in the tree (build-wise irrelevant, but bad UX).
+    per_svc_srcs = ['    src/Settings.h']
+    for svc in services:
+        svc_snake = _mono_snake(svc.name)
+        svc_pascal = svc.name
+        per_svc_srcs.append(f'    src/{svc_snake}/domain/{svc_pascal}.h')
+        per_svc_srcs.append(f'    src/{svc_snake}/domain/{svc_pascal}.cpp')
+        per_svc_srcs.append(f'    src/{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.h')
+        per_svc_srcs.append(f'    src/{svc_snake}/adapters/api/{svc_pascal}GrpcAdapter.cpp')
+    per_svc_block = '\n'.join(per_svc_srcs)
+
+    return f'''cmake_minimum_required(VERSION 3.16)
+
+# vcpkg auto-detection BEFORE project() so the toolchain loads correctly.
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{{VCPKG_ROOT}})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{{VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected from VCPKG_ROOT env var)")
+elseif(NOT CMAKE_TOOLCHAIN_FILE)
+    message(WARNING
+        "{project_name}: VCPKG_ROOT not set + CMAKE_TOOLCHAIN_FILE missing - "
+        "find_package will likely fail.  Set VCPKG_ROOT or pass "
+        "-DCMAKE_TOOLCHAIN_FILE=... directly.")
+endif()
+if(EXISTS "${{CMAKE_CURRENT_SOURCE_DIR}}/triplets/x64-mingw-qt.cmake")
+    if(NOT VCPKG_TARGET_TRIPLET)
+        set(VCPKG_TARGET_TRIPLET "x64-mingw-qt"
+            CACHE STRING "vcpkg triplet (auto-set from triplets/ overlay)")
+    endif()
+    if(NOT VCPKG_OVERLAY_TRIPLETS)
+        set(VCPKG_OVERLAY_TRIPLETS "${{CMAKE_CURRENT_SOURCE_DIR}}/triplets"
+            CACHE PATH "vcpkg overlay triplets directory")
+    endif()
+    if(NOT VCPKG_OVERLAY_PORTS AND EXISTS "${{CMAKE_CURRENT_SOURCE_DIR}}/ports")
+        set(VCPKG_OVERLAY_PORTS "${{CMAKE_CURRENT_SOURCE_DIR}}/ports"
+            CACHE PATH "vcpkg overlay ports directory")
+    endif()
+endif()
+
+project({project_name} VERSION {spec.version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Manifest-mode fallback: when vcpkg toolchain didn't load but a populated
+# vcpkg_installed/x64-mingw-qt/ exists in the build dir.
+if(EXISTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/share")
+    list(APPEND CMAKE_PREFIX_PATH "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt")
+endif()
+if(NOT Protobuf_PROTOC_EXECUTABLE
+   AND EXISTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe")
+    set(Protobuf_PROTOC_EXECUTABLE
+        "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe"
+        CACHE FILEPATH "protoc (target triplet)")
+endif()
+
+find_package(gRPC     CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(CURL     CONFIG REQUIRED)
+
+if(TARGET gRPC::grpc++_reflection)
+    set(GRPC_REFL_LIB gRPC::grpc++_reflection)
+else()
+    set(GRPC_REFL_LIB "")
+endif()
+
+# MicroserviceBase runtime (find_package + env-var + in-tree fallback).
+find_package(MicroserviceBase CONFIG QUIET)
+if(NOT MicroserviceBase_FOUND)
+    set(_mb_candidates "")
+    if(DEFINED ENV{{MICROSERVICEBASE_DIR}})
+        list(APPEND _mb_candidates
+            "$ENV{{MICROSERVICEBASE_DIR}}/MicroserviceBase/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}/runtime_cpp"
+            "$ENV{{MICROSERVICEBASE_DIR}}")
+    endif()
+    list(APPEND _mb_candidates
+        "${{CMAKE_CURRENT_SOURCE_DIR}}/../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${{_p}}/CMakeLists.txt")
+            set(_mb_in_tree "${{_p}}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
+        add_subdirectory("${{_mb_in_tree}}"
+                         "${{CMAKE_CURRENT_BINARY_DIR}}/microservice_base_runtime")
+    else()
+        message(FATAL_ERROR
+            "MicroserviceBase runtime not found.  Set MICROSERVICEBASE_DIR env var "
+            "to your framework checkout, or install + add to CMAKE_PREFIX_PATH "
+            "(see docs/runtime_cpp_install.md).")
+    endif()
+endif()
+
+{_MB_DEPLOY_RUNTIME_BLOCK}
+
+# ---- Proto codegen (one block per .proto file) -----------------------
+set(PROTO_DIR "${{CMAKE_CURRENT_SOURCE_DIR}}/proto")
+set(GEN_DIR "${{CMAKE_CURRENT_BINARY_DIR}}/gen")
+file(MAKE_DIRECTORY "${{GEN_DIR}}")
+if(TARGET protobuf::protoc)
+    get_target_property(_protoc protobuf::protoc LOCATION)
+else()
+    find_program(_protoc NAMES protoc protoc.exe
+        HINTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-windows/tools/protobuf"
+              "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/protobuf"
+        REQUIRED)
+endif()
+if(TARGET gRPC::grpc_cpp_plugin)
+    get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin LOCATION)
+else()
+    find_program(_grpc_cpp NAMES grpc_cpp_plugin grpc_cpp_plugin.exe
+        HINTS "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-windows/tools/grpc"
+              "${{CMAKE_BINARY_DIR}}/vcpkg_installed/x64-mingw-qt/tools/grpc"
+        REQUIRED)
+endif()
+
+{codegen_joined}
+
+# ---- Single executable hosting all services --------------------------
+add_executable({sn}
+    src/main.cpp
+{per_svc_block}
+    {proto_srcs_var_uses}
+)
+
+target_include_directories({sn} PRIVATE
+    "${{CMAKE_CURRENT_SOURCE_DIR}}/src"
+    "${{GEN_DIR}}"
+)
+
+target_link_libraries({sn} PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++ ${{GRPC_REFL_LIB}}
+    protobuf::libprotobuf
+)
+mb_deploy_runtime({sn})
+
+# ---- On-demand `dist` target ----
+# Builds the .exe (if not already built) then runs deploy_qt_vcpkg.bat
+# to package a self-contained dist-qt-vcpkg/ folder.  Invoke from CLI:
+#   cmake --build <build-dir> --target dist
+# In Qt Creator: Projects -> Build -> Build Steps -> Add "CMake Build" step
+# with Targets = "dist".  Doesn't fire on F5 / Build All -- only when
+# explicitly requested -- so day-to-day builds stay snappy.
+if(WIN32 AND EXISTS "${{CMAKE_SOURCE_DIR}}/deploy_qt_vcpkg.bat")
+    add_custom_target(dist
+        COMMAND "${{CMAKE_SOURCE_DIR}}/deploy_qt_vcpkg.bat"
+        WORKING_DIRECTORY "${{CMAKE_SOURCE_DIR}}"
+        DEPENDS {sn}
+        COMMENT "[mb-dist] Packaging dist-qt-vcpkg/ via deploy_qt_vcpkg.bat"
+        USES_TERMINAL
+        VERBATIM)
+endif()
+'''
+
+
+def _mp_proto_codegen_block(proto_filename: str, basename: str, var: str) -> str:
+    """Emit the add_custom_command + variable for one .proto's codegen.
+
+    Quoting note: with VERBATIM, embedded quotes inside an argument value
+    (e.g. `--proto_path="${PROTO_DIR}"`) get passed to protoc as part of
+    the path literal -- protoc then sees `"D:/path"` (with quotes) and
+    reports `directory does not exist`.  The fix is to drop the inner
+    quotes; VERBATIM still escapes spaces correctly for paths containing
+    spaces because each argument is passed as one element.
+    """
+    return f'''add_custom_command(
+    OUTPUT
+        "${{GEN_DIR}}/{basename}.pb.cc"  "${{GEN_DIR}}/{basename}.pb.h"
+        "${{GEN_DIR}}/{basename}.grpc.pb.cc" "${{GEN_DIR}}/{basename}.grpc.pb.h"
+    COMMAND ${{_protoc}}
+        --proto_path=${{PROTO_DIR}}
+        --cpp_out=${{GEN_DIR}}
+        --grpc_out=${{GEN_DIR}}
+        --plugin=protoc-gen-grpc=${{_grpc_cpp}}
+        ${{PROTO_DIR}}/{proto_filename}
+    DEPENDS "${{PROTO_DIR}}/{proto_filename}"
+    COMMENT "Generating gRPC stubs for {proto_filename}"
+    VERBATIM)
+set({var}
+    "${{GEN_DIR}}/{basename}.pb.cc"
+    "${{GEN_DIR}}/{basename}.grpc.pb.cc")'''
+
+
+# -------- Nomad job (one job, one .exe, one port) --------
+def _mp_nomad(spec, services) -> str:
+    sn = spec.snake_name
+    prefix = sn.upper() + "_"
+    services_list = ", ".join(svc.name for svc in services)
+    # NOTE: NO `service { ... }` block here.
+    # Consul registration is performed by the C++ ServiceRunner at startup
+    # (HTTP API call to Consul agent).  Nomad's service block validates
+    # service names against RFC 1123 (alphanumeric + dashes only) which
+    # rejects snake_case names like "multi_service".  Letting the runtime
+    # handle registration sidesteps that AND keeps registration / health
+    # check / shutdown deregister atomic with the process lifecycle.
+    return f'''# Nomad job for {spec.service_name}.
+# Hosts {len(services)} gRPC service(s) in one process: {services_list}.
+# Single port, single Consul registration (done by ServiceRunner at startup).
+
+job "{sn}" {{
+  datacenters = ["{spec.nomad_dc}"]
+  type        = "service"
+
+  group "{sn}" {{
+    count = 1
+
+    network {{
+      port "grpc" {{}}   # dynamic port — Nomad picks a free one
+    }}
+
+    task "server" {{
+      driver = "{spec.nomad_driver}"
+
+      # Windows: launch via run_{sn}.bat (emitted by deploy_qt_vcpkg.bat
+      # into dist-qt-vcpkg/).  The .bat sets PATH so vcpkg/MinGW DLLs
+      # resolve regardless of which agent inherits which environment.
+      # The `dist-msys2` segment is a placeholder -- deploy_qt_vcpkg.bat
+      # rewrites the project path AND swaps dist-msys2 -> dist-qt-vcpkg
+      # when copying this HCL into dist-qt-vcpkg/deploy/.
+      # Path placeholder uses ONE segment after `C:/path/to/` so
+      # prep_nomad_paths.bat's regex `C:/path/to/[^/]+` matches it.
+      config {{
+        command = "cmd.exe"
+        args    = ["/c", "C:/path/to/{spec.service_name}/dist-msys2/run_{sn}.bat"]
+      }}
+
+      # On Linux drop the cmd.exe wrapper and run the binary directly:
+      # config {{
+      #   command = "/path/to/{sn}"
+      # }}
+
+      env {{
+        {prefix}GRPC_PORT      = "${{NOMAD_PORT_grpc}}"
+        {prefix}ADVERTISE_ADDR = "127.0.0.1"
+        {prefix}CONSUL_ADDR    = "{spec.nomad_consul_addr}"
+        {prefix}LOG_LEVEL      = "INFO"
+      }}
+
+      resources {{
+        cpu    = {spec.nomad_cpu}
+        memory = {spec.nomad_mem}
+      }}
+    }}
+  }}
+}}
+'''
+
+
+# -------- Build scripts (single .exe — simpler than monorepo's N-exe loop) --------
+def _mp_build_bat(spec) -> str:
+    sn = spec.snake_name
+    return f'''@echo off
+:: Build the {spec.service_name} multi-service binary.
+setlocal EnableDelayedExpansion
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+call "%SCRIPT_DIR%\\set_env.bat"
+cmake -S "%SCRIPT_DIR%" -B "%SCRIPT_DIR%\\build" -G Ninja ^
+    -DCMAKE_BUILD_TYPE=Release || exit /b 1
+cmake --build "%SCRIPT_DIR%\\build" --config Release || exit /b 1
+echo [build] OK -^> %SCRIPT_DIR%\\build\\{sn}.exe
+endlocal
+'''
+
+
+def _mp_build_sh(spec) -> str:
+    sn = spec.snake_name
+    return f'''#!/usr/bin/env bash
+# Build the {spec.service_name} multi-service binary.
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+source "$SCRIPT_DIR/set_env.sh"
+cmake -S "$SCRIPT_DIR" -B "$SCRIPT_DIR/build" -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build "$SCRIPT_DIR/build" --config Release
+echo "[build] OK -> $SCRIPT_DIR/build/{sn}"
+'''
+
+
+# -------- Stub-gen helpers (walk all .proto files in proto/) --------
+def _mp_gen_stubs_bat(spec, services) -> str:
+    proto_list = " ".join(_mp_proto_filename(svc) for svc in services)
+    return f'''@echo off
+:: Generate C++ proto + grpc stubs for all .proto files.
+setlocal EnableDelayedExpansion
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+where protoc >nul 2>&1 || ( echo [stubs] ERROR: protoc not in PATH & exit /b 1 )
+where grpc_cpp_plugin >nul 2>&1 || ( echo [stubs] ERROR: grpc_cpp_plugin not in PATH & exit /b 1 )
+for %%P in ({proto_list}) do (
+    echo [stubs] %%P
+    protoc --proto_path="%SCRIPT_DIR%" --cpp_out="%SCRIPT_DIR%" --grpc_out="%SCRIPT_DIR%" ^
+        --plugin=protoc-gen-grpc="%~dp0..\\..\\grpc_cpp_plugin.exe" ^
+        "%SCRIPT_DIR%\\%%P" || exit /b 1
+)
+echo [stubs] Done.
+endlocal
+'''
+
+
+def _mp_gen_stubs_sh(spec, services) -> str:
+    proto_list = " ".join(_mp_proto_filename(svc) for svc in services)
+    return f'''#!/usr/bin/env bash
+# Generate C++ proto + grpc stubs for all .proto files.
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+for proto in {proto_list}; do
+    echo "[stubs] $proto"
+    protoc --proto_path="$SCRIPT_DIR" --cpp_out="$SCRIPT_DIR" --grpc_out="$SCRIPT_DIR" \\
+        --plugin=protoc-gen-grpc="$(which grpc_cpp_plugin)" \\
+        "$SCRIPT_DIR/$proto"
+done
+echo "[stubs] Done."
+'''
+
+
+# -------- README --------
+def _mp_readme(spec, services) -> str:
+    sn = spec.snake_name
+    svc_lines = "\n".join(
+        f"- **{svc.name}** — proto `{_mp_proto_filename(svc)}`, "
+        f"package `{_mp_proto_package(svc)}`, "
+        f"{len(svc.methods)} method(s)"
+        for svc in services
+    )
+
+    # Annotated folder tree.  Mark user-editable spots with [edit] so a
+    # new contributor can find where their work goes vs. what to leave alone.
+    svc_tree_lines = []
+    for svc in services:
+        svc_snake = _mono_snake(svc.name)
+        svc_pascal = svc.name
+        svc_tree_lines.append(
+            f"│   ├── {svc_snake}/                "
+            f"# {svc_pascal} (proto `{_mp_proto_filename(svc)}`)"
+        )
+        svc_tree_lines.append(
+            f"│   │   ├── domain/{svc_pascal}.{{h,cpp}}"
+            f"      # [edit] business logic (pure C++)"
+        )
+        svc_tree_lines.append(
+            f"│   │   └── adapters/api/{svc_pascal}GrpcAdapter.{{h,cpp}}"
+            f"  # [edit] proto<->domain wrapper"
+        )
+    svc_tree = "\n".join(svc_tree_lines)
+
+    return f'''# {spec.service_name}
+
+{spec.description or spec.service_name + ' multi-service binary.'}
+
+**Layout**: `multi_proto` — {len(services)} gRPC services hosted in ONE
+binary, ONE Consul registration, ONE port (vehicle-example pattern).
+
+## Hosted services
+
+{svc_lines}
+
+## Folder structure
+
+`[edit]` marks files you'll write business logic into.  Everything else
+is scaffolding regenerated by `mb-scaffold` — safe to leave alone.
+
+```
+{spec.service_name}/
+├── proto/                       # N .proto files (one per service, each with its own package)
+{chr(10).join(f"│   ├── {_mp_proto_filename(svc)}" for svc in services)}
+├── src/
+│   ├── main.cpp                 # registers ALL services on one ServerBuilder
+│   ├── Settings.h               # shared config (env prefix {sn.upper()}_)
+{svc_tree}
+├── deploy/{sn}.nomad.hcl  # Nomad job (single .exe, dynamic port)
+├── client/                      # console client subproject
+│   ├── src/client.cpp           # interactive RPC tester (Consul or --direct)
+│   └── CMakeLists.txt
+├── CMakeLists.txt               # one add_executable, N proto codegens
+├── build_deploy.bat / .sh       # one-shot build for the server binary
+├── set_env*.bat / .sh           # toolchain env (VCPKG_ROOT, QT_DIR, etc.)
+└── README.md
+```
+
+## Build & run flow
+
+```mermaid
+flowchart TD
+    Start([Start])
+    Setup["1\\. One-time setup<br/>setx VCPKG_ROOT, QT_DIR, QT_MINGW_BIN"]
+    Choose{{"Toolchain?"}}
+    Prebuilt{{"Have prebuilt zip?"}}
+    Import["import_prebuilt.bat &lt;zip&gt;<br/>~30 seconds"]
+    BuildVcpkg["build_qt_vcpkg.bat<br/>(or Qt Creator F5)"]
+    BuildMSYS2["build_deploy_msys2.bat"]
+    BuildResult["build-qt-vcpkg/{sn}.exe<br/>+ runtime DLLs alongside"]
+    LocalRun["Run locally:<br/>{sn}.exe"]
+    Pkg["deploy_qt_vcpkg.bat<br/>→ dist-qt-vcpkg/"]
+    NomadRun["nomad job run<br/>deploy/{sn}.nomad.hcl"]
+    Discover["Clients discover via Consul<br/>(svc name: {sn})"]
+
+    Start --> Setup --> Choose
+    Choose -->|"Qt MinGW + vcpkg<br/>(recommended)"| Prebuilt
+    Choose -->|MSYS2| BuildMSYS2 --> BuildResult
+    Prebuilt -->|"Yes (~2 min total)"| Import --> BuildVcpkg
+    Prebuilt -->|"No (first build ~30-60 min)"| BuildVcpkg
+    BuildVcpkg --> BuildResult
+    BuildResult --> LocalRun
+    BuildResult -->|For sharing| Pkg
+    LocalRun --> NomadRun
+    Pkg --> NomadRun
+    NomadRun --> Discover
+```
+
+## Build (quick)
+
+```cmd
+build_deploy.bat        :: Windows MSYS2 path
+build_qt_vcpkg.bat      :: Windows Qt MinGW + vcpkg path
+./build_deploy.sh       # Linux
+```
+
+Output: one executable `build*/{sn}.exe` listening on
+`${sn.upper()}_GRPC_PORT` (Nomad-allocated when run under Nomad).
+gRPC server reflection enumerates every hosted service so generic
+clients (Manager GUI, `grpcurl`) discover them transparently.
+
+## Why multi_proto vs. monorepo
+
+Use **multi_proto** (this layout) when the services are:
+- conceptually one device with multiple functional surfaces
+  (e.g. PowerSupply: configuration + control), AND
+- always co-deployed (one binary, one process), AND
+- benefit from sharing a Consul registration / port / lifecycle.
+
+Use **monorepo** when services are independent enough to be deployed
+separately (each gets its own .exe, its own Consul registration,
+its own port).
+'''
+
+
+# =======================================================================
 # Qt-native client (qt_client/) — uses Qt6::Grpc + Qt6::Protobuf
 # =======================================================================
 #
@@ -6234,6 +8010,8 @@ find_package(Qt6 REQUIRED COMPONENTS
 qt_standard_project_setup()
 set(CMAKE_AUTOMOC ON)
 
+{_MB_DEPLOY_RUNTIME_BLOCK}
+
 qt_add_executable({sn}_qt_gui
     src/main.cpp
     src/MainWindow.cpp
@@ -6276,6 +8054,8 @@ target_link_libraries({sn}_qt_gui PRIVATE
 set_target_properties({sn}_qt_gui PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE    ON)
+
+mb_deploy_runtime({sn}_qt_gui QT_APP)
 '''
 
 
@@ -7768,24 +9548,43 @@ if defined SRC (
     set "INSTALLED_PARENT=!SRC!\\vcpkg_installed"
     set "SRC_LABEL=user-specified"
 ) else (
-    for /d %%D in ("%SCRIPT_DIR%\\build\\Desktop_Qt_*") do (
-        if exist "%%D\\vcpkg_installed\\x64-mingw-qt\\share\\grpc" (
-            if not defined INSTALLED_PARENT (
-                set "INSTALLED_PARENT=%%D\\vcpkg_installed"
-                set "SRC_LABEL=Qt Creator (%%~nxD)"
-            )
-        )
-    )
-    if not defined INSTALLED_PARENT (
-        if exist "%SCRIPT_DIR%\\build-qt-vcpkg\\vcpkg_installed\\x64-mingw-qt\\share\\grpc" (
-            set "INSTALLED_PARENT=%SCRIPT_DIR%\\build-qt-vcpkg\\vcpkg_installed"
-            set "SRC_LABEL=server CLI"
-        )
+    REM Auto-detect order matters: prefer the canonical CLI build dir
+    REM (build-qt-vcpkg/) because it's most likely a clean from-source
+    REM compile through our overlay-port (with gRPC_BUILD_CODEGEN=ON,
+    REM grpc++_reflection, gcc 13 ICE patch).  Qt Creator kit dirs
+    REM (build/Desktop_Qt_*/) often contain artifacts imported from a
+    REM prebuilt zip OR built with different feature flags -- bad source
+    REM for re-export since the receiver might miss reflection / codegen.
+    if exist "%SCRIPT_DIR%\\build-qt-vcpkg\\vcpkg_installed\\x64-mingw-qt\\share\\grpc" (
+        set "INSTALLED_PARENT=%SCRIPT_DIR%\\build-qt-vcpkg\\vcpkg_installed"
+        set "SRC_LABEL=server CLI (build-qt-vcpkg)"
     )
     if not defined INSTALLED_PARENT (
         if exist "%SCRIPT_DIR%\\qt_client_grpcpp\\build\\vcpkg_installed\\x64-mingw-qt\\share\\grpc" (
             set "INSTALLED_PARENT=%SCRIPT_DIR%\\qt_client_grpcpp\\build\\vcpkg_installed"
-            set "SRC_LABEL=client CLI"
+            set "SRC_LABEL=client CLI (qt_client_grpcpp/build)"
+        )
+    )
+    if not defined INSTALLED_PARENT (
+        for /d %%D in ("%SCRIPT_DIR%\\build\\Desktop_Qt_*") do (
+            if exist "%%D\\vcpkg_installed\\x64-mingw-qt\\share\\grpc" (
+                if not defined INSTALLED_PARENT (
+                    set "INSTALLED_PARENT=%%D\\vcpkg_installed"
+                    set "SRC_LABEL=Qt Creator (%%~nxD)"
+                )
+            )
+        )
+    )
+    REM Sanity warning: if we picked a Qt Creator dir, that often means
+    REM the user hasn't done a from-source CLI build yet -- their export
+    REM may be re-packaging an imported zip rather than fresh artifacts.
+    if defined INSTALLED_PARENT (
+        echo !INSTALLED_PARENT! | findstr /i "Desktop_Qt_" >nul
+        if not errorlevel 1 (
+            echo [export] WARN: source is a Qt Creator kit build dir.
+            echo [export]       If this came from an import_prebuilt.bat zip, the
+            echo [export]       export will just re-pack what was imported.  For a
+            echo [export]       fresh from-source build, run build_qt_vcpkg.bat first.
         )
     )
 )
@@ -7922,7 +9721,7 @@ def _qt_client_grpcpp_cmake_presets() -> str:
     {
       "name": "vcpkg-x64-mingw-qt",
       "displayName": "vcpkg + Qt MinGW 13.1.0 (Release)",
-      "description": "Builds with vcpkg-installed grpc/protobuf via Qt MinGW.  Overlays from parent project. If Qt Creator warns about debugger ABI mismatch, see parent README \"Troubleshooting: The ABI of the selected debugger does not match\".",
+      "description": "Builds with vcpkg-installed grpc/protobuf via Qt MinGW.  Overlays from parent project. If Qt Creator warns about debugger ABI mismatch, see parent README \\"Troubleshooting: The ABI of the selected debugger does not match\\".",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
@@ -8084,6 +9883,9 @@ target_link_libraries({sn}_qt_gui PRIVATE
 
 set_target_properties({sn}_qt_gui PROPERTIES
     WIN32_EXECUTABLE ON MACOSX_BUNDLE ON)
+
+{_MB_DEPLOY_RUNTIME_BLOCK}
+mb_deploy_runtime({sn}_qt_gui QT_APP)
 '''
 
 
@@ -8100,8 +9902,26 @@ int main(int argc, char** argv) {
 '''
 
 
-def _qt_client_grpcpp_mainwindow_h(spec) -> str:
+def _qt_client_grpcpp_mainwindow_h(spec, services=None) -> str:
     sn = spec.snake_name
+
+    # multi_proto: each service has its own .proto -> include each one
+    # (deduped by basename so single-file multi-service shares one).
+    # Single-service / monorepo: one shared proto named after the project.
+    if spec.layout == "multi_proto" and services:
+        seen = set()
+        proto_includes = []
+        for svc in services:
+            basename = _mp_proto_basename(svc)
+            if basename in seen:
+                continue
+            seen.add(basename)
+            proto_includes.append(f'#include "{basename}.pb.h"')
+            proto_includes.append(f'#include "{basename}.grpc.pb.h"')
+        proto_inc_block = "\n".join(proto_includes)
+    else:
+        proto_inc_block = f'#include "{sn}.pb.h"\n#include "{sn}.grpc.pb.h"'
+
     return f'''#pragma once
 
 #include <QWidget>
@@ -8112,8 +9932,7 @@ def _qt_client_grpcpp_mainwindow_h(spec) -> str:
 #include <functional>
 #include <memory>
 
-#include "{sn}.pb.h"
-#include "{sn}.grpc.pb.h"
+{proto_inc_block}
 
 namespace Ui {{ class MainWindow; }}
 namespace grpc {{ class Channel; }}
@@ -8156,21 +9975,30 @@ private:
 
 def _qt_client_grpcpp_mainwindow_cpp(spec, services) -> str:
     """Generate MainWindow.cpp with one dispatch entry per (service, method)
-    pair, using Google grpc++ sync stubs on a QtConcurrent::run worker."""
-    sn = spec.snake_name
-    ns = spec.proto_namespace
+    pair, using Google grpc++ sync stubs on a QtConcurrent::run worker.
 
+    multi_proto: each service has its own proto namespace (parsed from
+    its .proto's `package X;`) -- per-service inT/outT must use it.
+    Single-service / monorepo: all services share spec.proto_namespace.
+    """
+    sn = spec.snake_name
+    is_multi = spec.layout == "multi_proto"
+    project_ns = spec.proto_namespace
+
+    # Each entry: (display_name, fully_qualified_service_class, snake, methods, proto_namespace)
     entries = []
     if services:
         for s in services:
-            entries.append((s.name, f"{ns}::{s.name}", _mono_snake(s.name), s.methods))
+            svc_ns = _mp_proto_namespace(s) if is_multi else project_ns
+            entries.append((s.name, f"{svc_ns}::{s.name}", _mono_snake(s.name),
+                            s.methods, svc_ns))
     else:
         grpc_name = _grpc_svc_name(spec)
-        entries.append((grpc_name, f"{ns}::{grpc_name}",
-                        _snake(grpc_name), spec.methods or []))
+        entries.append((grpc_name, f"{project_ns}::{grpc_name}",
+                        _snake(grpc_name), spec.methods or [], project_ns))
 
     dispatch_blocks = []
-    for display, class_, _snake_name, methods in entries:
+    for display, class_, _snake_name, methods, ns in entries:
         method_labels = ", ".join(f'"{m.name}"' for m in methods)
         dispatch_blocks.append(
             f'    m_serviceList << "{display}";\n'
@@ -8797,6 +10625,13 @@ for %%F in ("%DIST%\\*.exe") do (
 
 REM Re-point Nomad HCL files (deploy/*.nomad.hcl) into dist-qt-vcpkg/.
 if exist "%SCRIPT_DIR%\\deploy\\*.nomad.hcl" (
+    REM Step 1: ensure source HCLs have the project's actual path baked in.
+    REM prep_nomad_paths.bat rewrites C:/path/to/<project> placeholders to
+    REM the real %SCRIPT_DIR% (idempotent -- skips files already rewritten).
+    if exist "%SCRIPT_DIR%\\prep_nomad_paths.bat" (
+        echo [deploy] Resolving Nomad HCL placeholders ^(prep_nomad_paths.bat^)
+        call "%SCRIPT_DIR%\\prep_nomad_paths.bat" >nul
+    )
     echo [deploy] Re-pointing Nomad HCL files to %DIST%
     if not exist "%DIST%\\deploy" mkdir "%DIST%\\deploy"
     set "DIST_FWD=%DIST:\\=/%"

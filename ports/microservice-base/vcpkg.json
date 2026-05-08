@@ -1,0 +1,20 @@
+{
+  "name": "microservice-base",
+  "version": "1.0.0",
+  "description": "MicroserviceBase C++ runtime — gRPC-based microservice framework with Consul service discovery and Nomad orchestration.",
+  "homepage": "https://github.com/test-fullautomation/python-microservice-base",
+  "license": "Apache-2.0",
+  "dependencies": [
+    "grpc",
+    "protobuf",
+    "curl",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}

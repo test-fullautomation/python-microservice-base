@@ -144,7 +144,7 @@ void ServiceRunner::serveForever() {
     if (!m_consul->registerService()) {
         std::cerr << "[ServiceRunner] WARNING: Consul registration failed: "
                   << m_consul->getLastError()
-                  << " — continuing anyway (service still reachable)." << std::endl;
+                  << " - continuing anyway (service still reachable)." << std::endl;
     }
 
     std::cout << "[ServiceRunner] Service " << m_settings.service_name

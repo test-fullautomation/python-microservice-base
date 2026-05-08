@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (updated post-migration: the same RPC-shutdown principle now applies to the gRPC `ServiceRunner` — graceful shutdown calls `Server::Shutdown(deadline)` and Consul deregistration before exit).
 
 ## Date
 

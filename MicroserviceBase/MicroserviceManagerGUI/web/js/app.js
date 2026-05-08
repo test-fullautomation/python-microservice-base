@@ -2064,6 +2064,21 @@
       });
     });
 
+    // If the service shown on the right (API explorer / cached panel) was
+    // just deregistered (process killed, Nomad job stopped, agent down,
+    // or its Consul cluster disconnected), clear it.  Without this the
+    // user is left with a stale panel showing methods for a service that
+    // no longer exists.  Also drop the cached panel so re-registration
+    // picks up fresh metadata instead of resurrecting the stale element.
+    if (_activePanelName && !MM.servicesInfor[_activePanelName]) {
+      var goneName = _activePanelName;
+      _deactivateCurrentPanel();
+      if (_servicePanels[goneName]) {
+        try { _servicePanels[goneName].remove(); } catch (e) { /* ignore */ }
+        delete _servicePanels[goneName];
+      }
+    }
+
     if (_connectedConsuls.length === 0) {
       container.innerHTML =
         '<div class="sidebar-empty-hint">' +

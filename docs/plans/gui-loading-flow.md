@@ -1,5 +1,10 @@
 # GUI Loading Mechanism — Multi-Tier Detection & Rendering
 
+> **Status: ✅ Active.** Implemented in `MicroserviceManagerGUI/web/js/`
+> (see `app.js` `_loadServiceGUIMultiTier()` and the per-tier loader
+> modules). This plan still matches the live behaviour. The `gui_schema.json`
+> tier is the foundation of [ADR-021 Schema-Driven UI Builder](../adr/021-schema-driven-ui-builder.md).
+
 ## Overview
 
 When a user clicks a service in the sidebar, the GUI loading mechanism detects what type of UI assets the service provides and selects the appropriate renderer. The detection follows a priority waterfall — the first match wins.

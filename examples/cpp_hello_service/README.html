@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>cpp_hello_service</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+  header{background:linear-gradient(135deg,#10b981,#0ea5e9);padding:30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1{display:none;}
+  h2{color:var(--green);margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  h3{color:var(--amber);margin-top:22px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+  pre code{background:none;padding:0;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--green);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header><h1 style="display:block;">cpp_hello_service</h1></header>
+<main>
+<h1 id="cpp_hello_service">cpp_hello_service</h1>
+
+<blockquote><p>↑ <a href="../README.html">Examples index</a> · 📄 <a href="README.html">HTML version</a> · 🐍 <a href="../hello_service/README.html">Python equivalent</a></p></blockquote>
+
+<p>A minimal C++ gRPC service for the MicroserviceBase runtime. Smallest working scaffold — copy as a starting point for your own service.</p>
+
+<p>Demonstrates:</p>
+<ul>
+<li>Hexagonal layout (<code>domain/</code>, <code>adapters/</code>, <code>Settings.h</code>, <code>main.cpp</code>)</li>
+<li><code>microservice_base::ServiceRunner</code> with graceful shutdown</li>
+<li>Consul registration via libcurl (<code>ConsulRegistration</code>)</li>
+<li>gRPC reflection enabled by the runtime automatically (so <code>grpcurl</code> and the <a href="../../MicroserviceBase/MicroserviceManagerGUI/README.html">Manager GUI</a> can enumerate methods at runtime)</li>
+<li>Dynamic port allocation (<code>HELLO_GRPC_PORT=0</code>)</li>
+</ul>
+
+<h2 id="layout">Layout</h2>
+
+<pre><code>cpp_hello_service/
+├── CMakeLists.txt
+├── proto/
+│   └── hello.proto                         # Shared with Python sample
+├── src/
+│   ├── main.cpp                            # Entry point
+│   ├── Settings.h                          # HELLO_* env vars
+│   ├── domain/
+│   │   ├── HelloService.h                  # Pure logic — no gRPC, no I/O
+│   │   └── HelloService.cpp
+│   └── adapters/
+│       └── api/
+│           ├── HelloGrpcAdapter.h          # Wires gRPC to HelloService
+│           └── HelloGrpcAdapter.cpp
+└── README.md
+</code></pre>
+
+<p>The hexagonal split — <code>domain/</code> is pure C++ with zero gRPC / Consul dependencies; <code>adapters/api/</code> is where gRPC enters the building. See <a href="../../docs/architecture.html"><code>../../docs/architecture.md</code></a> for the framework-level rationale.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<ul>
+<li>CMake 3.16+</li>
+<li>gRPC + protobuf + libcurl — pick a toolchain:</li>
+<li><strong>MSYS2</strong>: <code>pacman -S mingw-w64-x86_64-grpc mingw-w64-x86_64-protobuf mingw-w64-x86_64-curl</code> (see <a href="../docs/html/mingw_setup.html"><code>../docs/md/mingw_setup.md</code></a>)</li>
+<li><strong>vcpkg + Qt MinGW</strong>: <code>vcpkg install grpc protobuf curl</code> (see <a href="../docs/html/vcpkg_setup.html"><code>../docs/md/vcpkg_setup.md</code></a> — recommended for new teams)</li>
+<li>MicroserviceBase C++ runtime (built automatically via <code>add_subdirectory</code>)</li>
+<li>Consul agent running locally — start with <code>consul agent -dev</code> or the <a href="../../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html">Manager GUI Service Network tab</a></li>
+</ul>
+
+<h2 id="build">Build</h2>
+
+<pre><code>cd examples/cpp_hello_service
+mkdir build &amp;&amp; cd build
+cmake -DCMAKE_TOOLCHAIN_FILE=&lt;vcpkg&gt;/scripts/buildsystems/vcpkg.cmake ..
+cmake --build . --config Release
+</code></pre>
+
+<p>For MSYS2 / MinGW workflows, drop the <code>-DCMAKE_TOOLCHAIN_FILE=...</code> and make sure your shell has the MSYS2 mingw64 binaries on <code>%PATH%</code>.</p>
+
+<h2 id="run">Run</h2>
+
+<h3 id="direct-invocation-smoke-test">Direct invocation (smoke test)</h3>
+
+<pre><code># Optional: configure via env vars
+set HELLO_GRPC_PORT=50052
+set HELLO_GREETING=Bonjour
+
+./hello_service.exe
+</code></pre>
+
+<p>You should see:</p>
+
+<pre><code>[ServiceRunner] gRPC server listening on 0.0.0.0:50052
+[ConsulRegistration] Registered service hello (id=hello-xxxxxxxx) at &lt;ip&gt;:50052
+[ServiceRunner] Service hello ready.  Press Ctrl+C to stop.
+</code></pre>
+
+<h3 id="run-via-nomad-the-supervised-path">Run via Nomad (the supervised path)</h3>
+
+<p>A bare-bones <code>.hcl</code> example (adapt paths to your build output):</p>
+
+<pre><code>job "hello_service" {
+    datacenters = ["dc1"]
+    type        = "service"
+    group "hello_service" {
+        network { port "grpc" {} }
+        task "server" {
+            driver = "raw_exec"
+            config { command = "C:/path/to/cpp_hello_service/build/Release/hello_service.exe" }
+            env {
+                CONSUL_ADDR        = "http://127.0.0.1:8500"
+                HELLO_GRPC_PORT    = "${NOMAD_PORT_grpc}"
+            }
+        }
+    }
+}
+</code></pre>
+
+<pre><code>nomad job run hello.nomad.hcl
+</code></pre>
+
+<p>(For a real-world <code>.nomad.hcl</code> template, run <code>mb-scaffold</code> and look at the generated <code>deploy/&lt;svc&gt;.nomad.hcl</code>.)</p>
+
+<h3 id="run--invoke-via-the-manager-gui">Run + invoke via the Manager GUI</h3>
+
+<p>1. Launch the GUI (<code>cd MicroserviceBase/MicroserviceManagerGUI &amp;&amp; npm start</code>) 2. <strong>Service Network → Consul → Start Agent</strong> (Dev Mode) 3. <strong>Service Network → Nomad → Submit Job → pick <code>hello.nomad.hcl</code></strong> 4. Switch to <strong>Services</strong> mode → click <code>hello_service</code> → invoke <code>Greet</code> with <code>{"name": "Cuong"}</code></p>
+
+<p>See <a href="../../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md</code></a> for the full GUI walkthrough.</p>
+
+<h2 id="verify-with-grpcurl">Verify with <code>grpcurl</code></h2>
+
+<p>Find the service address from Consul:</p>
+
+<pre><code>curl -s http://localhost:8500/v1/health/service/hello?passing=true | jq '.[0].Service | {Address, Port}'
+</code></pre>
+
+<p>Then invoke:</p>
+
+<pre><code>grpcurl -plaintext -d '{"name": "Cuong"}' &lt;addr&gt;:&lt;port&gt; hello.v1.HelloService/Greet
+# -&gt; {"message": "Bonjour, Cuong!"}
+</code></pre>
+
+<p><code>grpcurl</code> uses the server's gRPC reflection to discover the schema — no local <code>.proto</code> needed.</p>
+
+<h2 id="environment-variables">Environment variables</h2>
+
+<table>
+  <tr><th>Var</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>HELLO_GRPC_PORT</code></td><td><code>0</code> (random)</td><td>gRPC bind port</td></tr>
+  <tr><td><code>HELLO_GREETING</code></td><td><code>Hello</code></td><td>Prefix used by <code>Greet</code></td></tr>
+  <tr><td><code>CONSUL_ADDR</code></td><td><code>http://127.0.0.1:8500</code></td><td>Consul agent HTTP API</td></tr>
+</table>
+
+<h2 id="cross-references">Cross-references</h2>
+
+<ul>
+<li><a href="../hello_service/README.html"><code>../hello_service/README.md</code></a> — Python equivalent (same <code>.proto</code>, same protocol)</li>
+<li><a href="../cpp_hello_client/README.html"><code>../cpp_hello_client/README.md</code></a> — companion C++ client</li>
+<li><a href="../../docs/runtime_model.html"><code>../../docs/runtime_model.md</code></a> — what <code>ServiceRunner</code> actually does</li>
+<li><a href="../../docs/architecture.html"><code>../../docs/architecture.md</code></a> — hexagonal layers + Consul + Nomad + gRPC reflection</li>
+<li><a href="../docs/html/mingw_setup.html"><code>../docs/md/mingw_setup.md</code></a> — MSYS2 toolchain setup</li>
+<li><a href="../docs/html/vcpkg_setup.html"><code>../docs/md/vcpkg_setup.md</code></a> — vcpkg + Qt MinGW toolchain setup</li>
+<li><a href="../../docs/troubleshooting.html"><code>../../docs/troubleshooting.md</code></a> — symptom-indexed problem fixes</li>
+</ul>
+
+</main>
+</body>
+</html>

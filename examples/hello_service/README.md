@@ -1,12 +1,16 @@
 # hello_service
 
-Minimal demo microservice for the new MicroserviceBase runtime.
+> ↑ [Examples index](../README.md) · 📄 [HTML version](README.html) · ⚙️ [C++ equivalent](../cpp_hello_service/README.md)
+
+Minimal Python demo microservice for the MicroserviceBase runtime.
+Smallest working scaffold — copy as a starting point for your own
+Python service.
 
 Demonstrates:
 - Hexagonal layout (`domain/`, `adapters/`, `context.py`, `main.py`)
 - `ServiceRunner` with async gRPC server
 - Consul registration + gRPC health check
-- gRPC reflection (so `grpcurl` and the GUI can enumerate methods)
+- gRPC reflection (so `grpcurl` and the [Manager GUI](../../MicroserviceBase/MicroserviceManagerGUI/README.md) can enumerate methods)
 - Dynamic port allocation (`HELLO_GRPC_PORT=0`)
 - Three RPCs: unary (`Greet`), unary (`Echo`), server streaming (`Tick`)
 
@@ -18,6 +22,7 @@ hello_service/
 ├── config.py                    # Pydantic Settings (HELLO_* env vars)
 ├── context.py                   # DI factory — wires domain + adapter
 ├── pyproject.toml
+├── hello.nomad.hcl              # Nomad job spec for raw_exec deployment
 │
 ├── proto/
 │   ├── hello.proto              # Service definition
@@ -32,14 +37,20 @@ hello_service/
 │       └── grpc_adapter.py      # Wires generated stubs to domain object
 │
 └── scripts/
-    └── generate_protos.py       # Regenerate protos after editing .proto
+    └── generate_protos.py       # Regenerate stubs after editing .proto
 ```
+
+The hexagonal split — `domain/` is pure Python with zero gRPC / Consul
+imports; `adapters/api/` is where gRPC enters the building. See
+[`../../docs/architecture.md`](../../docs/architecture.md) for the
+framework-level rationale.
 
 ## Prerequisites
 
 - Python 3.10+
 - MicroserviceBase installed (`pip install -e ..` from repo root)
-- Consul agent running locally (`consul agent -dev`)
+- Consul agent running locally — `consul agent -dev` or via the
+  [Manager GUI Service Network tab](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md)
 
 ## First run
 
@@ -61,7 +72,18 @@ INFO MicroserviceBase.runtime.consul: Registering service hello (id=hello-xxxxxx
 INFO MicroserviceBase.runtime.server: Service hello ready.
 ```
 
-## Verify with grpcurl
+## Run via Nomad (the supervised path)
+
+The folder ships a `hello.nomad.hcl`:
+
+```bash
+nomad job run hello.nomad.hcl
+```
+
+Or **Submit Job** in the Manager GUI's Nomad tab. See
+[`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
+
+## Verify
 
 Find the service address from Consul:
 
@@ -69,7 +91,7 @@ Find the service address from Consul:
 curl -s http://localhost:8500/v1/health/service/hello?passing=true | jq '.[0].Service | {Address, Port}'
 ```
 
-Then call the service directly:
+Then:
 
 ```bash
 # List services exposed by the server (via reflection)
@@ -86,6 +108,17 @@ grpcurl -plaintext -d '{"name": "Cuong"}' <addr>:<port> hello.v1.HelloService/Gr
 grpcurl -plaintext -d '{"count": 5, "interval_ms": 500}' <addr>:<port> hello.v1.HelloService/Tick
 ```
 
+`grpcurl` uses the server's gRPC reflection to discover the schema — no
+local `.proto` needed.
+
+### Or invoke via the Manager GUI
+
+1. Launch the GUI (`cd MicroserviceBase/MicroserviceManagerGUI && npm start`)
+2. **Service Network → Consul → Start Agent** (Dev Mode)
+3. Switch to **Services** mode → click `hello` → invoke methods
+   interactively (the panel uses the same gRPC reflection that
+   `grpcurl` does)
+
 ## Environment variables
 
 | Variable | Default | Description |
@@ -97,3 +130,11 @@ grpcurl -plaintext -d '{"count": 5, "interval_ms": 500}' <addr>:<port> hello.v1.
 | `HELLO_CONSUL_TOKEN` | `` | Optional Consul ACL token |
 | `HELLO_GREETING` | `Hello` | Greeting prefix used by `Greet` |
 | `HELLO_LOG_LEVEL` | `INFO` | Python logging level |
+
+## Cross-references
+
+- [`../cpp_hello_service/README.md`](../cpp_hello_service/README.md) — C++ equivalent (same `.proto`)
+- [`../cpp_hello_client/README.md`](../cpp_hello_client/README.md) — typed C++ client that talks to either equivalent
+- [`../../docs/runtime_model.md`](../../docs/runtime_model.md) — what `ServiceRunner` does end-to-end
+- [`../../docs/architecture.md`](../../docs/architecture.md) — hexagonal layers + Consul + Nomad + gRPC reflection
+- [`../../docs/troubleshooting.md`](../../docs/troubleshooting.md) — symptom-indexed problem fixes

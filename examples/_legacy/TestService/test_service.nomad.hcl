@@ -27,7 +27,7 @@ job "test_service" {
       driver = "raw_exec"
 
       config {
-        command = "D:\Project\robot\github\microsoft-base-develop\examples"
+        command = "D:\Project\robot\github\microsoft-base-develop\examples\TestService\dist-msys2\test_service.exe"
       }
 
       env {

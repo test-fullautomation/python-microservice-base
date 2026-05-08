@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Architecture</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+  header{background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  header p{margin:8px 0 0;opacity:0.9;}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1,h2,h3,h4{color:var(--accent);}
+  h1{font-size:1.9em;border-bottom:1px solid var(--border);padding-bottom:8px;}
+  h2{margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  h3{color:var(--amber);margin-top:22px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+  pre code{background:none;padding:0;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--accent);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header>
+  <h1>Architecture</h1>
+</header>
+<main>
+<h1 id="architecture">Architecture</h1>
+
+<blockquote><p>📄 <em>Also available as HTML:</em> <a href="architecture.html"><code>architecture.html</code></a></p></blockquote>
+
+<p>A walk through the major pieces of MicroserviceBase, what they do, and how they connect. For the lifecycle of a single running service, see <a href="runtime_model.html"><code>runtime_model.md</code></a>. For a glossary of unfamiliar terms, see <a href="concepts.html"><code>concepts.md</code></a>.</p>
+
+<h2 id="high-level-picture">High-level picture</h2>
+
+<pre><code>┌──────────────────────────────────────────────────────────────────────────┐
+│  Developer machine                                                       │
+│                                                                          │
+│   ┌─────────────────────┐    HTTP/JSON    ┌──────────────────────────┐   │
+│   │   Manager GUI       │ ──────────────→ │   FastAPI bridge         │   │
+│   │  (Electron/web)     │                 │   (Python; one process)  │   │
+│   │                     │ ←──────────────  │                          │   │
+│   └─────────────────────┘                 │   ─ /api/grpc/...        │   │
+│                                           │   ─ /api/consul/...      │   │
+│                                           │   ─ /api/nomad/...       │   │
+│                                           │   ─ /api/scaffold/...    │   │
+│                                           └────────────┬─────────────┘   │
+│                                                        │                 │
+│              ┌─────────────────────────────────────────┤                 │
+│              │                                         │                 │
+│        Consul HTTP API                          Nomad HTTP API           │
+│              │                                         │                 │
+│              ▼                                         ▼                 │
+│      ┌──────────────┐                          ┌──────────────┐          │
+│      │   Consul     │ ←───── service           │   Nomad      │          │
+│      │   agent      │       registration       │   agent      │          │
+│      │   :8500      │                          │   :4646      │          │
+│      └──────┬───────┘                          └──────┬───────┘          │
+│             │                                         │ raw_exec         │
+│             │                                         ▼                  │
+│             │                                  ┌─────────────────┐       │
+│             │  health probes,                  │   Service A     │       │
+│             ├─────────────────────────────────→│   (gRPC :NNNNN) │       │
+│             │  service catalog                 │   ↑ registers   │       │
+│             │                                  └─────────────────┘       │
+│             │                                  ┌─────────────────┐       │
+│             ├─────────────────────────────────→│   Service B     │       │
+│             │                                  │   (gRPC :NNNNN) │       │
+│             │                                  └─────────────────┘       │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+                                                            ▲
+                                                            │ gRPC over HTTP/2
+                                                            │ (clients reach via Consul lookup)
+                                                  ┌─────────┴─────────┐
+                                                  │   Other clients   │
+                                                  │   (CLI, Qt GUI,   │
+                                                  │   another service)│
+                                                  └───────────────────┘
+</code></pre>
+
+<p>Three independent runtime processes (Consul agent, Nomad agent, the service binary) plus the FastAPI bridge that ties them together for the GUI. Service binaries are launched by Nomad as child processes under <code>raw_exec</code>; they register in Consul on startup and deregister on clean shutdown.</p>
+
+<h2 id="the-hexagonal-layers">The hexagonal layers</h2>
+
+<p>Inside any one service binary or the framework itself:</p>
+
+<pre><code>┌───────────────────────────────────────────────────────────────┐
+│  Adapters                                                     │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐ │
+│  │ gRPC adapter    │  │ Consul adapter  │  │ scaffold       │ │
+│  │ (api/...)       │  │ (registration   │  │ generator      │ │
+│  │                 │  │   + discovery)  │  │ (cpp_tmpl.py)  │ │
+│  └─────────────────┘  └─────────────────┘  └────────────────┘ │
+│  ┌─────────────────┐  ┌─────────────────┐                     │
+│  │ FastAPI bridge  │  │ Nomad           │      …              │
+│  │ (REST front)    │  │ subprocess mgr  │                     │
+│  └─────────────────┘  └─────────────────┘                     │
+└───────────────────────────────┬───────────────────────────────┘
+                                │ talks via
+                                ▼
+┌───────────────────────────────────────────────────────────────┐
+│  Ports (interfaces / protocols)                               │
+│   - service registry port  - process lifecycle port           │
+│   - serialization port     - subprocess port                  │
+└───────────────────────────────┬───────────────────────────────┘
+                                │ implemented by adapters,
+                                │ consumed by domain
+                                ▼
+┌───────────────────────────────────────────────────────────────┐
+│  Domain (zero-deps)                                           │
+│   Service business logic.  No imports from grpc, fastapi,     │
+│   consul, nomad, qt — anything infra.  Plain functions and    │
+│   value types.  Unit-testable in isolation.                   │
+└───────────────────────────────────────────────────────────────┘
+</code></pre>
+
+<table>
+  <tr><th>Layer</th><th>Lives in</th><th>Imports</th><th>Imported by</th></tr>
+  <tr><td><strong>Domain</strong></td><td><code>MicroserviceBase/domain/</code> and <code>&lt;service&gt;/src/&lt;svc&gt;/domain/</code></td><td>nothing infra</td><td>adapters via ports</td></tr>
+  <tr><td><strong>Ports</strong></td><td><code>MicroserviceBase/ports/</code></td><td>typing only</td><td>both</td></tr>
+  <tr><td><strong>Adapters</strong></td><td><code>MicroserviceBase/adapters/</code> and <code>&lt;service&gt;/src/&lt;svc&gt;/adapters/</code></td><td>grpc, consul, fastapi, etc.</td><td>top-level wiring (<code>main.cpp</code>/<code>main.py</code>)</td></tr>
+</table>
+
+<p>The hexagonal split means: changing the transport (e.g. swapping a service from MSYS2's gRPC to vcpkg's gRPC) is purely an adapter problem; the domain code never moves. Same when we replaced the old RabbitMQ adapter with the gRPC adapter — the domain didn't change.</p>
+
+<h2 id="service-discovery-consul">Service discovery: Consul</h2>
+
+<p>Every service registers itself in Consul on startup with:</p>
+
+<ul>
+<li><strong>Name</strong>: snake-case service name (e.g. <code>analog_input_service</code>)</li>
+<li><strong>Address + port</strong>: where its gRPC server is listening (Nomad-allocated port via <code>${NOMAD_PORT_grpc}</code>)</li>
+<li><strong>Health check</strong>: a TCP probe to the gRPC port, polled by Consul every few seconds</li>
+<li><strong>Tags</strong>: <code>v1</code> (or whatever the service version is)</li>
+<li><strong>Meta</strong>: <code>grpc_services</code> = comma-separated list of fully-qualified gRPC service names the binary implements (lets the GUI skip the reflection round-trip when listing services to enumerate)</li>
+</ul>
+
+<p>Clients resolve via <code>GET /v1/health/service/&lt;name&gt;?passing=true</code>, which returns the healthy address:port pairs. The Manager GUI uses this for its Services sidebar; <code>ServiceClient</code> uses it for outbound gRPC calls.</p>
+
+<p>Local-dev typically runs <code>consul agent -dev</code>, which is single-node in-memory. The Manager GUI's Service Network → Consul tab can launch this for you (see <a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.md</code></a>).</p>
+
+<h2 id="orchestration-nomad">Orchestration: Nomad</h2>
+
+<p>Each generated service ships a <code>deploy/&lt;service&gt;.nomad.hcl</code> job that declares:</p>
+
+<ul>
+<li>A single task running the service binary under <code>raw_exec</code></li>
+<li>A dynamic port labelled <code>grpc</code> (Nomad picks free, exports as <code>${NOMAD_PORT_grpc}</code> env var)</li>
+<li>Environment vars to point the binary at Consul (<code>CONSUL_ADDR</code>)</li>
+</ul>
+
+<p>Submit with <code>nomad job run deploy/&lt;svc&gt;.nomad.hcl</code> (or via the GUI's Nomad tab → Submit Job dialog).</p>
+
+<p><code>raw_exec</code> runs the process directly (no container) so the same job works on Windows + Linux without Docker / cgroups setup. For production you can swap to <code>exec</code> (Linux container) or <code>docker</code> without changing the framework — only the <code>.hcl</code> template.</p>
+
+<h2 id="method-discovery-grpc-server-reflection">Method discovery: gRPC server reflection</h2>
+
+<p>Servers built with our scaffold include <code>grpc++_reflection</code> (vcpkg overlay-port forces it on; see <a href="changelog.html"><code>changelog.md</code></a>) and call <code>grpc::reflection::InitProtoReflectionServerBuilderPlugin()</code> at startup. Clients can then enumerate services + methods + message schemas at runtime without any <code>.proto</code> file:</p>
+
+<pre><code>Manager GUI                  Bridge                  Service
+    │                          │                       │
+    │  GET /api/grpc/services/&lt;name&gt;                  │
+    │ ───────────────────────→ │                       │
+    │                          │  Consul lookup       │
+    │                          │ ─→ host:port         │
+    │                          │                       │
+    │                          │  reflection RPC       │
+    │                          │ ────────────────────→ │
+    │                          │                       │
+    │                          │ ←─── descriptors ──── │
+    │                          │                       │
+    │     methods + schemas    │                       │
+    │ ←─────────────────────── │                       │
+</code></pre>
+
+<p>Fallback: when reflection isn't available (older servers, custom builds), the bridge can compile local <code>.proto</code> files via <code>grpc_tools.protoc</code> and use the descriptors that way. See the <code>LocalProtoClient</code> in <code>MicroserviceBase/adapters/grpc_bridge/reflect_client.py</code>.</p>
+
+<h2 id="the-fastapi-bridge">The FastAPI bridge</h2>
+
+<p>The bridge is a single Python process that:</p>
+
+<p>1. Hosts the Manager GUI's static assets at <code>/</code> (when running in browser mode) 2. Exposes REST endpoints for everything the GUI does:</p>
+<ul>
+<li><code>/api/scaffold/...</code> — generate service projects (mb-scaffold backend)</li>
+<li><code>/api/grpc/...</code> — list methods + invoke (via reflect_client)</li>
+<li><code>/api/consul/...</code> — start/stop the agent + read the catalog</li>
+<li><code>/api/nomad/...</code> — start/stop the agent + submit/stop jobs</li>
+</ul>
+<p>3. Manages Consul + Nomad agents as Python subprocesses (PID-tracked in <code>%TEMP%/msbase_*_agent.pid</code> for restart resilience)</p>
+
+<p>The GUI is a thin client over this — every button maps to one or two endpoints. Same endpoints are usable from <code>curl</code> / scripts when automating.</p>
+
+<p>Source: <code>MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py</code>. Full endpoint list: see "CLI equivalents" in <a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.md</code></a>.</p>
+
+<h2 id="the-scaffold-generator">The scaffold generator</h2>
+
+<p><code>mb-scaffold</code> (<code>python -m MicroserviceBase.tools.scaffold_cli</code>) emits a complete service project from a small spec:</p>
+
+<pre><code>spec (CLI flags or YAML)         emitter
+       │                            │
+       ▼                            ▼
+┌──────────────┐    POST /api/scaffold/generate-v2     ┌─────────────────┐
+│  CLI / GUI   │ ───────────────────────────────────→ │   Bridge        │
+│  wizard      │                                      │   ↓ delegates   │
+└──────────────┘                                      │  cpp_tmpl.py    │
+                                                      └────────┬────────┘
+                                                               │ writes
+                                                               ▼
+                                                       ┌──────────────┐
+                                                       │  out/&lt;svc&gt;/  │
+                                                       │  ├─ proto/   │
+                                                       │  ├─ src/     │
+                                                       │  ├─ deploy/  │
+                                                       │  ├─ build_*  │
+                                                       │  └─ README   │
+                                                       └──────────────┘
+</code></pre>
+
+<p>Source: <code>MicroserviceBase/adapters/scaffold/cpp_tmpl.py</code> (~7000 lines of templated emitters — one function per output file). The same code backs both the GUI wizard and the CLI.</p>
+
+<h2 id="why-these-choices">Why these choices</h2>
+
+<table>
+  <tr><th>Decision</th><th>Why</th></tr>
+  <tr><td>gRPC over a message broker</td><td>Direct point-to-point, no central bottleneck or single-PoF, native streaming, on-the-wire schema introspection via reflection</td></tr>
+  <tr><td>Consul for discovery</td><td>Battle-tested, single binary, dev mode is one command, well-documented HCL</td></tr>
+  <tr><td>Nomad for orchestration</td><td>Same vendor as Consul (no integration glue), <code>raw_exec</code> covers Windows-host dev, scales to docker/exec without changing the framework</td></tr>
+  <tr><td>Hexagonal architecture</td><td>Switching transports (RabbitMQ → gRPC) was a contained refactor — no domain code touched</td></tr>
+  <tr><td>Scaffold generator</td><td>Boilerplate is ~80% of every service; keeping it in a generator means one place to fix the gRPC reflection patch instead of N</td></tr>
+  <tr><td>Bundled GUI as a separate web app (not a Qt one)</td><td>Same code runs in Electron + headless browser; service-side GUI plugins are just HTML+JS dropped into <code>web/services/</code></td></tr>
+</table>
+
+<h2 id="where-things-live">Where things live</h2>
+
+<pre><code>MicroserviceBase/
+├── domain/           ← framework domain (request/response types, settings)
+├── ports/            ← protocol abstractions (registry, transport, lifecycle)
+├── adapters/
+│   ├── grpc_bridge/  ← reflect_client, LocalProtoClient (the bridge's gRPC client)
+│   ├── ui_bridge/    ← FastAPI bridge (REST front)
+│   ├── scaffold/     ← cpp_tmpl.py (the generator)
+│   └── consul_*      ← Consul SDK adapter
+├── runtime/          ← Python ServiceRunner + ServiceClient
+├── runtime_cpp/      ← C++ ServiceRunner (header library) + CMake glue
+├── tools/            ← scaffold_cli (mb-scaffold)
+└── MicroserviceManagerGUI/  ← Electron + browser app (its own README)
+</code></pre>
+
+<p>For per-component code-level reference, the doc-comments in each file are the source of truth — these architecture docs describe the shape, not the API.</p>
+
+<h2 id="see-also">See also</h2>
+
+<ul>
+<li><a href="runtime_model.html"><code>runtime_model.md</code></a> — what happens inside one service from <code>main()</code> to first RPC handled</li>
+<li><a href="concepts.html"><code>concepts.md</code></a> — terminology</li>
+<li><a href="changelog.html"><code>changelog.md</code></a> — what this architecture replaced</li>
+<li><a href="adr/"><code>adr/</code></a> — per-decision rationale</li>
+</ul>
+
+</main>
+</body>
+</html>

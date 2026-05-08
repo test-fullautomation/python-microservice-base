@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Troubleshooting</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+  header{background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  header p{margin:8px 0 0;opacity:0.9;}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1,h2,h3,h4{color:var(--accent);}
+  h1{font-size:1.9em;border-bottom:1px solid var(--border);padding-bottom:8px;}
+  h2{margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  h3{color:var(--amber);margin-top:22px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+  pre code{background:none;padding:0;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--accent);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header>
+  <h1>Troubleshooting</h1>
+</header>
+<main>
+<h1 id="troubleshooting">Troubleshooting</h1>
+
+<blockquote><p>📄 <em>Also available as HTML:</em> <a href="troubleshooting.html"><code>troubleshooting.html</code></a></p></blockquote>
+
+<p>Symptom-indexed problems and fixes for the current gRPC + Consul + Nomad stack. For pre-migration symptoms (RabbitMQ, ServiceRegistry, ProcessHub, Fleet hubs), see <a href="_legacy/troubleshooting-guide.md"><code>_legacy/troubleshooting-guide.md</code></a>.</p>
+
+<blockquote><p><strong>How to use:</strong> <code>Ctrl+F</code> for the symptom you're seeing, or browse by category. Each entry says what it usually means and what to do.</p></blockquote>
+
+<h2 id="quick-index">Quick index</h2>
+
+<table>
+  <tr><th>Symptom</th><th>Section</th></tr>
+  <tr><td>Manager GUI bridge LED stays red after <code>npm start</code></td><td><a href="#bridge">Bridge</a></td></tr>
+  <tr><td>Service appears in Consul UI but not in the GUI sidebar</td><td><a href="#service-discovery">Service discovery</a></td></tr>
+  <tr><td>Service registers, then disappears from Consul a few seconds later</td><td><a href="#service-discovery">Service discovery</a></td></tr>
+  <tr><td>GUI shows "Reflection RPC … failed: UNIMPLEMENTED"</td><td><a href="#grpc">gRPC</a></td></tr>
+  <tr><td>GUI shows "Reflection unavailable … no .proto files matched"</td><td><a href="#grpc">gRPC</a></td></tr>
+  <tr><td>Nomad job stays "pending" forever</td><td><a href="#nomad">Nomad</a></td></tr>
+  <tr><td><code>nomad job run</code> succeeds but service never starts</td><td><a href="#nomad">Nomad</a></td></tr>
+  <tr><td><code>consul agent -dev</code> won't start ("port 8500 in use")</td><td><a href="#consul--nomad-agents">Consul / Nomad agents</a></td></tr>
+  <tr><td><code>vcpkg install grpc</code> fails with "corrupt patch"</td><td><a href="#build-vcpkg">Build (vcpkg)</a></td></tr>
+  <tr><td><code>vcpkg install grpc</code> fails with gcc 13.1.0 ICE on <code>per_cpu.h</code></td><td><a href="#build-vcpkg">Build (vcpkg)</a></td></tr>
+  <tr><td>Generated server returns <code>UNIMPLEMENTED</code> for reflection RPCs</td><td><a href="#build-vcpkg">Build (vcpkg)</a></td></tr>
+  <tr><td>Built <code>.exe</code> won't run: <code>libprotobuf.dll not found</code> (or <code>Qt6Core.dll</code>)</td><td><a href="#build-qt">Build (Qt)</a></td></tr>
+  <tr><td>Qt Creator can't find <code>gRPC</code> package</td><td><a href="#build-qt">Build (Qt)</a></td></tr>
+  <tr><td><code>import_prebuilt.bat</code> extracts but Qt Creator still fails</td><td><a href="#build-qt">Build (Qt)</a></td></tr>
+  <tr><td><code>mb-scaffold --help</code> works but generation fails</td><td><a href="#scaffold">Scaffold</a></td></tr>
+  <tr><td>Generated service won't compile</td><td><a href="#scaffold">Scaffold</a></td></tr>
+</table>
+
+<h2 id="bridge">Bridge</h2>
+
+<h3 id="bridge-led-stays-red-after-npm-start-electron-mode">Bridge LED stays red after <code>npm start</code> (Electron mode)</h3>
+
+<p>The FastAPI bridge process didn't start, usually because port 1112 is already taken.</p>
+
+<pre><code>netstat -ano | findstr :1112
+</code></pre>
+
+<p>If something else holds 1112: kill it, or set <code>MB_BRIDGE_URL=http://127.0.0.1:&lt;other-port&gt;</code> in your environment before launching the GUI.</p>
+
+<h3 id="bridge-led-amber-and-never-turns-green">Bridge LED amber and never turns green</h3>
+
+<p>Bridge is starting / re-trying. Wait ~10s. If it stays amber:</p>
+
+<ul>
+<li>Look at the bridge log (Electron mode: dev tools console; web</li>
+</ul>
+<p>  mode: terminal where you launched <code>python -m   MicroserviceBase.adapters.ui_bridge.fastapi_bridge</code>).</p>
+<ul>
+<li>Common cause: missing Python dep — <code>pip install -e .</code> again.</li>
+</ul>
+
+<h3 id="bridge-led-red-in-browserweb-mode">Bridge LED red in browser/web mode</h3>
+
+<p>The bridge <strong>is</strong> the web server in this mode. A red LED means you lost the page (the Python process died). Re-launch the bridge and refresh the page.</p>
+
+<h2 id="service-discovery">Service discovery</h2>
+
+<h3 id="service-appears-in-consul-ui-8500ui-but-not-in-the-gui-sidebar">Service appears in Consul UI (<code>:8500/ui</code>) but not in the GUI sidebar</h3>
+
+<p>The GUI is connected to a different Consul cluster than the service registered with.</p>
+
+<ul>
+<li>Check the navbar's connected-cluster chip — that's where the GUI</li>
+</ul>
+<p>  is looking.</p>
+<ul>
+<li>Check the service's <code>CONSUL_ADDR</code> env var — that's where the</li>
+</ul>
+<p>  service registered.</p>
+<ul>
+<li>Either fix the service's <code>CONSUL_ADDR</code> (in the <code>.nomad.hcl</code></li>
+</ul>
+<p>  <code>env</code> block) or click <strong>Connect</strong> in the navbar to add a chip for   the right cluster.</p>
+
+<h3 id="service-registers-then-disappears-from-consul-after-30-seconds">Service registers, then disappears from Consul after ~30 seconds</h3>
+
+<p>Consul's TCP health check is failing. Most common reasons:</p>
+
+<ul>
+<li>Service crashed silently — check Nomad logs:</li>
+</ul>
+<p>  <code>nomad alloc logs &lt;alloc-id&gt;</code></p>
+<ul>
+<li>Service didn't actually start gRPC — check that</li>
+</ul>
+<p>  <code>&lt;PREFIX&gt;_GRPC_PORT</code> was set in the env (Nomad does this via   <code>${NOMAD_PORT_grpc}</code>)</p>
+<ul>
+<li>Port mismatch — service registered with port X but listens on Y;</li>
+</ul>
+<p>  audit the registration in <code>ServiceRunner</code> (or its C++ equivalent)</p>
+
+<h3 id="gui-says-no-services-found-but-consul-has-services-registered">GUI says "No services found" but Consul has services registered</h3>
+
+<p>Some services exist but none are passing health checks. The GUI filters for <code>?passing=true</code>. To see all (including failing), open the Consul UI directly via the <strong>Open Consul UI</strong> button in the Service Network tab.</p>
+
+<h2 id="grpc">gRPC</h2>
+
+<h3 id="reflection-rpc--failed-unimplemented-when-clicking-a-service">"Reflection RPC … failed: UNIMPLEMENTED" when clicking a service</h3>
+
+<p>The server doesn't ship <code>grpc++_reflection</code>. Two paths:</p>
+
+<p><strong>Quick:</strong> The GUI now offers a proto-path input field below the error. Type the folder containing the service's <code>.proto</code> files (e.g. <code>D:\…\&lt;project&gt;\proto</code>) and click <strong>Use this path</strong>. The bridge falls back to <code>LocalProtoClient</code> (compiles <code>.proto</code> from disk).</p>
+
+<p><strong>Permanent:</strong> Rebuild the server with reflection enabled. For vcpkg-built servers: this is now the default — re-run <code>init_vcpkg_overlay.bat --upgrade</code> and rebuild grpc, then redeploy the service. See <a href="changelog.html"><code>changelog.md</code></a> for what changed.</p>
+
+<h3 id="reflection-unavailable--no-proto-files-matched-in-search-paths">"Reflection unavailable … no .proto files matched in search paths"</h3>
+
+<p>The GUI's fallback couldn't find any <code>.proto</code> files. Either:</p>
+
+<ul>
+<li>Set <code>MB_PROTO_SEARCH_PATH</code> env var (semicolon-separated</li>
+</ul>
+<p>  directories) before launching the bridge, or</p>
+<ul>
+<li>Type the path into the GUI's proto-path input field and click</li>
+</ul>
+<p>  <strong>Use this path</strong> (persisted per-service in <code>sessionStorage</code> for   the rest of the browser session)</p>
+
+<h3 id="grpc-call-returns-unavailable-failed-to-connect-to-all-addresses">gRPC call returns <code>UNAVAILABLE: failed to connect to all addresses</code></h3>
+
+<p>The address Consul returned isn't reachable from where the client runs:</p>
+
+<ul>
+<li>Check that the service is on the same machine / network as the</li>
+</ul>
+<p>  caller (Consul advertises its <code>Address</code>; if it's a private IP,   callers from outside that network can't reach it)</p>
+<ul>
+<li>For dev: set <code>bind_addr = 0.0.0.0</code> in Consul if you want services</li>
+</ul>
+<p>  visible from other dev machines</p>
+
+<h3 id="grpc-call-returns-invalid_argument-immediately">gRPC call returns <code>INVALID_ARGUMENT</code> immediately</h3>
+
+<p>Usually a JSON marshalling problem. The bridge's <code>call_method</code> parses the JSON request into a dynamic protobuf — common mistakes:</p>
+
+<ul>
+<li>Field name typo (proto uses snake_case; check the request panel's</li>
+</ul>
+<p>  pre-filled skeleton for the correct names)</p>
+<ul>
+<li>Type mismatch (e.g. sending a string for an <code>int32</code> field)</li>
+<li>Extra unknown fields — the dynamic builder is strict by default</li>
+</ul>
+
+<h2 id="nomad">Nomad</h2>
+
+<h3 id="job-stays-pending-forever">Job stays "pending" forever</h3>
+
+<p><code>nomad node status</code> to confirm there's a healthy client. Then <code>nomad job status &lt;name&gt;</code> and look at the placement failure message. Most common in dev mode:</p>
+
+<ul>
+<li>Driver mismatch — generated jobs use <code>raw_exec</code>. Dev mode enables</li>
+</ul>
+<p>  this automatically; if you're using a custom config, add the   <code>raw_exec</code> plugin block.</p>
+<ul>
+<li>Memory / CPU limits in the job exceed what the dev-mode client</li>
+</ul>
+<p>  reports.</p>
+
+<h3 id="nomad-job-run-succeeds-but-service-never-starts"><code>nomad job run</code> succeeds but service never starts</h3>
+
+<p>Check <code>nomad alloc logs &lt;alloc-id&gt;</code> — the binary probably crashed on startup. Common causes:</p>
+
+<ul>
+<li>Missing DLL (Windows): the <code>.hcl</code> runs the binary in-place; if</li>
+</ul>
+<p>  you didn't <code>deploy_qt_vcpkg.bat</code> first, the runtime DLLs may not   be on PATH. Either deploy first or use the deployed   <code>dist-qt-vcpkg/run_&lt;svc&gt;.bat</code> wrapper which sets PATH.</p>
+<ul>
+<li>Wrong working directory: HCL has <code>command = "C:/path/to/run.bat"</code>;</li>
+</ul>
+<p>  the .bat needs to be at that exact path. Run   <code>prep_nomad_paths.bat</code> after moving a project.</p>
+<ul>
+<li><code>CONSUL_ADDR</code> unreachable — check the <code>env</code> block in the HCL.</li>
+</ul>
+
+<h3 id="job-ran-fine-then-i-edited-the-hcl-and-nomad-job-run-said-no-changes">Job ran fine, then I edited the HCL and <code>nomad job run</code> said "No changes"</h3>
+
+<p>Nomad re-evaluates only when <code>Job.Modify</code> actually changes. If you edited an <code>env</code> value but not the version, force re-run:</p>
+
+<pre><code>nomad job stop &lt;name&gt;
+nomad job run deploy/&lt;name&gt;.nomad.hcl
+</code></pre>
+
+<h2 id="consul--nomad-agents">Consul / Nomad agents</h2>
+
+<h3 id="port-8500-is-already-in-use-when-starting-consul-or-4646-for-nomad">"Port 8500 is already in use" when starting Consul (or 4646 for Nomad)</h3>
+
+<p>Another agent is already running. Either:</p>
+
+<ul>
+<li>Use the GUI's Service Network → Consul / Nomad → **Connect to</li>
+</ul>
+<p>  Existing** form to point at the running one</p>
+<ul>
+<li>Or stop the running one (<code>tasklist | findstr consul</code>,</li>
+</ul>
+<p>  <code>taskkill /pid &lt;pid&gt;</code>) and click <strong>Start Agent</strong></p>
+
+<h3 id="agent-already-running-pid--but-the-led-is-gray">"Agent already running (PID …)" but the LED is gray</h3>
+
+<p>Stale PID file from a crashed agent. Delete and retry:</p>
+
+<pre><code>del %TEMP%\msbase_consul_agent.pid
+del %TEMP%\msbase_nomad_agent.pid
+</code></pre>
+
+<p>Then click Start Agent in the GUI.</p>
+
+<h2 id="build-vcpkg">Build (vcpkg)</h2>
+
+<h3 id="vcpkg-install-grpc-fails-with-corrupt-patch-at-line-23"><code>vcpkg install grpc</code> fails with "corrupt patch at line 23"</h3>
+
+<p>Patch file <code>00018-gcc13-per-cpu-ice-workaround.patch</code> has zero-byte blank lines (some editors strip trailing whitespace). Pull the latest scaffold, or run <code>init_vcpkg_overlay.bat --reinit</code>. The generator now uses a <code>{SP}</code> placeholder so blank context lines keep their leading space.</p>
+
+<h3 id="gcc-1310-ice-in-per_cpuh-during-vcpkg-install-grpc">gcc 13.1.0 ICE in <code>per_cpu.h</code> during <code>vcpkg install grpc</code></h3>
+
+<p>Patch <code>00018-gcc13-per-cpu-ice-workaround.patch</code> should have applied; verify it's listed in <code>ports/grpc/portfile.cmake</code>'s <code>PATCHES</code>. <code>init_vcpkg_overlay.bat --upgrade</code> will (idempotently) ensure it's there.</p>
+
+<h3 id="generated-server-returns-unimplemented-for-reflection-vcpkg-path">Generated server returns <code>UNIMPLEMENTED</code> for reflection (vcpkg path)</h3>
+
+<p>vcpkg's <code>gRPC_BUILD_CODEGEN</code> got dropped for the target triplet — the overlay portfile must force it on. Run:</p>
+
+<pre><code>init_vcpkg_overlay.bat --upgrade
+del /q "%LOCALAPPDATA%\vcpkg\archives\??\grpc_*"
+rmdir /s /q build-qt-vcpkg
+build_qt_vcpkg.bat
+</code></pre>
+
+<p>Verify after rebuild:</p>
+
+<pre><code>dir build-qt-vcpkg\vcpkg_installed\x64-mingw-qt\lib\libgrpc++_reflection.a
+</code></pre>
+
+<h2 id="build-qt">Build (Qt)</h2>
+
+<h3 id="built-exe-complains-libprotobufdll-not-found-or-qt6coredll">Built <code>.exe</code> complains <code>libprotobuf.dll not found</code> (or <code>Qt6Core.dll</code>)</h3>
+
+<p>Windows DLL search only looks at the <code>.exe</code>'s folder and <code>%PATH%</code>. Three fixes (pick one):</p>
+
+<ul>
+<li><strong>F5 in Qt Creator</strong>: Projects (Ctrl+5) → Run → Environment →</li>
+</ul>
+<p>  Path → Edit, prepend (semicolon-separated):   <code>&lt;build-dir&gt;\vcpkg_installed\x64-mingw-qt\bin;C:\Qt\6.x.y\mingw_64\bin;C:\Qt\Tools\mingw1310_64\bin</code></p>
+<ul>
+<li><strong>Run from a deployed dist</strong>: <code>deploy_qt_vcpkg.bat</code> (or</li>
+</ul>
+<p>  <code>cd qt_client_grpcpp &amp;&amp; deploy_qt.bat</code>) copies every DLL next to   the <code>.exe</code> in <code>dist-qt-vcpkg/</code>. Self-contained.</p>
+<ul>
+<li><strong>System PATH</strong>: prepend the three dirs to your user-level PATH —</li>
+</ul>
+<p>  works for any new terminal / Qt Creator.</p>
+
+<h3 id="qt-creator-could-not-find-a-package-configuration-file-provided-by-grpc">Qt Creator: "Could not find a package configuration file provided by <code>gRPC</code>"</h3>
+
+<p>Qt Creator didn't pass <code>-DCMAKE_TOOLCHAIN_FILE</code> to the build. Either use the bundled <code>vcpkg-x64-mingw-qt</code> CMake preset, or stay on the kit and add these four entries to <em>Initial Configuration</em>:</p>
+
+<pre><code>CMAKE_TOOLCHAIN_FILE   = D:/Project/Out/vcpkg/scripts/buildsystems/vcpkg.cmake
+VCPKG_TARGET_TRIPLET   = x64-mingw-qt
+VCPKG_OVERLAY_TRIPLETS = D:/path/to/your/project/triplets
+VCPKG_OVERLAY_PORTS    = D:/path/to/your/project/ports
+</code></pre>
+
+<p>(use absolute paths — Qt Creator doesn't expand <code>${sourceDir}</code> in Initial Configuration; var name is <strong>plural</strong> TRIPLETS with S.)</p>
+
+<p>Then <em>Build → Clear CMake Configuration → Run CMake</em>.</p>
+
+<h3 id="import_prebuiltbat-extracts-but-qt-creator-still-fails-to-find-grpc"><code>import_prebuilt.bat</code> extracts but Qt Creator still fails to find gRPC</h3>
+
+<p>The prebuilt zip went into one build dir, but Qt Creator is using a different one. Verify:</p>
+
+<pre><code>dir build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\
+</code></pre>
+
+<p>If empty, check the import script's output for which build dirs it detected. Add <code>VCPKG_MANIFEST_INSTALL = OFF</code> (Boolean) to Qt Creator's Initial Configuration so vcpkg doesn't try to overwrite the imported tree.</p>
+
+<h2 id="scaffold">Scaffold</h2>
+
+<h3 id="mb-scaffold-works-but-generation-fails-with-bridge-not-reachable"><code>mb-scaffold</code> works but generation fails with "bridge not reachable"</h3>
+
+<p>The CLI POSTs to <code>http://127.0.0.1:1112/api/scaffold/generate-v2</code>. That bridge has to be running:</p>
+
+<pre><code>python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge
+</code></pre>
+
+<p>(or launch the Electron Manager GUI, which auto-starts the bridge). Override the URL with <code>--bridge-url</code> or <code>MB_BRIDGE_URL</code>.</p>
+
+<h3 id="generated-service-wont-compile">Generated service won't compile</h3>
+
+<p>Most likely: missing toolchain. Match the <code>--client-grpc</code> / <code>--server-grpc</code> you scaffolded with the toolchain you have:</p>
+
+<ul>
+<li><code>--server-grpc msys2</code>: needs MSYS2 + <code>mingw-w64-x86_64-grpc</code></li>
+</ul>
+<p>  installed. See <a href="../examples/docs/html/mingw_setup.html"><code>../examples/docs/md/mingw_setup.md</code></a>.</p>
+<ul>
+<li><code>--server-grpc vcpkg</code>: needs vcpkg checkout + Qt installer's</li>
+</ul>
+<p>  MinGW. See <a href="../examples/docs/html/vcpkg_setup.html"><code>../examples/docs/md/vcpkg_setup.md</code></a>.</p>
+<ul>
+<li><code>--gui qt</code>: needs Qt 6.8+ with the GRPC + Protobuf modules. See</li>
+</ul>
+<p>  <a href="../examples/docs/html/qt_grpc_setup.html"><code>../examples/docs/md/qt_grpc_setup.md</code></a>.</p>
+
+<p>After the toolchain is set up:</p>
+
+<pre><code>cd &lt;generated_service&gt;
+build_deploy_msys2.bat        # or build_qt_vcpkg.bat for vcpkg
+</code></pre>
+
+<h2 id="see-also">See also</h2>
+
+<ul>
+<li><a href="architecture.html"><code>architecture.md</code></a> / <a href="runtime_model.html"><code>runtime_model.md</code></a> — to understand why a symptom happens</li>
+<li><a href="../examples/docs/html/index.html"><code>../examples/docs/md/index.md</code></a> — toolchain setup for build problems</li>
+<li><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md</code></a> — Consul/Nomad GUI ops + their own troubleshooting tail</li>
+<li><a href="_legacy/troubleshooting-guide.md"><code>_legacy/troubleshooting-guide.md</code></a> — pre-migration symptoms (RabbitMQ, ProcessHub, Fleet)</li>
+</ul>
+
+</main>
+</body>
+</html>

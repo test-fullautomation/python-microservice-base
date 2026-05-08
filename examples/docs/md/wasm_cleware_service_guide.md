@@ -81,7 +81,7 @@ cd vcpkg
 ```
 
 ### 5. RabbitMQ Server
-Download from [rabbitmq.com](https://www.rabbitmq.com/install-windows.html) — installs Erlang + RabbitMQ. Verify it runs on `localhost:5672`.
+Download from [rabbitmq.com](https://www.rabbitmq.com/install-windows.md) — installs Erlang + RabbitMQ. Verify it runs on `localhost:5672`.
 
 ### 6. Python 3.x + MicroserviceBase
 The MicroserviceBase repo bundles a Python distribution at `RobotFramework\python3\`. After cloning:

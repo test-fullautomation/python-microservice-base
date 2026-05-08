@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded — gRPC service+method names are explicit in `.proto`, so the `svc_api_` prefix convention (used to auto-discover callable methods on RabbitMQ-era services) is no longer needed. Generated scaffolds use plain method names matching the `.proto`.
 
 ## Date
 

@@ -39,8 +39,8 @@ building:
 | ⏱ Want vcpkg + Qt MinGW but don't want the 30–60 min compile | Download prebuilt artifacts from [SharePoint](https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x) and run `import_prebuilt.bat <path>.zip` at your project root. See the *Use prebuilt libraries* section in any vcpkg project's `README.html`. |
 | 🌐 Adding a browser-rendered UI (WASM) | [WASM Cleware service guide](wasm_cleware_service_guide.md) — full walkthrough of building a service with a Qt-WebAssembly UI. |
 | 🛠 Already have the toolchain — want to write the service code | [Service creation guide](service_creation.md) — the long tutorial: proto, domain, adapter, settings, main, build, run, debug. |
-| 🪄 Want the boilerplate generated for you | [Service Creator wizard guide](gui_wizard.md) — drive the Manager GUI's 4-step wizard, or use the `mb-scaffold` CLI. |
-| 🎛 Don't want to run `consul agent -dev` / `nomad agent -dev` in two terminals | [Manager GUI ops guide](manager_gui_ops.md) — the GUI starts/stops both agents, shows live LEDs, lists registered services, and submits Nomad jobs from a file picker. Replaces the per-terminal CLI workflow. |
+| 🪄 Want the boilerplate generated for you | [Service Creator wizard guide](../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) — drive the Manager GUI's 4-step wizard, or use the `mb-scaffold` CLI. |
+| 🎛 Don't want to run `consul agent -dev` / `nomad agent -dev` in two terminals | [Manager GUI ops guide](../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) — the GUI starts/stops both agents, shows live LEDs, lists registered services, and submits Nomad jobs from a file picker. Replaces the per-terminal CLI workflow. |
 | ⚡ Just want to scaffold something fast | Run `python -m MicroserviceBase.tools.scaffold_cli --help` from the project root. |
 
 ## All docs
@@ -79,7 +79,7 @@ building:
 
 ### Tutorials
 
-- **[Manager GUI — Consul + Nomad ops](manager_gui_ops.md)** —
+- **[Manager GUI — Consul + Nomad ops](../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md)** —
   Service Network tab · agent start/stop · live LEDs. The easiest
   on-ramp to the runtime: launch the Manager GUI (Electron or browser),
   open *Service Network*, and start Consul + Nomad with one click each.
@@ -89,7 +89,7 @@ building:
   available via `POST /api/{consul,nomad}/agent/start` for scripting.
   *For: anyone who'd rather not babysit two terminal windows.*
 
-- **[Service Creator wizard guide](gui_wizard.md)** — Manager GUI ·
+- **[Service Creator wizard guide](../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md)** — Manager GUI ·
   4-step wizard · screenshots. End-to-end walkthrough of generating a
   service scaffold (proto + domain + adapter + clients + Nomad) from
   the Manager GUI without writing boilerplate. Same generator backend

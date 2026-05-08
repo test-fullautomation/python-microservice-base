@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-022 Nomad Orchestrator Integration](022-nomad-orchestrator-integration.md). The Local Hub process supervisor was replaced by Nomad `raw_exec` jobs; lifecycle management moved out of the GUI process and into the Nomad agent.
 
 ## Date
 

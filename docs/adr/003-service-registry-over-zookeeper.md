@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded — replaced by Consul service catalog (see [ADR-022](022-nomad-orchestrator-integration.md) for the Nomad+Consul rationale).
 
 ## Date
 
