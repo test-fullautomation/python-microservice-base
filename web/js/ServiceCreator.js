@@ -80,6 +80,7 @@
       importedProtoFileName: '',
       importedServices: [],         // [{name, methods}] when user imported 2+ services
       monorepoLayout: false,        // false = separate folders, true = single project
+      layout: '',                   // '' | 'monorepo' | 'multi_proto' — set by import handlers
       outputPath: '',
       customGuiHtml: null,
       customGuiJs: null
@@ -554,25 +555,86 @@
             '<div class="card-body">' +
               '<h6 class="card-title text-success mb-3">' +
                 '<i class="bi bi-collection me-2"></i>' +
-                _formData.importedServices.length + ' services will be generated ' +
-                '<span class="badge bg-primary ms-2">' +
-                  (_formData.monorepoLayout ? 'monorepo' : 'separate folders') +
-                '</span>' +
+                _formData.importedServices.length + ' services will be generated' +
               '</h6>' +
-              '<ul class="mb-2">' +
+              // Layout selector — three options:
+              //   multi_proto: one .exe hosting all services
+              //   monorepo:    one project, N .exes (shared codebase)
+              //   separate:    N independent projects, one per service
+              // Reflects whatever was set during import (picker modal /
+              // multi-file auto-default).
+              '<div class="mb-3 p-2 rounded" style="background:rgba(255,255,255,0.04);">' +
+                '<div class="small text-muted mb-1">Output layout:</div>' +
+                '<div class="form-check">' +
+                  '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                    'id="creatorLayoutMultiProto" value="multi_proto"' +
+                    (_formData.layout === 'multi_proto' ? ' checked' : '') + '>' +
+                  '<label class="form-check-label small" for="creatorLayoutMultiProto">' +
+                    '<strong>multi-proto</strong> &mdash; one <code>.exe</code> hosting ' +
+                    'all services on one port (one Consul registration). ' +
+                    '<span class="text-muted">Best for one logical device.</span>' +
+                  '</label>' +
+                '</div>' +
+                '<div class="form-check">' +
+                  '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                    'id="creatorLayoutMonorepo" value="monorepo"' +
+                    (_formData.layout === 'monorepo' ||
+                     (_formData.monorepoLayout && _formData.layout !== 'multi_proto'
+                                              && _formData.layout !== 'separate')
+                       ? ' checked' : '') + '>' +
+                  '<label class="form-check-label small" for="creatorLayoutMonorepo">' +
+                    '<strong>monorepo</strong> &mdash; one project, ' +
+                    '<em>N</em> <code>.exe</code>s, each with its own port and ' +
+                    'Consul registration. ' +
+                    '<span class="text-muted">Scale services independently.</span>' +
+                  '</label>' +
+                '</div>' +
+                '<div class="form-check">' +
+                  '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                    'id="creatorLayoutSeparate" value="separate"' +
+                    (_formData.layout === 'separate' ? ' checked' : '') + '>' +
+                  '<label class="form-check-label small" for="creatorLayoutSeparate">' +
+                    '<strong>separate projects</strong> &mdash; ' +
+                    '<em>N</em> independent project folders, one per service. ' +
+                    '<span class="text-muted">Each ships separately ' +
+                    '(own CMakeLists, build script, Nomad job).</span>' +
+                  '</label>' +
+                '</div>' +
+              '</div>' +
+              // Per-service grouped method list -- shows which RPC belongs
+              // to which service so it's clear how the .proto is structured.
+              '<div class="mb-2">' +
                 _formData.importedServices.map(function (s) {
-                  return '<li><strong>' + _escapeHtml(s.name) + '</strong>' +
-                    ' <span class="text-muted">— ' + s.methods.length + ' method(s)</span></li>';
+                  var methodsHtml = (s.methods && s.methods.length > 0)
+                    ? '<ul class="ms-4 mb-2 mt-1" style="font-family: Consolas, monospace; font-size: 0.85em;">' +
+                        s.methods.map(function (m) {
+                          var paramStr = (m.params || []).map(function (p) {
+                            return p.name + ':' + (p.type || 'string');
+                          }).join(', ');
+                          var stream = m.serverStreaming
+                            ? ' <span class="badge bg-warning text-dark" style="font-size: 0.75em;">stream</span>'
+                            : '';
+                          return '<li>' +
+                            'rpc <strong>' + _escapeHtml(m.name) + '</strong>' +
+                            '(' + _escapeHtml(paramStr) + ')' +
+                            (m.returnType ? ' &rarr; ' + _escapeHtml(m.returnType) : '') +
+                            stream +
+                          '</li>';
+                        }).join('') +
+                      '</ul>'
+                    : '<div class="ms-4 text-muted small fst-italic">no methods</div>';
+                  return '<div class="mb-2">' +
+                    '<div class="fw-semibold">' +
+                      '<i class="bi bi-box me-1"></i>' + _escapeHtml(s.name) +
+                      ' <span class="text-muted small">(' + s.methods.length + ' method' +
+                      (s.methods.length === 1 ? '' : 's') + ')</span>' +
+                    '</div>' +
+                    methodsHtml +
+                  '</div>';
                 }).join('') +
-              '</ul>' +
+              '</div>' +
               '<p class="text-muted small mb-2">' +
-                (_formData.monorepoLayout ?
-                  'All services will be scaffolded into <strong>one project folder</strong> ' +
-                  'with one CMakeLists and one <code>build_deploy.bat</code>.  Each service ' +
-                  'builds to its own <code>.exe</code>, sharing a single <code>.proto</code>.' :
-                  'Each service gets its own folder under the output path, sharing ' +
-                  'this single <code>.proto</code> file.') +
-                '  To edit methods, modify the <code>.proto</code> and re-import.' +
+                'To edit methods, modify the <code>.proto</code>(s) and re-import.' +
               '</p>' +
               '<button class="btn btn-sm btn-outline-secondary" id="btnClearImport">' +
                 '<i class="bi bi-x-circle me-1"></i>Clear import &amp; enter manually' +
@@ -590,7 +652,7 @@
               '<i class="bi bi-upload me-1"></i>Import .proto…' +
             '</button>' +
             '<input type="file" id="importProtoFile" accept=".proto,text/plain" ' +
-              'style="display:none">' +
+              'multiple style="display:none">' +
             (_formData.importedProtoContent ?
               '<span class="badge bg-success align-self-center">' +
                 '<i class="bi bi-check-circle me-1"></i>Imported .proto loaded' +
@@ -713,8 +775,24 @@
         _formData.importedProtoContent = '';
         _formData.importedProtoFileName = '';
         _formData.monorepoLayout = false;
+        _formData.layout = '';
         _formData.methods = [];
         _renderStep(_currentStep);
+      });
+
+      // Inline layout toggle — flips _formData.layout / monorepoLayout
+      // so the user can switch between multi_proto (1 .exe), monorepo
+      // (N .exe in 1 project), or separate (N independent projects)
+      // without re-importing.
+      var layoutRadios = document.querySelectorAll(
+        'input[name="creatorStep3Layout"]'
+      );
+      layoutRadios.forEach(function (radio) {
+        radio.addEventListener('change', function () {
+          _formData.layout = this.value;
+          // monorepoLayout is the legacy boolean; keep it consistent.
+          _formData.monorepoLayout = (this.value === 'monorepo');
+        });
       });
       _wireNavButtons();
       return;
@@ -742,12 +820,22 @@
     var importFileInput = document.getElementById('importProtoFile');
     importBtn.addEventListener('click', function () { importFileInput.click(); });
     importFileInput.addEventListener('change', function (ev) {
-      var file = ev.target.files && ev.target.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function (e) { _handleImportedProto(e.target.result, file.name); };
-      reader.readAsText(file);
-      // Clear so the same file can be re-picked.
+      var files = ev.target.files ? Array.from(ev.target.files) : [];
+      if (files.length === 0) return;
+      if (files.length === 1) {
+        // Single .proto: original flow (may itself contain multiple
+        // service blocks → triggers picker modal).
+        var f = files[0];
+        var reader = new FileReader();
+        reader.onload = function (e) { _handleImportedProto(e.target.result, f.name); };
+        reader.readAsText(f);
+      } else {
+        // Multiple .proto files: each file becomes one ServiceBlock with
+        // its own proto_file + proto_content.  Forces multi_proto layout
+        // (one binary, N gRPC services on one ServerBuilder).
+        _handleMultipleProtoImports(files);
+      }
+      // Clear so the same file(s) can be re-picked.
       importFileInput.value = '';
     });
 
@@ -792,9 +880,128 @@
             if (!pick || !pick.indices || pick.indices.length === 0) return;
             var picked = pick.indices.map(function (i) { return data.services[i]; });
             _formData.monorepoLayout = !!pick.monorepo;
+            _formData.layout = pick.layout || (pick.monorepo ? 'monorepo' : '');
+            // For multi_proto from a single .proto, all services share the
+            // same proto file + content.  _applyImportedServices stamps the
+            // shared values onto each ServiceBlock so the generator's
+            // multi_proto path can dedup by proto_file.
             _applyImportedServices(picked, data.proto_package, protoText, fileName);
           });
         }
+      })
+      .catch(function (err) {
+        MM.showToast('Import failed', 'Bridge unreachable: ' + err.message, 'danger');
+      });
+  }
+
+  // Multi-file import: parses N .proto files in parallel, collects every
+  // service from every file into _formData.importedServices (each entry
+  // carrying its own proto_file + proto_content), and forces
+  // layout=multi_proto so the bridge's multi-proto generator emits one
+  // binary hosting all services on one ServerBuilder.
+  function _handleMultipleProtoImports(files) {
+    var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
+      var settings = MM.getSettings ? MM.getSettings() : {};
+      var bridgePort = settings.bridgePort || 1112;
+      apiUrl = 'http://localhost:' + bridgePort;
+    }
+
+    // Read each File into text first (FileReader is async per-file).
+    var readPromises = files.map(function (f) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          resolve({ name: f.name, content: e.target.result });
+        };
+        reader.onerror = function () { reject(new Error('Read failed: ' + f.name)); };
+        reader.readAsText(f);
+      });
+    });
+
+    Promise.all(readPromises)
+      .then(function (filePayloads) {
+        // Parse each file via the bridge.  The bridge endpoint accepts one
+        // .proto at a time; we fan out and wait for all results.
+        var parsePromises = filePayloads.map(function (fp) {
+          return fetch(apiUrl + '/api/scaffold/parse-proto', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ proto_content: fp.content })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              return { file: fp, parsed: data };
+            });
+        });
+        return Promise.all(parsePromises);
+      })
+      .then(function (results) {
+        var allServices = [];
+        var failed = [];
+        results.forEach(function (r) {
+          if (r.parsed.status !== 'ok') {
+            failed.push(r.file.name + ': ' + (r.parsed.error || 'parse failed'));
+            return;
+          }
+          if (!r.parsed.services || r.parsed.services.length === 0) {
+            failed.push(r.file.name + ': no services found');
+            return;
+          }
+          // Take ALL services from this file (most files have 1; if a file
+          // has multiple, each becomes its own ServiceBlock anyway).
+          r.parsed.services.forEach(function (svc) {
+            allServices.push({
+              name: svc.name,
+              methods: (svc.methods || []).map(function (m) {
+                return {
+                  name: m.name,
+                  params: (m.params || []).map(function (p) {
+                    return { name: p.name, type: p.type || 'string', required: true };
+                  }),
+                  returnType: m.return_type || 'string',
+                  description: m.description || '',
+                  serverStreaming: !!m.server_streaming,
+                  inputType: m.input_type || '',
+                  outputType: m.output_type || ''
+                };
+              }),
+              // multi_proto-only fields: which file this service came from
+              // (also drives the proto/<file> path on the backend).
+              protoFile: r.file.name,
+              protoContent: r.file.content
+            });
+          });
+        });
+
+        if (failed.length > 0) {
+          MM.showToast('Some files failed to import',
+                       failed.join('  |  '), 'warning');
+        }
+        if (allServices.length === 0) {
+          MM.showToast('Import failed', 'No services parsed from selected files.', 'danger');
+          return;
+        }
+
+        // Populate _formData for multi_proto layout.
+        _formData.importedServices = allServices;
+        _formData.layout = 'multi_proto';
+        _formData.monorepoLayout = false; // mutually exclusive with multi_proto
+        // Drive the wizard's single-service fields from the first service
+        // (same convention as single-file multi-service path).
+        _formData.methods = allServices[0].methods.slice();
+        if (!_formData.serviceName) {
+          _formData.serviceName = allServices[0].name;
+        }
+        // Track aggregated source for the "imported badge" text.
+        _formData.importedProtoFileName = files.length + ' files';
+        _formData.importedProtoContent = ''; // not used in multi_proto mode
+
+        MM.showToast('Imported',
+          allServices.length + ' service(s) from ' + files.length + ' file(s) ' +
+          '(layout: multi_proto — one binary on one port).',
+          'success');
+        _renderStep(_currentStep);
       })
       .catch(function (err) {
         MM.showToast('Import failed', 'Bridge unreachable: ' + err.message, 'danger');
@@ -836,6 +1043,10 @@
     });
 
     // Keep the full list so submit can loop generate-v2 per service.
+    // For single-file multi-service in multi_proto layout, every service
+    // shares the same proto file + content (the generator dedups codegen
+    // blocks by proto_file).  protoFile defaults to the imported file's
+    // name so the generator writes proto/<fileName> verbatim.
     _formData.importedServices = (services.length > 1) ? services.map(function (s) {
       return {
         name: s.name,
@@ -851,7 +1062,9 @@
             inputType: m.input_type || '',
             outputType: m.output_type || ''
           };
-        })
+        }),
+        protoFile: fileName || '',
+        protoContent: protoText || ''
       };
     }) : [];
 
@@ -906,13 +1119,16 @@
               '<h6 class="mb-2">Output layout</h6>' +
               '<div class="form-check">' +
                 '<input class="form-check-input" type="radio" name="svcLayout" ' +
-                  'id="svcLayoutSeparate" value="separate" checked>' +
-                '<label class="form-check-label" for="svcLayoutSeparate">' +
-                  '<strong>One folder per service</strong> (independent projects)<br>' +
+                  'id="svcLayoutMultiProto" value="multi_proto" checked>' +
+                '<label class="form-check-label" for="svcLayoutMultiProto">' +
+                  '<strong>Single binary, multiple services</strong> ' +
+                  '(<code>multi_proto</code>)<br>' +
                   '<span class="text-muted small">' +
-                    'Each service becomes a self-contained scaffold — its own proto, ' +
-                    'CMakeLists, build script, and Nomad job.  Good for services that ' +
-                    'ship separately or are owned by different teams.' +
+                    'One <code>.exe</code> hosts every selected service on the ' +
+                    '<strong>same</strong> <code>grpc::ServerBuilder</code> &mdash; ' +
+                    'one Consul registration, one port, atomic lifecycle.  ' +
+                    'Best for one logical device with multiple capability ' +
+                    'surfaces (e.g. Power Supply: config + control).' +
                   '</span>' +
                 '</label>' +
               '</div>' +
@@ -920,11 +1136,24 @@
                 '<input class="form-check-input" type="radio" name="svcLayout" ' +
                   'id="svcLayoutMonorepo" value="monorepo">' +
                 '<label class="form-check-label" for="svcLayoutMonorepo">' +
-                  '<strong>Single project (monorepo)</strong><br>' +
+                  '<strong>Single project (monorepo)</strong> &mdash; N executables<br>' +
                   '<span class="text-muted small">' +
                     'One project (one CMakeLists for C++, one pyproject.toml ' +
                     'for Python) that produces N entry points sharing the ' +
-                    'same .proto.  Good for cohesive systems of related services.' +
+                    'same .proto.  Each service has its own port and Consul ' +
+                    'registration.  Good for services that may scale independently.' +
+                  '</span>' +
+                '</label>' +
+              '</div>' +
+              '<div class="form-check mt-2">' +
+                '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                  'id="svcLayoutSeparate" value="separate">' +
+                '<label class="form-check-label" for="svcLayoutSeparate">' +
+                  '<strong>One folder per service</strong> (independent projects)<br>' +
+                  '<span class="text-muted small">' +
+                    'Each service becomes a self-contained scaffold &mdash; its own proto, ' +
+                    'CMakeLists, build script, and Nomad job.  Good for services that ' +
+                    'ship separately or are owned by different teams.' +
                   '</span>' +
                 '</label>' +
               '</div>' +
@@ -963,9 +1192,15 @@
         return;
       }
       var layoutRadio = modalEl.querySelector('input[name="svcLayout"]:checked');
-      var monorepo = layoutRadio && layoutRadio.value === 'monorepo';
+      var layoutValue = layoutRadio ? layoutRadio.value : 'multi_proto';
       modal.hide();
-      onPick({ indices: picked, monorepo: monorepo });
+      // Keep `monorepo: bool` for back-compat with older callbacks.
+      // `layout` is the new authoritative value.
+      onPick({
+        indices: picked,
+        layout: layoutValue,
+        monorepo: layoutValue === 'monorepo',
+      });
     });
     modalEl.addEventListener('hidden.bs.modal', function () { modalEl.remove(); });
     modal.show();
@@ -1938,15 +2173,29 @@
         '<div class="creator-summary">' +
           '<div class="creator-summary-header">' +
             (isMulti
-              ? '<i class="bi bi-collection me-2"></i>' +
-                _escapeHtml(d.serviceName) +
-                ' <span class="badge bg-primary ms-2">' +
-                  d.importedServices.length + ' services' +
-                '</span>' +
-                ' <span class="badge ' +
-                  (d.monorepoLayout ? 'bg-info' : 'bg-secondary') + ' ms-1">' +
-                  (d.monorepoLayout ? 'monorepo' : 'separate folders') +
-                '</span>'
+              ? (function () {
+                  // Resolve effective layout label.  d.layout is the
+                  // authoritative value (multi_proto / monorepo /
+                  // separate); fall back to legacy monorepoLayout for
+                  // older imports that didn't set d.layout.
+                  var effectiveLayout = d.layout
+                    || (d.monorepoLayout ? 'monorepo' : 'separate');
+                  var layoutLabelMap = {
+                    'multi_proto': { text: 'multi-proto (1 .exe)', cls: 'bg-success' },
+                    'monorepo':    { text: 'monorepo (N .exe)',    cls: 'bg-info' },
+                    'separate':    { text: 'separate projects',    cls: 'bg-secondary' },
+                  };
+                  var meta = layoutLabelMap[effectiveLayout]
+                    || layoutLabelMap['separate'];
+                  return '<i class="bi bi-collection me-2"></i>' +
+                    _escapeHtml(d.serviceName) +
+                    ' <span class="badge bg-primary ms-2">' +
+                      d.importedServices.length + ' services' +
+                    '</span>' +
+                    ' <span class="badge ' + meta.cls + ' ms-1">' +
+                      meta.text +
+                    '</span>';
+                })()
               : '<i class="bi bi-box-seam me-2"></i>' +
                 _escapeHtml(d.serviceName) + ' v' + _escapeHtml(d.version)) +
           '</div>' +
@@ -2650,6 +2899,58 @@
       apiUrl = 'http://localhost:' + bridgePort;
     }
 
+    // ---- Multi-proto import: single POST, backend generates ONE binary
+    //                          hosting N gRPC services on one ServerBuilder.
+    if (d.importedServices && d.importedServices.length > 1
+        && d.layout === 'multi_proto') {
+      var mpPayload = _buildGeneratePayload(d, d.serviceName, d.methods);
+      mpPayload.monorepo = false;
+      mpPayload.layout = 'multi_proto';
+      mpPayload.services = d.importedServices.map(function (svc) {
+        return {
+          name: svc.name,
+          // Per-service .proto location + verbatim content (multi_proto only).
+          // The generator writes proto/<proto_file> with this exact text so
+          // imported messages, comments, and packages are preserved.
+          proto_file: svc.protoFile || '',
+          proto_content: svc.protoContent || '',
+          methods: (svc.methods || []).map(function (m) {
+            return {
+              name: m.name,
+              params: (m.params || []).map(function (p) {
+                return { name: p.name, type: p.type || 'string',
+                         required: p.required !== false, description: p.description || '' };
+              }),
+              return_type: m.returnType || 'string',
+              description: m.description || '',
+              server_streaming: !!m.serverStreaming,
+              input_type: m.inputType || '',
+              output_type: m.outputType || ''
+            };
+          })
+        };
+      });
+      fetch(apiUrl + '/api/scaffold/generate-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mpPayload)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status === 'ok') {
+            MM.showToast('Success',
+              'Multi-proto binary with ' + d.importedServices.length +
+              ' services saved to ' + data.path, 'success');
+          } else {
+            MM.showToast('Error', data.error || 'Generation failed.', 'danger');
+          }
+        })
+        .catch(function (err) {
+          MM.showToast('Error', 'Failed to save: ' + err.message, 'danger');
+        });
+      return;
+    }
+
     // ---- Monorepo import: single POST, backend generates one project folder
     //                       with N executables.
     if (d.importedServices && d.importedServices.length > 1 && d.monorepoLayout) {
@@ -2696,12 +2997,23 @@
     }
 
     // ---- Separate-folders multi-service import: loop N POSTs.
+    // Each service becomes its own independent project.  In multi-file
+    // mode, every service carries its own protoContent (set by the
+    // multi-file import handler), so each generated project preserves
+    // exactly the .proto file it was imported from.  In single-file
+    // mode, all services share the imported proto (handled implicitly
+    // by _buildGeneratePayload reading d.importedProtoContent).
     if (d.importedServices && d.importedServices.length > 1) {
       var results = { ok: 0, fail: 0, errors: [] };
       var chain = Promise.resolve();
       d.importedServices.forEach(function (svc) {
         chain = chain.then(function () {
           var p = _buildGeneratePayload(d, svc.name, svc.methods);
+          // Multi-file import: per-service .proto content overrides the
+          // shared d.importedProtoContent (which is empty in multi-file mode).
+          if (svc.protoContent) {
+            p.proto_content_override = svc.protoContent;
+          }
           return fetch(apiUrl + '/api/scaffold/generate-v2', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

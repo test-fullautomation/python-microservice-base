@@ -2265,9 +2265,16 @@ Generate scaffolding for a new microservice project.
          output_type: str = ""   # fully-qualified proto type (imported protos)
 
       class ScaffoldV2Service(BaseModel):
-         """One service block inside a monorepo scaffold."""
+         """One service block inside a multi-service scaffold (monorepo or
+         multi_proto layout)."""
          name: str = ""
          methods: List[ScaffoldV2Method] = []
+         # multi_proto-only: per-service .proto filename and verbatim text.
+         # When set, the generator writes proto/<proto_file> with this
+         # exact content (preserves comments / imports / packages).
+         # Empty in monorepo mode.
+         proto_file: str = ""
+         proto_content: str = ""
 
       class ScaffoldV2Request(BaseModel):
          service_name: str
@@ -2297,7 +2304,12 @@ Generate scaffolding for a new microservice project.
          output_path: str = ""
          proto_content_override: str = ""   # if non-empty, written verbatim to proto/<sn>.proto
          monorepo: bool = False             # when true, emit one project with N executables
-         services: List[ScaffoldV2Service] = []  # for monorepo: [{name, methods}]
+         layout: str = ""                   # ""|"monorepo"|"multi_proto" - explicit layout
+                                            # selector.  Takes precedence over `monorepo`
+                                            # (kept for back-compat).  multi_proto = N
+                                            # services in 1 binary; needs per-service
+                                            # proto_file + proto_content.
+         services: List[ScaffoldV2Service] = []  # for monorepo / multi_proto
          proto_package: str = ""            # real .proto `package X;` when importing
 
       class ParseProtoRequest(BaseModel):
@@ -2444,9 +2456,19 @@ Generate scaffolding for a new microservice project.
          except ValueError as exc:
             return {"status": "error", "error": str(exc)}
 
-         # Convert monorepo services list into ServiceBlock dataclasses.
+         # Resolve effective layout.  Explicit `layout` takes precedence;
+         # `monorepo: true` is the legacy form.  Multi_proto requires per-
+         # service proto_file + proto_content, so the JS wizard sets it
+         # explicitly when the user picked >1 .proto files.
+         effective_layout = body.layout
+         if not effective_layout:
+            effective_layout = "monorepo" if body.monorepo else ""
+
+         # Convert services list (used by both monorepo and multi_proto) into
+         # ServiceBlock dataclasses.  multi_proto entries also carry
+         # proto_file + proto_content.
          mono_services = []
-         if body.monorepo and body.services:
+         if effective_layout in ("monorepo", "multi_proto") and body.services:
             for svc in body.services:
                try:
                   _validate_safe_name(svc.name)
@@ -2469,6 +2491,8 @@ Generate scaffolding for a new microservice project.
                      )
                      for m in svc.methods
                   ],
+                  proto_file=svc.proto_file,
+                  proto_content=svc.proto_content,
                ))
 
          spec = ScaffoldSpec(
@@ -2512,6 +2536,7 @@ Generate scaffolding for a new microservice project.
             proto_content_override=body.proto_content_override,
             proto_package_override=body.proto_package,
             services=mono_services,
+            layout=effective_layout or "monorepo",
          )
 
          try:
