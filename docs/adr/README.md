@@ -36,7 +36,7 @@ ADRs document important architectural decisions made during the development of t
 | [ADR-026](026-uv-python-service-envs.md) | uv-based Python service environments | Proposed | 2026-05-07 | Audit follow-up | (pending) |
 | [ADR-027](027-kafka-event-bus-alongside-grpc.md) | Kafka event bus alongside gRPC | Proposed | 2026-05-07 | Audit follow-up | (pending) |
 | [ADR-028](028-grpc-reflection-primary-rpc.md) | gRPC + reflection as the primary RPC layer | Proposed | 2026-05-07 | Audit follow-up | (pending) |
-| [ADR-029](029-robot-framework-primary-test-client.md) | Robot Framework as the primary test client | Proposed | 2026-05-07 | Audit follow-up | (pending) |
+| [ADR-029](029-robot-framework-primary-test-client.md) | Robot Framework as the primary test client (via QConnectBase `GrpcClient` connection type) | Proposed | 2026-05-10 | Audit follow-up | (pending) |
 
 > **Audit note (2026-05-07).** ADRs 023–029 capture the
 > post-migration architecture aligned with the TA reference at

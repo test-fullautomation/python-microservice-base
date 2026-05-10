@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "MicroserviceBase"
-version = "2.0.0"
+version = "2.1.0"
 description = "Microservice base framework with pluggable transport, registry adapters, and Manager GUI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,14 @@ dependencies = [
     "grpcio>=1.60.0",
     "grpcio-reflection>=1.60.0",
     "grpcio-health-checking>=1.60.0",
+    # grpcio-tools is needed at runtime by the bridge's "Pre-generate
+    # proto stubs" feature (Service Creator wizard) — `from grpc_tools
+    # import protoc` runs in-process when the user ticks that checkbox.
+    # Was previously an optional `proto-tools` extra; promoted to a base
+    # dep in 2026-05 because the wizard silently no-op'd when the bridge
+    # Python lacked it.  ~30 MB cost on every install, but removes a
+    # surprising failure mode.
+    "grpcio-tools>=1.60.0",
     "protobuf>=4.25.0",
     "httpx>=0.25.0",
     "pydantic>=2.5.0",
@@ -40,9 +48,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-proto-tools = [
-    "grpcio-tools>=1.60.0",
-]
 web = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
@@ -54,7 +59,7 @@ dev = [
     "colorama>=0.4.0",
 ]
 all = [
-    "MicroserviceBase[proto-tools,web,dev]",
+    "MicroserviceBase[web,dev]",
 ]
 
 [project.urls]

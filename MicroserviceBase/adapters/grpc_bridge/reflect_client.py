@@ -39,34 +39,58 @@ logger = logging.getLogger(__name__)
 
 
 class GrpcReflectError(Exception):
-    """Any failure from the reflection client — network, parse, or invoke.
+    """
+Any failure from the reflection client — network, parse, or invoke.
 
-    Attributes:
-        is_unimplemented: True when the failure came from a reflection RPC
-            that the server returned ``UNIMPLEMENTED`` for — the canonical
-            signal that the server wasn't built with reflection support.
-            Bridge code uses this to decide whether to fall back to
-            :class:`LocalProtoClient`.
+**Attributes:**
+
+* ``is_unimplemented``
+
+  / *Type*: bool /
+
+  ``True`` when the failure came from a reflection RPC that the server
+  returned ``UNIMPLEMENTED`` for — the canonical signal that the server
+  wasn't built with reflection support.  Bridge code uses this to decide
+  whether to fall back to :class:`LocalProtoClient`.
     """
 
     def __init__(self, message: str, *, is_unimplemented: bool = False) -> None:
+        """
+Construct a GrpcReflectError.
+
+**Arguments:**
+
+* ``message``
+
+  / *Condition*: required / *Type*: str /
+
+  Human-readable error message (passed straight to ``Exception``).
+
+* ``is_unimplemented``
+
+  / *Condition*: optional / *Type*: bool / *Default*: False /
+
+  Set to ``True`` when the underlying RPC returned UNIMPLEMENTED.
+        """
         super().__init__(message)
         self.is_unimplemented = is_unimplemented
 
 
 class GrpcReflectClient:
-    """Talk to a gRPC server using only its address + the reflection API.
+    """
+Talk to a gRPC server using only its address + the reflection API.
 
-    Usage:
-        client = GrpcReflectClient("127.0.0.1:50051")
-        services = client.list_services()
-        methods = client.list_methods("hello.v1.HelloService")
-        result = client.call_unary(
-            "hello.v1.HelloService", "Greet", '{"name": "World"}'
-        )
+Usage::
 
-    The instance is **not** thread-safe.  Create one per request on the
-    bridge side.
+    client = GrpcReflectClient("127.0.0.1:50051")
+    services = client.list_services()
+    methods = client.list_methods("hello.v1.HelloService")
+    result = client.call_unary(
+        "hello.v1.HelloService", "Greet", '{"name": "World"}'
+    )
+
+The instance is **not** thread-safe.  Create one per request on the
+bridge side.
     """
 
     # Built-in gRPC services to hide from callers — they're implementation
@@ -78,6 +102,24 @@ class GrpcReflectClient:
     }
 
     def __init__(self, target: str, timeout: float = 5.0) -> None:
+        """
+Construct a GrpcReflectClient bound to a gRPC target.
+
+**Arguments:**
+
+* ``target``
+
+  / *Condition*: required / *Type*: str /
+
+  ``host:port`` string of the gRPC server.
+
+* ``timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: 5.0 /
+
+  Per-RPC timeout in seconds (applies to both reflection requests and
+  the actual unary calls).
+        """
         self._target = target
         self._timeout = timeout
         self._channel = grpc.insecure_channel(target)
@@ -87,6 +129,13 @@ class GrpcReflectClient:
         self._loaded_symbols: set[str] = set()
 
     def close(self) -> None:
+        """
+Close the underlying gRPC channel.  Safe to call multiple times.
+
+**Returns:**
+
+(*no returns*)
+        """
         try:
             self._channel.close()
         except Exception:
@@ -123,8 +172,20 @@ class GrpcReflectClient:
         raise GrpcReflectError("Empty reflection response")
 
     def list_services(self) -> List[str]:
-        """Return all fully-qualified service names exposed by the target,
-        excluding the built-in reflection / health services."""
+        """
+Return all fully-qualified service names exposed by the target,
+excluding the built-in reflection / health services.
+
+**Returns:**
+
+* ``services``
+
+  / *Type*: List[str] /
+
+  Sorted-by-server fully-qualified service names (e.g.
+  ``"hello.v1.HelloService"``).  Empty list when the server exposes
+  only built-in services.
+        """
         req = reflection_pb2.ServerReflectionRequest(list_services="")
         resp = self._reflect(req)
         names = [s.name for s in resp.list_services_response.service]
@@ -204,17 +265,27 @@ class GrpcReflectClient:
         return self._pool.FindServiceByName(full_name)
 
     def list_methods(self, full_service_name: str) -> List[Dict[str, Any]]:
-        """Return a list of method descriptors for *full_service_name*.
+        """
+Return method descriptors for ``full_service_name``.
 
-        Each entry:
-            {
-              "name": "Greet",
-              "input_type": "hello.v1.GreetRequest",
-              "output_type": "hello.v1.GreetResponse",
-              "client_streaming": False,
-              "server_streaming": False,
-              "input_fields": [ {name, type, label, message_type?}, ... ]
-            }
+**Arguments:**
+
+* ``full_service_name``
+
+  / *Condition*: required / *Type*: str /
+
+  Fully-qualified service name (e.g. ``"hello.v1.HelloService"``).
+
+**Returns:**
+
+* ``methods``
+
+  / *Type*: List[Dict[str, Any]] /
+
+  One dict per RPC, with keys ``name``, ``input_type``,
+  ``output_type``, ``client_streaming``, ``server_streaming``,
+  ``input_fields`` (shallow field list), and ``input_skeleton``
+  (JSON skeleton with default values).
         """
         svc = self._service_descriptor(full_service_name)
         out: List[Dict[str, Any]] = []
@@ -292,18 +363,59 @@ class GrpcReflectClient:
         max_events: int = 100,
         max_seconds: float = 15.0,
     ) -> Dict[str, Any]:
-        """Invoke a unary-unary or server-streaming method.
+        """
+Invoke a unary-unary or server-streaming method.
 
-        * **Unary-unary** → returns ``{"streaming": False, "result": <dict>}``.
-        * **Server-streaming** → reads up to *max_events* events from the
-          stream (or until *max_seconds* elapses), then cancels the RPC and
-          returns
-          ``{"streaming": True, "events": [<dict>, ...], "truncated": bool}``.
-        * **Client- or bidi-streaming** → raises :class:`GrpcReflectError`.
+* **Unary-unary** → returns ``{"streaming": False, "result": <dict>}``.
+* **Server-streaming** → reads up to ``max_events`` events from the
+  stream (or until ``max_seconds`` elapses), then cancels the RPC and
+  returns ``{"streaming": True, "events": [<dict>, ...], "truncated": bool}``.
+* **Client- or bidi-streaming** → raises :class:`GrpcReflectError`.
 
-        Client-streaming and bidirectional streaming need a different UI
-        pattern (incremental request sends + cancel button) and are
-        intentionally rejected here.
+Client-streaming and bidirectional streaming need a different UI
+pattern (incremental request sends + cancel button) and are
+intentionally rejected here.
+
+**Arguments:**
+
+* ``full_service_name``
+
+  / *Condition*: required / *Type*: str /
+
+  Fully-qualified service name (e.g. ``"hello.v1.HelloService"``).
+
+* ``method_name``
+
+  / *Condition*: required / *Type*: str /
+
+  Method name within the service (e.g. ``"Greet"``).
+
+* ``args_json``
+
+  / *Condition*: required / *Type*: str /
+
+  JSON-encoded request message.  Empty string is allowed for methods
+  with no required fields.
+
+* ``max_events``
+
+  / *Condition*: optional / *Type*: int / *Default*: 100 /
+
+  Server-streaming only: maximum events to collect before cancelling.
+
+* ``max_seconds``
+
+  / *Condition*: optional / *Type*: float / *Default*: 15.0 /
+
+  Server-streaming only: maximum wall-clock seconds before cancelling.
+
+**Returns:**
+
+* ``result``
+
+  / *Type*: Dict[str, Any] /
+
+  See the description above for the per-mode shape.
         """
         import time
 
@@ -394,8 +506,31 @@ class GrpcReflectClient:
             "truncated": truncated,
         }
 
-    # Backwards-compat alias — unwraps unary results to match the old shape.
     def call_unary(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """
+Backwards-compat alias for :meth:`call_method` that unwraps unary
+results to match the older shape.
+
+For unary-unary calls returns the response dict directly.  For
+server-streaming calls returns the same shape as ``call_method``
+(``{"streaming": True, ...}``) so callers can still detect streams.
+
+**Arguments:**
+
+* ``args``, ``kwargs``
+
+  / *Condition*: forwarded / *Type*: Any /
+
+  Forwarded verbatim to :meth:`call_method`.
+
+**Returns:**
+
+* ``result``
+
+  / *Type*: Dict[str, Any] /
+
+  Response dict (unary) or full streaming envelope.
+        """
         data = self.call_method(*args, **kwargs)
         if not data.get("streaming"):
             return data.get("result") or {}

@@ -66,6 +66,60 @@ signal-based stop (CTRL_BREAK_EVENT on Windows, SIGTERM on Linux).
         shutdown_timeout: float = 5.0,
         log_dir: Optional[str] = None,
     ):
+        """
+Construct a ServiceExecutor.
+
+**Arguments:**
+
+* ``broker_host``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'localhost' /
+
+  RabbitMQ broker host used for the RPC shutdown attempt.  Ignored
+  when the underlying service is gRPC-only (``svc_api_shutdown`` is a
+  broker-era convention).
+
+* ``broker_port``
+
+  / *Condition*: optional / *Type*: int / *Default*: 5672 /
+
+  RabbitMQ broker port.
+
+* ``start_callback``
+
+  / *Condition*: optional / *Type*: callable / *Default*: None /
+
+  Forwarded to the wrapped ``SimpleExecutor``; invoked after a
+  successful start.
+
+* ``stop_callback``
+
+  / *Condition*: optional / *Type*: callable / *Default*: None /
+
+  Forwarded to the wrapped ``SimpleExecutor``; invoked after a stop.
+
+* ``stop_timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: 5.0 /
+
+  Forwarded to the wrapped ``SimpleExecutor`` — how long the
+  signal-based stop waits before SIGKILL / TerminateProcess.
+
+* ``shutdown_timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: 5.0 /
+
+  Seconds to wait for the RPC shutdown to take effect before falling
+  back to signal-based stop.
+
+* ``log_dir``
+
+  / *Condition*: optional / *Type*: str / *Default*: None /
+
+  Directory for per-process stdout/stderr logs.  Created on first
+  use.  When ``None``, log files are not opened (the process inherits
+  the parent's stdout/stderr).
+        """
         self._broker_host = broker_host
         self._broker_port = int(broker_port)
         self._shutdown_timeout = shutdown_timeout

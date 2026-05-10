@@ -1,11 +1,12 @@
-"""Consul service registration.
+"""
+Consul service registration and lookup.
 
-Direct HTTP client (no python-consul dependency).  Consul's HTTP API is small
-and stable; adding a third-party wrapper adds a dependency without value.
+Direct HTTP client (no python-consul dependency).  Consul's HTTP API is
+small and stable; adding a third-party wrapper adds a dependency without
+value.
 
-The :class:`ConsulRegistration` class is used as an async context manager:
-
-.. code-block:: python
+The :class:`ConsulRegistration` class is used as an async context
+manager::
 
     async with ConsulRegistration(
         name="hello",
@@ -15,9 +16,12 @@ The :class:`ConsulRegistration` class is used as an async context manager:
     ):
         await server.wait_for_termination()
 
-The service is registered when the context is entered and deregistered on
-exit.  A gRPC health check is registered against the same port so Consul
-can mark the service healthy/unhealthy automatically.
+The service is registered when the context is entered and deregistered
+on exit.  A gRPC health check is registered against the same port so
+Consul can mark the service healthy / unhealthy automatically.
+
+For client-side lookup, :func:`resolve_via_consul` returns the first
+healthy ``host:port`` registered under a service name.
 """
 
 from __future__ import annotations
@@ -33,24 +37,13 @@ logger = logging.getLogger(__name__)
 
 
 class ConsulRegistration:
-    """Async context manager that registers a service with Consul on entry
-    and deregisters it on exit.
+    """
+Async context manager that registers a service with Consul on entry
+and deregisters it on exit.
 
-    The service ID is generated from the service name and a short random
-    suffix so multiple instances of the same service can coexist on the
-    same node.
-
-    Args:
-        name:          Logical service name, e.g. ``"hello"``.
-        address:       Address other services should use to reach this one.
-        port:          gRPC port.
-        consul_addr:   Consul HTTP API endpoint.
-        tags:          Optional Consul tags (e.g. ``["v1", "demo"]``).
-        meta:          Optional key/value metadata attached to the service.
-        token:         Optional Consul ACL token.
-        health_interval: How often Consul probes the gRPC health endpoint.
-        health_timeout:  Health probe timeout.
-        deregister_after: Deregister the service if critical for this long.
+The service ID is generated from the service name and a short random
+suffix so multiple instances of the same service can coexist on the
+same node.
     """
 
     def __init__(
@@ -66,6 +59,71 @@ class ConsulRegistration:
         health_timeout: str = "2s",
         deregister_after: str = "1m",
     ) -> None:
+        """
+Construct a ConsulRegistration context manager.
+
+**Arguments:**
+
+* ``name``
+
+  / *Condition*: required / *Type*: str /
+
+  Logical service name, e.g. ``"hello"``.
+
+* ``address``
+
+  / *Condition*: required / *Type*: str /
+
+  Address other services should use to reach this one.
+
+* ``port``
+
+  / *Condition*: required / *Type*: int /
+
+  gRPC port.
+
+* ``consul_addr``
+
+  / *Condition*: optional / *Type*: str / *Default*: "http://localhost:8500" /
+
+  Consul HTTP API endpoint.
+
+* ``tags``
+
+  / *Condition*: optional / *Type*: Sequence[str] / *Default*: None /
+
+  Optional Consul tags (e.g. ``["v1", "demo"]``).
+
+* ``meta``
+
+  / *Condition*: optional / *Type*: dict[str, str] / *Default*: None /
+
+  Optional key/value metadata attached to the service.
+
+* ``token``
+
+  / *Condition*: optional / *Type*: str / *Default*: "" /
+
+  Optional Consul ACL token.
+
+* ``health_interval``
+
+  / *Condition*: optional / *Type*: str / *Default*: "10s" /
+
+  How often Consul probes the gRPC health endpoint.
+
+* ``health_timeout``
+
+  / *Condition*: optional / *Type*: str / *Default*: "2s" /
+
+  Health probe timeout.
+
+* ``deregister_after``
+
+  / *Condition*: optional / *Type*: str / *Default*: "1m" /
+
+  Deregister the service if it stays critical for this long.
+        """
         self._name = name
         self._address = address
         self._port = port
@@ -83,6 +141,17 @@ class ConsulRegistration:
 
     @property
     def service_id(self) -> str:
+        """
+The randomly-suffixed service ID this registration uses.
+
+**Returns:**
+
+* ``service_id``
+
+  / *Type*: str /
+
+  Concatenation of service name and a short hex suffix.
+        """
         return self._service_id
 
     # ------------------------------------------------------------------
@@ -90,6 +159,18 @@ class ConsulRegistration:
     # ------------------------------------------------------------------
 
     async def __aenter__(self) -> "ConsulRegistration":
+        """
+Open the HTTP client and register the service with Consul.
+
+**Returns:**
+
+* ``self``
+
+  / *Type*: ConsulRegistration /
+
+  The instance, so callers can grab ``service_id`` from inside the
+  ``async with`` block.
+        """
         headers = {"X-Consul-Token": self._token} if self._token else {}
         self._client = httpx.AsyncClient(
             base_url=self._consul_addr,
@@ -100,6 +181,13 @@ class ConsulRegistration:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
+        """
+Deregister the service and close the HTTP client.
+
+**Returns:**
+
+(*no returns*)
+        """
         try:
             await self._deregister()
         finally:
@@ -112,6 +200,13 @@ class ConsulRegistration:
     # ------------------------------------------------------------------
 
     async def _register(self) -> None:
+        """
+PUT the service definition to Consul.
+
+**Returns:**
+
+(*no returns*)
+        """
         assert self._client is not None
         payload = {
             "ID": self._service_id,
@@ -137,6 +232,14 @@ class ConsulRegistration:
         resp.raise_for_status()
 
     async def _deregister(self) -> None:
+        """
+PUT the deregister request.  Logs and swallows any failure so the
+context manager still closes cleanly.
+
+**Returns:**
+
+(*no returns*)
+        """
         if self._client is None:
             return
         logger.info("Deregistering service %s (id=%s)", self._name, self._service_id)
@@ -147,3 +250,76 @@ class ConsulRegistration:
             resp.raise_for_status()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to deregister %s: %s", self._service_id, exc)
+
+
+# ----------------------------------------------------------------------
+# Client-side lookup
+# ----------------------------------------------------------------------
+
+def resolve_via_consul(consul_addr: str, service_name: str,
+                       timeout: float = 5.0) -> str:
+   """
+Resolve a Consul service name to a ``host:port`` string.
+
+Calls ``GET /v1/health/service/<name>?passing=true`` and returns the
+first healthy instance.  Synchronous (uses ``httpx.Client``) — designed
+for client-side bootstrap of a single channel, not for hot paths.
+
+For per-call resolution, prefer the gRPC channel's built-in
+``consul://`` resolver in MicroserviceBase's C++ ``ServiceClient<T>``,
+or use the bridge's ``/api/consul/health/<svc>`` endpoint.
+
+**Arguments:**
+
+* ``consul_addr``
+
+  / *Condition*: required / *Type*: str /
+
+  Consul HTTP API endpoint, e.g. ``"http://localhost:8500"``.
+
+* ``service_name``
+
+  / *Condition*: required / *Type*: str /
+
+  Logical service name as registered with Consul.
+
+* ``timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: 5.0 /
+
+  HTTP request timeout in seconds.
+
+**Returns:**
+
+* ``endpoint``
+
+  / *Type*: str /
+
+  ``host:port`` string of the first healthy instance.  Empty string
+  when no healthy instance is registered.
+
+**Raises:**
+
+* ``httpx.HTTPError``
+
+  When the Consul API call itself fails (network error, 5xx, etc.).
+   """
+   base = consul_addr.rstrip("/")
+   url = f"{base}/v1/health/service/{service_name}"
+   with httpx.Client(timeout=timeout) as client:
+      resp = client.get(url, params={"passing": "true"})
+      resp.raise_for_status()
+      entries = resp.json()
+   if not entries:
+      return ""
+
+   # Each entry has Service.Address, Service.Port, Node.Address.  Service
+   # address may be empty — fall back to the node's address in that case.
+   first = entries[0]
+   service = first.get("Service") or {}
+   node    = first.get("Node") or {}
+   address = service.get("Address") or node.get("Address") or ""
+   port    = service.get("Port") or 0
+   if not address or not port:
+      return ""
+   return f"{address}:{port}"

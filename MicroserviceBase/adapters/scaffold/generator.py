@@ -255,15 +255,28 @@ def _generate_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, str]:
 
 
 def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, str]:
-    """Use grpc_tools.protoc to compile .proto content into Python stubs."""
+    """Use grpc_tools.protoc to compile .proto content into Python stubs.
+
+    Failure modes (all logged at WARNING level so they show up in the
+    bridge's launcher.log) all return ``{}`` — the user can then run
+    ``scripts/generate_protos.py`` manually inside the service.
+    """
+    import logging
     import os
     import tempfile
+
+    log = logging.getLogger(__name__)
 
     try:
         from grpc_tools import protoc as grpc_protoc
     except ImportError:
-        # grpc_tools not installed — return empty (user will need to
-        # run generate_protos.py manually).
+        log.warning(
+            "Pre-generate proto stubs requested for service %r, but the "
+            "bridge's Python environment does not have `grpcio-tools` "
+            "installed.  No stubs will be written.  Install with: "
+            "`pip install grpcio-tools` in the bridge's Python.",
+            spec.service_name,
+        )
         return {}
 
     stubs: Dict[str, str] = {}
@@ -284,6 +297,13 @@ def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, 
         ])
 
         if result != 0:
+            log.warning(
+                "grpc_tools.protoc returned non-zero (%d) for service %r — "
+                "no Python stubs generated.  The .proto may have a syntax "
+                "error; try compiling it manually with the same command "
+                "to see protoc's error output.",
+                result, spec.service_name,
+            )
             return {}
 
         # Read generated files
@@ -293,6 +313,8 @@ def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, 
         if os.path.isfile(pb2_path):
             with open(pb2_path, "r", encoding="utf-8") as f:
                 stubs[f"proto/{sn}_pb2.py"] = f.read()
+        else:
+            log.warning("protoc succeeded but %s_pb2.py was not produced.", sn)
 
         if os.path.isfile(grpc_path):
             content = ""
@@ -304,7 +326,12 @@ def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, 
                 f"from . import {sn}_pb2 as {sn.replace('_', '__')}__pb2",
             )
             stubs[f"proto/{sn}_pb2_grpc.py"] = content
+        else:
+            log.warning("protoc succeeded but %s_pb2_grpc.py was not produced.", sn)
 
+    if stubs:
+        log.info("Pre-generated %d Python stub file(s) for service %r.",
+                 len(stubs), spec.service_name)
     return stubs
 
 

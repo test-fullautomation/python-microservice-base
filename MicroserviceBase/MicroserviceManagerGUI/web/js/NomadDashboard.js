@@ -176,7 +176,9 @@
             '<div class="row mb-3">' +
               '<div class="col">' +
                 '<label for="nomadBinPath" class="form-label">Nomad Binary</label>' +
-                '<input type="text" class="form-control" id="nomadBinPath" value="nomad" placeholder="nomad">' +
+                '<input type="text" class="form-control" id="nomadBinPath" value="' +
+                  _esc(((MM.getSettings && MM.getSettings()) || {}).nomadPath || 'nomad') +
+                '" placeholder="nomad">' +
               '</div>' +
               '<div class="col">' +
                 '<label for="nomadHttpPort" class="form-label">HTTP Port</label>' +

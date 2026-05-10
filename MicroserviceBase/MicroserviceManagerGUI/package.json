@@ -70,6 +70,10 @@
         ]
       },
       {
+        "from": "build-resources/bootstrap.sh",
+        "to": "bootstrap.sh"
+      },
+      {
         "from": "build-resources/icon.png",
         "to": "icon.png"
       },
@@ -82,11 +86,15 @@
           "!**/*.log",
           "!**/build/**",
           "!**/dist/**",
-          "!**/.qt/**"
+          "!**/dist-msys2/**",
+          "!**/deploy/**",
+          "!**/.qt/**",
+          "!**/_legacy/**"
         ]
       }
     ],
     "asar": true,
+    "electronLanguages": ["en-US"],
     "win": {
       "target": "nsis",
       "icon": "build-resources/icon.png"
@@ -106,6 +114,9 @@
         "deb"
       ],
       "icon": "build-resources/icon.png"
+    },
+    "deb": {
+      "afterInstall": "build-resources/postinst.sh"
     }
   },
   "devDependencies": {

@@ -87,7 +87,6 @@
 
 <nav class="sidebar">
   <h2 class="toc-title">MicroserviceBase</h2>
-  <a href="#docs-map">📖 Documentation map</a>
   <p class="toc-sub">Why &amp; how</p>
   <a href="#why-microservicebase">Why MicroserviceBase?</a>
   <a href="#the-problem" class="indent">The Problem</a>
@@ -120,6 +119,7 @@
   <a href="#troubleshooting-guide">Troubleshooting</a>
   <a href="#architecture-decision-records-adrs">ADRs</a>
   <a href="#package-documentation">Package Documentation</a>
+  <a href="#docs-map">📖 Documentation map</a>
 
   <p class="toc-sub">Project</p>
   <a href="#feedback">Feedback</a>
@@ -141,45 +141,6 @@
 <main>
 
 <p>MicroserviceBase provides the foundation for creating microservices that communicate over gRPC, with a built-in <strong>Manager GUI</strong> for monitoring, <strong>Consul-based service discovery</strong> for dynamic registration, and <strong>Nomad-based orchestration</strong> for lifecycle management. Whether you're building test automation infrastructure, managing distributed services, or creating IoT device controllers, MicroserviceBase gives you the tools to develop and deploy microservices reliably.</p>
-
-<h2 id="docs-map">Documentation map</h2>
-
-<p>Quick jump to the doc you need.  Sections below this map go into more depth on each topic, but if you're looking for a specific guide this is the fastest path:</p>
-
-<table>
-  <tr><th>I want to&hellip;</th><th>Go to</th></tr>
-
-  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Get started</td></tr>
-  <tr><td>Get the 5-minute pitch</td><td>This page (continue scrolling, or jump to <a href="#why-microservicebase">Why MicroserviceBase?</a>)</td></tr>
-  <tr><td>Install Consul + Nomad</td><td><a href="#consul-nomad-install">Consul &amp; Nomad install</a> (above) &mdash; download + PATH + verify</td></tr>
-  <tr><td>Scaffold and run a first service end-to-end</td><td><a href="#quick-start">Quick Start</a> (5 numbered steps below)</td></tr>
-
-  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Manager GUI</td></tr>
-  <tr><td>Manager GUI overview &amp; install</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/README.html"><code>MicroserviceManagerGUI/README.html</code></a></td></tr>
-  <tr><td>All Manager GUI guides (long-form)</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html"><code>MicroserviceManagerGUI/docs/</code></a> &mdash; index of GUI walkthroughs</td></tr>
-  <tr><td>Operate Consul + Nomad from the GUI</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> &mdash; one-click agent launch + service network tab</td></tr>
-  <tr><td>Walk through the Service Creator wizard</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html"><code>service_creator.html</code></a> &mdash; 4-step UI + YAML schema</td></tr>
-
-  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Examples</td></tr>
-  <tr><td>Canonical multi-service C++ example</td><td><a href="examples/PowerDeviceService/README.html"><code>examples/PowerDeviceService/</code></a> &mdash; 6 services, Qt client, vcpkg + Qt MinGW</td></tr>
-  <tr><td>Minimal single C++ service</td><td><a href="examples/cpp_hello_service/README.html"><code>examples/cpp_hello_service/</code></a></td></tr>
-  <tr><td>Console + Qt-Widget client (matches the C++ service)</td><td><a href="examples/cpp_hello_client/README.html"><code>examples/cpp_hello_client/</code></a></td></tr>
-  <tr><td>Single Python service</td><td><a href="examples/hello_service/README.html"><code>examples/hello_service/</code></a></td></tr>
-  <tr><td>Toolchain setup (MSYS2, Qt-installer MinGW, vcpkg + Qt)</td><td><a href="examples/docs/html/index.html"><code>examples/docs/</code></a></td></tr>
-
-  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Framework reference</td></tr>
-  <tr><td>Hexagonal layers, transport, Consul, Nomad &mdash; the big picture</td><td><a href="docs/architecture.html"><code>docs/architecture.html</code></a></td></tr>
-  <tr><td>How a single service runs end-to-end (lifecycle, channel pooling, reflection)</td><td><a href="docs/runtime_model.html"><code>docs/runtime_model.html</code></a></td></tr>
-  <tr><td>Look up a term (bridge, hub, runtime, port, adapter, scaffold&hellip;)</td><td><a href="docs/concepts.html"><code>docs/concepts.html</code></a></td></tr>
-  <tr><td>Install the C++ runtime as a CMake / vcpkg package (so generated services can <code>find_package(MicroserviceBase)</code>)</td><td><a href="docs/runtime_cpp_install.html"><code>docs/runtime_cpp_install.html</code></a></td></tr>
-  <tr><td>Migration history (RabbitMQ &rarr; gRPC, ProcessHub &rarr; Nomad, etc.)</td><td><a href="docs/changelog.html"><code>docs/changelog.html</code></a></td></tr>
-  <tr><td>Diagnose a problem &mdash; symptom-indexed</td><td><a href="docs/troubleshooting.html"><code>docs/troubleshooting.html</code></a></td></tr>
-  <tr><td>Architecture Decision Records (one per design choice)</td><td><a href="docs/adr/README.md"><code>docs/adr/</code></a> &mdash; markdown only for now</td></tr>
-
-  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Repo-level entry points</td></tr>
-  <tr><td>Repo docs index (everything in <code>docs/</code>)</td><td><a href="docs/index.html"><code>docs/index.html</code></a></td></tr>
-  <tr><td>This page in Markdown</td><td><a href="README.md"><code>README.md</code></a></td></tr>
-</table>
 
 <h2 id="why-microservicebase">Why MicroserviceBase?</h2>
 
@@ -699,6 +660,45 @@ build.bat --pack
 <h2 id="package-documentation">Package Documentation</h2>
 
 <p>A detailed documentation of <strong>MicroserviceBase</strong> can be found here: <a href="MicroserviceBase/MicroserviceBase.pdf">MicroserviceBase.pdf</a></p>
+
+<h2 id="docs-map">Documentation map</h2>
+
+<p>Cross-reference of where to find each kind of doc across the repo.</p>
+
+<table>
+  <tr><th>I want to&hellip;</th><th>Go to</th></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Get started</td></tr>
+  <tr><td>Get the 5-minute pitch</td><td><a href="#why-microservicebase">Why MicroserviceBase?</a> at the top of this page</td></tr>
+  <tr><td>Install Consul + Nomad</td><td><a href="#consul-nomad-install">Consul &amp; Nomad install</a> &mdash; download + PATH + verify</td></tr>
+  <tr><td>Scaffold and run a first service end-to-end</td><td><a href="#quick-start">Quick Start</a> &mdash; 5 numbered steps</td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Manager GUI</td></tr>
+  <tr><td>Manager GUI overview &amp; install</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/README.html"><code>MicroserviceManagerGUI/README.html</code></a></td></tr>
+  <tr><td>All Manager GUI guides (long-form)</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html"><code>MicroserviceManagerGUI/docs/</code></a> &mdash; index of GUI walkthroughs</td></tr>
+  <tr><td>Operate Consul + Nomad from the GUI</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> &mdash; one-click agent launch + service network tab</td></tr>
+  <tr><td>Walk through the Service Creator wizard</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html"><code>service_creator.html</code></a> &mdash; 5-step UI + YAML schema</td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Examples</td></tr>
+  <tr><td>Canonical multi-service C++ example</td><td><a href="examples/PowerDeviceService/README.html"><code>examples/PowerDeviceService/</code></a> &mdash; 6 services, Qt client, vcpkg + Qt MinGW</td></tr>
+  <tr><td>Minimal single C++ service</td><td><a href="examples/cpp_hello_service/README.html"><code>examples/cpp_hello_service/</code></a></td></tr>
+  <tr><td>Console + Qt-Widget client (matches the C++ service)</td><td><a href="examples/cpp_hello_client/README.html"><code>examples/cpp_hello_client/</code></a></td></tr>
+  <tr><td>Single Python service</td><td><a href="examples/hello_service/README.html"><code>examples/hello_service/</code></a></td></tr>
+  <tr><td>Toolchain setup (MSYS2, Qt-installer MinGW, vcpkg + Qt)</td><td><a href="examples/docs/html/index.html"><code>examples/docs/</code></a></td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Framework reference</td></tr>
+  <tr><td>Hexagonal layers, transport, Consul, Nomad &mdash; the big picture</td><td><a href="docs/architecture.html"><code>docs/architecture.html</code></a></td></tr>
+  <tr><td>How a single service runs end-to-end (lifecycle, channel pooling, reflection)</td><td><a href="docs/runtime_model.html"><code>docs/runtime_model.html</code></a></td></tr>
+  <tr><td>Look up a term (bridge, hub, runtime, port, adapter, scaffold&hellip;)</td><td><a href="docs/concepts.html"><code>docs/concepts.html</code></a></td></tr>
+  <tr><td>Install the C++ runtime as a CMake / vcpkg package (so generated services can <code>find_package(MicroserviceBase)</code>)</td><td><a href="docs/runtime_cpp_install.html"><code>docs/runtime_cpp_install.html</code></a></td></tr>
+  <tr><td>Migration history (RabbitMQ &rarr; gRPC, ProcessHub &rarr; Nomad, etc.)</td><td><a href="docs/changelog.html"><code>docs/changelog.html</code></a></td></tr>
+  <tr><td>Diagnose a problem &mdash; symptom-indexed</td><td><a href="docs/troubleshooting.html"><code>docs/troubleshooting.html</code></a></td></tr>
+  <tr><td>Architecture Decision Records (one per design choice)</td><td><a href="docs/adr/README.md"><code>docs/adr/</code></a> &mdash; markdown only for now</td></tr>
+
+  <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Repo-level entry points</td></tr>
+  <tr><td>Repo docs index (everything in <code>docs/</code>)</td><td><a href="docs/index.html"><code>docs/index.html</code></a></td></tr>
+  <tr><td>This page in Markdown</td><td><a href="README.md"><code>README.md</code></a></td></tr>
+</table>
 
 <h2 id="feedback">Feedback</h2>
 

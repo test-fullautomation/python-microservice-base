@@ -5,56 +5,6 @@
 
 MicroserviceBase provides the foundation for creating microservices that communicate over gRPC, with a built-in **Manager GUI** for monitoring, **Consul-based service discovery** for dynamic registration, and **Nomad-based orchestration** for lifecycle management. Whether you're building test automation infrastructure, managing distributed services, or creating IoT device controllers, MicroserviceBase gives you the tools to develop and deploy microservices reliably.
 
-## Documentation map
-
-Quick jump to the doc you need.  Sections below this map go into more depth on each topic.
-
-**Get started**
-
-| I want to… | Go to |
-|---|---|
-| Get the 5-minute pitch | This page (continue scrolling, or jump to [Why MicroserviceBase?](#why-microservicebase)) |
-| Install Consul + Nomad | [Consul & Nomad install](#consul--nomad-install) below — download + PATH + verify |
-| Scaffold and run a first service end-to-end | [Quick Start](#quick-start) (5 numbered steps below) |
-
-**Manager GUI**
-
-| I want to… | Go to |
-|---|---|
-| Manager GUI overview & install | [`MicroserviceBase/MicroserviceManagerGUI/README.md`](MicroserviceBase/MicroserviceManagerGUI/README.md) |
-| All Manager GUI guides (long-form) | [`MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md) — index of GUI walkthroughs |
-| Operate Consul + Nomad from the GUI | [`ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) — one-click agent launch |
-| Walk through the Service Creator wizard | [`service_creator.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) — 4-step UI + YAML schema |
-
-**Examples**
-
-| I want to… | Go to |
-|---|---|
-| Canonical multi-service C++ example | [`examples/PowerDeviceService/`](examples/PowerDeviceService/README.md) — 6 services, Qt client, vcpkg + Qt MinGW |
-| Minimal single C++ service | [`examples/cpp_hello_service/`](examples/cpp_hello_service/README.md) |
-| Console + Qt-Widget client | [`examples/cpp_hello_client/`](examples/cpp_hello_client/README.md) |
-| Single Python service | [`examples/hello_service/`](examples/hello_service/README.md) |
-| Toolchain setup (MSYS2, Qt-installer MinGW, vcpkg + Qt) | [`examples/docs/`](examples/docs/README.md) |
-
-**Framework reference**
-
-| I want to… | Go to |
-|---|---|
-| Hexagonal layers, transport, Consul, Nomad — the big picture | [`docs/architecture.md`](docs/architecture.md) |
-| How a single service runs end-to-end (lifecycle, channel pooling, reflection) | [`docs/runtime_model.md`](docs/runtime_model.md) |
-| Look up a term (bridge, hub, runtime, port, adapter, scaffold…) | [`docs/concepts.md`](docs/concepts.md) |
-| Install the C++ runtime as a CMake / vcpkg package | [`docs/runtime_cpp_install.md`](docs/runtime_cpp_install.md) |
-| Migration history (RabbitMQ → gRPC, ProcessHub → Nomad, etc.) | [`docs/changelog.md`](docs/changelog.md) |
-| Diagnose a problem — symptom-indexed | [`docs/troubleshooting.md`](docs/troubleshooting.md) |
-| Architecture Decision Records (one per design choice) | [`docs/adr/`](docs/adr/README.md) |
-
-**Repo-level entry points**
-
-| I want to… | Go to |
-|---|---|
-| Repo docs index (everything in `docs/`) | [`docs/index.md`](docs/index.md) |
-| This page in HTML | [`README.html`](README.html) |
-
 ## Why MicroserviceBase?
 
 ### The Problem
@@ -582,6 +532,56 @@ Design decisions are documented in [`docs/adr/`](docs/adr/README.md), organized 
 
 A detailed documentation of **MicroserviceBase** can be found here:
 [MicroserviceBase.pdf](MicroserviceBase/MicroserviceBase.pdf)
+
+## Documentation map
+
+Cross-reference of where to find each kind of doc across the repo.
+
+**Get started**
+
+| I want to… | Go to |
+|---|---|
+| Get the 5-minute pitch | [Why MicroserviceBase?](#why-microservicebase) at the top of this page |
+| Install Consul + Nomad | [Consul & Nomad install](#consul--nomad-install) — download + PATH + verify |
+| Scaffold and run a first service end-to-end | [Quick Start](#quick-start) — 5 numbered steps |
+
+**Manager GUI**
+
+| I want to… | Go to |
+|---|---|
+| Manager GUI overview & install | [`MicroserviceBase/MicroserviceManagerGUI/README.md`](MicroserviceBase/MicroserviceManagerGUI/README.md) |
+| All Manager GUI guides (long-form) | [`MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md) — index of GUI walkthroughs |
+| Operate Consul + Nomad from the GUI | [`ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) — one-click agent launch |
+| Walk through the Service Creator wizard | [`service_creator.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) — 5-step UI + YAML schema |
+
+**Examples**
+
+| I want to… | Go to |
+|---|---|
+| Canonical multi-service C++ example | [`examples/PowerDeviceService/`](examples/PowerDeviceService/README.md) — 6 services, Qt client, vcpkg + Qt MinGW |
+| Minimal single C++ service | [`examples/cpp_hello_service/`](examples/cpp_hello_service/README.md) |
+| Console + Qt-Widget client | [`examples/cpp_hello_client/`](examples/cpp_hello_client/README.md) |
+| Single Python service | [`examples/hello_service/`](examples/hello_service/README.md) |
+| Toolchain setup (MSYS2, Qt-installer MinGW, vcpkg + Qt) | [`examples/docs/`](examples/docs/README.md) |
+
+**Framework reference**
+
+| I want to… | Go to |
+|---|---|
+| Hexagonal layers, transport, Consul, Nomad — the big picture | [`docs/architecture.md`](docs/architecture.md) |
+| How a single service runs end-to-end (lifecycle, channel pooling, reflection) | [`docs/runtime_model.md`](docs/runtime_model.md) |
+| Look up a term (bridge, hub, runtime, port, adapter, scaffold…) | [`docs/concepts.md`](docs/concepts.md) |
+| Install the C++ runtime as a CMake / vcpkg package | [`docs/runtime_cpp_install.md`](docs/runtime_cpp_install.md) |
+| Migration history (RabbitMQ → gRPC, ProcessHub → Nomad, etc.) | [`docs/changelog.md`](docs/changelog.md) |
+| Diagnose a problem — symptom-indexed | [`docs/troubleshooting.md`](docs/troubleshooting.md) |
+| Architecture Decision Records (one per design choice) | [`docs/adr/`](docs/adr/README.md) |
+
+**Repo-level entry points**
+
+| I want to… | Go to |
+|---|---|
+| Repo docs index (everything in `docs/`) | [`docs/index.md`](docs/index.md) |
+| This page in HTML | [`README.html`](README.html) |
 
 ## Feedback
 

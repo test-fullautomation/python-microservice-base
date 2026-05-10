@@ -9,11 +9,250 @@ Produces:
 
 from __future__ import annotations
 
+import datetime as _dt
+import getpass as _getpass
 import json
+import os as _os
+import sys as _sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .generator import ScaffoldSpec, MethodSpec
+
+
+# -----------------------------------------------------------------------
+# Generation-time metadata (used in file headers)
+# -----------------------------------------------------------------------
+
+def _full_username() -> str:
+    """
+Best-effort full display name of the current OS user.
+
+Tries (in order):
+
+1. Windows: ``GetUserNameExW`` (NameDisplay) via ctypes — returns the
+   AD / local account display name (e.g. "Cuong Nguyen Huynh Tri").
+2. Windows fallback: parse ``net user <login>`` for the ``Full Name``
+   line.
+3. Linux: ``pwd.getpwuid().pw_gecos`` — the GECOS first-name field.
+4. Final fallback: ``getpass.getuser()`` (the bare login name).
+
+**Returns:**
+
+* ``name``
+
+  / *Type*: str /
+
+  Full display name when available, login name otherwise.
+    """
+    if _sys.platform == "win32":
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(256)
+            size = ctypes.c_uint(256)
+            # NameDisplay = 3 (EXTENDED_NAME_FORMAT)
+            if ctypes.windll.secur32.GetUserNameExW(3, buf, ctypes.byref(size)):
+                if buf.value:
+                    return buf.value
+        except Exception:
+            pass
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["net", "user", _getpass.getuser()],
+                capture_output=True, text=True, timeout=2,
+            )
+            for line in out.stdout.splitlines():
+                if line.lower().startswith("full name"):
+                    parts = line.split(None, 2)
+                    if len(parts) >= 3:
+                        full = parts[2].strip()
+                        if full:
+                            return full
+        except Exception:
+            pass
+    else:
+        try:
+            import pwd  # type: ignore[import-not-found]
+            entry = pwd.getpwuid(_os.getuid())
+            gecos = (entry.pw_gecos or "").split(",")[0].strip()
+            if gecos:
+                return gecos
+        except Exception:
+            pass
+    return _getpass.getuser()
+
+
+def _today_dotted() -> str:
+    """Return today's date in ``DD.MM.YYYY`` (history-line format)."""
+    return _dt.date.today().strftime("%d.%m.%Y")
+
+
+def _today_long() -> str:
+    """Return today's date in ``Mon YYYY`` (header "Initially created" format)."""
+    return _dt.date.today().strftime("%b %Y")
+
+
+def python_file_header(filename: str, description: str,
+                       version: str = "1.0.0") -> str:
+    """
+Render the standard QConnect-style Python file header block.
+
+Format mirrors the upstream QConnectBase convention:
+
+  - Apache 2.0 boilerplate
+  - File / Author / Date / Description / History sections
+  - Author taken from :func:`_full_username` (full PC user name)
+  - Date and history entry generated from today's date
+
+**Arguments:**
+
+* ``filename``
+
+  / *Condition*: required / *Type*: str /
+
+  Bare filename (no path), e.g. ``"main.py"``.
+
+* ``description``
+
+  / *Condition*: required / *Type*: str /
+
+  One-paragraph description of what the module provides.  May contain
+  newlines; will be re-indented to fit the comment column.
+
+* ``version``
+
+  / *Condition*: optional / *Type*: str / *Default*: "1.0.0" /
+
+  Initial version string written in the History entry.
+
+**Returns:**
+
+* ``header``
+
+  / *Type*: str /
+
+  Multi-line ``#``-comment header, ending with a blank line for clean
+  separation from the module docstring that follows.
+    """
+    author = _full_username()
+    today = _today_dotted()
+    year = _dt.date.today().year
+    long_date = _today_long()
+
+    desc_lines = "\n".join(
+        f"#   {line}" if line else "#"
+        for line in description.strip().splitlines()
+    )
+
+    return (
+        f"#  Copyright 2020-{year} Robert Bosch GmbH\n"
+        f"#\n"
+        f"#  Licensed under the Apache License, Version 2.0 (the \"License\");\n"
+        f"#  you may not use this file except in compliance with the License.\n"
+        f"#  You may obtain a copy of the License at\n"
+        f"#\n"
+        f"#      http://www.apache.org/licenses/LICENSE-2.0\n"
+        f"#\n"
+        f"#  Unless required by applicable law or agreed to in writing, software\n"
+        f"#  distributed under the License is distributed on an \"AS IS\" BASIS,\n"
+        f"#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n"
+        f"#  See the License for the specific language governing permissions and\n"
+        f"#  limitations under the License.\n"
+        f"# *******************************************************************************\n"
+        f"#\n"
+        f"# File: {filename}\n"
+        f"#\n"
+        f"# Initially created by {author} / {long_date}.\n"
+        f"#\n"
+        f"# Description:\n"
+        f"{desc_lines}\n"
+        f"#\n"
+        f"# History:\n"
+        f"#\n"
+        f"# {today} / V {version} / {author}\n"
+        f"# - Initialize\n"
+        f"#\n"
+        f"# *******************************************************************************\n"
+    )
+
+
+def cpp_file_header(filename: str, description: str,
+                    version: str = "1.0.0") -> str:
+    """
+Render the QConnect-style file header as a C/C++ ``//`` comment block.
+
+Same content as :func:`python_file_header` but with ``//`` line
+comments so it compiles inside a ``.h`` / ``.cpp`` source file.
+
+**Arguments:**
+
+* ``filename``
+
+  / *Condition*: required / *Type*: str /
+
+  Bare filename, e.g. ``"main.cpp"`` or ``"HelloService.h"``.
+
+* ``description``
+
+  / *Condition*: required / *Type*: str /
+
+  Module / file description.  Multi-line allowed.
+
+* ``version``
+
+  / *Condition*: optional / *Type*: str / *Default*: "1.0.0" /
+
+  Initial version string.
+
+**Returns:**
+
+* ``header``
+
+  / *Type*: str /
+
+  Multi-line ``//``-comment header, ending with a blank line.
+    """
+    author = _full_username()
+    today = _today_dotted()
+    year = _dt.date.today().year
+    long_date = _today_long()
+
+    desc_lines = "\n".join(
+        f"//   {line}" if line else "//"
+        for line in description.strip().splitlines()
+    )
+
+    return (
+        f"//  Copyright 2020-{year} Robert Bosch GmbH\n"
+        f"//\n"
+        f"//  Licensed under the Apache License, Version 2.0 (the \"License\");\n"
+        f"//  you may not use this file except in compliance with the License.\n"
+        f"//  You may obtain a copy of the License at\n"
+        f"//\n"
+        f"//      http://www.apache.org/licenses/LICENSE-2.0\n"
+        f"//\n"
+        f"//  Unless required by applicable law or agreed to in writing, software\n"
+        f"//  distributed under the License is distributed on an \"AS IS\" BASIS,\n"
+        f"//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n"
+        f"//  See the License for the specific language governing permissions and\n"
+        f"//  limitations under the License.\n"
+        f"// *******************************************************************************\n"
+        f"//\n"
+        f"// File: {filename}\n"
+        f"//\n"
+        f"// Initially created by {author} / {long_date}.\n"
+        f"//\n"
+        f"// Description:\n"
+        f"{desc_lines}\n"
+        f"//\n"
+        f"// History:\n"
+        f"//\n"
+        f"// {today} / V {version} / {author}\n"
+        f"// - Initialize\n"
+        f"//\n"
+        f"// *******************************************************************************\n"
+    )
 
 
 # -----------------------------------------------------------------------
@@ -36,10 +275,51 @@ _PROTO_TYPE_MAP = {
 
 
 def _proto_type(t: str) -> str:
+    """
+Map a wizard / config type name to its proto3 wire type.
+
+**Arguments:**
+
+* ``t``
+
+  / *Condition*: required / *Type*: str /
+
+  Type name as accepted in the wizard / scaffold spec
+  (e.g. ``"string"``, ``"int"``, ``"bool"``).
+
+**Returns:**
+
+* ``proto_type``
+
+  / *Type*: str /
+
+  Proto3 type (e.g. ``"string"``, ``"int32"``).  Unknown types fall
+  back to ``"string"``.
+    """
     return _PROTO_TYPE_MAP.get(t.lower(), "string")
 
 
 def gen_proto(spec: "ScaffoldSpec") -> str:
+    """
+Render the ``.proto`` file for a single service.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Scaffold specification (service name, methods, package, …).
+
+**Returns:**
+
+* ``proto``
+
+  / *Type*: str /
+
+  The full ``.proto`` text, including the service block and one
+  request/response message per method.
+    """
     lines = [
         f'syntax = "proto3";',
         f"",
@@ -83,6 +363,29 @@ def gen_proto(spec: "ScaffoldSpec") -> str:
 # -----------------------------------------------------------------------
 
 def gen_service_config(spec: "ScaffoldSpec") -> str:
+    """
+Render the ``service_config.json`` metadata file for a service.
+
+The shape carries broker-era fields (``broker_*``) for back-compat
+with the legacy Manager GUI's service-info reader.  New gRPC-only
+deployments ignore those fields.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Scaffold specification.
+
+**Returns:**
+
+* ``json_text``
+
+  / *Type*: str /
+
+  Pretty-printed JSON document (4-space indent, trailing newline).
+    """
     cfg = {
         "name": spec.service_name,
         "version": spec.version,
@@ -107,6 +410,31 @@ def gen_service_config(spec: "ScaffoldSpec") -> str:
 # -----------------------------------------------------------------------
 
 def gen_nomad(spec: "ScaffoldSpec") -> str:
+    """
+Render the ``<service>.nomad.hcl`` job spec.
+
+Wires the dynamic ``NOMAD_PORT_grpc`` allocation into ``<PREFIX>_GRPC_PORT``
+and ``<PREFIX>_ADVERTISE_ADDR`` env vars; sets ``<PREFIX>_CONSUL_ADDR``
+to the configured Consul address so ``ServiceRunner`` can register the
+gRPC port automatically.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Scaffold specification.  Reads ``nomad_dc``, ``nomad_driver``,
+  ``nomad_cpu``, ``nomad_mem``, ``nomad_consul_addr`` if present.
+
+**Returns:**
+
+* ``hcl``
+
+  / *Type*: str /
+
+  Nomad HCL job definition, ready to ``nomad job run``.
+    """
     sn = spec.snake_name
     prefix = spec.env_prefix
     dc = getattr(spec, 'nomad_dc', 'dc1') or 'dc1'
@@ -190,6 +518,29 @@ def gen_nomad(spec: "ScaffoldSpec") -> str:
 # -----------------------------------------------------------------------
 
 def gen_readme(spec: "ScaffoldSpec") -> str:
+    """
+Render the ``README.md`` for a generated service.
+
+Output covers: project layout, build instructions for the language /
+GUI / toolchain combination the wizard picked, run instructions
+(direct + Nomad), and the list of RPC methods exposed by the service.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Scaffold specification.
+
+**Returns:**
+
+* ``markdown``
+
+  / *Type*: str /
+
+  README contents (Markdown).
+    """
     sn = spec.snake_name
     lang_label = "Python" if spec.language == "python" else "C++"
     gui_label = {

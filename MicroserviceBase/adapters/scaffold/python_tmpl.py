@@ -8,11 +8,40 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict
 
+from .shared import python_file_header
+
 if TYPE_CHECKING:
     from .generator import ScaffoldSpec
 
 
 def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
+    """
+Render every file for a Python single-service gRPC scaffold.
+
+Produces ``main.py``, ``config.py`` (Pydantic ``BaseServiceSettings``
+subclass), ``context.py`` (composition root), ``pyproject.toml``,
+domain stubs, gRPC adapter, proto-stub generator script, and
+optionally HTML/JS GUI files when ``spec.gui_type == "html"``.
+
+For multi-service / monorepo layouts use :func:`generate_monorepo`.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Scaffold specification.
+
+**Returns:**
+
+* ``files``
+
+  / *Type*: Dict[str, str] /
+
+  Map of relative-path → file-contents for every file the scaffold
+  should write.
+    """
     files: Dict[str, str] = {}
 
     sn = spec.snake_name
@@ -45,7 +74,17 @@ def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
 def _main_py(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
     svc = spec.service_name
-    return f'''"""Entry point for {svc}."""
+    header = python_file_header(
+        "main.py",
+        f"Entry point for the {svc} service.\n"
+        f"Composes the dependency-injection context and hands it off to\n"
+        f"ServiceRunner, which manages the gRPC server lifecycle and\n"
+        f"Consul registration.",
+    )
+    return f'''{header}\
+"""
+Entry point for {svc}.
+"""
 
 from __future__ import annotations
 
@@ -65,6 +104,15 @@ from MicroserviceBase.runtime import ServiceRunner, ServicerEntry
 
 
 async def amain() -> None:
+    """
+Async entry point.  Builds the service context, configures logging,
+wires the gRPC servicer into a ServiceRunner, and serves until a
+shutdown signal arrives.
+
+**Returns:**
+
+(*no returns*)
+    """
     ctx = create_context()
 
     logging.basicConfig(
@@ -102,7 +150,16 @@ if __name__ == "__main__":
 def _config_py(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
     prefix = spec.env_prefix
-    return f'''"""Settings for {spec.service_name}."""
+    header = python_file_header(
+        "config.py",
+        f"Pydantic settings for the {spec.service_name} service.\n"
+        f"All fields are loaded from environment variables prefixed with\n"
+        f"`{prefix}` (e.g. {prefix}GRPC_PORT, {prefix}CONSUL_ADDR).",
+    )
+    return f'''{header}\
+"""
+Settings for {spec.service_name}.
+"""
 
 from __future__ import annotations
 
@@ -112,6 +169,25 @@ from MicroserviceBase.runtime import BaseServiceSettings
 
 
 class Settings(BaseServiceSettings):
+    """
+Settings for the {spec.service_name} service.
+
+Inherits the standard fields from :class:`BaseServiceSettings`
+(``service_host``, ``grpc_port``, ``advertise_addr``, ``consul_addr``,
+``consul_token``, ``log_level``).  Add service-specific fields here as
+plain class attributes — Pydantic will read them from env vars prefixed
+with ``{prefix}``.
+
+**Attributes:**
+
+* ``service_name``
+
+  / *Type*: str / *Default*: "{sn}" /
+
+  Logical service name used for Consul registration.  Override via
+  ``{prefix}SERVICE_NAME`` if running multiple instances of this
+  service on the same Consul cluster.
+    """
     model_config = SettingsConfigDict(
         env_prefix="{prefix}",
         env_file=".env",
@@ -130,7 +206,16 @@ def _context_py(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
     svc = spec.service_name
     cls = f"{svc}Service"
-    return f'''"""Dependency injection for {svc}."""
+    header = python_file_header(
+        "context.py",
+        f"Dependency-injection composition root for the {svc} service.\n"
+        f"Wires Settings, the domain class, and the gRPC adapter together.\n"
+        f"main.py calls create_context() once at startup.",
+    )
+    return f'''{header}\
+"""
+Dependency injection for {svc}.
+"""
 
 from __future__ import annotations
 
@@ -143,12 +228,47 @@ from domain.{sn}_service import {cls}
 
 @dataclass
 class Context:
+    """
+Bag of constructed objects passed around the service.
+
+**Attributes:**
+
+* ``settings``
+
+  / *Type*: Settings /
+
+  Service settings loaded from environment.
+
+* ``domain``
+
+  / *Type*: {cls} /
+
+  The pure-business-logic domain instance.
+
+* ``grpc_adapter``
+
+  / *Type*: {svc}GrpcAdapter /
+
+  gRPC inbound adapter that translates protobuf calls to ``domain``
+  method invocations.
+    """
     settings: Settings
     domain: {cls}
     grpc_adapter: {svc}GrpcAdapter
 
 
 def create_context() -> Context:
+    """
+Build the service context.
+
+**Returns:**
+
+* ``ctx``
+
+  / *Type*: Context /
+
+  Fully-wired :class:`Context` ready to hand to ServiceRunner.
+    """
     settings = Settings()
     domain = {cls}()
     grpc_adapter = {svc}GrpcAdapter(domain)
@@ -164,25 +284,75 @@ def _domain_service(spec: "ScaffoldSpec") -> str:
     svc = spec.service_name
     cls = f"{svc}Service"
 
+    def _arg_block(p) -> str:
+        return (
+            f"\n* ``{p.name}``\n"
+            f"\n  / *Condition*: required / *Type*: str /\n"
+            f"\n  TODO: describe ``{p.name}``.\n"
+        )
+
     methods = ""
     for m in spec.methods:
         params = ", ".join(f"{p.name}: str" for p in m.params)
         if params:
             params = ", " + params
+
+        arg_section = ""
+        if m.params:
+            arg_section = "\n**Arguments:**\n" + "".join(_arg_block(p) for p in m.params)
+
         if m.server_streaming:
             methods += f'''
     async def {_snake(m.name)}(self{params}):
-        """TODO: implement {m.name}."""
+        """
+{m.name} — TODO: describe what this server-streaming RPC does.
+{arg_section}
+**Yields:**
+
+* ``event``
+
+  / *Type*: dict /
+
+  TODO: describe each event yielded to the caller.  The default stub
+  yields a placeholder dict ``{{"result": "not implemented"}}`` once
+  and stops.
+        """
+        # TODO: replace with real streaming logic.  Each yielded value
+        # becomes one streaming event delivered to the gRPC client.
         yield {{"result": "not implemented"}}
 '''
         else:
             methods += f'''
     async def {_snake(m.name)}(self{params}) -> str:
-        """TODO: implement {m.name}."""
+        """
+{m.name} — TODO: describe what this RPC does.
+{arg_section}
+**Returns:**
+
+* ``result``
+
+  / *Type*: str /
+
+  TODO: describe the return value.  The default stub returns the
+  literal string ``"not implemented"``.
+        """
+        # TODO: replace with real implementation.
         return "not implemented"
 '''
 
-    return f'''"""Pure business logic for {svc} — no gRPC, no I/O."""
+    header = python_file_header(
+        f"{_snake(svc)}_service.py",
+        f"Pure business logic for the {svc} service.\n"
+        f"This module owns the domain model and contains zero I/O — no\n"
+        f"gRPC, no Consul, no Nomad, no HTTP.  All inbound traffic enters\n"
+        f"through the gRPC adapter (adapters/api/grpc_adapter.py) and is\n"
+        f"translated into method calls on this class.",
+    )
+
+    return f'''{header}\
+"""
+Pure business logic for {svc} — no gRPC, no I/O.
+"""
 
 from __future__ import annotations
 
@@ -190,6 +360,13 @@ from typing import AsyncIterator
 
 
 class {cls}:
+    """
+Domain service for {svc}.
+
+One method per RPC defined in the .proto file.  Edit the bodies to
+plug in real logic.  Method signatures should stay aligned with the
+proto so the gRPC adapter can call them without translation glue.
+    """
 {methods if methods else "    pass"}
 '''
 
@@ -209,6 +386,11 @@ def _grpc_adapter(spec: "ScaffoldSpec") -> str:
         f"from domain.{sn}_service import {cls}\n"
     )
 
+    def _request_field_block(p) -> str:
+        return (
+            f"\n  Field ``{p.name}`` is forwarded to the domain layer.\n"
+        )
+
     methods = ""
     for m in spec.methods:
         param_reads = "\n".join(
@@ -216,9 +398,39 @@ def _grpc_adapter(spec: "ScaffoldSpec") -> str:
             for p in m.params
         )
         args = ", ".join(f"_{p.name}" for p in m.params)
+
+        request_doc = f"Proto message ``{m.name}Request``."
+        if m.params:
+            request_doc += "  Fields: " + ", ".join(f"``{p.name}``" for p in m.params) + "."
+
         if m.server_streaming:
             methods += f'''
     async def {m.name}(self, request, context):
+        """
+Handle a server-streaming {m.name} RPC.
+
+**Arguments:**
+
+* ``request``
+
+  / *Condition*: required / *Type*: {m.name}Request /
+
+  {request_doc}
+
+* ``context``
+
+  / *Condition*: required / *Type*: grpc.aio.ServicerContext /
+
+  Per-call context (deadline, metadata, abort, …).
+
+**Yields:**
+
+* ``response``
+
+  / *Type*: {m.name}Response /
+
+  One proto message per event produced by the domain.
+        """
 {param_reads or "        pass"}
         async for item in self._domain.{_snake(m.name)}({args}):
             yield {sn}_pb2.{m.name}Response(result=str(item.get("result", "")))
@@ -226,12 +438,49 @@ def _grpc_adapter(spec: "ScaffoldSpec") -> str:
         else:
             methods += f'''
     async def {m.name}(self, request, context):
+        """
+Handle a unary {m.name} RPC.
+
+**Arguments:**
+
+* ``request``
+
+  / *Condition*: required / *Type*: {m.name}Request /
+
+  {request_doc}
+
+* ``context``
+
+  / *Condition*: required / *Type*: grpc.aio.ServicerContext /
+
+  Per-call context (deadline, metadata, abort, …).
+
+**Returns:**
+
+* ``response``
+
+  / *Type*: {m.name}Response /
+
+  Proto response message with field ``result``.
+        """
 {param_reads or "        pass"}
         result = await self._domain.{_snake(m.name)}({args})
         return {sn}_pb2.{m.name}Response(result=str(result))
 '''
 
-    return f'''"""gRPC inbound adapter for {cls}."""
+    header = python_file_header(
+        "grpc_adapter.py",
+        f"gRPC inbound adapter for {cls}.\n"
+        f"Translates protobuf request/response messages into method calls\n"
+        f"on the domain service.  One method per RPC.  Do not change the\n"
+        f"signatures (they are required by the proto-generated servicer\n"
+        f"base class); edit only the body to plug in real logic.",
+    )
+
+    return f'''{header}\
+"""
+gRPC inbound adapter for {cls}.
+"""
 
 from __future__ import annotations
 
@@ -240,8 +489,23 @@ import grpc
 {imports}
 
 class {svc}GrpcAdapter({sn}_pb2_grpc.{svc}ServiceServicer):
+    """
+gRPC servicer that bridges proto messages and the domain class.
+    """
 
     def __init__(self, domain: {cls}) -> None:
+        """
+Wire the adapter to the domain service.
+
+**Arguments:**
+
+* ``domain``
+
+  / *Condition*: required / *Type*: {cls} /
+
+  Pure-business-logic instance.  Held by reference; method calls go
+  straight through.
+        """
         self._domain = domain
 {methods}
 '''
@@ -253,8 +517,17 @@ class {svc}GrpcAdapter({sn}_pb2_grpc.{svc}ServiceServicer):
 
 def _gen_protos_script(spec: "ScaffoldSpec") -> str:
     sn = spec.snake_name
+    header = python_file_header(
+        "generate_protos.py",
+        f"Helper script that runs `protoc` on {sn}.proto and patches the\n"
+        f"generated `_pb2_grpc.py` to use a package-relative import.\n"
+        f"Run from the service root:  python scripts/generate_protos.py",
+    )
     return f'''#!/usr/bin/env python3
-"""Generate Python gRPC stubs from {sn}.proto."""
+{header}\
+"""
+Generate Python gRPC stubs from {sn}.proto.
+"""
 
 from __future__ import annotations
 
@@ -268,6 +541,23 @@ PROTO_DIR = SERVICE_ROOT / "proto"
 
 
 def main() -> int:
+    """
+Run grpc_tools.protoc on the service's .proto file.
+
+Patches the generated ``_pb2_grpc.py`` so its import of the matching
+``_pb2`` module uses a package-relative path — needed because the
+service runs the ``proto/`` directory as a package, not as a top-level
+import root.
+
+**Returns:**
+
+* ``exit_code``
+
+  / *Type*: int /
+
+  ``0`` on success.  Forwards protoc's non-zero exit code on failure;
+  ``1`` when the .proto file is missing.
+    """
     proto_file = PROTO_DIR / "{sn}.proto"
     if not proto_file.exists():
         print(f"ERROR: {{proto_file}} not found", file=sys.stderr)
@@ -368,6 +658,40 @@ function initialize{svc}() {{
 # =======================================================================
 
 def generate_monorepo(spec: "ScaffoldSpec", services) -> Dict[str, str]:
+    """
+Render a Python monorepo scaffold: one project, N services, N
+``run_<svc>`` console-script entry points.
+
+Used when the user picks the ``monorepo`` layout in the Service
+Creator wizard or sets ``monorepo: true`` in the CLI config.  Each
+service gets its own ``main.py``, ``config.py``, ``context.py``,
+domain + adapter stubs, and Nomad job spec; ``pyproject.toml`` lists
+all entry points so ``pip install .`` produces N CLI commands.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Outer (project-level) scaffold specification.
+
+* ``services``
+
+  / *Condition*: required / *Type*: list /
+
+  List of per-service ``ScaffoldSpec``-like objects.  Each entry's
+  ``service_name``, ``methods``, and ``proto_package`` drive its own
+  generated files.
+
+**Returns:**
+
+* ``files``
+
+  / *Type*: Dict[str, str] /
+
+  Map of relative-path → file-contents for the entire monorepo tree.
+    """
     """Emit a Python monorepo scaffold with one entry-point per service.
 
     Layout:
@@ -524,7 +848,16 @@ def _mono_main_py(spec, svc) -> str:
     """Entry point for one service inside the monorepo."""
     proj_snake = spec.snake_name
     svc_snake = _snake(svc.name)
-    return f'''"""Entry point for {svc.name} (part of {spec.service_name})."""
+    header = python_file_header(
+        "main.py",
+        f"Entry point for {svc.name} (one service in the {spec.service_name}\n"
+        f"monorepo).  Reusable shape: each service has its own main.py /\n"
+        f"context.py / config.py and runs as `python -m {proj_snake}.{svc_snake}.main`.",
+    )
+    return f'''{header}\
+"""
+Entry point for {svc.name} (part of {spec.service_name}).
+"""
 
 from __future__ import annotations
 
@@ -538,6 +871,13 @@ from MicroserviceBase.runtime import ServiceRunner, ServicerEntry
 
 
 async def amain() -> None:
+    """
+Build the per-service context and serve the gRPC server until shutdown.
+
+**Returns:**
+
+(*no returns*)
+    """
     ctx = create_context()
 
     logging.basicConfig(
@@ -564,7 +904,14 @@ async def amain() -> None:
 
 
 def run() -> None:
-    """Console-script entry point (declared in pyproject.toml)."""
+    """
+Console-script entry point declared in ``pyproject.toml``.  After
+``pip install .`` you get a CLI command per service.
+
+**Returns:**
+
+(*no returns*)
+    """
     asyncio.run(amain())
 
 
@@ -576,7 +923,15 @@ if __name__ == "__main__":
 def _mono_config_py(spec, svc) -> str:
     svc_snake = _snake(svc.name)
     prefix = svc_snake.upper() + "_"
-    return f'''"""Settings for {svc.name}."""
+    header = python_file_header(
+        "config.py",
+        f"Pydantic settings for the {svc.name} sub-service.\n"
+        f"Reads env vars prefixed with `{prefix}`.",
+    )
+    return f'''{header}\
+"""
+Settings for {svc.name}.
+"""
 
 from __future__ import annotations
 
@@ -586,6 +941,19 @@ from MicroserviceBase.runtime import BaseServiceSettings
 
 
 class Settings(BaseServiceSettings):
+    """
+Per-service settings inside the monorepo.  Inherits standard fields
+from :class:`BaseServiceSettings`; add service-specific fields below
+as plain class attributes.
+
+**Attributes:**
+
+* ``service_name``
+
+  / *Type*: str / *Default*: "{svc_snake}" /
+
+  Logical name registered with Consul.
+    """
     model_config = SettingsConfigDict(
         env_prefix="{prefix}",
         env_file=".env",
@@ -600,7 +968,15 @@ def _mono_context_py(spec, svc) -> str:
     proj_snake = spec.snake_name
     svc_snake = _snake(svc.name)
     cls = svc.name
-    return f'''"""Dependency injection for {svc.name}."""
+    header = python_file_header(
+        "context.py",
+        f"Dependency-injection composition root for the {svc.name}\n"
+        f"sub-service.",
+    )
+    return f'''{header}\
+"""
+Dependency injection for {svc.name}.
+"""
 
 from __future__ import annotations
 
@@ -613,12 +989,46 @@ from {proj_snake}.{svc_snake}.domain.{svc_snake} import {cls}
 
 @dataclass
 class Context:
+    """
+Per-service DI bag.
+
+**Attributes:**
+
+* ``settings``
+
+  / *Type*: Settings /
+
+  Service-specific settings.
+
+* ``domain``
+
+  / *Type*: {cls} /
+
+  Pure-business-logic instance.
+
+* ``grpc_adapter``
+
+  / *Type*: {cls}GrpcAdapter /
+
+  gRPC inbound adapter.
+    """
     settings: Settings
     domain: {cls}
     grpc_adapter: {cls}GrpcAdapter
 
 
 def create_context() -> Context:
+    """
+Build the per-service :class:`Context`.
+
+**Returns:**
+
+* ``ctx``
+
+  / *Type*: Context /
+
+  Fully-wired context ready for ``ServiceRunner``.
+    """
     settings = Settings()
     domain = {cls}()
     grpc_adapter = {cls}GrpcAdapter(domain)
@@ -628,24 +1038,70 @@ def create_context() -> Context:
 
 def _mono_domain_py(spec, svc) -> str:
     cls = svc.name
+    svc_snake = _snake(svc.name)
+
     methods = ""
     for m in svc.methods:
         params = ", ".join(f"{p.name}: str" for p in m.params)
         if params:
             params = ", " + params
+
+        arg_section = ""
+        if m.params:
+            arg_section = "\n**Arguments:**\n" + "".join(
+                f"\n* ``{p.name}``\n"
+                f"\n  / *Condition*: required / *Type*: str /\n"
+                f"\n  TODO: describe ``{p.name}``.\n"
+                for p in m.params
+            )
+
         if m.server_streaming:
             methods += f'''
     async def {_snake(m.name)}(self{params}):
-        """TODO: implement {m.name}."""
+        """
+{m.name} — TODO: describe what this server-streaming RPC does.
+{arg_section}
+**Yields:**
+
+* ``event``
+
+  / *Type*: dict /
+
+  TODO: describe each event.  The default stub yields one
+  ``{{"result": "not implemented"}}`` and stops.
+        """
+        # TODO: implement.
         yield {{"result": "not implemented"}}
 '''
         else:
             methods += f'''
     async def {_snake(m.name)}(self{params}) -> str:
-        """TODO: implement {m.name}."""
+        """
+{m.name} — TODO: describe what this RPC does.
+{arg_section}
+**Returns:**
+
+* ``result``
+
+  / *Type*: str /
+
+  TODO: describe the return value.  Default stub returns
+  ``"not implemented"``.
+        """
+        # TODO: implement.
         return "not implemented"
 '''
-    return f'''"""Pure business logic for {svc.name} — no gRPC, no I/O."""
+
+    header = python_file_header(
+        f"{svc_snake}.py",
+        f"Pure business logic for the {svc.name} sub-service.\n"
+        f"Zero I/O — no gRPC, no Consul, no HTTP.  Inbound traffic enters\n"
+        f"through the gRPC adapter at adapters/api/grpc_adapter.py.",
+    )
+    return f'''{header}\
+"""
+Pure business logic for {svc.name} — no gRPC, no I/O.
+"""
 
 from __future__ import annotations
 
@@ -653,6 +1109,10 @@ from typing import AsyncIterator
 
 
 class {cls}:
+    """
+Domain service for {svc.name}.  One method per RPC.  Edit bodies to
+plug in real logic.
+    """
 {methods if methods else "    pass"}
 '''
 
@@ -660,21 +1120,81 @@ class {cls}:
 def _mono_grpc_adapter(spec, svc) -> str:
     proj_snake = spec.snake_name
     cls = svc.name
+
     methods = ""
     for m in svc.methods:
         if m.server_streaming:
             methods += f'''
     async def {m.name}(self, request, context):
+        """
+Handle a server-streaming {m.name} RPC.
+
+**Arguments:**
+
+* ``request``
+
+  / *Condition*: required / *Type*: {m.name}Request /
+
+  Proto request message.
+
+* ``context``
+
+  / *Condition*: required / *Type*: grpc.aio.ServicerContext /
+
+  Per-call context.
+
+**Yields:**
+
+* ``response``
+
+  / *Type*: {m.name}Response /
+
+  One proto message per event.
+        """
         async for item in self._domain.{_snake(m.name)}():
             yield {proj_snake}_pb2.{m.name}Response(result=str(item))
 '''
         else:
             methods += f'''
     async def {m.name}(self, request, context):
+        """
+Handle a unary {m.name} RPC.
+
+**Arguments:**
+
+* ``request``
+
+  / *Condition*: required / *Type*: {m.name}Request /
+
+  Proto request message.
+
+* ``context``
+
+  / *Condition*: required / *Type*: grpc.aio.ServicerContext /
+
+  Per-call context.
+
+**Returns:**
+
+* ``response``
+
+  / *Type*: {m.name}Response /
+
+  Proto response message.
+        """
         result = await self._domain.{_snake(m.name)}()
         return {proj_snake}_pb2.{m.name}Response(result=str(result))
 '''
-    return f'''"""gRPC adapter for {svc.name}."""
+
+    header = python_file_header(
+        "grpc_adapter.py",
+        f"gRPC inbound adapter for {svc.name} (one service in the\n"
+        f"{spec.service_name} monorepo).",
+    )
+    return f'''{header}\
+"""
+gRPC adapter for {svc.name}.
+"""
 
 from __future__ import annotations
 
@@ -683,7 +1203,23 @@ from proto import {proj_snake}_pb2, {proj_snake}_pb2_grpc  # type: ignore[import
 
 
 class {cls}GrpcAdapter({proj_snake}_pb2_grpc.{cls}Servicer):
+    """
+gRPC servicer for {svc.name}.  Translates proto messages to domain
+calls.  One method per RPC.
+    """
+
     def __init__(self, domain: {cls}) -> None:
+        """
+Wire the adapter to the domain service.
+
+**Arguments:**
+
+* ``domain``
+
+  / *Condition*: required / *Type*: {cls} /
+
+  Pure-business-logic instance for this service.
+        """
         self._domain = domain
 {methods if methods else "    pass"}
 '''

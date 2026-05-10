@@ -31,3 +31,6 @@ deploy/
 
 # CMake user presets (machine-specific)
 CMakeUserPresets.json
+
+# PlantUML jar fetched on demand for diagram regeneration
+docs/diagrams/tools/plantuml.jar

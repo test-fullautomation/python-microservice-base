@@ -18,5 +18,5 @@
 #
 # Version and date of MicroserviceBase
 #
-VERSION      = "2.0.0"
-VERSION_DATE = "09.02.2026"
+VERSION      = "2.1.0"
+VERSION_DATE = "11.05.2026"

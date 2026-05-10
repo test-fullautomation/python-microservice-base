@@ -6,7 +6,99 @@ Significant changes since the framework's RabbitMQ-era origins.
 Architectural records (one file per decision) live in [`adr/`](adr/);
 this is the chronological summary.
 
-## 2026 (current)
+## Release 2.1.0 — 2026-05-11
+
+First minor release after the gRPC + Consul + Nomad migration shipped
+in 2.0.0.  Focus areas: Manager GUI parity with the new architecture,
+Service Creator wizard upgrades, installer modernisation, and a
+fully-documented Robot Framework test path.
+
+**Highlights:**
+
+- **`grpcio-tools` promoted to base dependency** (was the
+  `[proto-tools]` optional extra).  The Service Creator wizard's
+  *Pre-generate proto stubs* feature now works out of the box on
+  every fresh install.  ~30 MB heavier; one fewer footgun.
+- **ADRs 023–029 added.**  Multi-node Consul, multi-node Nomad,
+  wrapper layer for raw_exec, uv-based Python envs, Kafka event bus
+  alongside gRPC, gRPC + reflection as the canonical RPC layer, and
+  Robot Framework via QConnectBase as the primary test client.  Older
+  ADRs (003, 010–018, 020) carry visible *Superseded* / *Archived*
+  callouts pointing at the new ones.
+- **Service Creator wizard:** multi-proto layout (one process,
+  N services on one port, one Consul registration), multi-file
+  `.proto` import, new *GUI Support* step with a Schema Builder + a
+  Custom HTML/JS editor, language-aware copy throughout (no more
+  `.exe` references for Python services).
+- **Generated Python + C++ services** now ship with full
+  QConnect-style file headers (author, date, history) and per-method
+  docstrings / Doxygen blocks.  Author is taken from the OS user's
+  full display name; date is the generation date.
+- **Manager GUI Settings dialog** got a new *Service infrastructure*
+  section with Consul / Nomad executable paths and OS file-picker
+  Browse buttons (Electron only); installer writes them automatically
+  if it found or installed those tools.
+- **Windows installer (NSIS):** new *Infrastructure* wizard page
+  detects Consul / Nomad on PATH, in `%ProgramFiles%\HashiCorp\`, in
+  the WinGet Links shim folder, and in `WinGet\Packages\Hashicorp.*`;
+  offers `winget install` (pinned), Browse-existing-path, or Skip.
+  Erlang / RabbitMQ / ProcessHub install steps moved behind
+  `ENABLE_LEGACY_BROKER` / `ENABLE_LEGACY_PROCESSHUB` flags (default
+  off; flip to re-enable).
+- **Linux installer:** new `bootstrap.sh` (interactive) shipped in
+  `extraResources` for AppImage users, plus a `.deb` postinst hook
+  that launches it when stdin is a TTY.  Detects via `command -v`,
+  installs from HashiCorp's official apt / yum repos with version
+  pinning, falls back to release-tarball download.
+- **QConnectBase `GrpcClient` connection type** contributed upstream
+  (`QConnectBase/grpc/grpc_client.py`).  Robot Framework tests now
+  drive gRPC services with the same `Connect` / `Send Command` /
+  `Verify` / `Disconnect` keywords as TCP / Serial / SSH / RabbitMQ.
+  Direct (host:port) and Consul-resolved (service_name + consul_addr)
+  modes; reflection client with automatic LocalProtoClient fallback.
+- **Documentation refresh:** new canonical
+  [`00_canonical_architecture.puml`](diagrams/00_canonical_architecture.puml)
+  and [`component.puml`](diagrams/component.puml); 14 legacy diagrams
+  archived under [`diagrams/_archive/`](diagrams/_archive/); class /
+  sequence diagrams refreshed; Service Creator wizard documentation
+  rewritten with new screenshots; framework + scaffold + Tier-A
+  source files brought in line with QConnect docstring style.
+
+The granular per-area entries below were the work that fed into this
+release.
+
+### Migration to gRPC + Consul + Nomad (the "big one")
+
+The framework was originally built around RabbitMQ for service-to-service
+communication, an in-process **ServiceRegistry** for discovery, and a
+**Local Process Hub** (custom Python supervisor) for lifecycle
+management.  All three were replaced:
+
+| Old | New |
+|---|---|
+| RabbitMQ + custom request/response framing | gRPC over HTTP/2 + protobuf |
+| ServiceRegistry (in-process, broker-coupled) | Consul service catalog (`/v1/health/service/...`) |
+| Routing keys + alias routing | Fully-qualified gRPC service + method names |
+| Local Process Hub (Python subprocess management) | Nomad `raw_exec` jobs + agent supervisor |
+| `hub_processes.json` config | per-service `deploy/<svc>.nomad.hcl` |
+| Fleet Web API + hub fleet view | Consul + Nomad UIs (`:8500/ui` and `:4646/ui`) + the GUI's Service Network tab |
+| `eventbus` transport adapter | (dropped — no broker means no transport adapter) |
+
+The rationale per piece is in the ADRs (especially ADRs 016 and 018,
+both flagged "superseded" — see ADR audit list at the bottom).
+
+The hexagonal architecture itself didn't change — the migration
+swapped adapters, not domain code. Services that had domain logic
+written for the RabbitMQ-era framework needed minor adjustments
+(method signatures became `(request_msg, response_msg)` instead of
+`svc_api_X(arg1, arg2)`), but the business logic was portable.
+
+### Multi-broker → multi-Consul
+- The "connect to multiple brokers" feature became "connect to
+  multiple Consul clusters."
+- `MM.connections` map keyed by `host:port`.
+- Sidebar groups services by which Consul cluster they came from.
+- Session persistence in `sessionStorage.mm_connections`.
 
 ### C++ runtime now installable as a standalone CMake / vcpkg package
 - `runtime_cpp/CMakeLists.txt` now exports `MicroserviceBaseConfig.cmake`
@@ -84,33 +176,15 @@ this is the chronological summary.
 - Used by the bridge as a fallback when reflection returns
   `UNIMPLEMENTED`.
 
-## 2025
+## Release 2.0.0 — 2026-02-09
 
-### Migration to gRPC + Consul + Nomad (the "big one")
-
-The framework was originally built around RabbitMQ for service-to-service
-communication, an in-process **ServiceRegistry** for discovery, and a
-**Local Process Hub** (custom Python supervisor) for lifecycle
-management.  All three were replaced:
-
-| Old | New |
-|---|---|
-| RabbitMQ + custom request/response framing | gRPC over HTTP/2 + protobuf |
-| ServiceRegistry (in-process, broker-coupled) | Consul service catalog (`/v1/health/service/...`) |
-| Routing keys + alias routing | Fully-qualified gRPC service + method names |
-| Local Process Hub (Python subprocess management) | Nomad `raw_exec` jobs + agent supervisor |
-| `hub_processes.json` config | per-service `deploy/<svc>.nomad.hcl` |
-| Fleet Web API + hub fleet view | Consul + Nomad UIs (`:8500/ui` and `:4646/ui`) + the GUI's Service Network tab |
-| `eventbus` transport adapter | (dropped — no broker means no transport adapter) |
-
-The rationale per piece is in the ADRs (especially ADRs 016 and 018,
-both flagged "superseded" — see ADR audit list at the bottom).
-
-The hexagonal architecture itself didn't change — the migration
-swapped adapters, not domain code. Services that had domain logic
-written for the RabbitMQ-era framework needed minor adjustments
-(method signatures became `(request_msg, response_msg)` instead of
-`svc_api_X(arg1, arg2)`), but the business logic was portable.
+Hexagonal-architecture refactor on top of the original RabbitMQ
+broker.  Still broker-era — the gRPC + Consul + Nomad migration came
+later in 2.1.0.  See
+[`packagedoc/additional_docs/History.tex`](../packagedoc/additional_docs/History.tex)
+for the full sub-section list (Architecture / GUI v2.0 / Multi-Broker
+Support / Local Process Hub / Service Management / Electron Packaging
+/ Windows Process Fixes / Documentation).
 
 ### Manager GUI rewrite (v2.0)
 - Pure browser-compatible HTML/CSS/JS (no Node.js deps in `web/`).
@@ -120,13 +194,6 @@ written for the RabbitMQ-era framework needed minor adjustments
 - Per-service GUI plugins loaded dynamically from `web/services/`.
 - Login replaced with Bootstrap modal (no separate Electron popup
   window).
-
-### Multi-broker → multi-Consul (v2.1)
-- The "connect to multiple brokers" feature became "connect to
-  multiple Consul clusters."
-- `MM.connections` map keyed by `host:port`.
-- Sidebar groups services by which Consul cluster they came from.
-- Session persistence in `sessionStorage.mm_connections`.
 
 ### Windows process shutdown reliability
 - `proc.terminate()` on Windows calls `TerminateProcess` — no cleanup,

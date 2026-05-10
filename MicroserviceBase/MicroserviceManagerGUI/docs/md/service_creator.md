@@ -19,7 +19,7 @@ any boilerplate yourself.
 |---|---|
 | Create a brand-new service from a description of methods | ✅ Yes |
 | Import an existing `.proto` file and get a matching server + client | ✅ Yes — `Import .proto…` button on Step 3 |
-| Generate multiple services from one .proto (monorepo) | ✅ Yes — pick "Single project (monorepo)" on the import dialog |
+| Generate multiple services from one or many `.proto` files | ✅ Yes — pick the layout on the import dialog: `multi_proto` (single binary, N services on one port), `monorepo` (single project, N executables), or `separate` (N independent projects). See [Step 3 — Import](#b-import-from-a-proto-file). |
 | Edit an *existing* service | ❌ No — edit the source files directly. Re-running the wizard would overwrite. |
 | Add a single new RPC to an existing service | ❌ No — easier to edit `.proto` + adapter by hand. See [service_creation.md](../../../../examples/docs/md/service_creation.md). |
 
@@ -101,8 +101,8 @@ The first step captures the project's identity and metadata.
 | **Short Description** | optional | One-liner for the Manager GUI's service card. |
 | **Group** | optional | Logical grouping shown in the GUI sidebar (e.g. "Sensors", "pps"). |
 | **Tag** | optional | Free-form tag string (e.g. `v1`). |
-| **Routing Key** | auto | Auto-generated from the service name (e.g. `service.sample_service`); editable. Used by the message-broker transport. |
-| **Transport Type** | dropdown | `RabbitMQ` is the current default. |
+| **Routing Key** | auto | Auto-generated from the service name (e.g. `service.sample_service`); editable. Carried in the generated config for back-compat — gRPC services do not use routing keys, so it's effectively cosmetic for new (gRPC) scaffolds. |
+| **Transport Type** | dropdown | `RabbitMQ` (default) or `EventBus`. Carried into the generated Python `main.py` to choose the legacy transport adapter. C++ scaffolds ignore this — they always emit a gRPC server with `ServiceRunner`. |
 
 > **Naming tip.** If you're going to import a `.proto` later, set
 > Service Name to whatever the proto's `service X { ... }` block
@@ -197,21 +197,15 @@ cases:
 
 ### Infrastructure files
 
-Three checkboxes for what's generated alongside the service:
+Three checkboxes for what's generated alongside the service (right column):
 
 - **Nomad job file** (`<service>.nomad.hcl`) — for Nomad deployment
 - **Build scripts** (`build_deploy*.bat/sh`) — MSVC, MinGW, MSYS2 variants
 - **README.md**
 
-All on by default. Untick any you don't need.
-
-### Nomad knobs *(only shown when "Nomad job file" is ticked)*
-
-- `nomad_dc` — Datacenter name (default `dc1`)
-- `nomad_driver` — `raw_exec` (default) or `docker`
-- `nomad_cpu` — millihertz (default 100)
-- `nomad_mem` — MB (default 128)
-- `nomad_consul_addr` — Consul HTTP API URL
+All on by default. Untick any you don't need. The actual Nomad job
+configuration (datacenter, driver, CPU, memory, Consul address) is
+captured later on **Step 5 — Review & Generate**.
 
 Click **Next**.
 
@@ -244,29 +238,48 @@ section (ticked by default for C++) — when on, the bridge runs
 `generate_stubs.bat` first. You can leave the `VCPKG_ROOT` /
 `protoc path` / `grpc_cpp_plugin path` fields blank for auto-detect.
 
-### B. Import from a `.proto` file
+### B. Import from `.proto` file(s)
 
-Click **Import .proto…** and pick an existing `.proto` from the OS
-file picker:
+Click **Import .proto…** and pick **one or many** `.proto` files from
+the OS file picker (the input is multi-select):
 
 ![Import .proto file picker](../img/gui_wizard_06.png)
 
-The bridge parses it via `protoc --descriptor_set_out` and, if the
-proto contains **multiple services**, opens a picker modal listing
-all of them with checkboxes plus an **Output layout** choice:
+The bridge parses each file via `protoc --descriptor_set_out`. What
+happens next depends on what you imported:
+
+| Import shape | Behaviour |
+|---|---|
+| **One file with one service** | Methods are loaded into the wizard immediately; you advance to Step 4/5 normally. |
+| **One file with N services** | A **service picker modal** opens (image below). You tick the services to include and pick a layout. |
+| **N files** (multi-select) | Every service from every file is loaded automatically. The layout is forced to `multi_proto` (one binary on one port). The picker modal does not appear — there's no per-file selection because the assumption is "I'm pointing at the proto-set for one device." |
+
+#### Service picker modal (single-file, multi-service path)
 
 ![Service picker modal — multi-service .proto with output-layout radio](../img/gui_wizard_07.png)
 
-| Picker option | Result |
-|---|---|
-| Tick services & **One folder per service** | Generator creates N sibling project folders, one per service |
-| Tick services & **Single project (monorepo)** *(C++ only)* | Generator creates one project with N executables sharing the same .proto |
+The modal has three layout options:
 
-The imported proto's text is preserved verbatim (comments, options,
-imports), only the structural metadata is read out for the wizard's
-internal tracking. The adapter and domain stubs use the **real**
-message types from the proto (e.g. `device::ChannelRequest`), not
-fabricated `<Method>Request` names.
+| Layout | Result |
+|---|---|
+| **Single binary, multiple services** (`multi_proto`) | One `.exe` hosts every selected service on the **same** `grpc::ServerBuilder` — one Consul registration, one port, atomic lifecycle. Best for one logical device with multiple capability surfaces (e.g. Power Supply: config + control). |
+| **Single project (monorepo)** — N executables (`monorepo`) | One project folder (single `CMakeLists.txt` for C++, single `pyproject.toml` for Python) that produces N entry points sharing the same `.proto`. Each service has its own port and Consul registration. Good for services that may scale independently. |
+| **One folder per service** (`separate`) | Each selected service becomes a self-contained scaffold with its own `proto/`, `CMakeLists.txt`, build script, Nomad job, and README. Good for services that ship separately or are owned by different teams. |
+
+#### Inline layout switch on Step 3
+
+After import, Step 3 shows a green summary card with the picked
+services and a **layout selector** at the top of that card. You can
+flip between `multi_proto`, `monorepo`, and `separate` without
+re-importing — the generator picks up the choice when you click
+**Save to Path** on Step 5.
+
+> **Note.** The imported `.proto` text is preserved verbatim
+> (comments, options, imports). Only the structural metadata
+> (services, methods, params) is read out for the wizard's internal
+> tracking. The generated adapter and domain stubs use the **real**
+> message types from the proto (e.g. `device::ChannelRequest`), not
+> fabricated `<Method>Request` names.
 
 > **Imported proto + GUI = smart placeholder code.** Because we can't
 > guess how your domain class maps to arbitrary message fields, the
@@ -278,43 +291,127 @@ Click **Next**.
 
 ---
 
-## Step 4 — Review & Generate
+## Step 4 — GUI Support *(Python + HTML/JS only)*
 
-> The sidebar numbers this step **5** because there's a hidden Step 4
-> (GUI Schema) that only appears when you pick `language=python` +
-> `gui_type=html`. For C++ flows you jump straight to the review.
+> This step is **skipped automatically** for C++ projects (where the
+> GUI is defined by the Step 2 GUI Type radio — QML / WASM / Widget)
+> and for any project with `gui_type=none`. Skipped steps don't show
+> in the left sidebar, so for those flows you go from Step 3
+> straight to Step 5.
+
+When the step does show, the top of the panel has a **Generate GUI**
+toggle. Off ⇒ no UI files emitted. On ⇒ two tabs appear:
+
+### Tab A — Schema Builder *(recommended)*
+
+![Step 4 — Schema Builder tab with seeded sections + live preview](../img/gui_wizard_04c_schema.png)
+
+A declarative builder that produces a `gui_schema.json`. The Manager
+GUI's loader then renders it at runtime — no HTML/JS to maintain by
+hand.
+
+- **Layout** — `tabs` / `single` / `accordion`. Drives how sections
+  are arranged.
+- **Title / Subtitle** — show in the rendered UI's header.
+- **Sections** — each section has an `id`, a `label`, and a list of
+  components. Click **Add Section** to append; the trash icon
+  removes.
+- **Components** (4 types):
+
+  | Type | What it does |
+  |---|---|
+  | **Method Form** | Form that calls one of your gRPC methods. Picking the method auto-populates the field list from the method's params. Per-field widget choices: `text`, `number`, `textarea`, `checkbox`, `select`, `file`. Result-display modes: `text`, `json`, `table`, `image`, `none`. |
+  | **Result Table** | Renders the result of a method call as a table; optional auto-refresh interval (ms). |
+  | **Static Text** | Plain text/HTML block. |
+  | **Live Status** | Polls a method on an interval and renders it through a format string (e.g. `Voltage: {voltage} V`). |
+
+- **Live preview** — below the editor, the schema is rendered via
+  `SchemaRenderer` so you see exactly what the user will see.
+- **Export as JSON** — download the resolved schema for version
+  control or hand-editing.
+
+The wizard seeds an initial schema from the methods you defined on
+Step 3 (one section per method, each with a Method Form component).
+
+### Tab B — Custom HTML/JS
+
+![Step 4 — Custom HTML/JS tab with editor + live preview side-by-side](../img/gui_wizard_04d_custom.png)
+
+For when the schema builder isn't enough (charts, third-party
+libraries, custom layouts).
+
+- **HTML editor** (left) + **live preview** (right) side-by-side
+  with debounced refresh.
+- **Reset to Template** restores a default Bootstrap card scaffold.
+- **Upload HTML** (button + drag-and-drop into the editor) loads
+  your hand-written HTML.
+- **JavaScript File** dropzone (below the editor) accepts a single
+  `.js` file. Drag-drop or click. The uploaded filename appears as
+  a badge and survives navigation between steps.
+
+The editor's text and the JS upload are committed to `_formData`
+when you click **Next** (or any sidebar step).
+
+Click **Next** to advance to Review.
+
+---
+
+## Step 5 — Review & Generate
+
+> Note: in the wizard sidebar this step is labelled **Step 5** even
+> when Step 4 (GUI Support) is hidden. Skipping a step doesn't
+> renumber the remaining ones.
 
 The left card summarises the service:
 
-- Service name + badges (`6 services` / `monorepo` if applicable)
-- Language, GUI variant, Client gRPC stack
-- Description, Group, Infrastructure files generated
-- Imported proto file name
-- All services + methods with their typed signatures (e.g.
-  `rpc SetVoltage(channel:int32, voltage:float) → bool`)
+- **Header** — service name + version, or for multi-service imports:
+  service name + a **service-count badge** + a **layout badge**
+  (`multi-proto (1 .exe)` / `monorepo (N .exe)` / `separate
+  projects`).
+- **Language**, **GUI**, **Client gRPC** *(C++ + GUI only)*,
+  **Server toolchain** *(C++ only)*, Description, Group,
+  **Infrastructure** badges (Nomad HCL / Build scripts / README /
+  Proto stubs), and the imported `.proto` file name when relevant.
+- **Methods block** — flat list for single-service, per-service
+  blocks for multi-service imports. Each method shown as
+  `rpc Name(field:type, …) → returnType` with a `stream` badge for
+  server-streaming methods.
 
-The right pane has the **Nomad Job Configuration** form: Datacenter,
-Driver (`raw_exec` / `docker`), Command path, Consul address, CPU
-limit, Memory limit. Defaults are sensible; tweak as needed.
+The right pane has the **Nomad Job Configuration** form (only when
+"Nomad job file" is ticked on Step 2):
 
-![Step 4 — Review & Generate (monorepo example)](../img/gui_wizard_08.png)
+- **Datacenter** (default `dc1`)
+- **Driver** — `raw_exec` (default), `exec` (Linux chroot), or
+  `docker` (container)
+- **Command path** — absolute path to the service binary/script
+- **Consul address** — where the service registers itself
+- **CPU (MHz)** + **Memory (MB)** — Nomad resource limits
+
+A help line below the form notes that `<PREFIX>_GRPC_PORT` and
+`ADVERTISE_ADDR` are populated automatically from Nomad's dynamic
+port allocation; `CONSUL_ADDR` uses the address configured above.
+
+![Step 5 — Review & Generate (monorepo example)](../img/gui_wizard_08.png)
 
 ### Generating
 
-Three buttons at the bottom:
+Three controls at the bottom:
 
 | Button | Result |
 |---|---|
-| **Browse…** | Pick the output folder via OS dialog (sets the **Output Path** field). |
-| **Download ZIP** | Streams a ZIP of the project tree to your browser/downloads folder. |
-| **Save to Path** | Writes the scaffold to `<Output Path>/<ServiceName>/`. |
+| **Browse…** *(Electron only)* | Pick the output folder via OS dialog (sets the **Output Path** field). Hidden in plain-browser mode where you have to type the path manually. |
+| **Download ZIP** | Pure client-side — generates a Python-only minimal scaffold and downloads `<ServiceName>.zip` directly. **Does not** support the multi-service `multi_proto` / `monorepo` / `separate` layouts or the C++ scaffold path; use **Save to Path** for those. |
+| **Save to Path** | POSTs to `/api/scaffold/generate-v2` on the bridge. Behaviour by import shape: |
 
-For **monorepo + import**: one Save creates a single folder with all
-services. For **separate-folders + import**: the wizard makes N saves
-in sequence (one per service) and shows partial success in a toast.
+| Import shape | Save behaviour |
+|---|---|
+| Single-service (manual or imported) | One POST → one project folder. |
+| Multi-service import + `multi_proto` | One POST → one project folder containing N services on one binary. |
+| Multi-service import + `monorepo` | One POST → one project folder with N executables. |
+| Multi-service import + `separate` | N sequential POSTs (one per service); progress reflected in a single summary toast. Partial failures show a yellow "X ok / Y failed" toast. |
 
-A success toast (bottom-right) confirms the path; a red toast surfaces
-any error from the bridge.
+A success toast (bottom-right) confirms the path; a red toast
+surfaces any error from the bridge.
 
 ![Success toast — Monorepo with 6 services saved](../img/gui_wizard_09.png)
 
@@ -362,8 +459,21 @@ For Google-grpc-via-vcpkg client mode, you additionally get
 See [vcpkg_setup.md](../../../../examples/docs/md/vcpkg_setup.md) for the layout, build flow,
 and the gcc 13.1.0 ICE workaround.
 
-For monorepo mode, you get one project folder with `src/<svc>/...`
-per service and per-service `deploy/<svc>.nomad.hcl`.
+For **monorepo** mode, you get one project folder with `src/<svc>/...`
+per service, one shared `proto/`, and per-service
+`deploy/<svc>.nomad.hcl`.
+
+For **multi_proto** mode, you get one project folder with
+**`proto/<file_a>.proto` … `proto/<file_n>.proto`** preserved
+verbatim from the imports, one `main.cpp` (or `main.py`) that
+constructs every servicer and registers them all on a single
+`grpc::ServerBuilder`, and **one** `.nomad.hcl` for the unified
+binary. There is one Consul registration with all service
+full-names listed in the `tags` field.
+
+For **separate** mode, you get N sibling project folders, each
+fully self-contained — the same as running the wizard N times,
+just batched.
 
 ---
 
@@ -487,6 +597,13 @@ methods:
 proto_content_override: ""
 proto_package: ""               # only set when proto_content_override is set
 ```
+
+> **CLI gap.** As of 2026-05-08 the CLI only supports `--monorepo` for
+> multi-service imports — it does **not** yet support the GUI's
+> `multi_proto` (one binary, N services) or `separate` (N independent
+> projects) layouts. Use the GUI for those flows, or the bridge HTTP
+> API directly if you need to script them. Tracked as a TODO on
+> `MicroserviceBase/tools/scaffold_cli.py`.
 
 **Monorepo example** — one project, N executables (one per service):
 
@@ -615,4 +732,34 @@ python -m MicroserviceBase.tools.scaffold_cli -c demo.yaml --dry-run
 | Generated build fails with "fabricated `<Method>Request` not declared" | Old generator bug. Make sure you're on the latest commit and regenerate. |
 | Save succeeds but folder is empty | Bridge couldn't write to `output_path` — check write permissions. Defaults to wherever the bridge process runs. |
 | C++ + Qt6::Grpc + monorepo emits two folders (`client/` and `qt_client/`) | This is intentional. `client/` has the Google-grpc console client (works without Qt installer); `qt_client/` is the Qt-native UI client. Use whichever fits. |
+| Multi-service picker only shows two layout options | You're on a stale build. Pull and rebuild — the picker has had **three** layouts (`multi_proto`, `monorepo`, `separate`) since 2026-05. |
+| Multi-file `.proto` import skipped the picker modal | Expected. Selecting N files forces `multi_proto` automatically (no per-file selection step). To use a different layout, import the protos one at a time, or change the layout via the inline selector on Step 3 after import. |
+| **Download ZIP** produces a tiny / bare scaffold | The ZIP path is client-side-only and emits a minimal Python scaffold for sharing without the bridge. Use **Save to Path** for full C++ scaffolds, multi-service imports, and any `multi_proto` / `monorepo` / `separate` layout. |
+
+---
+
+## Screenshot status (2026-05-08)
+
+The doc was diffed against `web/js/ServiceCreator.js` on 2026-05-08
+and all flagged screenshots were captured the same day.
+
+| Screenshot | Status | What it shows |
+|---|---|---|
+| `gui_wizard_01.png` | unchanged | Manager main window — empty state. |
+| `gui_wizard_02.png` | unchanged | Service Creator tab highlighted in top nav. |
+| `gui_wizard_03.png` | unchanged | Step 1 — Basic Info filled in. |
+| `gui_wizard_04a.png` | ✅ updated 2026-05-08 | Step 2 — C++ + Widget + Google grpc++; the new two-column layout with the Server Toolchain block visible. |
+| `gui_wizard_04b.png` | ✅ updated 2026-05-08 | Step 2 — C++ + Widget + Qt6::Grpc; the version-requirement alert is captured with the refreshed wording. |
+| `gui_wizard_04c_schema.png` | ✨ new 2026-05-08 | Step 4 — Schema Builder tab with seeded sections, components, and the live preview. |
+| `gui_wizard_04d_custom.png` | ✨ new 2026-05-08 | Step 4 — Custom HTML/JS tab with editor + preview side-by-side. |
+| `gui_wizard_05.png` | unchanged | Step 3 — manual gRPC method entry. |
+| `gui_wizard_06.png` | unchanged | OS file picker (now multi-select capable). |
+| `gui_wizard_07.png` | ✅ updated 2026-05-08 | Multi-service picker modal with all three layout radios (`multi_proto` / `monorepo` / `separate`). |
+| `gui_wizard_08.png` | ✅ updated 2026-05-08 | Step 5 review with the new layout badge + Server toolchain summary row. |
+| `gui_wizard_09.png` | unchanged | Success toast. |
+
+Both the Markdown and the HTML mirror at
+[`../html/service_creator.html`](../html/service_creator.html) were
+edited in the same pass, including image references for the two new
+Step 4 captures.
 

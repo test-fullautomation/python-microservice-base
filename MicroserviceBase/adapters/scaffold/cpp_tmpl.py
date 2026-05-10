@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Dict
 
+from .shared import cpp_file_header
+
 if TYPE_CHECKING:
     from .generator import ScaffoldSpec
 
@@ -88,6 +90,39 @@ endfunction()
 
 
 def generate(spec: "ScaffoldSpec") -> Dict[str, str]:
+    """
+Render every file for a C++ gRPC service scaffold.
+
+Produces a fully buildable project tree: CMakeLists, ``main.cpp``,
+``Settings.h``, domain stubs, gRPC adapter, env-var scripts
+(``set_env.bat`` / ``.sh`` / MinGW / MSYS2 / MSVC variants), build
+scripts (``build_deploy*.bat``), proto-stub generator scripts, and
+optionally Qt UI files (QML / WASM / Widget) per ``spec.gui_type``.
+
+Internal ``_xxx`` helpers in this module each return one file's text
+verbatim — they are not meant to be called directly; ``generate`` is
+the single public entry point.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Scaffold specification (service name, methods, GUI type, client /
+  server gRPC kind, toolchain hints, …).
+
+**Returns:**
+
+* ``files``
+
+  / *Type*: Dict[str, str] /
+
+  Map of relative-path-string → file-contents-string for every file
+  the scaffold should write.  The caller (``adapters/scaffold/generator.py``)
+  writes them to ``output_path/service_name/`` or zips them for
+  download.
+    """
     files: Dict[str, str] = {}
 
     # ---- Service project ----
@@ -470,13 +505,31 @@ def _main_cpp(spec: "ScaffoldSpec") -> str:
     pkg = spec.proto_package
     svc = spec.service_name
     grpc_name = _grpc_svc_name(spec)  # matches proto's `service X { ... }`
-    return f'''#include <iostream>
+    header = cpp_file_header(
+        "main.cpp",
+        f"Entry point for the {svc} service.\n"
+        f"Composes Settings, the domain class, and the gRPC adapter, then\n"
+        f"hands them to ServiceRunner which manages the gRPC server\n"
+        f"lifecycle and Consul registration.",
+    )
+    return f'''{header}
+#include <iostream>
 #include "MicroserviceBase/ServiceRunner.h"
 
 #include "Settings.h"
 #include "domain/{grpc_name}.h"
 #include "adapters/api/{svc}GrpcAdapter.h"
 
+/**
+ * Process entry point.
+ *
+ * Constructs the dependency-injection wiring (Settings -> domain ->
+ * gRPC adapter), registers the adapter with ServiceRunner under the
+ * fully-qualified service name "{pkg}.{grpc_name}", and serves until
+ * a shutdown signal arrives (SIGINT / SIGTERM / Windows SIGBREAK).
+ *
+ * @return 0 on clean shutdown, 1 on fatal startup error.
+ */
 int main() {{
     try {{
         {sn}::Settings settings;
@@ -504,13 +557,35 @@ def _settings_h(spec: "ScaffoldSpec") -> str:
     ns = spec.proto_namespace
     pkg = spec.proto_package
     prefix = spec.env_prefix
-    return f'''#pragma once
+    header = cpp_file_header(
+        "Settings.h",
+        f"Service-specific settings for {spec.service_name}.\n"
+        f"Loads all base fields (service_host, grpc_port, advertise_addr,\n"
+        f"consul_addr, consul_token, log_level) from environment variables\n"
+        f"prefixed with `{prefix}`.  Add service-specific fields below by\n"
+        f"declaring members and calling readEnv() inside the constructor.",
+    )
+    return f'''{header}
+#pragma once
 
 #include "MicroserviceBase/Settings.h"
 
 namespace {sn} {{
 
+/**
+ * Settings for the {spec.service_name} service.
+ *
+ * Inherits the standard fields from BaseServiceSettings.  Add
+ * service-specific fields here as plain data members and read them
+ * from the environment in the constructor using
+ * `readEnv("{prefix}MY_FIELD", my_field_)`.
+ */
 struct Settings : public microservice_base::BaseServiceSettings {{
+    /**
+     * Construct settings, loading every base field from `{prefix}*`
+     * environment variables.  Defaults from BaseServiceSettings apply
+     * when an env var is unset.
+     */
     Settings() {{
         service_name = "{sn}";
         loadBaseFromEnv("{prefix}");
@@ -531,15 +606,29 @@ def _domain_h(spec: "ScaffoldSpec") -> str:
 
     imported = any(m.input_type or m.output_type for m in spec.methods)
 
+    header = cpp_file_header(
+        f"{grpc_name}.h",
+        f"Domain class for the {spec.service_name} service.\n"
+        f"Pure business logic — no gRPC, no I/O, no protobuf types.\n"
+        f"All inbound traffic enters through the gRPC adapter and is\n"
+        f"translated into method calls on this class.",
+    )
+
     if imported:
-        # Imported proto: we can't infer the right domain signatures.
-        # Emit an empty class; the user adds methods matching their proto.
-        return f'''#pragma once
+        return f'''{header}
+#pragma once
 
 #include <string>
 
 namespace {sn} {{
 
+/**
+ * Domain class for {spec.service_name} (imported proto).
+ *
+ * The wizard couldn't infer the right method signatures from your
+ * imported .proto file — add one method per RPC, matching the
+ * request/response message types your adapter will pass in.
+ */
 class {grpc_name} {{
 public:
     // TODO: add domain methods for your imported proto here.
@@ -551,14 +640,36 @@ public:
     methods = ""
     for m in spec.methods:
         params = ", ".join(f"const std::string& {p.name}" for p in m.params)
-        methods += f"    std::string {_snake(m.name)}({params}) const;\n"
+        # Doxygen block per method
+        param_doc = "\n".join(
+            f"     * @param {p.name} TODO: describe ``{p.name}``."
+            for p in m.params
+        )
+        methods += (
+            f"\n    /**\n"
+            f"     * {m.name} — TODO: describe what this RPC does.\n"
+            + (f"     *\n{param_doc}\n" if param_doc else "")
+            + f"     *\n"
+            f"     * @return TODO: describe the return value.  The default\n"
+            f"     *         stub returns the literal string \"not implemented\".\n"
+            f"     */\n"
+            f"    std::string {_snake(m.name)}({params}) const;\n"
+        )
 
-    return f'''#pragma once
+    return f'''{header}
+#pragma once
 
 #include <string>
 
 namespace {sn} {{
 
+/**
+ * Domain class for {spec.service_name}.
+ *
+ * One method per RPC declared in the .proto file.  Edit the bodies
+ * in {grpc_name}.cpp to plug in real logic; the gRPC adapter calls
+ * these methods on every inbound RPC.
+ */
 class {grpc_name} {{
 public:
 {methods if methods else "    // Add methods here."}
@@ -574,8 +685,17 @@ def _domain_cpp(spec: "ScaffoldSpec") -> str:
 
     imported = any(m.input_type or m.output_type for m in spec.methods)
 
+    header = cpp_file_header(
+        f"{grpc_name}.cpp",
+        f"Domain implementations for {spec.service_name}.\n"
+        f"Replace each TODO body with the real business logic.  Method\n"
+        f"signatures must stay aligned with {grpc_name}.h so the gRPC\n"
+        f"adapter can keep calling them without changes.",
+    )
+
     if imported:
-        return f'''#include "{grpc_name}.h"
+        return f'''{header}
+#include "{grpc_name}.h"
 
 namespace {sn} {{
 
@@ -588,13 +708,20 @@ namespace {sn} {{
     for m in spec.methods:
         params = ", ".join(f"const std::string& {p.name}" for p in m.params)
         methods += f'''
+/**
+ * {m.name} — TODO: implement.  See header for the per-parameter doc.
+ *
+ * The default stub returns the literal "not implemented" so the
+ * service still builds and responds to RPCs end-to-end.
+ */
 std::string {grpc_name}::{_snake(m.name)}({params}) const {{
     // TODO: implement
     return "not implemented";
 }}
 '''
 
-    return f'''#include "{grpc_name}.h"
+    return f'''{header}
+#include "{grpc_name}.h"
 
 namespace {sn} {{
 {methods if methods else "// Add implementations here."}
@@ -618,19 +745,46 @@ def _adapter_h(spec: "ScaffoldSpec") -> str:
         outT = ("::" + m.output_type.replace(".", "::")) if m.output_type else f"{ns}::{m.name}Response"
         if m.server_streaming:
             methods += (
-                f"    grpc::Status {m.name}(grpc::ServerContext*,\n"
-                f"        const {inT}*,\n"
-                f"        grpc::ServerWriter<{outT}>*) override;\n\n"
+                f"    /**\n"
+                f"     * Handle a server-streaming {m.name} RPC.  Writes one or more\n"
+                f"     * {outT} responses to the writer.\n"
+                f"     *\n"
+                f"     * @param ctx     gRPC server context (deadline, metadata, …).\n"
+                f"     * @param request Inbound {inT}.\n"
+                f"     * @param writer  Stream writer to push responses through.\n"
+                f"     * @return        grpc::Status::OK on success.\n"
+                f"     */\n"
+                f"    grpc::Status {m.name}(grpc::ServerContext* ctx,\n"
+                f"        const {inT}* request,\n"
+                f"        grpc::ServerWriter<{outT}>* writer) override;\n\n"
             )
         else:
             methods += (
-                f"    grpc::Status {m.name}(grpc::ServerContext*,\n"
-                f"        const {inT}*,\n"
-                f"        {outT}*) override;\n\n"
+                f"    /**\n"
+                f"     * Handle a unary {m.name} RPC.\n"
+                f"     *\n"
+                f"     * @param ctx      gRPC server context.\n"
+                f"     * @param request  Inbound {inT}.\n"
+                f"     * @param response {outT} populated by this method.\n"
+                f"     * @return         grpc::Status::OK on success.\n"
+                f"     */\n"
+                f"    grpc::Status {m.name}(grpc::ServerContext* ctx,\n"
+                f"        const {inT}* request,\n"
+                f"        {outT}* response) override;\n\n"
             )
 
     grpc_name = _grpc_svc_name(spec)
-    return f'''#pragma once
+    header = cpp_file_header(
+        f"{svc}GrpcAdapter.h",
+        f"gRPC inbound adapter for {grpc_name}.\n"
+        f"Translates protobuf request/response messages into method calls\n"
+        f"on the {grpc_name} domain class.  One method per RPC, generated\n"
+        f"from the .proto file.  Do not change the signatures (they are\n"
+        f"required by the proto-generated servicer base class); edit only\n"
+        f"the bodies in {svc}GrpcAdapter.cpp to plug in real logic.",
+    )
+    return f'''{header}
+#pragma once
 
 #include <grpcpp/grpcpp.h>
 #include "{sn}.grpc.pb.h"
@@ -638,8 +792,21 @@ def _adapter_h(spec: "ScaffoldSpec") -> str:
 
 namespace {sn} {{
 
+/**
+ * gRPC servicer adapter for {grpc_name}.
+ *
+ * Holds a non-owning reference to the domain instance and forwards
+ * each inbound RPC to it after unpacking the proto request fields.
+ */
 class {svc}GrpcAdapter final : public {ns}::{grpc_name}::Service {{
 public:
+    /**
+     * Wire the adapter to the domain service.
+     *
+     * @param domain Reference to the domain instance.  Must outlive
+     *               the adapter (typically both live for the duration
+     *               of main()).
+     */
     explicit {svc}GrpcAdapter({grpc_name}& domain) : m_domain(domain) {{}}
 
 {methods}
@@ -720,7 +887,16 @@ grpc::Status {svc}GrpcAdapter::{m.name}(
 }}
 '''
 
-    return f'''#include "{svc}GrpcAdapter.h"
+    header = cpp_file_header(
+        f"{svc}GrpcAdapter.cpp",
+        f"Implementations for {svc}GrpcAdapter.\n"
+        f"Each method unpacks the proto request, calls into the domain\n"
+        f"object via m_domain, and packs the result into the response\n"
+        f"message.  Imported-proto methods emit UNIMPLEMENTED until the\n"
+        f"author wires them up — the service still builds and starts.",
+    )
+    return f'''{header}
+#include "{svc}GrpcAdapter.h"
 
 namespace {sn} {{
 {methods}

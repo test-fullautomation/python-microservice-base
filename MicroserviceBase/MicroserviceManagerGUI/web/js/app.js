@@ -3975,8 +3975,44 @@
             'placeholder="python" value="' + _escapeHtml(_settings.pythonPath || '') + '">' +
           '<div class="form-text">Path to Python interpreter (used by Electron to spawn the bridge)</div>' +
         '</div>' +
+
         '<hr>' +
-        '<h6 class="fw-semibold mb-3">Infrastructure</h6>' +
+        '<h6 class="fw-semibold mb-3">Service infrastructure</h6>' +
+        '<div class="form-text mb-3 small">' +
+          'Lookup priority for each binary: <strong>this setting</strong> &rarr; ' +
+          '<code>PATH</code> &rarr; default install location ' +
+          '(<code>%ProgramFiles%\\HashiCorp\\</code>). Leave empty to skip the ' +
+          'override and let the bridge resolve via PATH.' +
+        '</div>' +
+        '<div class="mb-3">' +
+          '<label for="settingConsulPath" class="form-label fw-semibold">Consul executable</label>' +
+          '<div class="input-group">' +
+            '<input type="text" class="form-control" id="settingConsulPath" ' +
+              'placeholder="(auto-detect via PATH)" value="' +
+              _escapeHtml(_settings.consulPath || '') + '">' +
+            (window.electronAPI && window.electronAPI.showOpenDialog ?
+              '<button class="btn btn-outline-secondary" type="button" id="btnBrowseConsulPath">' +
+                '<i class="bi bi-folder2 me-1"></i>Browse&hellip;' +
+              '</button>' : '') +
+          '</div>' +
+          '<div class="form-text">Used when starting the local Consul agent from the Service Network tab.</div>' +
+        '</div>' +
+        '<div class="mb-3">' +
+          '<label for="settingNomadPath" class="form-label fw-semibold">Nomad executable</label>' +
+          '<div class="input-group">' +
+            '<input type="text" class="form-control" id="settingNomadPath" ' +
+              'placeholder="(auto-detect via PATH)" value="' +
+              _escapeHtml(_settings.nomadPath || '') + '">' +
+            (window.electronAPI && window.electronAPI.showOpenDialog ?
+              '<button class="btn btn-outline-secondary" type="button" id="btnBrowseNomadPath">' +
+                '<i class="bi bi-folder2 me-1"></i>Browse&hellip;' +
+              '</button>' : '') +
+          '</div>' +
+          '<div class="form-text">Used when starting the local Nomad agent from the Service Network tab.</div>' +
+        '</div>' +
+
+        '<hr>' +
+        '<h6 class="fw-semibold mb-3">Bridge &amp; broker</h6>' +
         '<div class="row mb-3">' +
           '<div class="col">' +
             '<label for="settingBrokerHost" class="form-label fw-semibold">Broker Host</label>' +
@@ -3996,6 +4032,50 @@
           '<div class="form-text">Port for the FastAPI bridge (REST API &amp; WebSocket)</div>' +
         '</div>' +
       '</form>';
+
+    _wireSettingsBrowseButtons();
+  }
+
+  // Wire the optional Browse buttons next to Consul/Nomad path inputs.
+  // Only present in Electron — plain browsers can't open the OS file
+  // picker (an <input type="file"> would work but the browser redacts
+  // the absolute path on submit, which is exactly what we need).
+  function _wireSettingsBrowseButtons() {
+    if (!window.electronAPI || !window.electronAPI.showOpenDialog) return;
+
+    function _pickExecutable(forTool, inputId) {
+      var binName = forTool === 'consul' ? 'consul.exe' : 'nomad.exe';
+      window.electronAPI.showOpenDialog({
+        properties: ['openFile'],
+        title: 'Locate the ' + forTool + ' executable',
+        filters: [
+          { name: forTool + ' executable', extensions: ['exe'] },
+          { name: 'All files',             extensions: ['*'] }
+        ],
+        defaultPath: binName
+      }).then(function (result) {
+        if (!result || result.canceled) return;
+        var picked = result.filePaths && result.filePaths[0];
+        if (!picked) return;
+        var input = document.getElementById(inputId);
+        if (input) input.value = picked;
+      }).catch(function (err) {
+        console.error('[settings] Browse dialog failed:', err);
+      });
+    }
+
+    var consulBtn = document.getElementById('btnBrowseConsulPath');
+    if (consulBtn) {
+      consulBtn.addEventListener('click', function () {
+        _pickExecutable('consul', 'settingConsulPath');
+      });
+    }
+    var nomadBtn = document.getElementById('btnBrowseNomadPath');
+    if (nomadBtn) {
+      nomadBtn.addEventListener('click', function () {
+        _pickExecutable('nomad', 'settingNomadPath');
+      });
+    }
   }
 
   function openSettings() {
@@ -4008,11 +4088,15 @@
 
   function saveSettings() {
     var pythonPathInput = document.getElementById('settingPythonPath');
+    var consulPathInput = document.getElementById('settingConsulPath');
+    var nomadPathInput  = document.getElementById('settingNomadPath');
     var brokerHostInput = document.getElementById('settingBrokerHost');
     var brokerPortInput = document.getElementById('settingBrokerPort');
     var bridgePortInput = document.getElementById('settingBridgePort');
     var newSettings = {
       pythonPath: pythonPathInput ? pythonPathInput.value.trim() : '',
+      consulPath: consulPathInput ? consulPathInput.value.trim() : '',
+      nomadPath:  nomadPathInput  ? nomadPathInput.value.trim()  : '',
       brokerHost: brokerHostInput ? brokerHostInput.value.trim() : '',
       brokerPort: brokerPortInput ? brokerPortInput.value.trim() : '',
       bridgePort: bridgePortInput ? bridgePortInput.value.trim() : ''
