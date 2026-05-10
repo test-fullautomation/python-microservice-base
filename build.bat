@@ -27,8 +27,16 @@ if not exist "%PYTHON_PATH%" (
     echo WARNING: Python not found at %PYTHON_PATH%, skipping wheel build
     goto skip_wheel
 )
+REM Drop any previously-built MSB wheels so the installers folder only ever
+REM ships the version this build produces.  Without this, version bumps leave
+REM the old wheel behind and the bundle silently grows.
+del /q "%~dp0build-resources\installers\microservicebase-*.whl" 2>nul
 set "SKIP_DOCBUILD=1"
-"%PYTHON_PATH%" -m pip wheel --no-deps -w "%~dp0build-resources\installers" "%~dp0..\.."
+REM --no-build-isolation skips pip's per-build venv (which would re-download
+REM setuptools / wheel / colorama from PyPI on every run).  Faster and works
+REM offline; assumes the active Python already has those build deps from
+REM `pyproject.toml`'s [build-system].requires.
+"%PYTHON_PATH%" -m pip wheel --no-deps --no-build-isolation -w "%~dp0build-resources\installers" "%~dp0..\.."
 set "SKIP_DOCBUILD="
 if errorlevel 1 (
     echo WARNING: Wheel build failed, installer will fall back to PyPI

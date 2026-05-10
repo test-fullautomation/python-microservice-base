@@ -40,9 +40,48 @@ logger = logging.getLogger(__name__)
 
 
 class NomadAPIError(Exception):
-   """Raised when the Nomad API returns a non-2xx response."""
+   """
+Raised when the Nomad API returns a non-2xx response.
+
+**Attributes:**
+
+* ``status_code``
+
+  / *Type*: int /
+
+  HTTP status code returned by Nomad (or ``0`` for transport errors).
+
+* ``url``
+
+  / *Type*: str /
+
+  The URL that was being requested when the error occurred.
+   """
 
    def __init__(self, status_code, message, url=''):
+      """
+Construct a NomadAPIError.
+
+**Arguments:**
+
+* ``status_code``
+
+  / *Condition*: required / *Type*: int /
+
+  HTTP status code (or ``0`` for network / transport errors).
+
+* ``message``
+
+  / *Condition*: required / *Type*: str /
+
+  Human-readable message body from Nomad (or the network error).
+
+* ``url``
+
+  / *Condition*: optional / *Type*: str / *Default*: '' /
+
+  URL that was being requested.  Included in the formatted message.
+      """
       self.status_code = status_code
       self.url = url
       super().__init__(f'Nomad API {status_code}: {message} ({url})')
@@ -52,12 +91,51 @@ class NomadClient:
    """
 HTTP client for the HashiCorp Nomad v1 API.
 
-Uses only ``urllib`` from the standard library — no external dependencies.
-Supports ACL token authentication and blocking queries (long-poll).
+Uses only ``urllib`` from the standard library — no external
+dependencies.  Supports ACL token authentication and blocking queries
+(long-poll).
    """
 
    def __init__(self, address='http://127.0.0.1:4646', token='',
                 namespace='default', timeout=30.0, verify_ssl=True):
+      """
+Construct a NomadClient bound to a Nomad server.
+
+**Arguments:**
+
+* ``address``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'http://127.0.0.1:4646' /
+
+  Nomad HTTP API endpoint, e.g. ``"http://nomad.example.com:4646"``.
+
+* ``token``
+
+  / *Condition*: optional / *Type*: str / *Default*: '' /
+
+  Nomad ACL token.  Sent in the ``X-Nomad-Token`` header on every
+  request when non-empty.
+
+* ``namespace``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'default' /
+
+  Default Nomad namespace.  Forwarded as the ``namespace`` query
+  parameter on every request.
+
+* ``timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: 30.0 /
+
+  Per-request timeout in seconds.
+
+* ``verify_ssl``
+
+  / *Condition*: optional / *Type*: bool / *Default*: True /
+
+  When ``False``, disables certificate verification for HTTPS endpoints
+  (use only for dev clusters with self-signed certs).
+      """
       self._address = address.rstrip('/')
       self._namespace = namespace
       self._timeout = timeout

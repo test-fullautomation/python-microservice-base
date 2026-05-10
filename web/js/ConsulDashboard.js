@@ -157,7 +157,9 @@
       '        <summary class="small text-muted">Advanced</summary>' +
       '        <div class="mt-2">' +
       '          <div class="mb-2"><label class="form-label small">Consul binary</label>' +
-      '            <input class="form-control form-control-sm" id="consulBinPath" value="consul"></div>' +
+      '            <input class="form-control form-control-sm" id="consulBinPath" value="' +
+                       _esc(((MM.getSettings && MM.getSettings()) || {}).consulPath || 'consul') +
+                     '"></div>' +
       '          <div class="mb-2"><label class="form-label small">HTTP port</label>' +
       '            <input class="form-control form-control-sm" id="consulHttpPort" value="8500"></div>' +
       '        </div>' +

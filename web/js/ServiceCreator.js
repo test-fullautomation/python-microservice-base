@@ -558,49 +558,59 @@
                 _formData.importedServices.length + ' services will be generated' +
               '</h6>' +
               // Layout selector — three options:
-              //   multi_proto: one .exe hosting all services
-              //   monorepo:    one project, N .exes (shared codebase)
+              //   multi_proto: one process hosting all services
+              //   monorepo:    one project, N processes (shared codebase)
               //   separate:    N independent projects, one per service
-              // Reflects whatever was set during import (picker modal /
-              // multi-file auto-default).
-              '<div class="mb-3 p-2 rounded" style="background:rgba(255,255,255,0.04);">' +
-                '<div class="small text-muted mb-1">Output layout:</div>' +
-                '<div class="form-check">' +
-                  '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
-                    'id="creatorLayoutMultiProto" value="multi_proto"' +
-                    (_formData.layout === 'multi_proto' ? ' checked' : '') + '>' +
-                  '<label class="form-check-label small" for="creatorLayoutMultiProto">' +
-                    '<strong>multi-proto</strong> &mdash; one <code>.exe</code> hosting ' +
-                    'all services on one port (one Consul registration). ' +
-                    '<span class="text-muted">Best for one logical device.</span>' +
-                  '</label>' +
-                '</div>' +
-                '<div class="form-check">' +
-                  '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
-                    'id="creatorLayoutMonorepo" value="monorepo"' +
-                    (_formData.layout === 'monorepo' ||
-                     (_formData.monorepoLayout && _formData.layout !== 'multi_proto'
-                                              && _formData.layout !== 'separate')
-                       ? ' checked' : '') + '>' +
-                  '<label class="form-check-label small" for="creatorLayoutMonorepo">' +
-                    '<strong>monorepo</strong> &mdash; one project, ' +
-                    '<em>N</em> <code>.exe</code>s, each with its own port and ' +
-                    'Consul registration. ' +
-                    '<span class="text-muted">Scale services independently.</span>' +
-                  '</label>' +
-                '</div>' +
-                '<div class="form-check">' +
-                  '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
-                    'id="creatorLayoutSeparate" value="separate"' +
-                    (_formData.layout === 'separate' ? ' checked' : '') + '>' +
-                  '<label class="form-check-label small" for="creatorLayoutSeparate">' +
-                    '<strong>separate projects</strong> &mdash; ' +
-                    '<em>N</em> independent project folders, one per service. ' +
-                    '<span class="text-muted">Each ships separately ' +
-                    '(own CMakeLists, build script, Nomad job).</span>' +
-                  '</label>' +
-                '</div>' +
-              '</div>' +
+              // Wording is language-aware: C++ uses ".exe", Python uses
+              // "Python entry point" so we don't suggest Python services
+              // produce native binaries.  Reflects whatever was set
+              // during import (picker modal / multi-file auto-default).
+              (function () {
+                var isCpp = (_formData.language === 'cpp');
+                var procWord    = isCpp ? '<code>.exe</code>'  : 'Python entry point';
+                var procWordPl  = isCpp ? '<code>.exe</code>s' : 'Python entry points';
+                var monorepoBuild = isCpp ? 'CMakeLists' : 'pyproject.toml';
+                return (
+                '<div class="mb-3 p-2 rounded" style="background:rgba(255,255,255,0.04);">' +
+                  '<div class="small text-muted mb-1">Output layout:</div>' +
+                  '<div class="form-check">' +
+                    '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                      'id="creatorLayoutMultiProto" value="multi_proto"' +
+                      (_formData.layout === 'multi_proto' ? ' checked' : '') + '>' +
+                    '<label class="form-check-label small" for="creatorLayoutMultiProto">' +
+                      '<strong>multi-proto</strong> &mdash; one ' + procWord + ' hosting ' +
+                      'all services on one port (one Consul registration). ' +
+                      '<span class="text-muted">Best for one logical device.</span>' +
+                    '</label>' +
+                  '</div>' +
+                  '<div class="form-check">' +
+                    '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                      'id="creatorLayoutMonorepo" value="monorepo"' +
+                      (_formData.layout === 'monorepo' ||
+                       (_formData.monorepoLayout && _formData.layout !== 'multi_proto'
+                                                && _formData.layout !== 'separate')
+                         ? ' checked' : '') + '>' +
+                    '<label class="form-check-label small" for="creatorLayoutMonorepo">' +
+                      '<strong>monorepo</strong> &mdash; one project, ' +
+                      '<em>N</em> ' + procWordPl + ', each with its own port and ' +
+                      'Consul registration. ' +
+                      '<span class="text-muted">Scale services independently.</span>' +
+                    '</label>' +
+                  '</div>' +
+                  '<div class="form-check">' +
+                    '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                      'id="creatorLayoutSeparate" value="separate"' +
+                      (_formData.layout === 'separate' ? ' checked' : '') + '>' +
+                    '<label class="form-check-label small" for="creatorLayoutSeparate">' +
+                      '<strong>separate projects</strong> &mdash; ' +
+                      '<em>N</em> independent project folders, one per service. ' +
+                      '<span class="text-muted">Each ships separately ' +
+                      '(own ' + monorepoBuild + ', build script, Nomad job).</span>' +
+                    '</label>' +
+                  '</div>' +
+                '</div>'
+                );
+              })() +
               // Per-service grouped method list -- shows which RPC belongs
               // to which service so it's clear how the .proto is structured.
               '<div class="mb-2">' +
@@ -1117,46 +1127,58 @@
 
               '<hr>' +
               '<h6 class="mb-2">Output layout</h6>' +
-              '<div class="form-check">' +
-                '<input class="form-check-input" type="radio" name="svcLayout" ' +
-                  'id="svcLayoutMultiProto" value="multi_proto" checked>' +
-                '<label class="form-check-label" for="svcLayoutMultiProto">' +
-                  '<strong>Single binary, multiple services</strong> ' +
-                  '(<code>multi_proto</code>)<br>' +
-                  '<span class="text-muted small">' +
-                    'One <code>.exe</code> hosts every selected service on the ' +
-                    '<strong>same</strong> <code>grpc::ServerBuilder</code> &mdash; ' +
-                    'one Consul registration, one port, atomic lifecycle.  ' +
-                    'Best for one logical device with multiple capability ' +
-                    'surfaces (e.g. Power Supply: config + control).' +
-                  '</span>' +
-                '</label>' +
-              '</div>' +
-              '<div class="form-check mt-2">' +
-                '<input class="form-check-input" type="radio" name="svcLayout" ' +
-                  'id="svcLayoutMonorepo" value="monorepo">' +
-                '<label class="form-check-label" for="svcLayoutMonorepo">' +
-                  '<strong>Single project (monorepo)</strong> &mdash; N executables<br>' +
-                  '<span class="text-muted small">' +
-                    'One project (one CMakeLists for C++, one pyproject.toml ' +
-                    'for Python) that produces N entry points sharing the ' +
-                    'same .proto.  Each service has its own port and Consul ' +
-                    'registration.  Good for services that may scale independently.' +
-                  '</span>' +
-                '</label>' +
-              '</div>' +
-              '<div class="form-check mt-2">' +
-                '<input class="form-check-input" type="radio" name="svcLayout" ' +
-                  'id="svcLayoutSeparate" value="separate">' +
-                '<label class="form-check-label" for="svcLayoutSeparate">' +
-                  '<strong>One folder per service</strong> (independent projects)<br>' +
-                  '<span class="text-muted small">' +
-                    'Each service becomes a self-contained scaffold &mdash; its own proto, ' +
-                    'CMakeLists, build script, and Nomad job.  Good for services that ' +
-                    'ship separately or are owned by different teams.' +
-                  '</span>' +
-                '</label>' +
-              '</div>' +
+              // Wording is language-aware so we don't tell Python users
+              // their service produces a ".exe" or has a "ServerBuilder".
+              (function () {
+                var isCpp = (_formData.language === 'cpp');
+                var procWord     = isCpp ? '.exe'                  : 'Python process';
+                var procWordPl   = isCpp ? 'executables'           : 'Python entry points';
+                var serverWord   = isCpp ? 'grpc::ServerBuilder'   : 'gRPC server';
+                var buildArtifact = isCpp ? 'CMakeLists' : 'pyproject.toml';
+                return (
+                '<div class="form-check">' +
+                  '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                    'id="svcLayoutMultiProto" value="multi_proto" checked>' +
+                  '<label class="form-check-label" for="svcLayoutMultiProto">' +
+                    '<strong>Single ' + (isCpp ? 'binary' : 'process') + ', multiple services</strong> ' +
+                    '(<code>multi_proto</code>)<br>' +
+                    '<span class="text-muted small">' +
+                      'One <code>' + procWord + '</code> hosts every selected service on the ' +
+                      '<strong>same</strong> <code>' + serverWord + '</code> &mdash; ' +
+                      'one Consul registration, one port, atomic lifecycle.  ' +
+                      'Best for one logical device with multiple capability ' +
+                      'surfaces (e.g. Power Supply: config + control).' +
+                    '</span>' +
+                  '</label>' +
+                '</div>' +
+                '<div class="form-check mt-2">' +
+                  '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                    'id="svcLayoutMonorepo" value="monorepo">' +
+                  '<label class="form-check-label" for="svcLayoutMonorepo">' +
+                    '<strong>Single project (monorepo)</strong> &mdash; N ' + procWordPl + '<br>' +
+                    '<span class="text-muted small">' +
+                      'One project (one <code>' + buildArtifact + '</code>) ' +
+                      'that produces N entry points sharing the same <code>.proto</code>.  ' +
+                      'Each service has its own port and Consul registration.  ' +
+                      'Good for services that may scale independently.' +
+                    '</span>' +
+                  '</label>' +
+                '</div>' +
+                '<div class="form-check mt-2">' +
+                  '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                    'id="svcLayoutSeparate" value="separate">' +
+                  '<label class="form-check-label" for="svcLayoutSeparate">' +
+                    '<strong>One folder per service</strong> (independent projects)<br>' +
+                    '<span class="text-muted small">' +
+                      'Each service becomes a self-contained scaffold &mdash; its own ' +
+                      '<code>.proto</code>, <code>' + buildArtifact + '</code>, build script, ' +
+                      'and Nomad job.  Good for services that ship separately or are owned ' +
+                      'by different teams.' +
+                    '</span>' +
+                  '</label>' +
+                '</div>'
+                );
+              })() +
             '</div>' +
             '<div class="modal-footer">' +
               '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>' +
@@ -2180,10 +2202,15 @@
                   // older imports that didn't set d.layout.
                   var effectiveLayout = d.layout
                     || (d.monorepoLayout ? 'monorepo' : 'separate');
+                  // Badge wording is language-aware — Python doesn't
+                  // produce ".exe" files even though it's still one
+                  // process per service.
+                  var _isCpp = (d.language === 'cpp');
+                  var _procWord = _isCpp ? '.exe' : 'process';
                   var layoutLabelMap = {
-                    'multi_proto': { text: 'multi-proto (1 .exe)', cls: 'bg-success' },
-                    'monorepo':    { text: 'monorepo (N .exe)',    cls: 'bg-info' },
-                    'separate':    { text: 'separate projects',    cls: 'bg-secondary' },
+                    'multi_proto': { text: 'multi-proto (1 ' + _procWord + ')', cls: 'bg-success' },
+                    'monorepo':    { text: 'monorepo (N ' + _procWord + ')',    cls: 'bg-info' },
+                    'separate':    { text: 'separate projects',                  cls: 'bg-secondary' },
                   };
                   var meta = layoutLabelMap[effectiveLayout]
                     || layoutLabelMap['separate'];
@@ -3060,6 +3087,7 @@
             ? data.file_count + ' files saved to ' + data.path
             : 'Files saved to ' + data.path;
           MM.showToast('Success', msg, 'success');
+          _warnIfStubsRequestedButMissing(d, data);
         } else {
           MM.showToast('Error', data.error || 'Generation failed.', 'danger');
         }
@@ -3116,6 +3144,36 @@
       proto_content_override: d.importedProtoContent || '',
       proto_package: d.protoPackage || ''
     };
+  }
+
+  // ---- Post-save sanity check ----
+
+  /**
+   * If the user ticked "Pre-generate proto stubs" and language=python,
+   * verify the bridge actually wrote *_pb2.py / *_pb2_grpc.py.  If not,
+   * surface a yellow toast pointing them at the diagnostic command.
+   * The bridge logs the real reason (grpcio-tools missing, protoc
+   * non-zero, etc.) at WARNING level — the toast just tells the user
+   * where to look.
+   */
+  function _warnIfStubsRequestedButMissing(d, data) {
+    if (!d || d.genStubs === false) return;
+    if ((d.language || 'python') !== 'python') return;
+    var files = (data && data.files) || [];
+    var hasPb2     = files.some(function (p) { return /\/.+_pb2\.py$/.test(p); });
+    var hasPb2Grpc = files.some(function (p) { return /\/.+_pb2_grpc\.py$/.test(p); });
+    if (hasPb2 && hasPb2Grpc) return;
+    MM.showToast(
+      'Proto stubs not generated',
+      'You ticked "Pre-generate proto stubs" but the bridge did not ' +
+      'produce *_pb2.py / *_pb2_grpc.py.  Most common cause: ' +
+      'grpcio-tools is not installed in the bridge\'s Python — fix with ' +
+      '`pip install grpcio-tools` in that environment.  Check the ' +
+      'bridge log (launcher.log) for the exact reason, or run ' +
+      '`python scripts/generate_protos.py` from inside the generated ' +
+      'service folder.',
+      'warning'
+    );
   }
 
   // ---- Public API ----

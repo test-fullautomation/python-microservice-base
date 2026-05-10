@@ -56,15 +56,67 @@ def _service_name_from_job(job):
 
 class NomadHubAdapter(HubManagerPort):
    """
-HubManagerPort implementation that manages services as Nomad jobs.
+:class:`HubManagerPort` implementation that manages services as Nomad
+jobs.
 
 Each service config is translated into a Nomad job spec using the
-``raw_exec`` driver (Python processes, no Docker required).
+``raw_exec`` driver (Python processes, no Docker required).  Method
+contracts are inherited from :class:`HubManagerPort` — refer to that
+class's docstrings for the per-method ``**Arguments:**`` and
+``**Returns:**`` shapes.
+
+Behaviour notes specific to this adapter:
+
+- ``start_hub`` does *not* start a Nomad agent; it verifies
+  connectivity to an already-running Nomad server and starts the
+  background status-poll thread.
+- ``stop_hub`` stops the poll thread but leaves Nomad jobs running.
+- A background poll thread (``_poll_loop``) calls
+  ``on_status_change(status)`` whenever the status snapshot from
+  ``get_status()`` changes.
    """
 
    def __init__(self, address='http://127.0.0.1:4646', token='',
                 namespace='default', datacenter='dc1',
                 on_status_change=None):
+      """
+Construct a NomadHubAdapter bound to a Nomad server.
+
+**Arguments:**
+
+* ``address``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'http://127.0.0.1:4646' /
+
+  Nomad HTTP API endpoint.
+
+* ``token``
+
+  / *Condition*: optional / *Type*: str / *Default*: '' /
+
+  Nomad ACL token.  Forwarded to :class:`NomadClient`.
+
+* ``namespace``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'default' /
+
+  Default Nomad namespace.
+
+* ``datacenter``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'dc1' /
+
+  Datacenter name written into every emitted job spec's
+  ``Datacenters`` field.
+
+* ``on_status_change``
+
+  / *Condition*: optional / *Type*: callable / *Default*: None /
+
+  Callback invoked as ``on_status_change(status_dict)`` whenever the
+  background poll detects a change in the per-job state.  Used by the
+  bridge to push WebSocket updates to the GUI.
+      """
       self._client = NomadClient(
          address=address, token=token, namespace=namespace
       )
