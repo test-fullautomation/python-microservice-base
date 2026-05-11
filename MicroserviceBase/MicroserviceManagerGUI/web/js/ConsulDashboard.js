@@ -65,6 +65,34 @@
     if (btn) btn.onclick = handler;
   }
 
+  /**
+   * Populate the bind-address datalist with the host's actual NICs by
+   * fetching /api/system/network-interfaces from the bridge.  The form
+   * already has two static <option>s in the datalist (127.0.0.1 +
+   * 0.0.0.0) so it stays usable if the fetch fails.
+   */
+  function _populateBindAddrOptions() {
+    var dl = document.getElementById('consulDevBindOptions');
+    if (!dl) return;
+    var origin = (MM.serviceClient && MM.serviceClient.apiUrl) || window.location.origin;
+    fetch(origin + '/api/system/network-interfaces')
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !Array.isArray(data.interfaces)) return;
+        // Build new <option>s with friendly labels.
+        // Format: <option value="<ip>">IP — Interface name (kind)</option>
+        // Datalists in modern browsers show both "value" and "label"; we
+        // put the IP in value (so picking it sets the input correctly)
+        // and the descriptive text inline.
+        var html = data.interfaces.map(function (iface) {
+          var label = iface.name + (iface.kind ? ' (' + iface.kind + ')' : '');
+          return '<option value="' + iface.ip + '">' + label + '</option>';
+        }).join('');
+        dl.innerHTML = html;
+      })
+      .catch(function () { /* keep static defaults */ });
+  }
+
   // ----------------------------------------------------------------------
   // Setup form
   // ----------------------------------------------------------------------
@@ -189,6 +217,11 @@
       '    </div>' +
       '  </div>' +
       '</div>';
+
+    // Populate the bind-address datalist with the host's actual NICs.
+    // Falls back to the static defaults already in the datalist if the
+    // bridge endpoint isn't reachable (older bridge, network glitch).
+    _populateBindAddrOptions();
 
     // Wire tab switching
     var mode = 'dev';
