@@ -114,6 +114,22 @@
       '          <input class="form-control form-control-sm" id="consulNodeName" placeholder="(auto)"></div>' +
       '        <div class="mb-2"><label class="form-label small">Datacenter</label>' +
       '          <input class="form-control form-control-sm" id="consulDc" value="dc1"></div>' +
+      '        <div class="mb-2"><label class="form-label small">Bind address</label>' +
+      '          <input class="form-control form-control-sm" id="consulDevBindAddr"' +
+      '                 list="consulDevBindOptions" value="127.0.0.1"' +
+      '                 placeholder="127.0.0.1">' +
+      '          <datalist id="consulDevBindOptions">' +
+      '            <option value="127.0.0.1">Loopback &mdash; recommended for local dev</option>' +
+      '            <option value="0.0.0.0">All interfaces &mdash; reachable from other machines</option>' +
+      '          </datalist>' +
+      '          <div class="form-text">' +
+      '            On a host with multiple private IPs (VPN / Docker / WSL / VirtualBox),' +
+      '            Consul cannot auto-pick which one to advertise. Stick with' +
+      '            <code>127.0.0.1</code> for local dev, or pick a specific NIC IP' +
+      '            (use <code>0.0.0.0</code> only if you also need other machines' +
+      '            to reach this Consul).' +
+      '          </div>' +
+      '        </div>' +
       '      </div>' +
 
       // Config mode panel
@@ -323,10 +339,19 @@
       if (mode === 'dev') {
         options.node_name = (document.getElementById('consulNodeName').value || '').trim();
         options.datacenter = (document.getElementById('consulDc').value || '').trim() || 'dc1';
+        // User-selectable bind address — defaults to 127.0.0.1 (loopback)
+        // to avoid Consul's "Multiple private IPv4 addresses found" error
+        // on workstations with VPN / Docker / WSL / VirtualBox NICs.
+        // Datalist offers 127.0.0.1 + 0.0.0.0; user can also type a specific IP.
+        options.bind_addr = (document.getElementById('consulDevBindAddr').value || '').trim() || '127.0.0.1';
       } else {
         options.config_dir = (document.getElementById('consulConfigDir').value || '').trim();
         options.data_dir = (document.getElementById('consulDataDir').value || '').trim();
-        options.bind_addr = (document.getElementById('consulBindAddr').value || '').trim() || '0.0.0.0';
+        // 127.0.0.1 is the safe default — picks the loopback interface and
+        // avoids the "Multiple private IPv4 addresses found" error Consul
+        // raises on workstations with VPN / Docker / WSL / VirtualBox NICs.
+        // Override to 0.0.0.0 (or a specific IP) only for cluster mode.
+        options.bind_addr = (document.getElementById('consulBindAddr').value || '').trim() || '127.0.0.1';
         options.node_name = (document.getElementById('consulCfgNodeName').value || '').trim();
         options.datacenter = (document.getElementById('consulCfgDc').value || '').trim() || 'dc1';
       }

@@ -35,7 +35,13 @@
 FastAPI Bridge launcher.
 
 Starts the FastAPI Bridge (REST/WS gateway) that connects the
-MicroserviceManagerGUI to microservices via RabbitMQ.
+MicroserviceManagerGUI to microservices.
+
+Post-migration to gRPC + Consul + Nomad, the bridge no longer requires
+a RabbitMQ broker to start.  If the broker is reachable, the legacy
+``/api/request`` endpoint and the WebSocket service-update stream are
+enabled; if not, the bridge starts in gRPC/Consul/Nomad-only mode and
+those legacy paths return a clear "no broker configured" response.
 """
 
 import argparse
@@ -51,6 +57,35 @@ try:
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
     from MicroserviceBase.factory import create_transport, create_registry, create_ui_bridge
+
+
+def _try_connect_rabbitmq(broker_host, broker_port, update_exchange):
+    """Attempt to connect to RabbitMQ for the legacy ``/api/request`` and
+    update-broadcast paths.
+
+    Returns ``(transport, registry)`` on success or ``(None, None)`` if
+    the broker is unreachable.  Failure is non-fatal — the bridge can
+    still serve the gRPC + Consul + Nomad endpoints.
+    """
+    cmd_args = ['--host', broker_host, '--port', str(broker_port)]
+    try:
+        transport = create_transport(
+            'rabbitmq', cmd_args=cmd_args, service_name='FastAPIBridge'
+        )
+        registry = create_registry(
+            'rabbitmq', cmd_args=cmd_args, service_name='FastAPIBridge',
+            update_exchange_name=update_exchange,
+        )
+        print(f" [*] RabbitMQ broker reachable at {broker_host}:{broker_port}"
+              f" — legacy /api/request + WS updates enabled.")
+        return transport, registry
+    except Exception as exc:
+        print(f" [!] RabbitMQ broker unreachable at {broker_host}:{broker_port}:"
+              f" {exc}")
+        print(" [!] Continuing without RabbitMQ — only gRPC, Consul, and Nomad")
+        print(" [!] endpoints are active.  Legacy /api/request will return a")
+        print(' [!] "no request handler configured" response if called.')
+        return None, None
 
 
 def _load_config(config_path):
@@ -111,18 +146,19 @@ def main():
     bridge_port = args.bridge_port or config.get('bridge_port', 1112)
     update_exchange = config.get('update_exchange_name', 'services_update')
 
-    cmd_args = ['--host', broker_host, '--port', str(broker_port)]
-
-    bridge_transport = create_transport('rabbitmq', cmd_args=cmd_args,
-                                        service_name='FastAPIBridge')
-    bridge_registry = create_registry('rabbitmq', cmd_args=cmd_args,
-                                       service_name='FastAPIBridge',
-                                       update_exchange_name=update_exchange)
+    bridge_transport, bridge_registry = _try_connect_rabbitmq(
+        broker_host, broker_port, update_exchange
+    )
 
     services_info = {}
 
-    def request_handler(request_data, exchange='services_request', routing_key=''):
-        return bridge_transport.rpc_call(request_data, exchange, routing_key)
+    if bridge_transport is not None:
+        def request_handler(request_data, exchange='services_request', routing_key=''):
+            return bridge_transport.rpc_call(request_data, exchange, routing_key)
+    else:
+        # Pass None — the bridge's /api/request endpoint already returns
+        # a clean "No request handler configured" response in this case.
+        request_handler = None
 
     def services_info_provider():
         return services_info
@@ -135,19 +171,29 @@ def main():
         bridge.broadcast_update(services_info)
         print(f" [>] Services updated: {list(services_info.keys())}")
 
-    # Update listener thread
-    threading.Thread(
-        target=bridge_registry.subscribe_to_updates,
-        args=(_on_update,),
-        daemon=True,
-    ).start()
+    # Update-listener thread is broker-dependent — skip when no RabbitMQ.
+    if bridge_registry is not None:
+        threading.Thread(
+            target=bridge_registry.subscribe_to_updates,
+            args=(_on_update,),
+            daemon=True,
+        ).start()
 
+    broker_status = (
+        f"{broker_host}:{broker_port} (connected)"
+        if bridge_transport is not None
+        else "(not configured — running in gRPC/Consul/Nomad-only mode)"
+    )
     print(f" [*] FastAPI Bridge Configuration:")
     print(f" [*]   Bridge:    http://{bridge_host}:{bridge_port}")
-    print(f" [*]   Broker:    {broker_host}:{broker_port}")
-    print(f" [*]   REST API:  http://{bridge_host}:{bridge_port}/api/request")
+    print(f" [*]   Broker:    {broker_status}")
+    if bridge_transport is not None:
+        print(f" [*]   REST API:  http://{bridge_host}:{bridge_port}/api/request")
+        print(f" [*]   WebSocket: ws://{bridge_host}:{bridge_port}/ws/updates")
     print(f" [*]   Services:  http://{bridge_host}:{bridge_port}/api/services")
-    print(f" [*]   WebSocket: ws://{bridge_host}:{bridge_port}/ws/updates")
+    print(f" [*]   gRPC API:  http://{bridge_host}:{bridge_port}/api/grpc/services/<name>")
+    print(f" [*]   Consul:    http://{bridge_host}:{bridge_port}/api/consul/*")
+    print(f" [*]   Nomad:     http://{bridge_host}:{bridge_port}/api/nomad/*")
     print(f" [*]   Swagger:   http://{bridge_host}:{bridge_port}/docs")
 
     try:
@@ -160,8 +206,10 @@ def main():
         print("\n [*] Shutting down...")
         try:
             bridge.stop()
-            bridge_transport.disconnect()
-            bridge_registry.cleanup()
+            if bridge_transport is not None:
+                bridge_transport.disconnect()
+            if bridge_registry is not None:
+                bridge_registry.cleanup()
         except (KeyboardInterrupt, SystemExit, Exception):
             pass
         print(" [*] Bridge stopped.")

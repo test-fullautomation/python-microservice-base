@@ -1320,208 +1320,329 @@
 
   /************************************************************
    *             Service Helper Modal (multi-language)         *
+   *                                                            *
+   * Reflection-driven client snippets for Python / C++ /       *
+   * Robot Framework.  Pulls method list + message schemas      *
+   * from the bridge (/api/grpc/services/<name>) so the snippet *
+   * shows real argument names and a JSON skeleton instead of   *
+   * placeholders.                                              *
    ************************************************************/
 
   var helperModal = null;
 
+  // ---- Per-method skeleton helpers --------------------------------------
+
   /**
-   * Generate Python example code for a service using MicroserviceBase transport.
+   * Indent a JSON string by 4 spaces per nesting level (so it lines up
+   * inside a Python triple-quoted block or a C++ raw-string literal).
    */
-  function _generatePythonCode(serviceName, serviceInfo, brokerHost, brokerPort) {
-    var methods = serviceInfo.methods || [];
-    var methodsInfo = serviceInfo.methods_info || {};
-    var routingKey = serviceInfo.routing_key || serviceName;
-
-    var code = '';
-    code += 'from MicroserviceBase import ServiceBase\n';
-    code += 'from MicroserviceBase.factory import create_transport\n';
-    code += '\n';
-    code += '# Create transport (connects to RabbitMQ broker)\n';
-    code += 'transport = create_transport(\n';
-    code += '    \'rabbitmq\',\n';
-    code += '    cmd_args=[\'--host\', \'' + brokerHost + '\', \'--port\', \'' + brokerPort + '\'],\n';
-    code += '    service_name=\'MyClient\'\n';
-    code += ')\n';
-    code += '\n';
-    code += 'EXCHANGE = \'' + SERVICES_EXCHANGE_NAME + '\'\n';
-    code += 'ROUTING_KEY = \'' + routingKey + '\'\n';
-    code += '\n';
-    code += 'try:\n';
-
-    if (methods.length > 0) {
-      methods.forEach(function (methodName, idx) {
-        var methodDetail = methodsInfo[methodName];
-        var argsValue = 'None';
-        var argsComment = '';
-
-        if (methodDetail && methodDetail.arguments && methodDetail.arguments.length > 0) {
-          var argNames = methodDetail.arguments.map(function (a) {
-            return a.name || 'arg';
-          });
-          argsComment = '  # args: ' + argNames.join(', ');
-          var argPlaceholders = methodDetail.arguments.map(function (a) {
-            var desc = a.description || a.name || 'value';
-            if (a.type === 'int' || a.type === 'number') return '0';
-            if (a.type === 'bool' || a.type === 'boolean') return 'True';
-            return '\'' + desc.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'';
-          });
-          argsValue = '[' + argPlaceholders.join(', ') + ']';
-        }
-
-        if (idx > 0) code += '\n';
-        code += '    # ' + methodName + '\n';
-        code += '    request = ServiceBase.create_request_data(\'' + methodName + '\', ' + argsValue + ')' + argsComment + '\n';
-        code += '    response = transport.rpc_call(request, EXCHANGE, ROUTING_KEY)\n';
-        code += '    print(f"[' + methodName + '] {response[\'result\']}: {response[\'result_data\']}")\n';
-      });
-    } else {
-      code += '    # No methods available for this service.\n';
-      code += '    pass\n';
-    }
-
-    code += '\nfinally:\n';
-    code += '    transport.disconnect()\n';
-    return code;
+  function _indentedJson(obj, indent) {
+    indent = indent || '';
+    if (obj === null || obj === undefined) return indent + 'null';
+    return JSON.stringify(obj, null, 2)
+      .split('\n')
+      .map(function (l) { return indent + l; })
+      .join('\n');
   }
 
   /**
-   * Generate Robot Framework example code for a service using QConnectBase.
+   * Build a one-liner human comment listing the request fields.
+   * e.g. "  # fields: a:int32, b:int32"
    */
-  function _generateRobotCode(serviceName, serviceInfo, brokerHost, brokerPort) {
-    var methods = serviceInfo.methods || [];
-    var methodsInfo = serviceInfo.methods_info || {};
-    var routingKey = serviceInfo.routing_key || serviceName;
-
-    var code = '';
-    code += '*** Settings ***\n';
-    code += 'Library    QConnectBase.ConnectionManager\n';
-    code += 'Library    Collections\n';
-    code += '\n';
-    code += '*** Variables ***\n';
-    code += '${BROKER_HOST}        ' + brokerHost + '\n';
-    code += '${BROKER_PORT}        ' + brokerPort + '\n';
-    code += '${ROUTING_KEY}        ' + routingKey + '\n';
-    code += '${CONNECTION_NAME}    ' + serviceName + '_conn\n';
-    code += '\n';
-    code += '*** Test Cases ***\n';
-
-    if (methods.length > 0) {
-      methods.forEach(function (methodName) {
-        var methodDetail = methodsInfo[methodName];
-        var argsValue = 'null';
-
-        if (methodDetail && methodDetail.arguments && methodDetail.arguments.length > 0) {
-          var argPlaceholders = methodDetail.arguments.map(function (a) {
-            if (a.type === 'int' || a.type === 'number') return '0';
-            if (a.type === 'bool' || a.type === 'boolean') return 'true';
-            var desc = a.description || a.name || 'value';
-            return '"' + desc.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-          });
-          argsValue = '[' + argPlaceholders.join(', ') + ']';
-        }
-
-        code += 'Test ' + methodName + '\n';
-        code += '    [Documentation]    Call ' + methodName;
-        if (methodDetail && methodDetail.description) {
-          code += ' - ' + methodDetail.description;
-        }
-        code += '\n';
-        code += '    ${config}=    Evaluate    json.loads(\'{"address":"${BROKER_HOST}","port":"${BROKER_PORT}","routing_key":"${ROUTING_KEY}"}\')    json\n';
-        code += '    Connect    conn_name=${CONNECTION_NAME}\n    ...        conn_type=RabbitmqClient\n    ...        conn_conf=${config}\n';
-        code += '    ${res}=    Verify    conn_name=${CONNECTION_NAME}\n';
-        code += '    ...    send_cmd={ "method": "' + methodName + '", "args": ' + argsValue + ' }\n';
-        code += '    ...    search_pattern=(.*)\n';
-        code += '    ...    timeout=30\n';
-        code += '    Log To Console    ${res}\n';
-        code += '    [Teardown]    Disconnect    ${CONNECTION_NAME}\n';
-        code += '\n';
-      });
-    } else {
-      code += 'Test No Methods\n';
-      code += '    [Documentation]    No methods available for this service.\n';
-      code += '    Log    No methods to call.\n';
-    }
-
-    return code;
+  function _fieldsComment(method, prefix) {
+    prefix = prefix || '#';
+    var fields = method.input_fields || [];
+    if (!fields.length) return '';
+    var parts = fields.map(function (f) { return f.name + ':' + f.type; });
+    return '  ' + prefix + ' fields: ' + parts.join(', ');
   }
 
-  /**
-   * Generate JavaScript example code for a service using the ServiceClient / fetch API.
-   */
-  function _generateJavaScriptCode(serviceName, serviceInfo, brokerHost, brokerPort) {
-    var methods = serviceInfo.methods || [];
-    var methodsInfo = serviceInfo.methods_info || {};
-    var routingKey = serviceInfo.routing_key || serviceName;
-    var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : 'http://localhost:8000';
-
-    var code = '';
-    code += '// Using the FastAPI bridge REST endpoint\n';
-    code += 'const API_URL   = \'' + apiUrl + '/api/request\';\n';
-    code += 'const EXCHANGE  = \'' + SERVICES_EXCHANGE_NAME + '\';\n';
-    code += 'const ROUTING_KEY = \'' + routingKey + '\';\n';
-    code += '\n';
-    code += '/**\n';
-    code += ' * Send an RPC request to a service method.\n';
-    code += ' * @param {string} method - Service method name.\n';
-    code += ' * @param {Array|null} args - Method arguments.\n';
-    code += ' * @returns {Promise<object>} Service response.\n';
-    code += ' */\n';
-    code += 'async function callService(method, args = null) {\n';
-    code += '  const res = await fetch(API_URL, {\n';
-    code += '    method: \'POST\',\n';
-    code += '    headers: { \'Content-Type\': \'application/json\' },\n';
-    code += '    body: JSON.stringify({\n';
-    code += '      method,\n';
-    code += '      args,\n';
-    code += '      exchange: EXCHANGE,\n';
-    code += '      routing_key: ROUTING_KEY,\n';
-    code += '    }),\n';
-    code += '  });\n';
-    code += '  if (!res.ok) throw new Error(`Request failed: ${res.status}`);\n';
-    code += '  return res.json();\n';
-    code += '}\n';
-    code += '\n';
-    code += '// --- Example calls ---\n';
-
-    if (methods.length > 0) {
-      code += '(async () => {\n';
-      methods.forEach(function (methodName) {
-        var methodDetail = methodsInfo[methodName];
-        var argsValue = 'null';
-        var argsComment = '';
-
-        if (methodDetail && methodDetail.arguments && methodDetail.arguments.length > 0) {
-          var argNames = methodDetail.arguments.map(function (a) {
-            return a.name || 'arg';
-          });
-          argsComment = '  // args: ' + argNames.join(', ');
-          var argPlaceholders = methodDetail.arguments.map(function (a) {
-            var desc = a.description || a.name || 'value';
-            if (a.type === 'int' || a.type === 'number') return '0';
-            if (a.type === 'bool' || a.type === 'boolean') return 'true';
-            return '\'' + desc.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'';
-          });
-          argsValue = '[' + argPlaceholders.join(', ') + ']';
-        }
-
-        code += '\n';
-        code += '  // ' + methodName + '\n';
-        code += '  const r_' + methodName.replace(/\W/g, '_') + ' = await callService(\'' + methodName + '\', ' + argsValue + ');' + argsComment + '\n';
-        code += '  console.log(\'' + methodName + ':\', r_' + methodName.replace(/\W/g, '_') + ');\n';
-      });
-      code += '})();\n';
-    } else {
-      code += '// No methods available for this service.\n';
-    }
-
-    return code;
-  }
+  // ---- Snippet generators (one per language) ----------------------------
 
   /**
-   * Show a modal with example code for calling a service's APIs.
-   * Supports multiple languages via tabs (Python, JavaScript).
+   * Python snippet: call the gRPC method through the FastAPI bridge.
    *
-   * @param {string} serviceName - The service name key in MM.servicesInfor.
+   * Uses the bridge's reflection-driven /api/grpc/call endpoint so the
+   * caller doesn't need a local .proto / generated stubs.  This is the
+   * fastest path for "I want to drive this service from a script today";
+   * for performance-critical paths the project's generate_protos.py +
+   * stub-based grpc.insecure_channel(...) approach is better.
+   */
+  function _generatePythonReflect(serviceInfo, refl, bridgeOrigin) {
+    var consulName = serviceInfo.name;
+    var consulUrl  = serviceInfo.consulUrl || '';
+    var grpcServices = (refl && refl.grpc_services) || [];
+
+    var lines = [];
+    lines.push('import json');
+    lines.push('import httpx');
+    lines.push('');
+    lines.push('# Reflection-driven invocation through the Manager GUI bridge.');
+    lines.push('# The bridge resolves ' + consulName + ' via Consul, opens a gRPC');
+    lines.push('# channel, and serialises the request from the JSON schema below.');
+    lines.push('BRIDGE = "' + bridgeOrigin + '"');
+    if (consulUrl) {
+      lines.push('CONSUL = "' + consulUrl + '"');
+    } else {
+      lines.push('CONSUL = ""   # leave blank to use the bridge\'s default Consul');
+    }
+    lines.push('SERVICE = "' + consulName + '"');
+    lines.push('');
+    lines.push('def call(grpc_service: str, method: str, request: dict) -> dict:');
+    lines.push('    res = httpx.post(f"{BRIDGE}/api/grpc/call", json={');
+    lines.push('        "consul_name":  SERVICE,');
+    lines.push('        "grpc_service": grpc_service,');
+    lines.push('        "method":       method,');
+    lines.push('        "args_json":    json.dumps(request),');
+    lines.push('        "consul":       CONSUL,');
+    lines.push('    }, timeout=10.0)');
+    lines.push('    return res.json()');
+    lines.push('');
+
+    if (!grpcServices.length) {
+      lines.push('# No gRPC services advertised \u2014 is reflection enabled and the agent registered?');
+      return lines.join('\n');
+    }
+
+    grpcServices.forEach(function (svc) {
+      lines.push('# --- ' + svc.name + ' ---');
+      var methods = svc.methods || [];
+      if (!methods.length) {
+        lines.push('# (no methods)');
+        return;
+      }
+      methods.forEach(function (m) {
+        lines.push('# ' + m.name + ' (' + (m.input_type || '') + ' -> ' + (m.output_type || '') + ')'
+                   + (m.server_streaming ? '  [server-streaming]' : ''));
+        lines.push('request = ' + _indentedJson(m.input_skeleton || {}, '').replace(/^/, ''));
+        lines.push('print(call("' + svc.name + '", "' + m.name + '", request))');
+        lines.push('');
+      });
+    });
+
+    return lines.join('\n').trimEnd();
+  }
+
+  /**
+   * C++ snippet: stub-based call using generated gRPC headers.
+   *
+   * C++ has no production-grade equivalent of dynamic invocation, so we
+   * show the stub-based form developers will actually paste into their
+   * project after running protoc on the .proto.
+   */
+  function _generateCppReflect(serviceInfo, refl) {
+    var grpcServices = (refl && refl.grpc_services) || [];
+    var target = (refl && refl.target) ||
+                 ((serviceInfo.address || '127.0.0.1') + ':' + (serviceInfo.port || 0));
+
+    var lines = [];
+    lines.push('// Build dependency: link against gRPC + the generated stubs');
+    lines.push('// from your project\'s proto/<service>.proto (run');
+    lines.push('// proto/generate_stubs.{bat,sh} to produce *.pb.h / *.grpc.pb.h).');
+    lines.push('//');
+    lines.push('// In production resolve "' + (serviceInfo.name || '') + '" via Consul');
+    lines.push('// (GET /v1/health/service/<name>?passing=true) instead of hard-');
+    lines.push('// coding host:port \u2014 this snippet uses the address Consul currently');
+    lines.push('// reports for the service so you can run it as-is.');
+    lines.push('');
+    lines.push('#include <grpcpp/grpcpp.h>');
+    lines.push('#include <iostream>');
+    var hdrHints = {};
+    grpcServices.forEach(function (svc) {
+      // For an FQN like calc.v1.CalculatorService the first dotted part
+      // (calc) is the proto package's root, which by mb-scaffold convention
+      // is also the .proto filename \u2014 so calc.proto -> calc.grpc.pb.h.
+      // The user must adjust if their project deviates.
+      var hint = (svc.name.split('.')[0] || 'service');
+      if (!hdrHints[hint]) {
+        lines.push('#include "' + hint + '.grpc.pb.h"');
+        hdrHints[hint] = true;
+      }
+    });
+    lines.push('');
+    lines.push('int main() {');
+    lines.push('    auto channel = grpc::CreateChannel(');
+    lines.push('        "' + target + '",');
+    lines.push('        grpc::InsecureChannelCredentials());');
+    lines.push('');
+
+    if (!grpcServices.length) {
+      lines.push('    // No gRPC services advertised \u2014 is reflection enabled and the agent registered?');
+      lines.push('    return 0;');
+      lines.push('}');
+      return lines.join('\n');
+    }
+
+    grpcServices.forEach(function (svc) {
+      // FQN namespace: calc.v1.CalculatorService -> calc::v1, type CalculatorService
+      var parts = svc.name.split('.');
+      var typeName = parts.pop();
+      var ns = parts.join('::');
+      var stubVar = typeName.charAt(0).toLowerCase() + typeName.slice(1) + 'Stub';
+
+      lines.push('    // --- ' + svc.name + ' ---');
+      lines.push('    auto ' + stubVar + ' = ' + ns + '::' + typeName + '::NewStub(channel);');
+      lines.push('');
+
+      (svc.methods || []).forEach(function (m) {
+        // Input/output type name (last component of FQN)
+        var inT  = (m.input_type  || '').split('.').pop() || 'Request';
+        var outT = (m.output_type || '').split('.').pop() || 'Response';
+        lines.push('    {');
+        lines.push('        // ' + m.name + ' (' + (m.input_type || '') + ' -> ' + (m.output_type || '') + ')');
+        lines.push('        ' + ns + '::' + inT + '  req;');
+        // Show field assignments derived from input_fields where possible.
+        var fields = m.input_fields || [];
+        fields.forEach(function (f) {
+          var setter = 'set_' + f.name;
+          // reflect_client emits lowercase descriptor types: int32, string,
+          // bool, bytes, message, ... and labels: optional, required, repeated.
+          if (f.label === 'repeated') {
+            lines.push('        // req.add_' + f.name + '(...);   // repeated ' + f.type);
+          } else if (f.type === 'bool') {
+            lines.push('        req.' + setter + '(false);');
+          } else if (f.type === 'string' || f.type === 'bytes') {
+            lines.push('        req.' + setter + '("");');
+          } else if (f.type === 'message') {
+            lines.push('        // req.mutable_' + f.name + '()->...   // nested ' + (f.message_type || 'message'));
+          } else {
+            lines.push('        req.' + setter + '(0);');
+          }
+        });
+        lines.push('        ' + ns + '::' + outT + ' resp;');
+        lines.push('        grpc::ClientContext ctx;');
+        if (m.server_streaming) {
+          lines.push('        auto reader = ' + stubVar + '->' + m.name + '(&ctx, req);');
+          lines.push('        while (reader->Read(&resp)) {');
+          lines.push('            std::cout << resp.DebugString();');
+          lines.push('        }');
+          lines.push('        auto status = reader->Finish();');
+        } else {
+          lines.push('        auto status = ' + stubVar + '->' + m.name + '(&ctx, req, &resp);');
+        }
+        lines.push('        if (!status.ok()) {');
+        lines.push('            std::cerr << "' + m.name + ' failed: " << status.error_message() << "\\n";');
+        lines.push('        } else {');
+        lines.push('            std::cout << "' + m.name + ' OK:\\n" << resp.DebugString();');
+        lines.push('        }');
+        lines.push('    }');
+        lines.push('');
+      });
+    });
+
+    lines.push('    return 0;');
+    lines.push('}');
+    return lines.join('\n');
+  }
+
+  /**
+   * Robot Framework snippet: QConnectBase GrpcClient connection type.
+   *
+   * Mirrors the QConnectBase house style (see python-process-hub /
+   * QConnectBase test suites): import ConnectionManager `WITH NAME
+   * conn_manager`, build the conn_conf as a `&{Param}` Create Dictionary,
+   * then call `conn_manager.connect / verify / disconnect`.  The
+   * GrpcClient ``send_cmd`` is a JSON document
+   * ``{"method": "...", "args": {...}}`` (or with an explicit
+   * ``"service": "<pkg.Service>"`` to target a specific service when the
+   * connection's ``full_service_name`` differs).
+   */
+  function _generateRobotReflect(serviceInfo, refl) {
+    var consulName = serviceInfo.name;
+    var consulUrl  = serviceInfo.consulUrl || 'http://127.0.0.1:8500';
+    var grpcServices = (refl && refl.grpc_services) || [];
+
+    // Pick the first gRPC service as the connection's default
+    // ``full_service_name``; per-test ``send_cmd`` can override with
+    // ``"service": "<pkg.Service>"``.
+    var defaultFqn = (grpcServices[0] && grpcServices[0].name) || '';
+
+    var lines = [];
+    lines.push('*** Settings ***');
+    lines.push('Library    QConnectBase.ConnectionManager    WITH NAME    conn_manager');
+    lines.push('');
+    lines.push('*** Variables ***');
+    lines.push('${SERVICE_NAME}        ' + consulName);
+    lines.push('${CONSUL_ADDR}         ' + consulUrl);
+    if (defaultFqn) {
+      lines.push('${FULL_SERVICE_NAME}   ' + defaultFqn);
+    }
+    lines.push('');
+    lines.push('*** Test Cases ***');
+
+    if (!grpcServices.length) {
+      lines.push(consulName + ' Smoke');
+      lines.push('    [Documentation]    Connect to ${SERVICE_NAME} via Consul.');
+      lines.push('    set_test_variable    ${connection_name}    ' + consulName + '-Connection');
+      lines.push('    &{GrpcParam}=    Create Dictionary    conn_type=GrpcClient');
+      lines.push('    ...                                   service_name=${SERVICE_NAME}');
+      lines.push('    ...                                   consul_addr=${CONSUL_ADDR}');
+      lines.push('');
+      lines.push('    conn_manager.connect       conn_name=${connection_name}');
+      lines.push('    ...                        conn_conf=${GrpcParam}');
+      lines.push('    # No gRPC services advertised yet \u2014 is reflection enabled');
+      lines.push('    # and the service registered in Consul?');
+      lines.push('    conn_manager.disconnect    ${connection_name}');
+      return lines.join('\n');
+    }
+
+    grpcServices.forEach(function (svc) {
+      // FQN like calculator.v1.CalculatorService \u2192 bare type name for the
+      // test-case label (CalculatorService).
+      var bareType = svc.name.split('.').pop();
+      (svc.methods || []).forEach(function (m) {
+        var caseName = bareType + ' ' + m.name;
+
+        lines.push(caseName);
+        lines.push('    [Documentation]    Call ' + svc.name + '.' + m.name +
+                   ' via the GrpcClient connection.');
+        if (m.input_fields && m.input_fields.length) {
+          lines.push('    ...                request fields: ' + m.input_fields.map(function (f) {
+            return f.name + ':' + f.type;
+          }).join(', '));
+        }
+
+        lines.push('');
+        lines.push('    set_test_variable    ${connection_name}    ' +
+                   bareType + '-' + m.name + '-Connection');
+        lines.push('');
+        lines.push('    # connection parameter for this test');
+        lines.push('    &{GrpcParam}=    Create Dictionary    conn_type=GrpcClient');
+        lines.push('    ...                                   service_name=${SERVICE_NAME}');
+        lines.push('    ...                                   consul_addr=${CONSUL_ADDR}');
+        lines.push('    ...                                   full_service_name=' + svc.name);
+        lines.push('');
+        lines.push('    conn_manager.connect       conn_name=${connection_name}');
+        lines.push('    ...                        conn_conf=${GrpcParam}');
+        lines.push('');
+
+        // send_cmd payload \u2014 JSON document, single line so the Robot cell
+        // parser doesn't trip on the embedded spaces.
+        var sendCmd = JSON.stringify({
+          method: m.name,
+          args: m.input_skeleton || {}
+        });
+        lines.push('    ${res}=    conn_manager.verify    conn_name=${connection_name}');
+        lines.push('    ...                               send_cmd=' + sendCmd);
+        lines.push('    Log    ${res}');
+        lines.push('');
+        lines.push('    [Teardown]    conn_manager.disconnect    ${connection_name}');
+        lines.push('');
+      });
+    });
+
+    return lines.join('\n').trimEnd();
+  }
+
+  // ---- Modal entrypoint -------------------------------------------------
+
+  /**
+   * Show the multi-language client-snippet modal for a service.  Fetches
+   * the service's reflected method list from the bridge before rendering
+   * so the snippets contain real method names + JSON skeletons.
+   *
+   * @param {string} serviceName Key into MM.servicesInfor
+   *     (e.g. "calculator@http://127.0.0.1:8500").
    */
   function showServiceHelper(serviceName) {
     var serviceInfo = MM.servicesInfor[serviceName];
@@ -1530,30 +1651,70 @@
       return;
     }
 
-    var version = serviceInfo.version || '';
+    var version     = serviceInfo.version || '';
     var description = serviceInfo.description || serviceInfo.shortdesc || '';
+    var displayName = serviceInfo.name || serviceName;
 
-    // Resolve broker host/port from the service's owning broker
-    var resolvedBroker = resolveBrokerUrlForService(serviceName) || MM.brokerUrl || 'localhost:5672';
-    var brokerHost = 'localhost';
-    var brokerPort = '5672';
-    if (resolvedBroker) {
-      var parts = resolvedBroker.split(':');
-      brokerHost = parts[0] || 'localhost';
-      brokerPort = parts[1] || '5672';
-    }
-
-    // Generate code for each language
-    var pythonCode = _generatePythonCode(serviceName, serviceInfo, brokerHost, brokerPort);
-    var jsCode = _generateJavaScriptCode(serviceName, serviceInfo, brokerHost, brokerPort);
-    var robotCode = _generateRobotCode(serviceName, serviceInfo, brokerHost, brokerPort);
-
-    // Build modal body with header + language tabs
-    var titleHtml = '<h5>' + _escapeHtml(serviceInfo.name || serviceName) + ' ' +
-      '<span class="badge bg-secondary">' + _escapeHtml(version) + '</span></h5>';
+    var titleHtml = '<h5>' + _escapeHtml(displayName) +
+      ' <span class="badge bg-secondary">' + _escapeHtml(version) + '</span></h5>';
     if (description) {
       titleHtml += '<p class="text-muted mb-3">' + _escapeHtml(description) + '</p>';
     }
+
+    var spinnerHtml =
+      '<div class="d-flex align-items-center text-muted small p-3">' +
+      '  <span class="spinner-border spinner-border-sm me-2"></span>' +
+      '  Discovering methods via gRPC reflection&hellip;' +
+      '</div>';
+
+    document.getElementById('helperModalTitle').textContent = 'Helper \u2014 ' + displayName;
+    document.getElementById('helperModalBody').innerHTML = titleHtml + spinnerHtml;
+
+    if (!helperModal) {
+      helperModal = new bootstrap.Modal(document.getElementById('helperModal'));
+    }
+    helperModal.show();
+
+    // Fire the reflection lookup AFTER the modal is shown so the user
+    // sees the spinner immediately even on slow Consul lookups.
+    var bridgeOrigin = (MM.serviceClient && MM.serviceClient.apiUrl) || window.location.origin;
+
+    MM.grpcClient.getServiceMethods(serviceInfo.name, serviceInfo.consulUrl)
+      .then(function (refl) {
+        if (refl.error && (!refl.grpc_services || !refl.grpc_services.length)) {
+          // Bridge couldn't talk to the service at all \u2014 show the error and
+          // generate snippets with empty schemas so the user still gets the
+          // boilerplate.
+          var errBlock =
+            '<div class="alert alert-warning small mb-3">' +
+            '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+            '  Reflection failed: <code>' + _escapeHtml(String(refl.error)) + '</code>.<br>' +
+            '  Showing snippets with empty request schemas \u2014 fill in the fields by hand.' +
+            '</div>';
+          _renderHelperTabs(serviceInfo, refl, bridgeOrigin, titleHtml + errBlock);
+          return;
+        }
+        _renderHelperTabs(serviceInfo, refl, bridgeOrigin, titleHtml);
+      })
+      .catch(function (err) {
+        var errHtml =
+          titleHtml +
+          '<div class="alert alert-danger small">' +
+          '  <i class="bi bi-x-octagon me-1"></i>' +
+          '  Couldn\'t reach the bridge: <code>' + _escapeHtml(err.message || String(err)) + '</code>' +
+          '</div>';
+        document.getElementById('helperModalBody').innerHTML = errHtml;
+      });
+  }
+
+  /**
+   * Render the Python / C++ / Robot tabs into the modal body.  Internal
+   * helper called once reflection data (or an error) has arrived.
+   */
+  function _renderHelperTabs(serviceInfo, refl, bridgeOrigin, headerHtml) {
+    var pythonCode = _generatePythonReflect(serviceInfo, refl, bridgeOrigin);
+    var cppCode    = _generateCppReflect(serviceInfo, refl);
+    var robotCode  = _generateRobotReflect(serviceInfo, refl);
 
     var tabsHtml =
       '<ul class="nav nav-tabs helper-lang-tabs" role="tablist">' +
@@ -1563,9 +1724,9 @@
             '<i class="bi bi-filetype-py me-1"></i>Python</button>' +
         '</li>' +
         '<li class="nav-item" role="presentation">' +
-          '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabJS" ' +
+          '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabCpp" ' +
             'type="button" role="tab" aria-selected="false">' +
-            '<i class="bi bi-filetype-js me-1"></i>JavaScript</button>' +
+            '<i class="bi bi-filetype-cpp me-1"></i>C++</button>' +
         '</li>' +
         '<li class="nav-item" role="presentation">' +
           '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabRobot" ' +
@@ -1577,21 +1738,15 @@
         '<div class="tab-pane fade show active" id="helperTabPython" role="tabpanel">' +
           '<pre class="helper-code-pre" id="helperCodePython">' + _escapeHtml(pythonCode) + '</pre>' +
         '</div>' +
-        '<div class="tab-pane fade" id="helperTabJS" role="tabpanel">' +
-          '<pre class="helper-code-pre" id="helperCodeJS">' + _escapeHtml(jsCode) + '</pre>' +
+        '<div class="tab-pane fade" id="helperTabCpp" role="tabpanel">' +
+          '<pre class="helper-code-pre" id="helperCodeCpp">' + _escapeHtml(cppCode) + '</pre>' +
         '</div>' +
         '<div class="tab-pane fade" id="helperTabRobot" role="tabpanel">' +
           '<pre class="helper-code-pre" id="helperCodeRobot">' + _escapeHtml(robotCode) + '</pre>' +
         '</div>' +
       '</div>';
 
-    document.getElementById('helperModalTitle').textContent = 'Helper \u2014 ' + (serviceInfo.name || serviceName);
-    document.getElementById('helperModalBody').innerHTML = titleHtml + tabsHtml;
-
-    if (!helperModal) {
-      helperModal = new bootstrap.Modal(document.getElementById('helperModal'));
-    }
-    helperModal.show();
+    document.getElementById('helperModalBody').innerHTML = headerHtml + tabsHtml;
   }
 
   /**
@@ -2145,9 +2300,12 @@
         row.setAttribute('data-service-name', svc.name);
 
         var status = svc.status || { kind: 'unknown', label: 'unknown' };
+        // Key into MM.servicesInfor — must match the format used at
+        // line ~2160 (svc.name + '@' + conn.url) so showServiceHelper
+        // can look the service up.
+        var infoKey = svc.name + '@' + conn.url;
 
-        // Wrap in a single block child so the two lines stack vertically
-        // inside the flex row of .list-group-item.
+        // Wrap stacked text in a single block child of the flex row.
         row.innerHTML =
           '<div class="svc-row">' +
           '  <div class="svc-name">' +
@@ -2161,11 +2319,23 @@
                  ? ' · ' + svc.tags.slice(0, 3).map(_escapeHtml).join(', ')
                  : '') +
           '  </div>' +
-          '</div>';
+          '</div>' +
+          '<span class="helper-btn" title="Client code examples (Python / C++ / Robot)">' +
+          '  <i class="bi bi-code-slash"></i>' +
+          '</span>';
 
         // Attach the Consul URL so the gRPC panel can route its calls
         // through the right bridge query param.
         var svcWithUrl = Object.assign({}, svc, { consulUrl: conn.url });
+
+        // Helper button: open the multi-language client-snippet modal.
+        // Stop propagation so clicking the icon doesn't also trigger
+        // the row's "show panel" handler underneath.
+        var helperBtn = row.querySelector('.helper-btn');
+        helperBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          showServiceHelper(infoKey);
+        });
 
         row.addEventListener('click', function () {
           _showGrpcServicePanel(svcWithUrl);
