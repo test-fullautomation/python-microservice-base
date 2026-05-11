@@ -187,6 +187,78 @@ Return the installed MicroserviceBase package version.
             version = "unknown"
          return {"version": version}
 
+      @app.get("/api/system/network-interfaces")
+      def get_network_interfaces():
+         """
+List local IPv4 interfaces with friendly labels.
+
+Powers the Consul/Nomad agent setup forms in the GUI: instead of
+asking the user to type a bind IP, the form populates a dropdown
+from this endpoint.  Returns loopback first, then private NICs,
+then the catch-all 0.0.0.0; each entry has a human-readable
+``name`` (e.g. "Ethernet", "Wi-Fi", "vEthernet (WSL)") and the
+``ip`` to pass as ``-bind``.
+
+Returns:
+   {
+     "interfaces": [
+       {"name": "Loopback",         "ip": "127.0.0.1", "kind": "loopback"},
+       {"name": "Ethernet",         "ip": "10.4.5.6",  "kind": "private"},
+       {"name": "Wi-Fi",            "ip": "192.168.1.42", "kind": "private"},
+       {"name": "vEthernet (WSL)",  "ip": "172.23.16.1",  "kind": "private"},
+       {"name": "All interfaces",   "ip": "0.0.0.0",   "kind": "any"}
+     ]
+   }
+
+On systems without ``psutil`` available the endpoint returns only
+the loopback + all-interfaces entries (safe fallback).
+         """
+         import socket
+         loopback_entry  = {"name": "Loopback", "ip": "127.0.0.1", "kind": "loopback"}
+         any_entry       = {"name": "All interfaces", "ip": "0.0.0.0", "kind": "any"}
+         nic_entries     = []
+
+         try:
+            import psutil
+            addrs = psutil.net_if_addrs()
+            for if_name, snic_list in addrs.items():
+               for snic in snic_list:
+                  if snic.family != socket.AF_INET:
+                     continue
+                  ip = snic.address
+                  if not ip or ip == "127.0.0.1":
+                     continue
+                  # Mark which interfaces look private vs link-local vs other.
+                  # 172.16.0.0/12 = 172.16.0.0 .. 172.31.255.255
+                  parts = ip.split(".")
+                  is_172_private = (
+                     len(parts) == 4
+                     and parts[0] == "172"
+                     and parts[1].isdigit()
+                     and 16 <= int(parts[1]) <= 31
+                  )
+                  if ip.startswith(("10.", "192.168.")) or is_172_private:
+                     kind = "private"
+                  elif ip.startswith("169.254."):
+                     kind = "link-local"
+                  else:
+                     kind = "public"
+                  nic_entries.append({
+                     "name": if_name,
+                     "ip": ip,
+                     "kind": kind,
+                  })
+            # Stable ordering: private first, then link-local, then public.
+            order = {"private": 0, "link-local": 1, "public": 2}
+            nic_entries.sort(key=lambda e: (order.get(e["kind"], 9), e["name"]))
+         except ImportError:
+            # psutil missing — return just the safe defaults.
+            pass
+         except Exception as exc:
+            logger.warning("Failed to enumerate NICs: %s", exc)
+
+         return {"interfaces": [loopback_entry] + nic_entries + [any_entry]}
+
       @app.get("/api/services")
       def get_services():
          """
