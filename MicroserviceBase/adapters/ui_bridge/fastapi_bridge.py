@@ -1248,7 +1248,11 @@ Forward a request to the FleetWebAPI.
 
       class ConsulAgentStartBody(BaseModel):
          mode: str = "dev"               # "dev" or "config"
-         bind_addr: str = "0.0.0.0"
+         # Default is 127.0.0.1 (single safe interface) so dev-mode startup
+         # never trips the "Multiple private IPv4 addresses found" error
+         # on machines with VPN / Docker / WSL / VirtualBox interfaces.
+         # Override to 0.0.0.0 for cluster mode — advertise is auto-added.
+         bind_addr: str = "127.0.0.1"
          http_port: int = 8500
          datacenter: str = "dc1"
          node_name: str = ""
@@ -1311,8 +1315,14 @@ Forward a request to the FleetWebAPI.
          args = [resolved, 'agent']
          if body.mode == 'dev':
             args.append('-dev')
-            if body.bind_addr and body.bind_addr != '127.0.0.1':
+            if body.bind_addr:
                args.extend(['-bind', body.bind_addr])
+               # Consul on a multi-NIC host (VPN, Docker, etc.) refuses to
+               # start with -bind 0.0.0.0 and no -advertise: it can't pick
+               # which IP to gossip to peers.  For dev mode we don't peer,
+               # so 127.0.0.1 is always a safe advertise default.
+               if body.bind_addr == '0.0.0.0':
+                  args.extend(['-advertise', '127.0.0.1'])
             if body.node_name:
                args.extend(['-node', body.node_name])
             if body.datacenter != 'dc1':
@@ -1327,6 +1337,11 @@ Forward a request to the FleetWebAPI.
                args.extend(['-data-dir', body.data_dir])
             if body.bind_addr:
                args.extend(['-bind', body.bind_addr])
+               if body.bind_addr == '0.0.0.0':
+                  # Same disambiguation as dev mode.  In real cluster
+                  # configs the operator should set -advertise (or the
+                  # equivalent in HCL) explicitly to a routable IP.
+                  args.extend(['-advertise', '127.0.0.1'])
             if body.node_name:
                args.extend(['-node', body.node_name])
             if body.datacenter != 'dc1':

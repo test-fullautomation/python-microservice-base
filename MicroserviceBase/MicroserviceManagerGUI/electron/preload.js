@@ -221,6 +221,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * Open the installer-bundled README.html that lives at the install
+   * root (alongside DevAtServGUI.exe).  Resolved relative to the app
+   * executable so it works regardless of install location
+   * (per-machine = C:\Program Files\DevAtServGUI\, per-user =
+   * %LOCALAPPDATA%\Programs\DevAtServGUI\).  Opens in the user's
+   * default HTML handler (their browser).
+   *
+   * @returns {Promise<string>} Empty string on success, error message
+   *     otherwise.  shell.openPath returns "" when the OS handler launches.
+   */
+  openInstallReadme: () => {
+    // process.execPath is the absolute path to DevAtServGUI.exe;
+    // the README is its sibling.
+    const exeDir = path.dirname(process.execPath);
+    const readmePath = path.join(exeDir, 'README.html');
+    return shell.openPath(readmePath);
+  },
+
+  /**
    * Show a native open dialog (folder or file picker).
    * @param {object} options - Electron dialog.showOpenDialog options.
    * @returns {Promise<{filePaths: string[]}>}
