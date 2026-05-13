@@ -43,6 +43,118 @@ from ...ports.ui_bridge import UIBridgePort
 logger = logging.getLogger(__name__)
 
 
+def _open_agent_log_file(agent_name):
+   """Open a size-rotated on-disk log file for a managed agent.
+
+   The bridge's existing in-memory log buffer (``bridge._<name>_agent_log``)
+   is bounded at 500 lines and lost on bridge restart.  This helper tees
+   the same output into a persistent rotating log file under the user's
+   per-app data directory so users can:
+
+     - go back to long-past output (the in-memory ring buffer wraps fast),
+     - attach the log to a bug report after a crash,
+     - inspect history after the bridge itself is restarted.
+
+   **Bounded disk usage** — uses :class:`logging.handlers.RotatingFileHandler`:
+
+     - 5 MB per file × 5 backups = **25 MB max per agent** on disk
+     - Total across both agents: ~50 MB worst-case
+     - Old runs survive bridge / agent restart (file is appended, not
+       truncated, with size-based rotation)
+     - Each new agent start writes a clear ``--- started ... ---`` marker
+       so you can find where each run begins inside the file
+
+   Files on disk:
+
+     - ``<name>_agent.log``       – current
+     - ``<name>_agent.log.1`` … ``.5`` – older rotated copies (newer = lower number)
+
+   Cross-platform location:
+
+     - Windows: ``%APPDATA%\\devatservgui\\logs\\``
+     - macOS:   ``~/Library/Logs/devatservgui/``
+     - Linux:   ``$XDG_STATE_HOME/devatservgui/logs/`` (default
+                ``~/.local/state/devatservgui/logs/``)
+
+   Returns ``(write_fn, close_fn, path_str)``:
+
+     - ``write_fn(line)`` – call once per captured line
+     - ``close_fn()``     – call when the agent's stdout closes; releases the file handle
+     - ``path_str``       – absolute path to the current log file (for the GUI)
+
+   On failure (disk full, permission denied, etc.) returns
+   ``(None, None, None)`` — the agent still starts, the in-memory ring
+   buffer is the fallback, and the start endpoint does not fail just
+   because logging to disk did not work.
+   """
+   import sys
+   import logging.handlers
+   from pathlib import Path
+   from datetime import datetime
+
+   try:
+      if sys.platform.startswith("win"):
+         base = Path(os.environ.get("APPDATA",
+                                    str(Path.home() / "AppData" / "Roaming")))
+         log_dir = base / "devatservgui" / "logs"
+      elif sys.platform == "darwin":
+         log_dir = Path.home() / "Library" / "Logs" / "devatservgui"
+      else:
+         base = Path(os.environ.get("XDG_STATE_HOME",
+                                    str(Path.home() / ".local" / "state")))
+         log_dir = base / "devatservgui" / "logs"
+
+      log_dir.mkdir(parents=True, exist_ok=True)
+      log_path = log_dir / f"{agent_name}_agent.log"
+
+      handler = logging.handlers.RotatingFileHandler(
+         str(log_path),
+         maxBytes=5 * 1024 * 1024,   # 5 MB per file
+         backupCount=5,              # 5 rotated copies → 25 MB total per agent
+         encoding="utf-8",
+      )
+      handler.setFormatter(logging.Formatter("%(message)s"))
+
+      agent_logger = logging.getLogger(f"msb.agent.{agent_name}")
+      agent_logger.setLevel(logging.INFO)
+      agent_logger.propagate = False
+      # Strip any handler from a previous run before adding the new one,
+      # otherwise restarting the agent leaks file handles.
+      for h in list(agent_logger.handlers):
+         agent_logger.removeHandler(h)
+         try:
+            h.close()
+         except Exception:
+            pass
+      agent_logger.addHandler(handler)
+
+      # Run marker — makes individual agent runs distinguishable inside
+      # a rotating file that spans many runs.
+      agent_logger.info(
+         "--- %s agent run started %s ---",
+         agent_name,
+         datetime.now().isoformat(timespec="seconds"),
+      )
+
+      def _write(line):
+         try:
+            agent_logger.info(line)
+         except Exception:
+            pass
+
+      def _close():
+         try:
+            agent_logger.removeHandler(handler)
+            handler.close()
+         except Exception:
+            pass
+
+      return _write, _close, str(log_path)
+   except Exception as exc:
+      logger.warning("Could not open %s log file: %s", agent_name, exc)
+      return None, None, None
+
+
 def _validate_safe_name(name: str) -> None:
    """
 Reject names that could escape the intended directory.
@@ -902,14 +1014,20 @@ Forward a request to the FleetWebAPI.
          logger.info('Starting Nomad agent: %s', ' '.join(args))
          bridge._nomad_agent_log = []
 
+         # Suppress the console window on Windows so the agent runs as a
+         # background process.  Output still flows through the pipe so the
+         # GUI's "Show log" feature keeps working.  POSIX has no equivalent
+         # — agents don't get a window there anyway.
+         spawn_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "bufsize": 1,
+         }
+         if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
          try:
-            proc = subprocess.Popen(
-               args,
-               stdout=subprocess.PIPE,
-               stderr=subprocess.STDOUT,
-               text=True,
-               bufsize=1,
-            )
+            proc = subprocess.Popen(args, **spawn_kwargs)
          except Exception as e:
             return {"success": False, "message": "Failed to start: %s" % e}
 
@@ -917,7 +1035,15 @@ Forward a request to the FleetWebAPI.
          nomad_url = 'http://127.0.0.1:%d' % body.http_port
          _save_agent_pid('nomad', proc.pid, nomad_url)
 
-         # Background thread to capture log output
+         # Open the rotated persistent log file for this run.  Returns
+         # (None, None, None) on failure — in-memory ring buffer is the
+         # fallback.  Disk usage capped at 25 MB total (5 MB × 5 backups).
+         nomad_log_write, nomad_log_close, nomad_log_path = \
+            _open_agent_log_file('nomad')
+         bridge._nomad_agent_log_path = nomad_log_path
+
+         # Background thread to capture log output (in-memory ring buffer
+         # + rotated persistent log file if open).
          def _read_output():
             max_lines = 500
             try:
@@ -926,8 +1052,13 @@ Forward a request to the FleetWebAPI.
                   bridge._nomad_agent_log.append(line)
                   if len(bridge._nomad_agent_log) > max_lines:
                      bridge._nomad_agent_log = bridge._nomad_agent_log[-max_lines:]
+                  if nomad_log_write is not None:
+                     nomad_log_write(line)
             except Exception:
                pass
+            finally:
+               if nomad_log_close is not None:
+                  nomad_log_close()
 
          t = threading.Thread(target=_read_output, daemon=True,
                               name='nomad-agent-log')
@@ -945,7 +1076,8 @@ Forward a request to the FleetWebAPI.
 
          return {"success": True, "pid": proc.pid,
                  "message": "Nomad agent started (PID %d)" % proc.pid,
-                 "nomad_url": nomad_url}
+                 "nomad_url": nomad_url,
+                 "log_file": nomad_log_path}
 
       @app.post("/api/nomad/agent/stop")
       def nomad_agent_stop():
@@ -1427,20 +1559,33 @@ Forward a request to the FleetWebAPI.
          logger.info('Starting Consul agent: %s', ' '.join(args))
          bridge._consul_agent_log = []
 
+         # Suppress the console window on Windows so the agent runs as a
+         # background process.  Output still flows through the pipe so the
+         # GUI's "Show log" feature keeps working.  POSIX has no equivalent
+         # — agents don't get a window there anyway.
+         spawn_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "bufsize": 1,
+         }
+         if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
          try:
-            proc = subprocess.Popen(
-               args,
-               stdout=subprocess.PIPE,
-               stderr=subprocess.STDOUT,
-               text=True,
-               bufsize=1,
-            )
+            proc = subprocess.Popen(args, **spawn_kwargs)
          except Exception as e:
             return {"success": False, "message": "Failed to start: %s" % e}
 
          bridge._consul_agent_proc = proc
          consul_url_val = 'http://127.0.0.1:%d' % body.http_port
          _save_agent_pid('consul', proc.pid, consul_url_val)
+
+         # Open the rotated persistent log file for this run.  Returns
+         # (None, None, None) on failure — in-memory ring buffer is the
+         # fallback.  Disk usage capped at 25 MB total (5 MB × 5 backups).
+         consul_log_write, consul_log_close, consul_log_path = \
+            _open_agent_log_file('consul')
+         bridge._consul_agent_log_path = consul_log_path
 
          def _read_output():
             max_lines = 500
@@ -1450,8 +1595,13 @@ Forward a request to the FleetWebAPI.
                   bridge._consul_agent_log.append(line)
                   if len(bridge._consul_agent_log) > max_lines:
                      bridge._consul_agent_log = bridge._consul_agent_log[-max_lines:]
+                  if consul_log_write is not None:
+                     consul_log_write(line)
             except Exception:
                pass
+            finally:
+               if consul_log_close is not None:
+                  consul_log_close()
 
          threading.Thread(target=_read_output, daemon=True,
                           name='consul-agent-log').start()
@@ -1468,14 +1618,16 @@ Forward a request to the FleetWebAPI.
                         "Consul agent exited immediately (code %d). "
                         "Last log lines:\n%s"
                     ) % (proc.returncode, log_tail or "(no output)"),
-                    "log": log_tail}
+                    "log": log_tail,
+                    "log_file": consul_log_path}
 
          consul_url = 'http://127.0.0.1:%d' % body.http_port
          bridge._consul_url = consul_url
 
          return {"success": True, "pid": proc.pid,
                  "message": "Consul agent started (PID %d)" % proc.pid,
-                 "consul_url": consul_url}
+                 "consul_url": consul_url,
+                 "log_file": consul_log_path}
 
       @app.post("/api/consul/agent/stop")
       def consul_agent_stop():
