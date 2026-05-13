@@ -1229,7 +1229,20 @@ def _mono_nomad(spec, svc) -> str:
     """Nomad HCL for one service inside the monorepo."""
     svc_snake = _snake(svc.name)
     prefix = svc_snake.upper() + "_"
-    return f'''job "{svc_snake}" {{
+    return f'''# Nomad job for {svc.name} inside the {spec.service_name} monorepo.
+#
+# Before `nomad job run`, do ONE of these so Python can find the
+# `{spec.snake_name}.{svc_snake}.main` module:
+#
+#   (A) Install the project once (recommended for production):
+#         pip install -e /PATH/TO/{spec.service_name}
+#       Then DELETE the PYTHONPATH line in the env block below.
+#
+#   (B) Or set PYTHONPATH to the project's src/ directory (no install
+#       needed) — replace /PATH/TO/{spec.service_name}/src with the
+#       absolute path on the machine that will run this job.
+#
+job "{svc_snake}" {{
   datacenters = ["{spec.nomad_dc}"]
   type        = "service"
 
@@ -1247,6 +1260,11 @@ def _mono_nomad(spec, svc) -> str:
       }}
 
       env {{
+        # Required unless the project is pip-installed (option A in the
+        # comment above).  Point this at <project>/src on the machine
+        # that runs the agent.
+        PYTHONPATH = "/PATH/TO/{spec.service_name}/src"
+
         {prefix}GRPC_PORT     = "${{NOMAD_PORT_grpc}}"
         {prefix}CONSUL_ADDR   = "{spec.nomad_consul_addr}"
         {prefix}LOG_LEVEL     = "INFO"
