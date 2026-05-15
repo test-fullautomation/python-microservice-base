@@ -1,0 +1,20 @@
+@@{header}
+#pragma once
+
+#include <string>
+
+namespace @@{snake_name} {
+
+/**
+ * Domain class for @@{service_name}.
+ *
+ * One method per RPC declared in the .proto file.  Edit the bodies
+ * in @@{grpc_name}.cpp to plug in real logic; the gRPC adapter calls
+ * these methods on every inbound RPC.
+ */
+class @@{grpc_name} {
+public:
+@@{methods}
+};
+
+}  // namespace @@{snake_name}

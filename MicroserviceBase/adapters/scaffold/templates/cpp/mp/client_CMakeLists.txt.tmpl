@@ -1,0 +1,116 @@
+cmake_minimum_required(VERSION 3.16)
+
+# vcpkg auto-detection BEFORE project() so the toolchain loads correctly.
+# Mirrors the parent CMakeLists; overlays come from the parent project
+# (../triplets, ../ports).
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected)")
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../triplets/x64-mingw-qt.cmake")
+    if(NOT VCPKG_TARGET_TRIPLET)
+        set(VCPKG_TARGET_TRIPLET "x64-mingw-qt"
+            CACHE STRING "vcpkg triplet (parent overlay)")
+    endif()
+    if(NOT VCPKG_OVERLAY_TRIPLETS)
+        set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/../triplets"
+            CACHE PATH "vcpkg overlay triplets")
+    endif()
+    if(NOT VCPKG_OVERLAY_PORTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../ports")
+        set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/../ports"
+            CACHE PATH "vcpkg overlay ports")
+    endif()
+endif()
+
+project(@@{project_name}Client VERSION @@{version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Manifest-mode fallback for prebuilt vcpkg_installed/.
+if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/share")
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt")
+endif()
+if(NOT Protobuf_PROTOC_EXECUTABLE
+   AND EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe")
+    set(Protobuf_PROTOC_EXECUTABLE
+        "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe"
+        CACHE FILEPATH "protoc")
+endif()
+
+find_package(gRPC     CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(CURL     CONFIG REQUIRED)
+
+# MicroserviceBase runtime — provides ServiceClient<T>.  Find via
+# installed package, env var, or in-tree fallback.
+find_package(MicroserviceBase CONFIG QUIET)
+if(NOT MicroserviceBase_FOUND)
+    set(_mb_candidates "")
+    if(DEFINED ENV{MICROSERVICEBASE_DIR})
+        list(APPEND _mb_candidates
+            "$ENV{MICROSERVICEBASE_DIR}/MicroserviceBase/runtime_cpp"
+            "$ENV{MICROSERVICEBASE_DIR}/runtime_cpp"
+            "$ENV{MICROSERVICEBASE_DIR}")
+    endif()
+    list(APPEND _mb_candidates
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${_p}/CMakeLists.txt")
+            set(_mb_in_tree "${_p}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
+        add_subdirectory("${_mb_in_tree}"
+                         "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime")
+    else()
+        message(FATAL_ERROR
+            "MicroserviceBase runtime not found.  Set MICROSERVICEBASE_DIR or "
+            "install + add to CMAKE_PREFIX_PATH (see docs/runtime_cpp_install.md).")
+    endif()
+endif()
+
+@@{deploy_runtime_block}
+
+# ---- Proto stubs (shared with the parent server, regenerated here) ---
+set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../proto")
+set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/gen")
+file(MAKE_DIRECTORY "${GEN_DIR}")
+if(TARGET protobuf::protoc)
+    get_target_property(_protoc protobuf::protoc LOCATION)
+else()
+    find_program(_protoc NAMES protoc protoc.exe
+        HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/tools/protobuf"
+              "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf"
+        REQUIRED)
+endif()
+if(TARGET gRPC::grpc_cpp_plugin)
+    get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin LOCATION)
+else()
+    find_program(_grpc_cpp NAMES grpc_cpp_plugin grpc_cpp_plugin.exe
+        HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/tools/grpc"
+              "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/grpc"
+        REQUIRED)
+endif()
+
+@@{proto_codegen}
+
+# ---- Console client executable ---------------------------------------
+add_executable(@@{sn}_client
+    src/client.cpp
+    @@{src_var_uses}
+)
+
+target_include_directories(@@{sn}_client PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${GEN_DIR}"
+)
+
+target_link_libraries(@@{sn}_client PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++
+    protobuf::libprotobuf
+)
+mb_deploy_runtime(@@{sn}_client)

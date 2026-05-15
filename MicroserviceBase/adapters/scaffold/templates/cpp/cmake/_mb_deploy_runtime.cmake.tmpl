@@ -1,0 +1,62 @@
+# ---- Auto-deploy runtime DLLs (POST_BUILD) ----
+# Copies vcpkg DLLs + MinGW runtime + (optional) Qt deploy next to each
+# .exe so Qt Creator's F5 (Run/Debug) works without manual PATH manipulation
+# or pre-running deploy_qt_vcpkg.bat.  Disable with
+# -DMB_DEPLOY_RUNTIME_DEPS=OFF (e.g. for CI builds).
+option(MB_DEPLOY_RUNTIME_DEPS "Auto-copy runtime DLLs next to each .exe on build" ON)
+
+function(mb_deploy_runtime target)
+    if(NOT MB_DEPLOY_RUNTIME_DEPS OR NOT WIN32)
+        return()
+    endif()
+    cmake_parse_arguments(MBD "QT_APP" "" "" ${ARGN})
+
+    set(_dest "$<TARGET_FILE_DIR:${target}>")
+
+    # 1. vcpkg runtime DLLs.  Glob at configure time -- new DLLs require a
+    #    CMake re-configure (vcpkg manifest install triggers one anyway).
+    set(_vcpkg_bin
+        "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin")
+    if(EXISTS "${_vcpkg_bin}")
+        file(GLOB _vcpkg_dlls "${_vcpkg_bin}/*.dll")
+        if(_vcpkg_dlls)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${_vcpkg_dlls} "${_dest}"
+                COMMENT "[mb-deploy] vcpkg DLLs -> $<TARGET_FILE_DIR:${target}>"
+                VERBATIM)
+        endif()
+    endif()
+
+    # 2. MinGW runtime DLLs (libstdc++-6, libgcc_s_seh-1, libwinpthread-1).
+    if(DEFINED ENV{QT_MINGW_BIN})
+        set(_mingw_dlls "")
+        foreach(_d libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
+            if(EXISTS "$ENV{QT_MINGW_BIN}/${_d}")
+                list(APPEND _mingw_dlls "$ENV{QT_MINGW_BIN}/${_d}")
+            endif()
+        endforeach()
+        if(_mingw_dlls)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${_mingw_dlls} "${_dest}"
+                COMMENT "[mb-deploy] MinGW runtime -> $<TARGET_FILE_DIR:${target}>"
+                VERBATIM)
+        endif()
+    endif()
+
+    # 3. Qt deployment (Qt6Core/Gui DLLs + plugins) -- Qt apps only.
+    if(MBD_QT_APP AND DEFINED ENV{QT_DIR})
+        find_program(MB_WINDEPLOYQT_EXE
+            NAMES windeployqt-qt6.exe windeployqt6.exe windeployqt.exe
+            HINTS "$ENV{QT_DIR}/bin")
+        if(MB_WINDEPLOYQT_EXE)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND "${MB_WINDEPLOYQT_EXE}" --no-translations
+                        --no-system-d3d-compiler --no-opengl-sw
+                        "$<TARGET_FILE:${target}>"
+                COMMENT "[mb-deploy] windeployqt ${target}"
+                VERBATIM)
+        endif()
+    endif()
+endfunction()

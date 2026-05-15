@@ -1,0 +1,30 @@
+@@{header}"""
+gRPC adapter for @@{svc_name}.
+"""
+
+from __future__ import annotations
+
+from @@{proj_snake}.@@{svc_snake}.domain.@@{svc_snake} import @@{cls}
+from proto import @@{proj_snake}_pb2, @@{proj_snake}_pb2_grpc  # type: ignore[import-not-found]
+
+
+class @@{cls}GrpcAdapter(@@{proj_snake}_pb2_grpc.@@{cls}Servicer):
+    """
+gRPC servicer for @@{svc_name}.  Translates proto messages to domain
+calls.  One method per RPC.
+    """
+
+    def __init__(self, domain: @@{cls}) -> None:
+        """
+Wire the adapter to the domain service.
+
+**Arguments:**
+
+* ``domain``
+
+  / *Condition*: required / *Type*: @@{cls} /
+
+  Pure-business-logic instance for this service.
+        """
+        self._domain = domain
+@@{methods}

@@ -1,0 +1,69 @@
+
+        <h3>1. Start the agents (one-time per dev session)</h3>
+        <p>Open two terminals and leave them running.</p>
+        <p><strong>Terminal A &mdash; Consul</strong>:</p>
+        <pre><code>consul agent -dev -client=0.0.0.0 -ui</code></pre>
+        <p>UI at <a href="http://127.0.0.1:8500" target="_blank">http://127.0.0.1:8500</a>.
+           Sanity check: <code>consul members</code> &mdash; should list one alive member.</p>
+
+        <p><strong>Terminal B &mdash; Nomad</strong>:</p>
+        <p>Windows needs <code>raw_exec</code> driver enabled.  Create
+           <code>C:\nomad\dev.hcl</code> once with:</p>
+        <pre><code>plugin "raw_exec" {
+  config {
+    enabled = true
+  }
+}</code></pre>
+        <p>Then start the agent:</p>
+        <pre><code>nomad agent -dev -config=C:\nomad\dev.hcl</code></pre>
+        <p>UI at <a href="http://127.0.0.1:4646" target="_blank">http://127.0.0.1:4646</a>.
+           Sanity check: <code>nomad node status</code>.</p>
+
+        <h3>2. One-time setup: resolve absolute paths in HCL files</h3>
+        <p>Generated <code>deploy\*.nomad.hcl</code> files use a
+           <code>C:/path/to/&lt;project&gt;</code> placeholder.  Run this script
+           once after scaffold (or after moving the project folder):</p>
+        <pre><code>prep_nomad_paths.bat</code></pre>
+        <p>This rewrites every <code>.hcl</code> file to point at the
+           current project&rsquo;s absolute path.  Idempotent.</p>
+
+        <h3>3. Submit each service to Nomad</h3>
+        <p>Pick the dist folder matching your build path:</p>
+        <ul>
+          <li>MSYS2 build: HCL points at <code>dist-msys2\run_&lt;service&gt;.bat</code></li>
+          <li>vcpkg build (after <code>deploy_qt_vcpkg.bat</code>): the
+              <code>dist-qt-vcpkg\</code> copy of the HCL points at
+              <code>dist-qt-vcpkg\run_&lt;service&gt;.bat</code> instead.
+              Submit those from <code>dist-qt-vcpkg\deploy\</code>.</li>
+        </ul>
+        <p>Submit each job:</p>
+        <table>
+          <tr><th>Service</th><th>Submit</th><th>Stop</th></tr>
+@@{nomad_rows}
+        </table>
+        <p>After submission, Nomad picks a random free port (defined as
+           <code>port "grpc" { }</code> in the HCL) and exports it as
+           <code>${NOMAD_PORT_grpc}</code> &rarr; the service reads it from
+           <code>&lt;PREFIX&gt;_GRPC_PORT</code> env var and registers in
+           Consul under that port.</p>
+
+        <h3>4. Verify each service is up</h3>
+        <pre><code>nomad job status &lt;service&gt;
+consul catalog services
+curl http://127.0.0.1:8500/v1/health/service/&lt;service&gt;?passing=true</code></pre>
+        <p>The Consul query returns the resolved <code>host:port</code> the
+           UI client uses when <strong>Use Consul</strong> is checked.</p>
+
+        <h3>5. Tail logs / stop / restart</h3>
+        <pre><code>nomad alloc logs &lt;alloc-id&gt;        :: stream stdout/stderr
+nomad job stop &lt;service&gt;            :: deregister + kill
+nomad job run deploy\&lt;service&gt;.nomad.hcl  :: re-submit</code></pre>
+        <p>Get the alloc ID from <code>nomad job status &lt;service&gt;</code>.</p>
+
+        <h3>Direct launch (skip Nomad)</h3>
+        <p>Useful for quick smoke tests &mdash; the service still registers
+           with Consul if <code>CONSUL_ADDR</code> is reachable:</p>
+        <pre><code>set &lt;PREFIX&gt;_GRPC_PORT=50051
+dist-qt-vcpkg\run_&lt;service&gt;.bat</code></pre>
+        <p>(Replace <code>&lt;PREFIX&gt;</code> with the env prefix listed in
+           the &ldquo;Project at a glance&rdquo; table.)</p>

@@ -1,0 +1,62 @@
+@@{header}"""
+Entry point for @@{svc_name} (part of @@{service_name}).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from @@{proj_snake}.@@{svc_snake}.context import create_context
+from proto import @@{proj_snake}_pb2, @@{proj_snake}_pb2_grpc  # type: ignore[import-not-found]
+
+from MicroserviceBase.runtime import ServiceRunner, ServicerEntry
+
+
+async def amain() -> None:
+    """
+Build the per-service context and serve the gRPC server until shutdown.
+
+**Returns:**
+
+(*no returns*)
+    """
+    ctx = create_context()
+
+    logging.basicConfig(
+        level=ctx.settings.log_level,
+        format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+    )
+
+    full_service_name = @@{proj_snake}_pb2.DESCRIPTOR.services_by_name[
+        "@@{svc_name}"
+    ].full_name
+
+    runner = ServiceRunner(
+        servicers=[
+            ServicerEntry(
+                register_fn=@@{proj_snake}_pb2_grpc.add_@@{svc_name}Servicer_to_server,
+                full_service_name=full_service_name,
+                servicer=ctx.grpc_adapter,
+            )
+        ],
+        settings=ctx.settings,
+        tags=["v1"],
+    )
+    await runner.serve_forever()
+
+
+def run() -> None:
+    """
+Console-script entry point declared in ``pyproject.toml``.  After
+``pip install .`` you get a CLI command per service.
+
+**Returns:**
+
+(*no returns*)
+    """
+    asyncio.run(amain())
+
+
+if __name__ == "__main__":
+    run()

@@ -1,0 +1,14 @@
+#pragma once
+
+#include "MicroserviceBase/Settings.h"
+
+namespace @@{svc_snake} {
+
+struct Settings : public microservice_base::BaseServiceSettings {
+    Settings() {
+        service_name = "@@{svc_snake}";
+        loadBaseFromEnv("@@{env_prefix}");
+    }
+};
+
+}  // namespace @@{svc_snake}

@@ -1,0 +1,38 @@
+
+
+# ---- UI client (@@{ui_kind}) ----------------------------------------------
+# Qt 6 discovery: honour QT_DIR / Qt6_DIR env vars (set in ../set_env.bat).
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{Qt6_DIR})
+    set(Qt6_DIR "$ENV{Qt6_DIR}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{QT_DIR} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+endif()
+
+find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+
+qt_add_executable(@@{project_snake}_gui
+    gui/main.cpp
+    gui/MainWindow.cpp
+    gui/MainWindow.h
+    gui/ClientRegistry.cpp
+    gui/ClientRegistry.h
+    ${STUB_SRCS})
+
+target_include_directories(@@{project_snake}_gui PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/gui"
+    "${STUB_INC}")
+
+target_link_libraries(@@{project_snake}_gui PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++
+    protobuf::libprotobuf
+    Qt6::Widgets)
+
+set_target_properties(@@{project_snake}_gui PROPERTIES
+    WIN32_EXECUTABLE ON
+    MACOSX_BUNDLE    ON)
+
+mb_deploy_runtime(@@{project_snake}_gui QT_APP)

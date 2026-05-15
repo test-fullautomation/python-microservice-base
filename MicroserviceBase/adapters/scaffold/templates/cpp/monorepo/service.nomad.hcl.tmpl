@@ -1,0 +1,43 @@
+# Nomad job for @@{svc_name} (part of @@{project_name} monorepo).
+job "@@{svc_snake}" {
+  datacenters = ["@@{datacenter}"]
+  type        = "service"
+
+  group "@@{svc_snake}" {
+    count = 1
+
+    network {
+      port "grpc" {}   # dynamic port — Nomad picks a free one
+    }
+
+    task "server" {
+      driver = "@@{driver}"
+
+      # Windows: launch via the run_<svc>.bat that build_deploy_msys2.bat
+      # emits into dist-msys2/.  Avoids 0xC0000135 DLL-load failures by
+      # layering MSYS2's bin on top of the agent-inherited PATH.
+      # Edit the absolute path to match where you deployed the project.
+      config {
+        command = "cmd.exe"
+        args    = ["/c", "C:/path/to/@@{project_name}/dist-msys2/run_@@{svc_snake}.bat"]
+      }
+
+      # On Linux use this instead (no PATH gymnastics needed):
+      # config {
+      #   command = "/path/to/@@{svc_snake}"
+      # }
+
+      env {
+        @@{env_prefix}GRPC_PORT      = "${NOMAD_PORT_grpc}"
+        @@{env_prefix}ADVERTISE_ADDR = "127.0.0.1"
+        @@{env_prefix}CONSUL_ADDR    = "@@{consul_addr}"
+        @@{env_prefix}LOG_LEVEL      = "INFO"
+      }
+
+      resources {
+        cpu    = @@{cpu}
+        memory = @@{mem}
+      }
+    }
+  }
+}

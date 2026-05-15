@@ -1,0 +1,25 @@
+#pragma once
+
+// Qt/QML-facing wrapper around ClientRegistry.  All methods are
+// Q_INVOKABLE so QML can call them directly as `clientBridge.*`.
+
+#include <QObject>
+#include <QString>
+#include <QStringList>
+#include <QVariantMap>
+
+class ClientBridge : public QObject {
+    Q_OBJECT
+public:
+    explicit ClientBridge(QObject* parent = nullptr) : QObject(parent) {}
+
+    Q_INVOKABLE QStringList services() const;
+    Q_INVOKABLE QStringList methods(const QString& serviceName) const;
+
+    Q_INVOKABLE void setDirectHost(const QString& hostPort);
+
+    /// Returns { "ok": bool, "body": QString }.
+    Q_INVOKABLE QVariantMap invoke(const QString& serviceName,
+                                   const QString& methodName,
+                                   const QString& requestJson);
+};

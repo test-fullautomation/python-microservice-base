@@ -1,0 +1,16 @@
+add_custom_command(
+    OUTPUT
+        "${GEN_DIR}/@@{basename}.pb.cc"  "${GEN_DIR}/@@{basename}.pb.h"
+        "${GEN_DIR}/@@{basename}.grpc.pb.cc" "${GEN_DIR}/@@{basename}.grpc.pb.h"
+    COMMAND ${_protoc}
+        --proto_path=${PROTO_DIR}
+        --cpp_out=${GEN_DIR}
+        --grpc_out=${GEN_DIR}
+        --plugin=protoc-gen-grpc=${_grpc_cpp}
+        ${PROTO_DIR}/@@{proto_filename}
+    DEPENDS "${PROTO_DIR}/@@{proto_filename}"
+    COMMENT "Generating gRPC stubs for @@{proto_filename}"
+    VERBATIM)
+set(@@{var}
+    "${GEN_DIR}/@@{basename}.pb.cc"
+    "${GEN_DIR}/@@{basename}.grpc.pb.cc")

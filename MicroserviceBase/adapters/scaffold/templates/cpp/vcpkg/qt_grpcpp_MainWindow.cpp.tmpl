@@ -1,0 +1,210 @@
+#include "MainWindow.h"
+#include "ui_MainWindow.h"
+
+#include <QtConcurrent/QtConcurrentRun>
+#include <QFutureWatcher>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLineEdit>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QStringList>
+#include <QTextEdit>
+#include <QUrl>
+
+#include <grpcpp/grpcpp.h>
+#include <google/protobuf/util/json_util.h>
+
+#include <chrono>
+#include <utility>
+
+namespace {
+
+QString messageToJson(const google::protobuf::Message& msg) {
+    std::string out;
+    google::protobuf::util::JsonPrintOptions opts;
+    opts.add_whitespace = true;
+    opts.preserve_proto_field_names = true;
+    auto status = google::protobuf::util::MessageToJsonString(msg, &out, opts);
+    if (!status.ok())
+        return QStringLiteral("{ \"error\": \"%1\" }").arg(QString::fromStdString(std::string(status.message())));
+    return QString::fromStdString(out);
+}
+
+bool jsonToMessage(const QByteArray& json, google::protobuf::Message* msg, QString* err) {
+    auto status = google::protobuf::util::JsonStringToMessage(
+        std::string(json.constData(), json.size()), msg);
+    if (!status.ok()) {
+        if (err) *err = QString::fromStdString(std::string(status.message()));
+        return false;
+    }
+    return true;
+}
+
+// invokeRpc: parse JSON -> typed Req, run sync RPC on worker, marshal
+// typed Resp back to JSON.  CallFn signature:
+//     grpc::Status (*)(grpc::ClientContext*, const Req&, Resp*)
+template <class Req, class Resp, class CallFn>
+void invokeRpcImpl(QObject* parent,
+                   const QByteArray& body,
+                   std::function<void(bool, const QString&)> done,
+                   CallFn call) {
+    Req req;
+    QString perr;
+    if (!body.trimmed().isEmpty() && !jsonToMessage(body, &req, &perr)) {
+        done(false, QStringLiteral("JSON parse error: %1").arg(perr));
+        return;
+    }
+    auto* watcher = new QFutureWatcher<QString>(parent);
+    QObject::connect(watcher, &QFutureWatcher<QString>::finished, parent,
+        [watcher, done]() {
+            done(true, watcher->result());
+            watcher->deleteLater();
+        });
+    watcher->setFuture(QtConcurrent::run([req, call]() -> QString {
+        Resp resp;
+        grpc::ClientContext ctx;
+        ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(10));
+        auto status = call(&ctx, req, &resp);
+        if (!status.ok())
+            return QStringLiteral("RPC failed [%1] %2")
+                .arg(status.error_code())
+                .arg(QString::fromStdString(status.error_message()));
+        return messageToJson(resp);
+    }));
+}
+
+}  // namespace
+
+// Member helper redirects to the namespace-scoped template (template
+// methods can't be defined out-of-class without the class declaration
+// being a template, so we forward via a lambda capture).
+template <class Req, class Resp, class CallFn>
+static void invokeRpc(QObject* parent, const QByteArray& body,
+                      std::function<void(bool, const QString&)> done, CallFn call) {
+    invokeRpcImpl<Req, Resp>(parent, body, done, call);
+}
+
+MainWindow::MainWindow(QWidget* parent)
+    : QWidget(parent), ui(new Ui::MainWindow), m_net(new QNetworkAccessManager(this)) {
+    ui->setupUi(this);
+
+    setupDispatch();
+
+    for (const auto& s : m_serviceList) ui->serviceCombo->addItem(s);
+    onServiceChanged(0);
+
+    if (!m_serviceList.isEmpty())
+        ui->serviceNameEdit->setText(m_serviceList.first().toLower().replace(' ', '_'));
+
+    connect(ui->connectButton, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
+    connect(ui->sendButton,    &QPushButton::clicked, this, &MainWindow::onSendClicked);
+    connect(ui->serviceCombo,  QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onServiceChanged);
+    connect(ui->useConsul,     &QCheckBox::toggled, this, &MainWindow::onUseConsulToggled);
+    onUseConsulToggled(ui->useConsul->isChecked());
+}
+
+MainWindow::~MainWindow() = default;
+
+void MainWindow::onServiceChanged(int) {
+    ui->methodCombo->clear();
+    for (const auto& m : m_methodsByService.value(ui->serviceCombo->currentText()))
+        ui->methodCombo->addItem(m);
+}
+
+void MainWindow::onUseConsulToggled(bool checked) {
+    ui->consulUrlEdit->setEnabled(checked);
+    ui->serviceNameEdit->setEnabled(checked);
+    ui->hostEdit->setEnabled(!checked);
+}
+
+void MainWindow::onConnectClicked() {
+    if (ui->useConsul->isChecked()) {
+        resolveViaConsul();
+    } else {
+        // Strip http:// prefix if present - grpc::CreateChannel wants host:port.
+        QString hp = ui->hostEdit->text().trimmed();
+        if (hp.startsWith("http://"))  hp = hp.mid(7);
+        if (hp.startsWith("https://")) hp = hp.mid(8);
+        applyChannelHostPort(hp);
+    }
+}
+
+void MainWindow::resolveViaConsul() {
+    const QString consul = ui->consulUrlEdit->text().trimmed();
+    const QString svc    = ui->serviceNameEdit->text().trimmed();
+    if (consul.isEmpty() || svc.isEmpty()) {
+        ui->statusLabel->setText("Consul URL and service name are required.");
+        return;
+    }
+    QUrl url(consul + "/v1/health/service/" + svc + "?passing=true");
+    ui->statusLabel->setText(QStringLiteral("Resolving %1 via Consul...").arg(svc));
+
+    auto* reply = m_net->get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, svc]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            ui->statusLabel->setText(QStringLiteral("Consul error: %1").arg(reply->errorString()));
+            return;
+        }
+        const auto doc = QJsonDocument::fromJson(reply->readAll());
+        if (!doc.isArray() || doc.array().isEmpty()) {
+            ui->statusLabel->setText(QStringLiteral("No healthy '%1'").arg(svc));
+            return;
+        }
+        const auto entry   = doc.array().first().toObject();
+        const auto service = entry.value("Service").toObject();
+        QString addr = service.value("Address").toString();
+        if (addr.isEmpty())
+            addr = entry.value("Node").toObject().value("Address").toString();
+        const int port = service.value("Port").toInt();
+        if (addr.isEmpty() || port <= 0) {
+            ui->statusLabel->setText("Consul entry missing Address/Port.");
+            return;
+        }
+        const QString hp = QStringLiteral("%1:%2").arg(addr).arg(port);
+        ui->hostEdit->setText(hp);
+        applyChannelHostPort(hp);
+    });
+}
+
+void MainWindow::applyChannelHostPort(const QString& hostport) {
+    m_channel = grpc::CreateChannel(hostport.toStdString(),
+                                    grpc::InsecureChannelCredentials());
+    ui->statusLabel->setText(QStringLiteral("channel ready: %1 (lazy connect)").arg(hostport));
+}
+
+void MainWindow::onSendClicked() {
+    if (!m_channel) {
+        ui->statusLabel->setText("Click Connect first.");
+        return;
+    }
+    const QString svc = ui->serviceCombo->currentText();
+    const QString rpc = ui->methodCombo->currentText();
+    const QString key = svc + QChar('.') + rpc;
+    const QByteArray body = ui->requestEdit->toPlainText().toUtf8();
+
+    auto it = m_dispatch.find(key);
+    if (it == m_dispatch.end()) {
+        ui->statusLabel->setText(QStringLiteral("No dispatcher for %1").arg(key));
+        return;
+    }
+
+    ui->statusLabel->setText(QStringLiteral("Calling %1 ...").arg(key));
+    ui->responseEdit->clear();
+    it.value()(body, [this](bool ok, const QString& result) {
+        ui->responseEdit->setPlainText(result);
+        ui->statusLabel->setText(ok ? "OK" : "FAILED");
+    });
+}
+
+void MainWindow::setupDispatch() {
+@@{dispatch_body}
+}

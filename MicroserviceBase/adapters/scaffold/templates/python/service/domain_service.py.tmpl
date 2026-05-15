@@ -1,0 +1,18 @@
+@@{header}"""
+Pure business logic for @@{svc} — no gRPC, no I/O.
+"""
+
+from __future__ import annotations
+
+from typing import AsyncIterator
+
+
+class @@{cls}:
+    """
+Domain service for @@{svc}.
+
+One method per RPC defined in the .proto file.  Edit the bodies to
+plug in real logic.  Method signatures should stay aligned with the
+proto so the gRPC adapter can call them without translation glue.
+    """
+@@{methods}

@@ -1,0 +1,18 @@
+#pragma once
+
+#include "MicroserviceBase/Settings.h"
+
+// Shared settings for the @@{service_name} multi-service binary.
+// All hosted gRPC services use ONE Consul registration, ONE port, ONE
+// service name (read from env via the @@{env_prefix} prefix).
+
+namespace @@{snake_name} {
+
+struct Settings : public microservice_base::BaseServiceSettings {
+    Settings() {
+        service_name = "@@{snake_name}";
+        loadBaseFromEnv("@@{env_prefix}");
+    }
+};
+
+}  // namespace @@{snake_name}

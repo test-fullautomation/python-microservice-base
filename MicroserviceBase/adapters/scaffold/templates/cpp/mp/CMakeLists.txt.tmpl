@@ -1,0 +1,144 @@
+cmake_minimum_required(VERSION 3.16)
+
+# vcpkg auto-detection BEFORE project() so the toolchain loads correctly.
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected from VCPKG_ROOT env var)")
+elseif(NOT CMAKE_TOOLCHAIN_FILE)
+    message(WARNING
+        "@@{project_name}: VCPKG_ROOT not set + CMAKE_TOOLCHAIN_FILE missing - "
+        "find_package will likely fail.  Set VCPKG_ROOT or pass "
+        "-DCMAKE_TOOLCHAIN_FILE=... directly.")
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/triplets/x64-mingw-qt.cmake")
+    if(NOT VCPKG_TARGET_TRIPLET)
+        set(VCPKG_TARGET_TRIPLET "x64-mingw-qt"
+            CACHE STRING "vcpkg triplet (auto-set from triplets/ overlay)")
+    endif()
+    if(NOT VCPKG_OVERLAY_TRIPLETS)
+        set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/triplets"
+            CACHE PATH "vcpkg overlay triplets directory")
+    endif()
+    if(NOT VCPKG_OVERLAY_PORTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ports")
+        set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/ports"
+            CACHE PATH "vcpkg overlay ports directory")
+    endif()
+endif()
+
+project(@@{project_name} VERSION @@{version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Manifest-mode fallback: when vcpkg toolchain didn't load but a populated
+# vcpkg_installed/x64-mingw-qt/ exists in the build dir.
+if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/share")
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt")
+endif()
+if(NOT Protobuf_PROTOC_EXECUTABLE
+   AND EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe")
+    set(Protobuf_PROTOC_EXECUTABLE
+        "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe"
+        CACHE FILEPATH "protoc (target triplet)")
+endif()
+
+find_package(gRPC     CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(CURL     CONFIG REQUIRED)
+
+if(TARGET gRPC::grpc++_reflection)
+    set(GRPC_REFL_LIB gRPC::grpc++_reflection)
+else()
+    set(GRPC_REFL_LIB "")
+endif()
+
+# MicroserviceBase runtime (find_package + env-var + in-tree fallback).
+find_package(MicroserviceBase CONFIG QUIET)
+if(NOT MicroserviceBase_FOUND)
+    set(_mb_candidates "")
+    if(DEFINED ENV{MICROSERVICEBASE_DIR})
+        list(APPEND _mb_candidates
+            "$ENV{MICROSERVICEBASE_DIR}/MicroserviceBase/runtime_cpp"
+            "$ENV{MICROSERVICEBASE_DIR}/runtime_cpp"
+            "$ENV{MICROSERVICEBASE_DIR}")
+    endif()
+    list(APPEND _mb_candidates
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "")
+    foreach(_p IN LISTS _mb_candidates)
+        if(EXISTS "${_p}/CMakeLists.txt")
+            set(_mb_in_tree "${_p}")
+            break()
+        endif()
+    endforeach()
+    if(_mb_in_tree)
+        add_subdirectory("${_mb_in_tree}"
+                         "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime")
+    else()
+        message(FATAL_ERROR
+            "MicroserviceBase runtime not found.  Set MICROSERVICEBASE_DIR env var "
+            "to your framework checkout, or install + add to CMAKE_PREFIX_PATH "
+            "(see docs/runtime_cpp_install.md).")
+    endif()
+endif()
+
+@@{deploy_runtime_block}
+
+# ---- Proto codegen (one block per .proto file) -----------------------
+set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto")
+set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/gen")
+file(MAKE_DIRECTORY "${GEN_DIR}")
+if(TARGET protobuf::protoc)
+    get_target_property(_protoc protobuf::protoc LOCATION)
+else()
+    find_program(_protoc NAMES protoc protoc.exe
+        HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/tools/protobuf"
+              "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf"
+        REQUIRED)
+endif()
+if(TARGET gRPC::grpc_cpp_plugin)
+    get_target_property(_grpc_cpp gRPC::grpc_cpp_plugin LOCATION)
+else()
+    find_program(_grpc_cpp NAMES grpc_cpp_plugin grpc_cpp_plugin.exe
+        HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/tools/grpc"
+              "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/grpc"
+        REQUIRED)
+endif()
+
+@@{codegen_joined}
+
+# ---- Single executable hosting all services --------------------------
+add_executable(@@{snake_name}
+    src/main.cpp
+@@{per_svc_block}
+    @@{proto_srcs_var_uses}
+)
+
+target_include_directories(@@{snake_name} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${GEN_DIR}"
+)
+
+target_link_libraries(@@{snake_name} PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++ ${GRPC_REFL_LIB}
+    protobuf::libprotobuf
+)
+mb_deploy_runtime(@@{snake_name})
+
+# ---- On-demand `dist` target ----
+# Builds the .exe (if not already built) then runs deploy_qt_vcpkg.bat
+# to package a self-contained dist-qt-vcpkg/ folder.  Invoke from CLI:
+#   cmake --build <build-dir> --target dist
+# In Qt Creator: Projects -> Build -> Build Steps -> Add "CMake Build" step
+# with Targets = "dist".  Doesn't fire on F5 / Build All -- only when
+# explicitly requested -- so day-to-day builds stay snappy.
+if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/deploy_qt_vcpkg.bat")
+    add_custom_target(dist
+        COMMAND "${CMAKE_SOURCE_DIR}/deploy_qt_vcpkg.bat"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS @@{snake_name}
+        COMMENT "[mb-dist] Packaging dist-qt-vcpkg/ via deploy_qt_vcpkg.bat"
+        USES_TERMINAL
+        VERBATIM)
+endif()

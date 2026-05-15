@@ -1,0 +1,163 @@
+
+  <section id="full-kit-walkthrough">
+    <h2>Full step-by-step: load both projects in Qt Creator with the
+        <code>Desktop Qt 6.x MinGW 64-bit</code> kit, no rebuild</h2>
+
+    <p>
+      The fastest path that loads <strong>both</strong> the server (this
+      project) and the <code>qt_client_grpcpp/</code> client into Qt
+      Creator with the <code>Desktop Qt 6.x MinGW 64-bit</code> kit
+      (no preset, no full vcpkg compile).  Follow exactly &mdash; each
+      step prevents a common pitfall covered in the troubleshooting
+      section.
+    </p>
+
+    <h3>One-time setup</h3>
+    <ol>
+      <li><strong>Set system env vars</strong> (in a regular CMD, replace
+          the paths with yours if different):
+        <pre><code>setx VCPKG_ROOT C:\vcpkg
+setx QT_DIR C:\Qt\6.11.0\mingw_64
+setx QT_MINGW_BIN C:\Qt\Tools\mingw1310_64\bin</code></pre>
+        <code>setx</code> writes the registry &mdash; only future
+        processes see the change.</li>
+      <li><strong>Fully close Qt Creator</strong>.  Check Task Manager for
+          stray <code>qtcreator.exe</code> and kill them.  Otherwise the
+          running Qt Creator keeps the old (empty) env, and the autodetect
+          block in CMakeLists won&rsquo;t see <code>VCPKG_ROOT</code>.</li>
+      <li><strong>Download the prebuilt zip</strong> from the SharePoint
+          link below (in the <em>Use prebuilt libraries</em> section) and
+          save anywhere, e.g.
+          <code>C:\prebuilt\vcpkg_installed_x64-mingw-qt.zip</code>.</li>
+    </ol>
+
+    <h3>Step 1 &mdash; configure the server (this) project</h3>
+    <ol>
+      <li>Open Qt Creator.  <em>File &rarr; Open File or Project</em>
+          &rarr; pick this project&rsquo;s <code>CMakeLists.txt</code>.</li>
+      <li>Configure dialog: <strong>untick every preset</strong>.  Tick
+          only the kit <strong>Desktop Qt 6.x MinGW 64-bit</strong>.
+          Click <em>Configure Project</em>.</li>
+      <li>The first configure may try to install vcpkg packages or fail
+          at <code>find_package(gRPC)</code> &mdash; <strong>that&rsquo;s
+          fine</strong>; we just need the build dir to exist.  If a long
+          vcpkg compile starts: <em>Build &rarr; Cancel Build</em> immediately.</li>
+      <li><em>Build &rarr; Clear CMake Configuration</em>.  This wipes
+          <code>CMakeCache.txt</code> so the vars you&rsquo;re about to add
+          actually take effect.  (<em>Clean</em> alone does NOT clear
+          cache.)</li>
+      <li><em>Projects (Ctrl+5) &rarr; Build (under
+          Desktop Qt 6.x MinGW 64-bit) &rarr; Initial Configuration
+          &rarr; Add</em>.  Add these <strong>five</strong> entries
+          (replace placeholders with your vcpkg checkout and project
+          absolute paths; leave forward slashes and the var-name S as
+          written):
+        <table>
+          <tr><th>Add as</th><th>Name</th><th>Value</th></tr>
+          <tr><td>String</td>  <td><code>CMAKE_TOOLCHAIN_FILE</code></td>   <td><code>C:/vcpkg/scripts/buildsystems/vcpkg.cmake</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_TARGET_TRIPLET</code></td>   <td><code>x64-mingw-qt</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_TRIPLETS</code></td> <td><code>C:/path/to/your/project/triplets</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_PORTS</code></td>    <td><code>C:/path/to/your/project/ports</code></td></tr>
+          <tr><td>Boolean</td> <td><code>VCPKG_MANIFEST_INSTALL</code></td> <td><code>OFF</code></td></tr>
+        </table>
+        Pitfall reminders:
+        <ul>
+          <li>Var name is <strong>plural</strong>:
+              <code>VCPKG_OVERLAY_TRIPLETS</code> (with S).</li>
+          <li>Use <strong>absolute paths</strong> for overlay vars.  Qt
+              Creator does <strong>not</strong> expand
+              <code>${sourceDir}</code> in <em>Initial Configuration</em>.</li>
+          <li>Forward slashes <code>/</code> only.</li>
+          <li><code>VCPKG_MANIFEST_INSTALL=OFF</code> is what tells the
+              vcpkg toolchain to skip its 30&ndash;60 min compile.  Without
+              this, vcpkg overwrites the prebuilt tree you&rsquo;re about
+              to import.</li>
+        </ul>
+      </li>
+      <li><em>Build &rarr; Run CMake</em>.  This will fail at
+          <code>find_package(gRPC)</code> &mdash; <strong>expected</strong>:
+          the build dir
+          <code>build\Desktop_Qt_*\</code> is now created but
+          <code>vcpkg_installed/</code> isn&rsquo;t populated yet.</li>
+    </ol>
+
+    <h3>Step 2 &mdash; configure the qt_client_grpcpp project</h3>
+    <ol>
+      <li><em>File &rarr; Open File or Project</em> &rarr;
+          <code>qt_client_grpcpp\CMakeLists.txt</code> (it&rsquo;s a
+          separate sub-project with its own build dir).</li>
+      <li>Configure dialog: <strong>untick every preset</strong>.  Tick
+          only <strong>Desktop Qt 6.x MinGW 64-bit</strong>.  Click
+          <em>Configure Project</em>.  Same as step 1: cancel any vcpkg
+          compile, then <em>Clear CMake Configuration</em>.</li>
+      <li><em>Projects (Ctrl+5) &rarr; Build &rarr; Initial Configuration
+          &rarr; Add</em>.  Same five entries as the server, but the two
+          overlay paths point at the <strong>parent</strong>
+          <code>triplets/</code> and <code>ports/</code> (one level up
+          from <code>qt_client_grpcpp/</code>):
+        <table>
+          <tr><th>Add as</th><th>Name</th><th>Value</th></tr>
+          <tr><td>String</td>  <td><code>CMAKE_TOOLCHAIN_FILE</code></td>   <td><code>C:/vcpkg/scripts/buildsystems/vcpkg.cmake</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_TARGET_TRIPLET</code></td>   <td><code>x64-mingw-qt</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_TRIPLETS</code></td> <td><code>C:/path/to/your/project/triplets</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_PORTS</code></td>    <td><code>C:/path/to/your/project/ports</code></td></tr>
+          <tr><td>Boolean</td> <td><code>VCPKG_MANIFEST_INSTALL</code></td> <td><code>OFF</code></td></tr>
+        </table>
+      </li>
+      <li><em>Build &rarr; Run CMake</em>.  Will fail at
+          <code>find_package(Protobuf)</code> &mdash; expected; the
+          <code>qt_client_grpcpp\build\Desktop_Qt_*\</code> dir is now
+          created.</li>
+    </ol>
+
+    <h3>Step 3 &mdash; populate vcpkg_installed/ from the prebuilt zip</h3>
+    <ol>
+      <li>Open a regular CMD/PowerShell.  <code>cd</code> to the
+          <strong>parent project</strong> (this directory).</li>
+      <li>Run import once &mdash; it auto-detects every build dir
+          (server <strong>and</strong> qt_client_grpcpp) and extracts the
+          zip into all of them:
+        <pre><code>import_prebuilt.bat C:\prebuilt\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+      </li>
+      <li>Verify both build dirs got the tree:
+        <pre><code>dir build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\
+dir qt_client_grpcpp\build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\</code></pre>
+        Both should list <code>gRPCConfig.cmake</code>.  If only one is
+        present, your other project&rsquo;s build dir wasn&rsquo;t created
+        yet &mdash; go back to whichever step you skipped.</li>
+    </ol>
+
+    <h3>Step 4 &mdash; re-run CMake on both projects</h3>
+    <ol>
+      <li>In Qt Creator, switch to the <strong>server</strong> project
+          (top-left project selector) &rarr; <em>Build &rarr; Run CMake</em>.
+          Should complete in ~1&ndash;3 sec.  In <em>General Messages</em>:
+          <pre><code>-- Found gRPC: &lt;build-dir&gt;/vcpkg_installed/x64-mingw-qt/share/grpc
+-- Found Protobuf: ...
+-- Configuring done</code></pre>
+      </li>
+      <li>Switch to the <strong>qt_client_grpcpp</strong> project &rarr;
+          <em>Build &rarr; Run CMake</em>.  Same ~1&ndash;3 sec result.</li>
+      <li><em>Build &rarr; Build All</em> on both projects.  Project code
+          compiles in ~30 sec &ndash; 2 min; vcpkg deps are
+          <strong>not</strong> rebuilt.</li>
+    </ol>
+
+    <h3>Sanity check: did it really skip the rebuild?</h3>
+    <p>In <em>General Messages</em> you should <strong>not</strong> see:</p>
+    <pre><code>-- Building boringssl[core]:x64-mingw-qt...
+-- Building abseil[core]:x64-mingw-qt...
+-- Building grpc:x64-mingw-qt...</code></pre>
+    <p>If you do, <code>VCPKG_MANIFEST_INSTALL=OFF</code> didn&rsquo;t reach
+       the toolchain.  Check that:</p>
+    <ul>
+      <li>The Initial Configuration entry is type <strong>Boolean</strong>
+          (or String <code>OFF</code>) &mdash; not deleted.</li>
+      <li>You ran <em>Clear CMake Configuration</em> after adding it
+          (cached configures don&rsquo;t pick up new <code>-D</code> flags).</li>
+    </ul>
+    <p>If you forgot one of the four toolchain vars or used a wrong path,
+       the failure surfaces as <code>Could not find a package configuration
+       file provided by &quot;gRPC&quot;</code> at <code>find_package</code>
+       &mdash; not as a build of grpc itself.</p>
+  </section>

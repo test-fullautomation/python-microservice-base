@@ -1,0 +1,8 @@
+
+grpc::Status @@{service_name}GrpcAdapter::@@{method_name}(
+    grpc::ServerContext* /*ctx*/,
+    const @@{input_type}* /*request*/,
+    @@{output_type}* /*response*/) {
+    // TODO: read fields from `request`, call m_domain, populate `response`.
+    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TODO: implement @@{method_name}");
+}

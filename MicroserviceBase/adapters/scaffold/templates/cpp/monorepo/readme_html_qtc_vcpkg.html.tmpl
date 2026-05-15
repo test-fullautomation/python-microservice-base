@@ -1,0 +1,114 @@
+
+    <h3>Recommended: use the bundled CMake preset</h3>
+    <ol>
+        <li>Open <code>CMakeLists.txt</code> in Qt Creator.  Qt Creator detects the
+            bundled <code>CMakePresets.json</code> and offers two presets:
+          <ul>
+            <li><strong>vcpkg-x64-mingw-qt</strong> &mdash; full vcpkg build (~30&ndash;60&nbsp;min first time).</li>
+            <li><strong>vcpkg-x64-mingw-qt-prebuilt</strong> &mdash; skip vcpkg install
+                (populate <code>build/.../vcpkg_installed/x64-mingw-qt/</code> first via
+                <code>import_prebuilt.bat</code>).</li>
+          </ul>
+        </li>
+        <li>Tick the preset(s) you want and click <em>Configure Project</em>.  Presets
+            already include <code>CMAKE_TOOLCHAIN_FILE</code>,
+            <code>VCPKG_TARGET_TRIPLET</code>, and overlay paths &mdash; no manual
+            wiring required.</li>
+    </ol>
+
+    <h3>Alternative: kit-based flow (Desktop Qt 6.x MinGW 64-bit)</h3>
+    <p>
+      If you prefer to use a Qt kit instead of the preset, you must give Qt Creator
+      the vcpkg toolchain explicitly &mdash; it does <strong>not</strong> auto-detect
+      vcpkg from <code>VCPKG_ROOT</code> the way the CLI build script does.
+    </p>
+    <ol>
+        <li><strong>Set system env vars (one-time)</strong>:
+          <pre><code>setx VCPKG_ROOT C:\vcpkg
+setx QT_DIR C:\Qt\6.11.0\mingw_64
+setx QT_MINGW_BIN C:\Qt\Tools\mingw1310_64\bin</code></pre>
+          <strong>Then fully close Qt Creator and reopen it</strong> &mdash;
+          <code>setx</code> only writes to the registry; the env vars only reach
+          processes started <em>after</em> the change.  An already-running Qt
+          Creator keeps the old (empty) environment.
+        </li>
+        <li><strong>Open the project &rarr; pick the kit
+            <em>Desktop Qt 6.x MinGW 64-bit</em></strong>.  In the
+            <em>Initial Configuration</em> panel, click <em>Add &rarr; String</em>
+            and add these four entries (replace the project path with yours):
+          <pre><code>CMAKE_TOOLCHAIN_FILE   = C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+VCPKG_TARGET_TRIPLET   = x64-mingw-qt
+VCPKG_OVERLAY_TRIPLETS = C:/path/to/your/project/triplets
+VCPKG_OVERLAY_PORTS    = C:/path/to/your/project/ports</code></pre>
+          <ul>
+            <li>Use forward slashes <code>/</code>, not back slashes
+                <code>\</code> (CMake interprets <code>\Q</code> as an escape).</li>
+            <li><strong>Use absolute paths for the overlay vars</strong>.
+                Qt Creator&rsquo;s <em>Initial Configuration</em> does
+                <strong>not</strong> expand <code>${sourceDir}</code> &mdash;
+                that&rsquo;s a CMakePresets-only macro.  If you paste
+                <code>${sourceDir}/triplets</code>, cmake gets it as a
+                literal string, vcpkg can&rsquo;t find the
+                <code>x64-mingw-qt</code> triplet, and manifest install
+                fails before grpc/protobuf even start to compile.</li>
+            <li>Make sure the var name is plural &mdash;
+                <code>VCPKG_OVERLAY_TRIPLETS</code> (with S), not
+                <code>VCPKG_OVERLAY_TRIPLET</code>.  vcpkg silently ignores
+                the singular form.</li>
+          </ul>
+        </li>
+        <li>Click <em>Configure Project</em>.  First configure: ~30&ndash;60 min while
+            vcpkg compiles boringssl + abseil + protobuf + grpc + curl.  Subsequent
+            configures: ~1&ndash;3 sec (cache hit).</li>
+        <li><strong>If you've already configured once and it failed</strong>:
+            <em>Build &rarr; Clear CMake Configuration</em>, then re-add the four
+            <em>Initial Configuration</em> entries above and re-run <em>Run CMake</em>.
+            Once <code>CMakeCache.txt</code> exists in the build dir, subsequent
+            CMake runs do <strong>not</strong> re-pass <code>-D</code> flags &mdash;
+            you must clear it to inject new vars.</li>
+    </ol>
+
+    <h3>Skip vcpkg install (use prebuilt)</h3>
+    <ol>
+        <li>Run <code>import_prebuilt.bat &lt;path&gt;.zip</code> from a terminal at
+            project root (it auto-detects the Qt Creator build dir).</li>
+        <li>In Qt Creator <em>Initial Configuration</em>, add
+            <code>VCPKG_MANIFEST_INSTALL = OFF</code> (BOOL).</li>
+        <li><em>Build &rarr; Clear CMake Configuration</em> &rarr; <em>Run CMake</em>.</li>
+    </ol>
+
+    <h3>Running the GUI from Qt Creator (F5) without copying DLLs</h3>
+    <p>
+      The build links the <code>.exe</code> against vcpkg DLLs in
+      <code>build/&lt;cfg&gt;/vcpkg_installed/x64-mingw-qt/bin/</code>, plus
+      Qt and MinGW runtime DLLs.  Windows&rsquo; DLL search only looks at the
+      <code>.exe</code>&rsquo;s folder and <code>%PATH%</code>, so a fresh
+      build run via F5 fails with <code>libprotobuf.dll not found</code>
+      (or <code>Qt6Core.dll</code>, <code>libgcc_s_seh-1.dll</code>, etc.).
+    </p>
+    <p>
+      Fix once per kit/preset: <em>Projects (Ctrl+5) &rarr; Run &rarr;
+      Environment &rarr; Details &rarr;</em> select <code>Path</code> and
+      click <em>Edit</em>.  Prepend (semicolon-separated) the three dirs
+      below.  Use absolute paths; replace
+      <code>&lt;build-dir&gt;</code> with this project&rsquo;s build dir
+      shown in the <em>Build</em> tab (e.g. <code>build/Desktop_Qt_*-Debug</code>
+      or <code>build-qt-vcpkg</code> for the preset):
+    </p>
+    <pre><code>&lt;build-dir&gt;\vcpkg_installed\x64-mingw-qt\bin;C:\Qt\6.x.y\mingw_64\bin;C:\Qt\Tools\mingw1310_64\bin</code></pre>
+    <p>
+      For <strong>qt_client_grpcpp/</strong> (a separate sub-project with
+      its own build dir), repeat the same edit on its
+      <em>Run &rarr; Environment</em> &mdash; substituting its build dir.
+      Re-doing this is only required when you change the build dir name
+      (switch between Debug/Release, change kit, etc.); it survives
+      rebuilds.
+    </p>
+    <p>
+      <strong>Permanent alternative</strong>: run <code>deploy_qt_vcpkg.bat</code>
+      (server) or <code>cd qt_client_grpcpp &amp;&amp; deploy_qt.bat</code>.
+      Each script copies every DLL next to the <code>.exe</code> in
+      <code>dist-qt-vcpkg/</code>; that folder is fully self-contained and
+      runs without any PATH setup.  Useful when shipping a build to a
+      teammate or to a test machine.
+    </p>

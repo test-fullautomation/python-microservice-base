@@ -1,0 +1,100 @@
+#include "ClientRegistry.h"
+
+#include <grpcpp/grpcpp.h>
+#include <google/protobuf/util/json_util.h>
+
+#include <memory>
+
+#include "@@{snake_name}.grpc.pb.h"
+#include "MicroserviceBase/ServiceClient.h"
+
+namespace client_registry {
+namespace {
+
+std::string g_direct_host;
+std::string g_consul_addr;   // empty = use ServiceClient default (env or 127.0.0.1:8500)
+
+@@{client_slots}
+
+@@{getter_fns}
+
+}  // anonymous
+
+void set_direct_host(const std::string& hostPort) {
+    if (hostPort == g_direct_host) return;
+    g_direct_host = hostPort;
+@@{reset_stmts}
+}
+
+void set_consul_addr(const std::string& consulAddr) {
+    if (consulAddr == g_consul_addr) return;
+    g_consul_addr = consulAddr;
+@@{reset_stmts}
+}
+
+std::vector<std::string> services() {
+    return { @@{svc_labels} };
+}
+
+std::vector<std::string> methods(const std::string& serviceName) {
+@@{methods_body}
+    return {};
+}
+
+std::pair<bool, std::string>
+invoke(const std::string& serviceName,
+       const std::string& methodName,
+       const std::string& requestJson) {
+@@{invoke_body}
+    return { false, "Unknown (service, method) pair: " + serviceName + "." + methodName };
+}
+
+}  // namespace client_registry
+
+// ---------------------------------------------------------------------------
+// Connectivity probes used by the GUI's Connect button.
+// libcurl is already linked via MicroserviceBase runtime (Consul HTTP).
+// ---------------------------------------------------------------------------
+#include <curl/curl.h>
+#include <chrono>
+
+namespace client_registry {
+namespace {
+size_t _curl_sink(char*, size_t size, size_t nmemb, void*) { return size * nmemb; }
+}
+
+std::pair<bool, std::string> ping_consul(const std::string& consulAddr) {
+    if (consulAddr.empty()) return { false, "Consul URL is empty" };
+    const std::string url = consulAddr + "/v1/agent/self";
+
+    CURL* h = curl_easy_init();
+    if (!h) return { false, "curl_easy_init failed" };
+    char errbuf[CURL_ERROR_SIZE] = {0};
+    curl_easy_setopt(h, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, _curl_sink);
+    curl_easy_setopt(h, CURLOPT_TIMEOUT, 3L);
+    curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(h, CURLOPT_ERRORBUFFER, errbuf);
+    CURLcode rc = curl_easy_perform(h);
+    long http_code = 0;
+    curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_easy_cleanup(h);
+
+    if (rc != CURLE_OK)
+        return { false, std::string("Consul unreachable: ") + (errbuf[0] ? errbuf : curl_easy_strerror(rc)) };
+    if (http_code != 200)
+        return { false, "Consul returned HTTP " + std::to_string(http_code) };
+    return { true, "Consul reachable: " + consulAddr };
+}
+
+std::pair<bool, std::string> ping_direct(const std::string& hostPort) {
+    if (hostPort.empty()) return { false, "Host:port is empty" };
+    auto channel = grpc::CreateChannel(hostPort, grpc::InsecureChannelCredentials());
+    if (!channel) return { false, "grpc::CreateChannel returned null" };
+    auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(3);
+    if (channel->WaitForConnected(deadline))
+        return { true, "Connected to " + hostPort };
+    return { false, "Cannot reach " + hostPort + " within 3s" };
+}
+
+}  // namespace client_registry

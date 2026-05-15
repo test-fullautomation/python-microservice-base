@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>@@{proj} &mdash; Build &amp; Run Guide</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --green: #10b981; --amber: #fbbf24; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0;
+         background: var(--bg); color: var(--text); line-height: 1.65; }
+  header { background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            padding: 24px 30px 24px 280px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  header h1 { margin: 0; font-size: 1.8em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 0.95em; }
+
+  .sidebar-nav { position: fixed; top: 0; left: 0; width: 250px; height: 100vh;
+                  background: #0b1220; border-right: 2px solid var(--border);
+                  overflow-y: auto; padding: 20px 0; z-index: 200; }
+  .sidebar-nav .nav-title { padding: 0 20px 14px; font-size: 0.82em; font-weight: 700;
+                             text-transform: uppercase; letter-spacing: 0.06em;
+                             color: var(--muted); border-bottom: 1px solid var(--border);
+                             margin-bottom: 8px; }
+  .sidebar-nav a { display: block; padding: 7px 20px; color: var(--muted);
+                    text-decoration: none; font-size: 0.88em; font-weight: 500;
+                    border-left: 3px solid transparent;
+                    transition: color 0.15s, border-color 0.15s, background-color 0.15s; }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav a.active { color: var(--accent); border-left-color: var(--accent);
+                           background: rgba(56,189,248,0.08); }
+  .sidebar-nav .nav-group { margin-top: 14px; padding: 0 20px 4px; font-size: 0.72em;
+                             font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 0.05em; color: rgba(148,163,184,0.6); }
+
+  main { margin-left: 250px; padding: 28px 38px; max-width: 1400px; }
+  section { background: var(--panel); border-radius: 12px; padding: 22px 26px;
+             margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+             border-left: 4px solid var(--accent); }
+  section h2 { color: var(--accent); margin-top: 0; border-bottom: 1px solid var(--border);
+                padding-bottom: 10px; font-size: 1.3em; }
+  h3 { color: var(--amber); margin-top: 18px; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px; color: #fcd34d;
+          font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: 0.9em; }
+  pre { background: #0b1220; padding: 14px 14px 14px 14px; border-radius: 8px;
+         overflow-x: auto; border: 1px solid var(--border); font-size: 0.88em;
+         position: relative; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  pre .copy-btn { position: absolute; top: 6px; right: 6px; background: #1e293b;
+                   border: 1px solid var(--border); color: var(--muted); padding: 3px 10px;
+                   font-size: 0.75em; border-radius: 4px; cursor: pointer; opacity: 0;
+                   transition: opacity 0.15s, color 0.15s, background 0.15s;
+                   font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  pre:hover .copy-btn { opacity: 1; }
+  pre .copy-btn:hover { color: var(--text); background: #334155; }
+  pre .copy-btn.copied { color: var(--green); border-color: var(--green); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0;
+           background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+            font-size: 0.92em; vertical-align: top; }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+  details { background: rgba(251,191,36,0.06); border-left: 3px solid var(--amber);
+             padding: 8px 14px; border-radius: 6px; margin: 8px 0; }
+  details summary { cursor: pointer; font-weight: 600; color: var(--amber); }
+  details p { margin: 8px 0 4px; }
+  a { color: var(--accent); }
+
+  /* Responsive: collapse sidebar on narrow viewports.  The page becomes
+     full-width and the sidebar is dismissed; user can still navigate via
+     the in-page Quick reference table or browser scroll. */
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header { padding-left: 30px; }
+    main { margin-left: 0; padding: 20px; }
+  }
+</style>
+</head>
+<body>
+<script>
+  // Add copy buttons to every <pre> block on load.  Uses the modern
+  // navigator.clipboard API, falls back to a textarea + execCommand for
+  // older browsers (or file:// where clipboard API is sandboxed).
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('pre').forEach((pre) => {
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.type = 'button';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', async () => {
+        const text = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
+        let ok = false;
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            ok = true;
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+        } catch (e) { ok = false; }
+        btn.textContent = ok ? 'Copied!' : 'Failed';
+        btn.classList.toggle('copied', ok);
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+      pre.appendChild(btn);
+    });
+
+    // Sidebar: highlight the active section as the user scrolls.  Uses
+    // IntersectionObserver so it stays cheap on long pages.
+    const links = document.querySelectorAll('.sidebar-nav a[href^="#"]');
+    const sections = Array.from(links)
+      .map(a => document.getElementById(a.getAttribute('href').slice(1)))
+      .filter(Boolean);
+    if ('IntersectionObserver' in window && sections.length) {
+      const linkFor = (id) => document.querySelector('.sidebar-nav a[href="#' + id + '"]');
+      const setActive = (id) => {
+        links.forEach(a => a.classList.remove('active'));
+        const a = linkFor(id);
+        if (a) a.classList.add('active');
+      };
+      const observer = new IntersectionObserver((entries) => {
+        const visible = entries.filter(e => e.isIntersecting)
+                               .sort((a, b) => a.target.offsetTop - b.target.offsetTop);
+        if (visible.length) setActive(visible[0].target.id);
+      }, { rootMargin: '-30% 0px -60% 0px', threshold: 0 });
+      sections.forEach(s => observer.observe(s));
+    }
+  });
+</script>
+<header>
+  <h1>@@{proj}</h1>
+  <p>Build &amp; run guide.  Auto-generated by <code>mb-scaffold</code>.</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">@@{proj}</div>
+  <a href="#overview">Project at a glance</a>
+  <a href="#quick-ref">Quick reference</a>
+  <a href="#folder-structure">Folder structure</a>
+  <a href="#flow">Build &amp; run flow</a>
+  <a href="#prereqs">Prerequisites</a>
+  <a href="#framework-dep">Framework dependency (MicroserviceBase)</a>
+
+  <div class="nav-group">Setup</div>
+  <a href="#env-setup">Environment setup</a>
+  @@{nav_rationale}
+
+  <div class="nav-group">Build</div>
+  <a href="#cli-build">Build via CLI</a>
+  <a href="#qtc-build">Build in Qt Creator</a>
+  @@{nav_prebuilt}
+
+  <div class="nav-group">Run</div>
+  <a href="#run">Consul + Nomad</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Common issues &amp; fixes</a>
+  <a href="#see-also">See also</a>
+</nav>
+
+<main>
+
+  <section id="overview">
+    <h2>Project at a glance</h2>
+    <table>
+      <tr><th>Service</th><th>Methods</th><th>Env prefix</th></tr>
+@@{svc_rows}
+    </table>
+    <p>Server toolchain: <code>@@{server_grpc_kind}</code>.  Client variant:
+       <code>@@{client_grpc_kind}</code>.  GUI: <code>@@{gui_type}</code>.</p>
+  </section>
+
+  <section id="quick-ref">
+    <h2>Quick reference</h2>
+    <table>
+      <tr><th>Task</th><th>Command (run from project root)</th></tr>
+@@{quick_rows}
+    </table>
+  </section>
+
+  <section id="folder-structure">
+    <h2>Folder structure</h2>
+    <p><code>[edit]</code> marks files you'll write business logic into.
+       Everything else is scaffolding regenerated by <code>mb-scaffold</code>
+       &mdash; safe to leave alone.</p>
+    <pre><code>@@{proj}/
+&#9500;&#9472;&#9472; proto/@@{snake_name}.proto     # one shared .proto for all services
+&#9500;&#9472;&#9472; src/&lt;service_snake&gt;/              # one folder per service
+&#9474;   &#9500;&#9472;&#9472; main.cpp                      # ServiceRunner entry-point
+&#9474;   &#9500;&#9472;&#9472; domain/&lt;Service&gt;.{h,cpp}      # [edit] business logic (pure C++)
+&#9474;   &#9492;&#9472;&#9472; adapters/api/&lt;Service&gt;GrpcAdapter.{h,cpp}  # [edit] proto&lt;-&gt;domain wrapper
+&#9500;&#9472;&#9472; deploy/&lt;service_snake&gt;.nomad.hcl  # one Nomad job per service
+&#9500;&#9472;&#9472; client/                           # console client subproject
+&#9500;&#9472;&#9472; CMakeLists.txt                    # single project, N add_executable() calls
+&#9500;&#9472;&#9472; build_deploy.bat / .sh            # one-shot build for all services
+&#9500;&#9472;&#9472; set_env*.bat / .sh                # toolchain env (VCPKG_ROOT, QT_DIR, ...)
+&#9492;&#9472;&#9472; dist/                             # output: N .exe&#39;s + shared DLLs</code></pre>
+  </section>
+
+  <section id="flow">
+    <h2>Build &amp; run flow</h2>
+    <p>Pick a toolchain on first build; subsequent rebuilds skip the
+       slow vcpkg compile (cache hit ~1&ndash;3 min).  See the
+       &quot;Use prebuilt libraries&quot; section if a teammate already
+       compiled the deps and shared a zip.</p>
+    <div class="mermaid">
+flowchart TD
+    Start([Start])
+    Setup["1\. One-time setup<br/>setx VCPKG_ROOT, QT_DIR, QT_MINGW_BIN"]
+    Choose{"Toolchain?"}
+    Prebuilt{"Have prebuilt zip?"}
+    Import["import_prebuilt.bat &lt;zip&gt;<br/>~30 seconds"]
+    BuildVcpkg["build_qt_vcpkg.bat<br/>(or Qt Creator F5)"]
+    BuildMSYS2["build_deploy_msys2.bat"]
+    BuildResult["build*/&lt;service&gt;.exe<br/>(N executables) + DLLs"]
+    LocalRun["Run any service:<br/>./&lt;service&gt;.exe"]
+    Pkg["deploy_qt_vcpkg.bat<br/>&rarr; dist-qt-vcpkg/"]
+    NomadRun["nomad job run<br/>deploy/&lt;svc&gt;.nomad.hcl<br/>(per-service jobs)"]
+    Discover["Clients discover via Consul<br/>(one entry per service)"]
+
+    Start --> Setup --> Choose
+    Choose -->|"Qt MinGW + vcpkg<br/>(recommended)"| Prebuilt
+    Choose -->|MSYS2| BuildMSYS2 --> BuildResult
+    Prebuilt -->|"Yes (~2 min total)"| Import --> BuildVcpkg
+    Prebuilt -->|"No (first build ~30-60 min)"| BuildVcpkg
+    BuildVcpkg --> BuildResult
+    BuildResult --> LocalRun
+    BuildResult -->|For sharing| Pkg
+    LocalRun --> NomadRun
+    Pkg --> NomadRun
+    NomadRun --> Discover
+    </div>
+  </section>
+
+@@{full_kit_walkthrough_html}
+
+  <section id="prereqs">
+    <h2>Prerequisites</h2>
+    <ul>
+@@{prereq_html}
+    </ul>
+  </section>
+
+  <section id="framework-dep">
+    <h2>Framework dependency (MicroserviceBase)</h2>
+    <p>
+      This service depends on the <strong>MicroserviceBase</strong> runtime
+      (C++ library + CMake package).  <code>CMakeLists.txt</code> calls
+      <code>find_package(MicroserviceBase CONFIG)</code> first and falls
+      back to <code>add_subdirectory(.../MicroserviceBase/runtime_cpp)</code>
+      for in-tree builds.  Pick one of three setups (any satisfies the
+      dependency):
+    </p>
+    <table>
+      <tr><th>Setup</th><th>When to use</th><th>One-time steps</th></tr>
+      <tr>
+        <td><strong>A. In-tree (zero install)</strong></td>
+        <td>You&rsquo;re working inside the framework checkout</td>
+        <td>Clone the framework so this scaffold sits at
+            <code>&lt;framework&gt;/examples/&lt;svc&gt;/</code> &mdash;
+            the relative path
+            <code>../../MicroserviceBase/runtime_cpp</code> resolves
+            automatically.</td>
+      </tr>
+      <tr>
+        <td><strong>A2. <code>MICROSERVICEBASE_DIR</code> env var</strong></td>
+        <td>Scaffold lives anywhere outside <code>examples/</code></td>
+        <td><code>setx MICROSERVICEBASE_DIR D:\workspace\python-microservice-base</code>
+            (accepts the framework root, the <code>runtime_cpp</code> parent,
+            or <code>runtime_cpp</code> itself).  Qt Creator inherits user
+            env so it picks this up automatically &mdash; close + reopen
+            Qt Creator after <code>setx</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>B. CMake install</strong></td>
+        <td>Standalone service, no vcpkg</td>
+        <td><code>cmake -S &lt;framework&gt;/MicroserviceBase/runtime_cpp -B build/mb &amp;&amp; cmake --build build/mb &amp;&amp; cmake --install build/mb --prefix $HOME/.local/microservice-base</code>,
+            then pass
+            <code>-DCMAKE_PREFIX_PATH=$HOME/.local/microservice-base</code>
+            on configure.</td>
+      </tr>
+      <tr>
+        <td><strong>C. vcpkg overlay-port</strong></td>
+        <td>Already using vcpkg (the Qt+vcpkg path)</td>
+        <td>Add <code>microservice-base</code> to your
+            <code>vcpkg.json</code> <code>dependencies</code> and pass
+            <code>-DVCPKG_OVERLAY_PORTS=&lt;framework&gt;/ports</code>.</td>
+      </tr>
+    </table>
+    <p>
+      <strong>Get the framework</strong> &mdash; branch
+      <code>ugc1hc/feat/migrate_to_ta_architecture</code> is the current
+      TA-architecture line (gRPC + Consul + Nomad runtime this scaffold
+      targets):
+    </p>
+    <pre><code>git clone -b ugc1hc/feat/migrate_to_ta_architecture ^
+    https://github.com/test-fullautomation/python-microservice-base.git</code></pre>
+    <p>What you get:</p>
+    <ul>
+      <li><code>MicroserviceBase/runtime_cpp/</code> &mdash; C++ runtime,
+          used by setups A, B, C.</li>
+      <li><code>ports/microservice-base/</code> &mdash; vcpkg overlay-port
+          for setup C.</li>
+      <li><code>docs/runtime_cpp_install.md</code> &mdash; full instructions
+          for each setup.</li>
+    </ul>
+    <p>
+      If <code>cmake -S .</code> fails with
+      <code>MicroserviceBase runtime not found.  Install + add to
+      CMAKE_PREFIX_PATH</code>, that&rsquo;s this dependency missing &mdash;
+      pick a setup above.
+    </p>
+  </section>
+
+  <section id="env-setup">
+    <h2>Environment setup (one-time)</h2>
+@@{env_section_html}
+  </section>
+
+  <section id="rationale">
+    <h2>How vcpkg + Qt MinGW works</h2>
+@@{rationale_html}
+  </section>
+
+  <section id="cli-build">
+    <h2>Build via CLI (no Qt Creator)</h2>
+    <ol>
+@@{cli_html}
+    </ol>
+    <p>
+      All scripts are runnable from the project root.  They use
+      <code>%~dp0</code>-relative paths internally so they work regardless
+      of where you call them from.
+    </p>
+  </section>
+
+  <section id="qtc-build">
+    <h2>Build &amp; run in Qt Creator</h2>
+@@{qtc_html}
+  </section>
+
+@@{prebuilt_section}
+
+  <section id="run">
+    <h2>Run sequence (Consul + Nomad)</h2>
+@@{run_html}
+  </section>
+
+  <section id="troubleshooting">
+    <h2>Common issues &amp; fixes</h2>
+    <p>Click each entry to expand.</p>
+@@{trouble_html}
+  </section>
+
+  <section id="see-also">
+    <h2>See also</h2>
+    <ul>
+      <li><code>README.md</code> &mdash; same content as plain Markdown.</li>
+      <li><code>examples/docs/html/index.html</code> &mdash; framework-level
+          docs (toolchain matrix, vcpkg setup, MSYS2 setup).</li>
+      <li><code>vcpkg_setup.html</code> in the framework docs &mdash; the
+          <code>google_vcpkg</code> path explained in depth.</li>
+    </ul>
+  </section>
+
+</main>
+
+<!-- Mermaid for the build/run flow diagram in #flow.  Loaded from the
+     framework-level docs/js/mermaid.min.js if available (zero-cost when
+     missing -- diagrams just render as their source code instead). -->
+<script src="../../docs/js/mermaid.min.js"></script>
+<script>
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({
+      startOnLoad: true, theme: 'dark', securityLevel: 'loose',
+      flowchart: { htmlLabels: true, useMaxWidth: true }
+    });
+  }
+</script>
+
+</body>
+</html>

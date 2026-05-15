@@ -1,0 +1,48 @@
+# Nomad job for @@{svc_name} inside the @@{service_name} monorepo.
+#
+# Before `nomad job run`, do ONE of these so Python can find the
+# `@@{proj_snake}.@@{svc_snake}.main` module:
+#
+#   (A) Install the project once (recommended for production):
+#         pip install -e /PATH/TO/@@{service_name}
+#       Then DELETE the PYTHONPATH line in the env block below.
+#
+#   (B) Or set PYTHONPATH to the project's src/ directory (no install
+#       needed) — replace /PATH/TO/@@{service_name}/src with the
+#       absolute path on the machine that will run this job.
+#
+job "@@{svc_snake}" {
+  datacenters = ["@@{nomad_dc}"]
+  type        = "service"
+
+  group "@@{svc_snake}" {
+    network {
+      port "grpc" {}
+    }
+
+    task "server" {
+      driver = "@@{nomad_driver}"
+
+      config {
+        command = "python"
+        args    = ["-m", "@@{proj_snake}.@@{svc_snake}.main"]
+      }
+
+      env {
+        # Required unless the project is pip-installed (option A in the
+        # comment above).  Point this at <project>/src on the machine
+        # that runs the agent.
+        PYTHONPATH = "/PATH/TO/@@{service_name}/src"
+
+        @@{prefix}GRPC_PORT     = "${NOMAD_PORT_grpc}"
+        @@{prefix}CONSUL_ADDR   = "@@{nomad_consul_addr}"
+        @@{prefix}LOG_LEVEL     = "INFO"
+      }
+
+      resources {
+        cpu    = @@{nomad_cpu}
+        memory = @@{nomad_mem}
+      }
+    }
+  }
+}

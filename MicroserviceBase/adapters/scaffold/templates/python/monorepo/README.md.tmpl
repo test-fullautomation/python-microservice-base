@@ -1,0 +1,52 @@
+# @@{proj}
+
+Python monorepo containing @@{n_services} gRPC services that share a single
+`.proto` file and one `pyproject.toml`.
+
+## Services
+
+@@{svc_lines}
+
+## Layout
+
+```
+@@{proj}/
+├── pyproject.toml          One project, N entry points
+├── proto/
+│   └── @@{proj_snake}.proto  Shared API definition
+├── scripts/
+│   └── generate_protos.py
+├── src/@@{proj_snake}/
+│   └── <service>/          One module per service
+│       ├── main.py         Entry point — `python -m @@{proj_snake}.<svc>.main`
+│       ├── config.py       Per-service env vars (`<SVC>_*`)
+│       ├── context.py      Per-service DI factory
+│       ├── domain/         Pure business logic
+│       └── adapters/api/   gRPC adapter
+├── deploy/                 One Nomad job per service
+└── README.md
+```
+
+## Build
+
+```bash
+pip install -e .
+python scripts/generate_protos.py
+```
+
+After install, each service is callable as a console script:
+
+```bash
+@@{first_svc_lower}      # or: python -m @@{proj_snake}.@@{first_svc_snake}.main
+```
+
+## Deploy
+
+Each service ships its own `deploy/<svc>.nomad.hcl`:
+
+```bash
+@@{nomad_run_line}
+```
+
+All services register with the same Consul agent by default
+(`http://127.0.0.1:8500`).

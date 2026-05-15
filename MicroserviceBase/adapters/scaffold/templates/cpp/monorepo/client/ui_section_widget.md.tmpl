@@ -1,0 +1,8 @@
+
+## UI client
+
+A Qt Widgets UI (`@@{project_snake}_gui`) is also built.  It has the same
+service->method picker plus a JSON editor for the request and a read-only
+JSON view of the response.  All proto messages are (de)serialised with
+`google::protobuf::util::JsonStringToMessage` so it works for both
+imported and generated protos without per-field code.

@@ -1,0 +1,131 @@
+cmake_minimum_required(VERSION 3.16)
+project(@@{project} VERSION @@{version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Qt 6 discovery — honour both Qt6_DIR (cmake config dir) and QT_DIR
+# (Qt install prefix), so users can point this anywhere from the env
+# without touching CMakeLists.
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{Qt6_DIR})
+    set(Qt6_DIR "$ENV{Qt6_DIR}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{QT_DIR} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+endif()
+
+# ---- Locate Google's protoc ---------------------------------------------
+# Qt's qt_add_grpc / qt_add_protobuf invoke `protoc` at build time (Qt
+# only ships the Qt-side plugins).  Make the path discoverable without
+# relying on PATH, so the build works from Qt Creator, raw cmake, or
+# build_qt.bat.  Override priority:
+#   1. -DProtobuf_PROTOC_EXECUTABLE=...
+#   2. PROTOC_DIR env var (folder containing protoc.exe)
+#   3. C:/msys64/mingw64/bin
+#   4. <VCPKG_ROOT>/installed/x64-windows/tools/protobuf
+#   5. find_program() on PATH
+if(NOT Protobuf_PROTOC_EXECUTABLE)
+    set(_protoc_candidates)
+    if(DEFINED ENV{PROTOC_DIR})
+        list(APPEND _protoc_candidates
+            "$ENV{PROTOC_DIR}/protoc.exe"
+            "$ENV{PROTOC_DIR}/protoc")
+    endif()
+    list(APPEND _protoc_candidates
+        "C:/msys64/mingw64/bin/protoc.exe"
+        "C:/msys64/ucrt64/bin/protoc.exe")
+    if(DEFINED ENV{VCPKG_ROOT})
+        list(APPEND _protoc_candidates
+            "$ENV{VCPKG_ROOT}/installed/x64-windows/tools/protobuf/protoc.exe")
+    endif()
+    foreach(_c IN LISTS _protoc_candidates)
+        if(EXISTS "${_c}")
+            set(Protobuf_PROTOC_EXECUTABLE "${_c}"
+                CACHE FILEPATH "protoc executable used by qt_add_grpc / qt_add_protobuf")
+            break()
+        endif()
+    endforeach()
+    if(NOT Protobuf_PROTOC_EXECUTABLE)
+        find_program(Protobuf_PROTOC_EXECUTABLE NAMES protoc protoc.exe)
+    endif()
+endif()
+
+# Whatever set Protobuf_PROTOC_EXECUTABLE — auto-discovery above OR an
+# externally-passed `-DProtobuf_PROTOC_EXECUTABLE=...` — also propagate
+# PATH + CMAKE_PREFIX_PATH so Qt's WrapProtoc (which does its own
+# find_program(protoc)) and FindProtobuf (wants headers + libs) succeed.
+if(Protobuf_PROTOC_EXECUTABLE)
+    message(STATUS "Using protoc: ${Protobuf_PROTOC_EXECUTABLE}")
+    get_filename_component(_protoc_dir "${Protobuf_PROTOC_EXECUTABLE}" DIRECTORY)
+    set(ENV{PATH} "${_protoc_dir};$ENV{PATH}")
+
+    get_filename_component(_protoc_prefix "${_protoc_dir}/.." ABSOLUTE)
+    list(APPEND CMAKE_PREFIX_PATH "${_protoc_prefix}")
+    message(STATUS "Adding to CMAKE_PREFIX_PATH for Protobuf headers/libs: ${_protoc_prefix}")
+else()
+    message(FATAL_ERROR
+        "protoc not found.  Qt's qt_add_grpc / qt_add_protobuf needs "
+        "Google's protoc at build time.  Install MSYS2's "
+        "mingw-w64-x86_64-protobuf, or download a Windows release "
+        "from https://github.com/protocolbuffers/protobuf/releases "
+        "and pass -DProtobuf_PROTOC_EXECUTABLE=<path/to/protoc.exe>.")
+endif()
+
+find_package(Qt6 REQUIRED COMPONENTS
+    Core
+    Gui
+    Widgets
+    Network
+    Grpc
+    Protobuf
+    ProtobufWellKnownTypes)
+
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+
+@@{deploy_runtime_block}
+
+qt_add_executable(@@{snake_name}_qt_gui
+    src/main.cpp
+    src/MainWindow.cpp
+    src/MainWindow.h
+    src/MainWindow.ui)
+
+# Make AUTOUIC look in src/ for the .ui file
+set(CMAKE_AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+# Generate Qt-style protobuf message classes (QProtobufMessage subclasses).
+# OUTPUT_DIRECTORY MUST live under the build tree — writing generated
+# `*.qpb.{h,cpp}` back into the source tree causes ninja to detect the
+# source dir as "dirty" on every build and re-run cmake forever
+# ("manifest 'build.ninja' still dirty after 100 tries").  IDEs pick up
+# the generated headers via compile_commands.json / the target's include
+# dirs.  proto/generate_qt_stubs.bat runs the same protoc command
+# outside CMake for one-shot pre-generation if you want to browse stubs
+# alongside the .proto source.
+qt_add_protobuf(@@{snake_name}_qt_gui
+    PROTO_FILES proto/@@{snake_name}.proto
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qt_proto_gen")
+
+# Generate Qt-style gRPC client stubs (no SERVER variant — Qt 6 doesn't
+# provide one; the service is built with Google grpc++ separately).
+qt_add_grpc(@@{snake_name}_qt_gui CLIENT
+    PROTO_FILES proto/@@{snake_name}.proto
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qt_proto_gen")
+
+target_include_directories(@@{snake_name}_qt_gui PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_BINARY_DIR}/qt_proto_gen")
+
+target_link_libraries(@@{snake_name}_qt_gui PRIVATE
+    Qt6::Widgets
+    Qt6::Network
+    Qt6::Grpc
+    Qt6::Protobuf
+    Qt6::ProtobufWellKnownTypes)
+
+set_target_properties(@@{snake_name}_qt_gui PROPERTIES
+    WIN32_EXECUTABLE ON
+    MACOSX_BUNDLE    ON)
+
+mb_deploy_runtime(@@{snake_name}_qt_gui QT_APP)

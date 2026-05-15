@@ -71,6 +71,13 @@ Repository = "https://github.com/test-fullautomation/python-microservice-base.gi
 where = ["."]
 include = ["MicroserviceBase*"]
 
+[tool.setuptools.package-data]
+# Scaffold generator reads template files at runtime from
+# `MicroserviceBase/adapters/scaffold/templates/`.  Without this glob
+# setuptools would only ship .py files in the wheel, causing the
+# generator to fail with FileNotFoundError on installed copies.
+"MicroserviceBase.adapters.scaffold" = ["templates/**/*.tmpl"]
+
 [tool.pytest.ini_options]
 testpaths = ["pytest"]
 

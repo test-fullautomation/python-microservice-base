@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/set_env.sh"
+
+if [ ! -f "$SCRIPT_DIR/proto/@@{snake_name}.pb.h" ]; then
+    bash "$SCRIPT_DIR/proto/generate_stubs.sh"
+fi
+
+# ----- Services -----
+SERVICE_BUILD="$SCRIPT_DIR/build"
+mkdir -p "$SERVICE_BUILD"
+cmake -S "$SCRIPT_DIR" -B "$SERVICE_BUILD" \
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+    -DCMAKE_BUILD_TYPE=Release
+cmake --build "$SERVICE_BUILD" --parallel $(nproc)
+
+# ----- Client test binaries -----
+QT_PREFIX_ARG=()
+if [ -n "${QT_DIR:-}" ]; then QT_PREFIX_ARG=(-DCMAKE_PREFIX_PATH="$QT_DIR"); fi
+CLIENT_BUILD="$SCRIPT_DIR/client/build"
+mkdir -p "$CLIENT_BUILD"
+cmake -S "$SCRIPT_DIR/client" -B "$CLIENT_BUILD" \
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+    "${QT_PREFIX_ARG[@]}" \
+    -DCMAKE_BUILD_TYPE=Release
+cmake --build "$CLIENT_BUILD" --parallel $(nproc)
+
+DIST="$SCRIPT_DIR/dist"
+mkdir -p "$DIST"
+@@{exe_copies}
+@@{client_copies}
+
+echo ""
+echo "Monorepo build complete. Binaries in: $DIST"

@@ -1,0 +1,32 @@
+@@{header}
+#pragma once
+
+#include <grpcpp/grpcpp.h>
+#include "@@{snake_name}.grpc.pb.h"
+#include "domain/@@{grpc_name}.h"
+
+namespace @@{snake_name} {
+
+/**
+ * gRPC servicer adapter for @@{grpc_name}.
+ *
+ * Holds a non-owning reference to the domain instance and forwards
+ * each inbound RPC to it after unpacking the proto request fields.
+ */
+class @@{service_name}GrpcAdapter final : public @@{proto_namespace}::@@{grpc_name}::Service {
+public:
+    /**
+     * Wire the adapter to the domain service.
+     *
+     * @param domain Reference to the domain instance.  Must outlive
+     *               the adapter (typically both live for the duration
+     *               of main()).
+     */
+    explicit @@{service_name}GrpcAdapter(@@{grpc_name}& domain) : m_domain(domain) {}
+
+@@{methods}
+private:
+    @@{grpc_name}& m_domain;
+};
+
+}  // namespace @@{snake_name}

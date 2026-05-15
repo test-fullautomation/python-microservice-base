@@ -1,0 +1,12 @@
+    /**
+     * Handle a unary @@{method_name} RPC.
+     *
+     * @param ctx      gRPC server context.
+     * @param request  Inbound @@{input_type}.
+     * @param response @@{output_type} populated by this method.
+     * @return         grpc::Status::OK on success.
+     */
+    grpc::Status @@{method_name}(grpc::ServerContext* ctx,
+        const @@{input_type}* request,
+        @@{output_type}* response) override;
+

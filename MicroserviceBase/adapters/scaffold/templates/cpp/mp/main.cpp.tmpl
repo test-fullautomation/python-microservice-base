@@ -1,0 +1,29 @@
+#include <iostream>
+#include "MicroserviceBase/ServiceRunner.h"
+
+#include "Settings.h"
+@@{inc_block}
+
+// Multi-proto / single-binary entry point.  This process hosts
+// @@{services_count} gRPC services on one port, with one Consul
+// registration.  Shutdown signals deregister all services together.
+
+int main() {
+    try {
+        @@{snake_name}::Settings settings;
+
+        // Domain instances (pure business logic, no gRPC dependency).
+@@{inst_block}
+
+        // Adapter instances (gRPC service implementations wrapping domain).
+@@{adapt_block}
+
+        microservice_base::ServiceRunner runner(settings, {"v1"});
+@@{add_block}
+        runner.serveForever();
+    } catch (const std::exception& e) {
+        std::cerr << "FATAL: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}

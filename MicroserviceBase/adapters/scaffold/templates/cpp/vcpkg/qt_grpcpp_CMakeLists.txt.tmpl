@@ -1,0 +1,128 @@
+cmake_minimum_required(VERSION 3.20)
+
+# vcpkg auto-detection BEFORE project() so the toolchain loads correctly.
+# Mirrors the server CMakeLists.txt; overlays live in the PARENT project.
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE PATH "vcpkg toolchain (auto-detected from VCPKG_ROOT env var)")
+elseif(NOT CMAKE_TOOLCHAIN_FILE)
+    message(WARNING
+        "qt_client_grpcpp: VCPKG_ROOT not set + CMAKE_TOOLCHAIN_FILE missing - "
+        "find_package will likely fail.  Set VCPKG_ROOT or pass "
+        "-DCMAKE_TOOLCHAIN_FILE=... directly.")
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../triplets/x64-mingw-qt.cmake")
+    if(NOT VCPKG_TARGET_TRIPLET)
+        set(VCPKG_TARGET_TRIPLET "x64-mingw-qt"
+            CACHE STRING "vcpkg triplet (auto-set from parent's triplets/ overlay)")
+    endif()
+    if(NOT VCPKG_OVERLAY_TRIPLETS)
+        set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/../triplets"
+            CACHE PATH "vcpkg overlay triplets (parent project)")
+    endif()
+    if(NOT VCPKG_OVERLAY_PORTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../ports")
+        set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/../ports"
+            CACHE PATH "vcpkg overlay ports (parent project)")
+    endif()
+endif()
+if(NOT DEFINED QT_CREATOR_SKIP_VCPKG_SETUP)
+    set(QT_CREATOR_SKIP_VCPKG_SETUP ON CACHE BOOL "")
+endif()
+if(NOT CMAKE_MAKE_PROGRAM)
+    set(_ninja_candidates "C:/Qt/Tools/Ninja/ninja.exe" "C:/Qt/Tools/Ninja_64/ninja.exe")
+    if(DEFINED ENV{VCPKG_ROOT})
+        file(GLOB _vcpkg_ninja "$ENV{VCPKG_ROOT}/downloads/tools/ninja-*/ninja.exe")
+        list(APPEND _ninja_candidates ${_vcpkg_ninja})
+    endif()
+    foreach(_n IN LISTS _ninja_candidates)
+        if(EXISTS "${_n}")
+            set(CMAKE_MAKE_PROGRAM "${_n}" CACHE FILEPATH "Ninja (auto-detected)")
+            break()
+        endif()
+    endforeach()
+endif()
+
+project(@@{service_name}QtClientGrpcpp VERSION @@{version} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{Qt6_DIR})
+    set(Qt6_DIR "$ENV{Qt6_DIR}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{QT_DIR} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+endif()
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Concurrent)
+
+# Manifest-mode fallback: when vcpkg toolchain didn't load (or installed
+# without manifest mode), point find_package at the vcpkg_installed dir.
+if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/share")
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt")
+endif()
+
+# Pre-set Protobuf_PROTOC_EXECUTABLE so vcpkg's protobuf-cmake-wrapper
+# (which hardcodes a search at .../x64-windows/tools/protobuf/) doesn't
+# fail when only x64-mingw-qt's tree is present.  Both protoc binaries
+# are equivalent; x64-mingw-qt's was built by the same triplet as our libs.
+if(NOT Protobuf_PROTOC_EXECUTABLE AND EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe")
+    set(Protobuf_PROTOC_EXECUTABLE "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe"
+        CACHE FILEPATH "protoc (target triplet)")
+endif()
+
+# Google grpc++ + protobuf via vcpkg (manifest-mode install via toolchain).
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC     CONFIG REQUIRED)
+
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+
+# Generate stubs into the build tree (NOT source tree - source-tree codegen
+# triggers ninja "manifest still dirty after 100 tries" loops).
+set(_proto_path "${CMAKE_CURRENT_SOURCE_DIR}/proto")
+set(_gen_dir    "${CMAKE_CURRENT_BINARY_DIR}/grpc_gen")
+file(MAKE_DIRECTORY "${_gen_dir}")
+
+set(_proto_files "${_proto_path}/@@{snake_name}.proto")
+
+protobuf_generate(
+    LANGUAGE       cpp
+    OUT_VAR        PROTO_SRCS
+    PROTOS         ${_proto_files}
+    PROTOC_OUT_DIR "${_gen_dir}"
+    IMPORT_DIRS    "${_proto_path}")
+
+protobuf_generate(
+    LANGUAGE             grpc
+    OUT_VAR              GRPC_SRCS
+    PROTOS               ${_proto_files}
+    PROTOC_OUT_DIR       "${_gen_dir}"
+    IMPORT_DIRS          "${_proto_path}"
+    GENERATE_EXTENSIONS  .grpc.pb.h .grpc.pb.cc
+    PLUGIN               "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>")
+
+qt_add_executable(@@{snake_name}_qt_gui
+    src/main.cpp
+    src/MainWindow.cpp
+    src/MainWindow.h
+    src/MainWindow.ui
+    ${PROTO_SRCS}
+    ${GRPC_SRCS})
+
+set(CMAKE_AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+target_include_directories(@@{snake_name}_qt_gui PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${_gen_dir}")
+
+target_link_libraries(@@{snake_name}_qt_gui PRIVATE
+    Qt6::Widgets Qt6::Network Qt6::Concurrent
+    protobuf::libprotobuf
+    gRPC::grpc++)
+
+set_target_properties(@@{snake_name}_qt_gui PROPERTIES
+    WIN32_EXECUTABLE ON MACOSX_BUNDLE ON)
+
+@@{deploy_runtime_block}
+mb_deploy_runtime(@@{snake_name}_qt_gui QT_APP)

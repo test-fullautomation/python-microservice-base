@@ -1,0 +1,8 @@
+
+grpc::Status @@{svc_pascal}GrpcAdapter::@@{method_name}(
+    grpc::ServerContext* /*ctx*/,
+    const @@{input_type}* /*request*/,
+    grpc::ServerWriter<@@{output_type}>* /*writer*/) {
+    // TODO: stream @@{output_type} responses to the writer based on `request` + m_domain.
+    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "TODO: implement @@{method_name}");
+}

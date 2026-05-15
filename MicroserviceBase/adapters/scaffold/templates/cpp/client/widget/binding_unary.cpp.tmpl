@@ -1,0 +1,18 @@
+    // --- @@{method_name} ---
+    {
+        MethodBinding b;
+        b.name = "@@{method_name}";
+        b.params = { @@{params_init} };
+        b.invoke = [this](const std::vector<QWidget*>& ws) -> QString {
+            grpc::ClientContext ctx;
+            @@{input_type} req;
+@@{setters_str}
+            @@{output_type} resp;
+            auto st = m_client->stub().@@{method_name}(&ctx, req, &resp);
+            if (!st.ok()) {
+                return QString("[error] ") + QString::fromStdString(st.error_message());
+            }
+            return @@{ret_expr};
+        };
+        m_methods.push_back(std::move(b));
+    }

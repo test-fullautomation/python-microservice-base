@@ -1,0 +1,60 @@
+@@{header}"""
+Dependency injection for @@{svc}.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from adapters.api.grpc_adapter import @@{svc}GrpcAdapter
+from config import Settings
+from domain.@@{sn}_service import @@{cls}
+
+
+@dataclass
+class Context:
+    """
+Bag of constructed objects passed around the service.
+
+**Attributes:**
+
+* ``settings``
+
+  / *Type*: Settings /
+
+  Service settings loaded from environment.
+
+* ``domain``
+
+  / *Type*: @@{cls} /
+
+  The pure-business-logic domain instance.
+
+* ``grpc_adapter``
+
+  / *Type*: @@{svc}GrpcAdapter /
+
+  gRPC inbound adapter that translates protobuf calls to ``domain``
+  method invocations.
+    """
+    settings: Settings
+    domain: @@{cls}
+    grpc_adapter: @@{svc}GrpcAdapter
+
+
+def create_context() -> Context:
+    """
+Build the service context.
+
+**Returns:**
+
+* ``ctx``
+
+  / *Type*: Context /
+
+  Fully-wired :class:`Context` ready to hand to ServiceRunner.
+    """
+    settings = Settings()
+    domain = @@{cls}()
+    grpc_adapter = @@{svc}GrpcAdapter(domain)
+    return Context(settings=settings, domain=domain, grpc_adapter=grpc_adapter)

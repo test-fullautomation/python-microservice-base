@@ -1,0 +1,18 @@
+    // --- @@{method_name} (imported proto, server streaming) ---
+    {
+        MethodBinding b;
+        b.name = "@@{method_name}";
+        b.params = {};
+        b.invoke = [this](const std::vector<QWidget*>& /*ws*/) -> QString {
+            grpc::ClientContext ctx;
+            @@{input_type} req;   // TODO: fill request fields
+            auto reader = m_client->stub().@@{method_name}(&ctx, req);
+            @@{output_type} resp;
+            int count = 0;
+            while (reader->Read(&resp)) ++count;
+            auto st = reader->Finish();
+            if (!st.ok()) return QString("[error] ") + QString::fromStdString(st.error_message());
+            return QString("(@@{method_name}: %1 messages — fill in response formatting)").arg(count);
+        };
+        m_methods.push_back(std::move(b));
+    }

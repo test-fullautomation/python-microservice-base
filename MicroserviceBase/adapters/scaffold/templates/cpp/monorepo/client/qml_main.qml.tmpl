@@ -1,0 +1,97 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+ApplicationWindow {
+    width: 820; height: 640
+    visible: true
+    title: "@@{title}"
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 6
+
+        RowLayout {
+            CheckBox {
+                id: useConsul
+                text: "Use Consul"
+                checked: true
+                onCheckedChanged: {
+                    if (checked) clientBridge.setDirectHost("")
+                    else         clientBridge.setDirectHost(directHost.text)
+                }
+            }
+            TextField {
+                id: directHost
+                enabled: !useConsul.checked
+                placeholderText: "host:port (when Consul disabled)"
+                Layout.fillWidth: true
+                onEditingFinished: if (!useConsul.checked)
+                    clientBridge.setDirectHost(text)
+            }
+        }
+
+        RowLayout {
+            Label { text: "Service:" }
+            ComboBox {
+                id: svcCombo
+                model: clientBridge.services()
+                Layout.fillWidth: true
+                onCurrentTextChanged: methodCombo.model =
+                    clientBridge.methods(currentText)
+                Component.onCompleted: methodCombo.model =
+                    clientBridge.methods(currentText)
+            }
+            Label { text: "Method:" }
+            ComboBox {
+                id: methodCombo
+                Layout.fillWidth: true
+            }
+        }
+
+        Label { text: "Request (JSON):" }
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 140
+            TextArea {
+                id: requestEdit
+                text: "{}"
+                wrapMode: TextEdit.Wrap
+                font.family: "monospace"
+            }
+        }
+
+        RowLayout {
+            Button {
+                text: "Send"
+                onClicked: {
+                    statusLabel.text = "Calling " + svcCombo.currentText +
+                        "." + methodCombo.currentText + " ..."
+                    var r = clientBridge.invoke(svcCombo.currentText,
+                                                methodCombo.currentText,
+                                                requestEdit.text)
+                    responseEdit.text = r.body
+                    statusLabel.text = r.ok ? "OK" : "FAILED"
+                }
+            }
+            Label {
+                id: statusLabel
+                text: "(idle)"
+                Layout.fillWidth: true
+            }
+        }
+
+        Label { text: "Response:" }
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            TextArea {
+                id: responseEdit
+                readOnly: true
+                wrapMode: TextEdit.Wrap
+                font.family: "monospace"
+            }
+        }
+    }
+}

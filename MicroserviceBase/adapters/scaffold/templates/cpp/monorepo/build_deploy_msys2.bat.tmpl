@@ -1,0 +1,97 @@
+@echo off
+:: MSYS2 variant (native MinGW from pacman).
+setlocal
+set "SCRIPT_DIR=%~dp0"
+call "%SCRIPT_DIR%set_env_msys2.bat"
+
+where g++   >nul 2>&1 || ( echo ERROR: g++ not found.   & exit /b 1 )
+where ninja >nul 2>&1 || ( echo ERROR: ninja not found. & exit /b 1 )
+where cmake >nul 2>&1 || ( echo ERROR: cmake not found. & exit /b 1 )
+
+if not exist "%MSYS2_ROOT%\share\grpc" (
+    echo ERROR: MSYS2 package mingw-w64-x86_64-grpc is not installed.
+    echo        C:\msys64\usr\bin\pacman -S --needed mingw-w64-x86_64-grpc mingw-w64-x86_64-protobuf mingw-w64-x86_64-curl
+    exit /b 1
+)
+
+:: ----- Force-regenerate stubs with MSYS2 protoc -----
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.pb.h"       >nul 2>&1
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.pb.cc"      >nul 2>&1
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.grpc.pb.h"  >nul 2>&1
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.grpc.pb.cc" >nul 2>&1
+call "%SCRIPT_DIR%proto\generate_stubs.bat"
+if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
+
+:: ----- Build services -----
+set "SERVICE_BUILD=%SCRIPT_DIR%build-msys2"
+if not exist "%SERVICE_BUILD%" mkdir "%SERVICE_BUILD%"
+pushd "%SERVICE_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_PREFIX_PATH="%MSYS2_ROOT%;%QT_DIR%" ..
+if errorlevel 1 ( echo Service configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Build clients -----
+set "CLIENT_BUILD=%SCRIPT_DIR%client\build-msys2"
+if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
+pushd "%CLIENT_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_PREFIX_PATH="%MSYS2_ROOT%;%QT_DIR%" ..
+if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Collect -----
+set "DIST=%SCRIPT_DIR%dist-msys2"
+if not exist "%DIST%" mkdir "%DIST%"
+@@{exe_copies}
+@@{client_copies}
+xcopy /Y /Q "%SERVICE_BUILD%\*.dll" "%DIST%\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\*.dll"  "%DIST%\" >nul 2>&1
+
+if exist "%MSYS2_ROOT%\bin" (
+    for %%L in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll zlib1.dll) do (
+        if exist "%MSYS2_ROOT%\bin\%%L" copy /Y "%MSYS2_ROOT%\bin\%%L" "%DIST%\" >nul
+    )
+    for %%G in (libgrpc libprotobuf libabsl libcares libre2 libssl libcrypto libcurl libidn2 libintl libiconv libpsl libunistring libzstd libbrotli libnghttp2 libssh2) do (
+        xcopy /Y /Q "%MSYS2_ROOT%\bin\%%G*.dll" "%DIST%\" >nul 2>&1
+    )
+)
+@@{windeployqt_block}
+:: ----- Emit run_*.bat launchers that ensure MSYS2 bin + Qt plugins are reachable -----
+@@{launcher_block}
+
+echo.
+echo MSYS2 monorepo build complete.  Binaries in: %DIST%
+echo.
+echo To run a service, use the generated launcher (prepends MSYS2 bin to PATH):
+echo    %DIST%\run_^<service^>.bat
+echo Launching the .exe directly will silently die if any transitive MSYS2
+echo DLL — or a Qt platform plugin — isn't reachable.
+endlocal
+exit /b 0
+
+:emit_launcher
+:: %~1 = launcher path, %~2 = target exe name
+> "%~1" echo @echo off
+>> "%~1" echo if not defined MSYS2_ROOT set "MSYS2_ROOT=C:\msys64\mingw64"
+>> "%~1" echo set "PATH=%%MSYS2_ROOT%%\bin;%%PATH%%"
+>> "%~1" echo "%%~dp0%~2" %%*
+exit /b 0
+
+:emit_gui_launcher
+:: Same as :emit_launcher but also exposes Qt plugins.  windeployqt drops
+:: `platforms/`, `qml/`, `styles/`, ... next to the exe, so Qt's automatic
+:: lookup finds them.  QT_PLUGIN_PATH is a belt-and-braces fallback for
+:: when windeployqt wasn't available at build time.
+:: %~1 = launcher path, %~2 = target exe name
+> "%~1" echo @echo off
+>> "%~1" echo if not defined MSYS2_ROOT set "MSYS2_ROOT=C:\msys64\mingw64"
+>> "%~1" echo set "PATH=%%MSYS2_ROOT%%\bin;%%PATH%%"
+>> "%~1" echo if not defined QT_PLUGIN_PATH set "QT_PLUGIN_PATH=%%MSYS2_ROOT%%\share\qt6\plugins"
+>> "%~1" echo if not defined QML2_IMPORT_PATH set "QML2_IMPORT_PATH=%%MSYS2_ROOT%%\share\qt6\qml"
+>> "%~1" echo "%%~dp0%~2" %%*
+exit /b 0

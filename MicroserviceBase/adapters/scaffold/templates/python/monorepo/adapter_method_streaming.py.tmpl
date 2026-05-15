@@ -1,0 +1,29 @@
+
+    async def @@{method}(self, request, context):
+        """
+Handle a server-streaming @@{method} RPC.
+
+**Arguments:**
+
+* ``request``
+
+  / *Condition*: required / *Type*: @@{method}Request /
+
+  Proto request message.
+
+* ``context``
+
+  / *Condition*: required / *Type*: grpc.aio.ServicerContext /
+
+  Per-call context.
+
+**Yields:**
+
+* ``response``
+
+  / *Type*: @@{method}Response /
+
+  One proto message per event.
+        """
+        async for item in self._domain.@@{snake_method}():
+            yield @@{proj_snake}_pb2.@@{method}Response(result=str(item))

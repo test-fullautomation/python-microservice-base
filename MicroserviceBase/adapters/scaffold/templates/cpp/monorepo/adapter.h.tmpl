@@ -1,0 +1,18 @@
+#pragma once
+
+#include <grpcpp/grpcpp.h>
+#include "@@{snake_name}.grpc.pb.h"
+#include "domain/@@{svc_pascal}.h"
+
+namespace @@{svc_snake} {
+
+class @@{svc_pascal}GrpcAdapter final : public @@{proto_namespace}::@@{svc_pascal}::Service {
+public:
+    explicit @@{svc_pascal}GrpcAdapter(@@{svc_pascal}& domain) : m_domain(domain) {}
+
+@@{methods}
+private:
+    @@{svc_pascal}& m_domain;
+};
+
+}  // namespace @@{svc_snake}

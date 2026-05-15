@@ -1,0 +1,28 @@
+@@{header}
+#pragma once
+
+#include "MicroserviceBase/Settings.h"
+
+namespace @@{snake_name} {
+
+/**
+ * Settings for the @@{service_name} service.
+ *
+ * Inherits the standard fields from BaseServiceSettings.  Add
+ * service-specific fields here as plain data members and read them
+ * from the environment in the constructor using
+ * `readEnv("@@{env_prefix}MY_FIELD", my_field_)`.
+ */
+struct Settings : public microservice_base::BaseServiceSettings {
+    /**
+     * Construct settings, loading every base field from `@@{env_prefix}*`
+     * environment variables.  Defaults from BaseServiceSettings apply
+     * when an env var is unset.
+     */
+    Settings() {
+        service_name = "@@{snake_name}";
+        loadBaseFromEnv("@@{env_prefix}");
+    }
+};
+
+}  // namespace @@{snake_name}
