@@ -2116,6 +2116,15 @@ def generate_multi_proto(spec: "ScaffoldSpec", services) -> Dict[str, str]:
     if client_uses_vcpkg:
         files.update(_mp_qt_client_grpcpp_files(spec, services))
 
+    # ---- Optional Qt6::Grpc client in qt_client/ (Qt-native; WASM-capable) ----
+    # Triggered by gui_type != "none" AND client_grpc_kind == "qt".  Mirrors
+    # the monorepo qt_client wiring but emits N per-service .proto files
+    # and a multi-codegen CMakeLists.
+    client_uses_qt = (spec.gui_type != "none"
+                      and spec.client_grpc_kind == "qt")
+    if client_uses_qt:
+        files.update(_mp_qt_client_files(spec, services))
+
     # ---- Server vcpkg path (Google grpc++ via vcpkg + Qt MinGW) ----
     server_uses_vcpkg = spec.server_grpc_kind == "vcpkg"
     if server_uses_vcpkg:
@@ -2334,6 +2343,165 @@ def _mp_qt_client_grpcpp_cmake(spec, services) -> str:
         sn=sn,
     )
 
+
+# ---- Optional Qt6::Grpc client for multi_proto (qt_client/) ---------
+# Triggered when spec.gui_type != "none" AND spec.client_grpc_kind == "qt".
+# Mirrors the monorepo qt_client wiring but emits N per-service .proto files
+# and lists every distinct proto in the PROTO_FILES of qt_add_protobuf /
+# qt_add_grpc.  MainWindow.cpp gets N include pairs (one per unique .proto)
+# and per-service namespace dispatch (each service has its own proto package).
+
+def _mp_qt_client_files(spec, services) -> Dict[str, str]:
+    """Emit a Qt-native client (Qt6::Grpc) for the multi_proto layout.
+
+    Same folder layout as single-service qt_client/ — same build scripts,
+    same WASM scripts — but N proto files and a multi-codegen CMakeLists.
+    """
+    files: Dict[str, str] = {}
+
+    # Per-service .proto files (verbatim if imported, generated otherwise).
+    # Dedup by filename so when multiple services share one .proto we only
+    # write it once.
+    seen_proto = set()
+    for svc in services:
+        proto_filename = _mp_proto_filename(svc)
+        if proto_filename in seen_proto:
+            continue
+        seen_proto.add(proto_filename)
+        files[f"qt_client/proto/{proto_filename}"] = svc.proto_content or _mp_gen_proto(svc)
+
+    files["qt_client/CMakeLists.txt"]      = _mp_qt_client_cmake(spec, services)
+    files["qt_client/src/main.cpp"]        = _qt_client_main_cpp(spec)
+    files["qt_client/src/MainWindow.h"]    = _qt_client_mainwindow_h()
+    files["qt_client/src/MainWindow.cpp"]  = _mp_qt_client_mainwindow_cpp(spec, services)
+    files["qt_client/src/MainWindow.ui"]   = _qt_client_mainwindow_ui(spec)
+    # Reuse the shared build / serve scripts unchanged — they don't care
+    # how many .proto files the project has.
+    files["qt_client/build_qt.bat"]        = _qt_client_build_bat(spec)
+    files["qt_client/build_qt.sh"]         = _qt_client_build_sh(spec)
+    files["qt_client/build_deploy_qt.bat"] = _qt_client_build_deploy_bat(spec)
+    files["qt_client/build_deploy_qt.sh"]  = _qt_client_build_deploy_sh(spec)
+    files["qt_client/build_wasm.bat"]      = _qt_client_build_wasm_bat(spec)
+    files["qt_client/build_wasm.sh"]       = _qt_client_build_wasm_sh(spec)
+    files["qt_client/serve_wasm.py"]       = _qt_client_serve_wasm_py()
+    files["qt_client/serve_wasm.bat"]      = _qt_client_serve_wasm_bat()
+    files["qt_client/serve_wasm.sh"]       = _qt_client_serve_wasm_sh()
+    files["qt_client/proto/generate_qt_stubs.bat"] = _mp_qt_client_gen_stubs_bat(spec, services)
+    files["qt_client/proto/generate_qt_stubs.sh"]  = _mp_qt_client_gen_stubs_sh(spec, services)
+    files["qt_client/README.md"]           = _qt_client_readme(spec, services)
+    return files
+
+
+def _mp_qt_client_cmake(spec, services) -> str:
+    """qt_client/CMakeLists.txt for the multi_proto layout: PROTO_FILES
+    lists every distinct .proto under qt_client/proto/."""
+    seen = set()
+    proto_lines = []
+    for svc in services:
+        fn = _mp_proto_filename(svc)
+        if fn in seen:
+            continue
+        seen.add(fn)
+        proto_lines.append(f"        proto/{fn}")
+    proto_files_block = "\n".join(proto_lines) if proto_lines else "        # no .proto files"
+
+    return load_template(
+        "cpp/qt_client/CMakeLists.txt.tmpl",
+        project=f"{spec.service_name}QtClient",
+        version=spec.version,
+        snake_name=spec.snake_name,
+        proto_files_block=proto_files_block,
+        deploy_runtime_block=_MB_DEPLOY_RUNTIME_BLOCK,
+    )
+
+
+def _mp_qt_client_mainwindow_cpp(spec, services) -> str:
+    """MainWindow.cpp for multi_proto qt_client/: N include pairs (one per
+    unique .proto) and per-service namespace dispatch (each service has its
+    own proto package, e.g. ``power.v1`` vs ``com.v1``)."""
+    sn = spec.snake_name
+
+    # N include pairs, deduped by proto basename.
+    seen_basename = set()
+    include_lines = []
+    for svc in services:
+        basename = _mp_proto_basename(svc)
+        if basename in seen_basename:
+            continue
+        seen_basename.add(basename)
+        include_lines.append(f'#include "{basename}.qpb.h"')
+        include_lines.append(f'#include "{basename}_client.grpc.qpb.h"')
+    proto_includes_block = "\n".join(include_lines)
+
+    # Per-service entries with their own namespace.
+    entries = []
+    for s in services:
+        ns_s = _mp_proto_namespace(s)
+        entries.append((s.name, f"{ns_s}::{s.name}",
+                        _mono_snake(s.name), s.methods))
+
+    accessors = []
+    for _, class_, snake, _methods in entries:
+        accessors.append(
+            f"{class_}::Client& {snake}_client() {{ static {class_}::Client c; return c; }}")
+    accessors_block = "\n".join(accessors)
+
+    attach_lines = "\n        ".join(
+        f"{snake}_client().attachChannel(m_channel);"
+        for _, _, snake, _ in entries
+    )
+
+    dispatch_blocks = []
+    for display, class_, snake, methods in entries:
+        method_labels = ", ".join(f'"{m.name}"' for m in methods)
+        dispatch_blocks.append(
+            f'    m_serviceList << "{display}";\n'
+            f'    m_methodsByService["{display}"] = {{ {method_labels} }};')
+        # Use the per-service namespace, not a project-wide one.
+        ns_s = _mp_proto_namespace(next(s for s in services if s.name == display))
+        for m in methods:
+            inT  = ("::" + m.input_type.replace(".", "::"))  if m.input_type  else f"{ns_s}::{m.name}Request"
+            outT = ("::" + m.output_type.replace(".", "::")) if m.output_type else f"{ns_s}::{m.name}Response"
+            if m.server_streaming:
+                dispatch_blocks.append(
+                    f'    m_dispatch.insert("{display}.{m.name}",\n'
+                    f'        [](const QByteArray&, DoneFn d) {{\n'
+                    f'            d(false, "{m.name}: streaming RPCs not supported by JSON UI client.");\n'
+                    f'        }});')
+            else:
+                dispatch_blocks.append(
+                    f'    m_dispatch.insert("{display}.{m.name}",\n'
+                    f'        [this](const QByteArray& j, DoneFn d) {{\n'
+                    f'            invokeRpc<{inT}, {outT}>(j, d,\n'
+                    f'                [](const {inT}& r) {{ return {snake}_client().{m.name}(r); }});\n'
+                    f'        }});')
+    dispatch_body = "\n\n".join(dispatch_blocks)
+
+    return load_template(
+        "cpp/qt_client/MainWindow.cpp.tmpl",
+        snake_name=sn,
+        proto_includes_block=proto_includes_block,
+        accessors_block=accessors_block,
+        attach_lines=attach_lines,
+        dispatch_body=dispatch_body,
+    )
+
+
+def _mp_qt_client_gen_stubs_bat(spec, services) -> str:
+    """Multi-proto variant of generate_qt_stubs.bat — runs protoc on every
+    distinct .proto under qt_client/proto/ rather than a single one named
+    after spec.snake_name."""
+    return load_template(
+        "cpp/qt_client/generate_qt_stubs.bat.tmpl",
+        snake_name=spec.snake_name,
+    )
+
+
+def _mp_qt_client_gen_stubs_sh(spec, services) -> str:
+    return load_template(
+        "cpp/qt_client/generate_qt_stubs.sh.tmpl",
+        snake_name=spec.snake_name,
+    )
 
 
 # -------- Per-service .proto generator (multi_proto fallback) --------
@@ -2696,6 +2864,17 @@ def _qt_client_files(spec, services) -> Dict[str, str]:
     # across Windows machines without a Qt install on the target.
     files["qt_client/build_deploy_qt.bat"]  = _qt_client_build_deploy_bat(spec)
     files["qt_client/build_deploy_qt.sh"]   = _qt_client_build_deploy_sh(spec)
+    # WebAssembly build (multi-threaded Qt WASM kit) + dev server with
+    # COOP/COEP headers required for SharedArrayBuffer.  CMakeLists.txt
+    # is the same — qt_add_executable produces a .wasm + .html when the
+    # Emscripten toolchain is in effect.  See README.md "Build for
+    # WebAssembly" for the runtime caveat about QGrpcHttp2Channel
+    # needing a gRPC-Web bridge.
+    files["qt_client/build_wasm.bat"]       = _qt_client_build_wasm_bat(spec)
+    files["qt_client/build_wasm.sh"]        = _qt_client_build_wasm_sh(spec)
+    files["qt_client/serve_wasm.py"]        = _qt_client_serve_wasm_py()
+    files["qt_client/serve_wasm.bat"]       = _qt_client_serve_wasm_bat()
+    files["qt_client/serve_wasm.sh"]        = _qt_client_serve_wasm_sh()
     # One-shot pre-generation of Qt-style stubs into proto/ — same
     # protoc command CMake runs at build time, just standalone.
     files["qt_client/proto/generate_qt_stubs.bat"] = _qt_client_gen_stubs_bat(spec)
@@ -2705,11 +2884,16 @@ def _qt_client_files(spec, services) -> Dict[str, str]:
 
 
 def _qt_client_cmake(spec, services) -> str:
+    # Single-service / monorepo: one shared proto named after spec.snake_name.
+    # Multi-proto callers go through _mp_qt_client_cmake which builds the
+    # PROTO_FILES list from N per-service protos instead.
+    proto_files_block = f"        proto/{spec.snake_name}.proto"
     return load_template(
         "cpp/qt_client/CMakeLists.txt.tmpl",
         project=f"{spec.service_name}QtClient",
         version=spec.version,
         snake_name=spec.snake_name,
+        proto_files_block=proto_files_block,
         deploy_runtime_block=_MB_DEPLOY_RUNTIME_BLOCK,
     )
 
@@ -2787,9 +2971,17 @@ def _qt_client_mainwindow_cpp(spec, services) -> str:
                     f'        }});')
     dispatch_body = "\n\n".join(dispatch_blocks)
 
+    # Single-service / monorepo: one shared proto generates one (.qpb.h,
+    # _client.grpc.qpb.h) pair.  Multi-proto callers go through
+    # _mp_qt_client_mainwindow_cpp which builds N include pairs instead.
+    proto_includes_block = (
+        f'#include "{sn}.qpb.h"\n'
+        f'#include "{sn}_client.grpc.qpb.h"'
+    )
     return load_template(
         "cpp/qt_client/MainWindow.cpp.tmpl",
         snake_name=sn,
+        proto_includes_block=proto_includes_block,
         accessors_block=accessors_block,
         attach_lines=attach_lines,
         dispatch_body=dispatch_body,
@@ -2822,6 +3014,33 @@ def _qt_client_build_deploy_sh(spec) -> str:
         "cpp/qt_client/build_deploy_qt.sh.tmpl",
         snake_name=spec.snake_name,
     )
+
+
+def _qt_client_build_wasm_bat(spec) -> str:
+    return load_template(
+        "cpp/qt_client/build_wasm.bat.tmpl",
+        snake_name=spec.snake_name,
+    )
+
+
+def _qt_client_build_wasm_sh(spec) -> str:
+    return load_template(
+        "cpp/qt_client/build_wasm.sh.tmpl",
+        snake_name=spec.snake_name,
+    )
+
+
+def _qt_client_serve_wasm_py() -> str:
+    # No substitutions — load_raw so future literal "@@" (none today) wouldn't break.
+    return load_raw("cpp/qt_client/serve_wasm.py.tmpl")
+
+
+def _qt_client_serve_wasm_bat() -> str:
+    return load_raw("cpp/qt_client/serve_wasm.bat.tmpl")
+
+
+def _qt_client_serve_wasm_sh() -> str:
+    return load_raw("cpp/qt_client/serve_wasm.sh.tmpl")
 
 
 def _qt_client_gen_stubs_bat(spec) -> str:

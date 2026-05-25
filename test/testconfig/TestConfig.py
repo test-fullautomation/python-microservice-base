@@ -305,3 +305,45 @@ dictUsecase['EXPECTEDRETURN']    = "OK: empty service_name produces malformed pa
 listofdictUsecases.append(dictUsecase)
 del dictUsecase
 # --------------------------------------------------------------------------------------------------------------
+dictUsecase = {}
+dictUsecase['TESTID']            = "MSB_0019"
+dictUsecase['DESCRIPTION']       = "C++ multi_proto + Qt6::Grpc client emits qt_client/ with multi-proto-aware CMakeLists + MainWindow.cpp + WASM scripts"
+dictUsecase['EXPECTATION']       = "qt_client/ folder is generated with PROTO_FILES listing all .proto files, MainWindow.cpp with N include pairs + per-service namespace dispatch, and build_wasm + serve_wasm helpers"
+dictUsecase['SECTION']           = "ScaffoldGenerator_Cpp"
+dictUsecase['SUBSECTION']        = "GOODCASE"
+dictUsecase['HINT']              = "L1 static check — no compiler needed"
+dictUsecase['COMMENT']           = "Regression guard for multi_proto + client_grpc_kind=qt wiring (previously the qt branch was missing from generate_multi_proto)"
+dictUsecase['TESTFILE']          = r"MSB_0019.py"
+dictUsecase['EXPECTEDEXCEPTION'] = None
+dictUsecase['EXPECTEDRETURN']    = "OK: qt_client/ emitted 19 files; multi-proto CMakeLists + N include pairs + per-service namespaces + WASM scripts verified"
+listofdictUsecases.append(dictUsecase)
+del dictUsecase
+# --------------------------------------------------------------------------------------------------------------
+dictUsecase = {}
+dictUsecase['TESTID']            = "MSB_0020"
+dictUsecase['DESCRIPTION']       = "LocalProtoClient._is_excluded prunes build / vcpkg_installed / vendor dirs"
+dictUsecase['EXPECTATION']       = "Recursive .proto glob keeps real service protos, excludes vcpkg_installed/google/protobuf duplicates + build-*/build_/_legacy/node_modules/.git/__pycache__ artefacts"
+dictUsecase['SECTION']           = "ScaffoldGenerator_Cpp"
+dictUsecase['SUBSECTION']        = "GOODCASE"
+dictUsecase['HINT']              = "L1 unit check — no compiler / network needed"
+dictUsecase['COMMENT']           = "Regression guard for GUI 'no reflection + provide a .proto folder' flow (previously protoc exited 1 because duplicated google.protobuf.* schemas from multiple build dirs were globbed in)"
+dictUsecase['TESTFILE']          = r"MSB_0020.py"
+dictUsecase['EXPECTEDEXCEPTION'] = None
+dictUsecase['EXPECTEDRETURN']    = "OK: _is_excluded correctly kept 4 real-proto paths and excluded 11 build/vendor paths"
+listofdictUsecases.append(dictUsecase)
+del dictUsecase
+# --------------------------------------------------------------------------------------------------------------
+dictUsecase = {}
+dictUsecase['TESTID']            = "MSB_0021"
+dictUsecase['DESCRIPTION']       = "robot_tmpl emits one .resource per service with prefixed keywords + conn_name-first args + no collisions on Connect/underscore RPC names"
+dictUsecase['EXPECTATION']       = "Per-service .resource with QConnectBase Library import, Open/Close Connection helpers (renamed to avoid colliding with proto-defined Connect()/Disconnect() RPCs), prefixed keyword names ('<Service> <Method>'), ${conn_name} as first positional arg, no-arg RPCs skip the args-dict scaffolding, and single-space-only keyword headers (regression: underscore + camelCase used to produce double-space names that Robot's parser truncates)"
+dictUsecase['SECTION']           = "ScaffoldGenerator_Cpp"
+dictUsecase['SUBSECTION']        = "GOODCASE"
+dictUsecase['HINT']              = "L1 unit check — uses grpc_tools to compile a synthetic .proto with `Connect` and `Get_SubItem_ID` methods that trigger both regressions, then asserts the emitted Robot resource shape"
+dictUsecase['COMMENT']           = "Locks in the Robot resource generator (see MicroserviceBase/adapters/scaffold/robot_tmpl.py + MicroserviceBase/tools/robot_gen.py). Two regressions guarded: (1) Connect/Disconnect helpers colliding with same-named RPCs; (2) GetThing_NestedName producing 'Get Thing  Nested Name' (double space) which Robot truncates"
+dictUsecase['TESTFILE']          = r"MSB_0021.py"
+dictUsecase['EXPECTEDEXCEPTION'] = None
+dictUsecase['EXPECTEDRETURN']    = "OK: 2 resources emitted; Calculator has 6 keywords, Echo has 3 keywords; prefixed names + conn_name-first + Open/Close Connection helpers + no Connect/underscore collisions verified"
+listofdictUsecases.append(dictUsecase)
+del dictUsecase
+# --------------------------------------------------------------------------------------------------------------

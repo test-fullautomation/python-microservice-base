@@ -94,3 +94,36 @@ class Test_ScaffoldGenerator_Cpp_GOODCASE:
       nReturn = CExecute.Execute("MSB_0016")
       assert nReturn == 0
 # --------------------------------------------------------------------------------------------------------------
+   # (L1 static check, C++ multi_proto + Qt6::Grpc client)
+   # Expected: qt_client/ emitted with multi-proto-aware CMakeLists (PROTO_FILES
+   # lists all N protos), MainWindow.cpp with N #include pairs + per-service
+   # namespace dispatch, and WASM build/serve scripts.
+   @pytest.mark.parametrize(
+      "Description", ["C++ multi_proto + Qt6::Grpc client emits multi-proto-aware qt_client/ + WASM scripts",]
+   )
+   def test_MSB_0019(self, Description):
+      nReturn = CExecute.Execute("MSB_0019")
+      assert nReturn == 0
+# --------------------------------------------------------------------------------------------------------------
+   # (L1 unit check, LocalProtoClient exclusion logic)
+   # Expected: build / vcpkg_installed / vendor dirs are pruned so a recursive
+   # .proto glob never feeds duplicate google.protobuf.* schemas to protoc.
+   @pytest.mark.parametrize(
+      "Description", ["LocalProtoClient._is_excluded prunes build / vcpkg_installed / vendor dirs",]
+   )
+   def test_MSB_0020(self, Description):
+      nReturn = CExecute.Execute("MSB_0020")
+      assert nReturn == 0
+# --------------------------------------------------------------------------------------------------------------
+   # (L1 unit check, Robot Framework resource generator)
+   # Expected: robot_tmpl.generate_robot_resources emits one .resource per
+   # service with QConnectBase Library import, Connect/Disconnect helpers,
+   # prefixed keyword names ("<Service> <Method>") and ${conn_name} as the
+   # first positional arg on every keyword.
+   @pytest.mark.parametrize(
+      "Description", ["robot_tmpl emits one .resource per service with prefixed keywords + conn_name-first args",]
+   )
+   def test_MSB_0021(self, Description):
+      nReturn = CExecute.Execute("MSB_0021")
+      assert nReturn == 0
+# --------------------------------------------------------------------------------------------------------------

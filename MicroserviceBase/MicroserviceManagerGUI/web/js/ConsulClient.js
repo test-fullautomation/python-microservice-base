@@ -30,16 +30,31 @@
     if (body !== undefined) {
       opts.body = JSON.stringify(body);
     }
-    return fetch(_bridgeOrigin() + path, opts).then(function (res) {
-      return res.json().then(function (data) {
-        if (!res.ok) {
-          var err = new Error(data.error || data.detail || 'Consul API error ' + res.status);
-          err.status = res.status;
-          throw err;
+    var url = _bridgeOrigin() + path;
+    return fetch(url, opts)
+      .catch(function (err) {
+        // TypeError from fetch == network-level failure (bridge not running,
+        // CORS rejection, DNS).  Rewrite the cryptic "Failed to fetch" into
+        // an actionable message that points at the most common cause.
+        if (err instanceof TypeError) {
+          var msg = 'Bridge not running on ' + _bridgeOrigin() +
+                    ' — click Start Bridge (top-right LED).';
+          var e = new Error(msg);
+          e.cause = 'bridge_down';
+          throw e;
         }
-        return data;
+        throw err;
+      })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) {
+            var err = new Error(data.error || data.detail || 'Consul API error ' + res.status);
+            err.status = res.status;
+            throw err;
+          }
+          return data;
+        });
       });
-    });
   }
 
   function _consulQ(consulUrl) {

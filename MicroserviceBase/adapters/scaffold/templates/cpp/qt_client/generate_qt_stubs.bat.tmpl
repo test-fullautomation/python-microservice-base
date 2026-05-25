@@ -1,10 +1,11 @@
 @echo off
-:: Pre-generate Qt6::Protobuf + Qt6::Grpc client stubs from
-:: @@{snake_name}.proto into THIS folder.
+:: Pre-generate Qt6::Protobuf + Qt6::Grpc client stubs from every
+:: .proto file in THIS folder.  Output lands next to the source .proto
+:: (one .qpb.h/.cpp + one _client.grpc.qpb.h/.cpp per service).
 ::
-:: Output:
-::   @@{snake_name}.qpb.h / .cpp
-::   @@{snake_name}_client.grpc.qpb.h / .cpp
+:: This is a one-shot helper.  The CMake build runs the same protoc
+:: invocations via qt_add_protobuf / qt_add_grpc, so you only need this
+:: if you want browseable stubs in the proto/ folder alongside the .proto.
 ::
 :: Honoured env vars:
 ::   QT_DIR       Qt install prefix.  Default: C:\Qt\6.11.0\mingw_64
@@ -39,20 +40,30 @@ echo   qtgrpcgen     = %QTGRPC_PLUGIN%
 echo   PROTO_DIR     = %PROTO_DIR%
 echo.
 
-"%PROTOC%" ^
-    --plugin=protoc-gen-qtprotobuf="%QTPB_PLUGIN%" ^
-    --qtprotobuf_out="%PROTO_DIR%" ^
-    --proto_path="%PROTO_DIR%" ^
-    "%PROTO_DIR%\@@{snake_name}.proto"
-if errorlevel 1 ( echo Qt Protobuf generation failed. & exit /b 1 )
+set "_any="
+for %%P in ("%PROTO_DIR%\*.proto") do (
+    set "_any=1"
+    echo Generating stubs for %%~nxP
+    "%PROTOC%" ^
+        --plugin=protoc-gen-qtprotobuf="%QTPB_PLUGIN%" ^
+        --qtprotobuf_out="%PROTO_DIR%" ^
+        --proto_path="%PROTO_DIR%" ^
+        "%%P"
+    if errorlevel 1 ( echo Qt Protobuf generation failed for %%~nxP. & exit /b 1 )
 
-"%PROTOC%" ^
-    --plugin=protoc-gen-qtgrpc="%QTGRPC_PLUGIN%" ^
-    --qtgrpc_opt=GENERATE_PACKAGE_SUBFOLDERS=false ^
-    --qtgrpc_out="%PROTO_DIR%" ^
-    --proto_path="%PROTO_DIR%" ^
-    "%PROTO_DIR%\@@{snake_name}.proto"
-if errorlevel 1 ( echo Qt GRPC generation failed. & exit /b 1 )
+    "%PROTOC%" ^
+        --plugin=protoc-gen-qtgrpc="%QTGRPC_PLUGIN%" ^
+        --qtgrpc_opt=GENERATE_PACKAGE_SUBFOLDERS=false ^
+        --qtgrpc_out="%PROTO_DIR%" ^
+        --proto_path="%PROTO_DIR%" ^
+        "%%P"
+    if errorlevel 1 ( echo Qt GRPC generation failed for %%~nxP. & exit /b 1 )
+)
+
+if not defined _any (
+    echo WARN: no .proto files found in %PROTO_DIR%
+    exit /b 1
+)
 
 echo.
 echo Qt stubs generated in %PROTO_DIR%

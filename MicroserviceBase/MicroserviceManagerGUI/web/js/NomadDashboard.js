@@ -304,7 +304,8 @@
             _waitAndConnect(url, startBtn);
           })
           .catch(function (err) {
-            MM.showToast('Nomad', 'Start failed: ' + err.message, 'danger');
+            var level = (err && err.cause === 'bridge_down') ? 'warning' : 'danger';
+            MM.showToast('Nomad', 'Start failed: ' + err.message, level);
             startBtn.disabled = false;
             startBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Start Agent';
           });

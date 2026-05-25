@@ -161,6 +161,16 @@ ipcMain.handle('show-open-dialog', async (_event, options) => {
   return { filePaths: result.filePaths || [] };
 });
 
+// IPC handler for native message box (alert / confirm replacement).
+// Electron disables the blocking renderer prompt() / confirm() / alert();
+// renderer code that needs a yes/no must invoke this instead.
+// Pass standard Electron options: { type, title, message, detail, buttons,
+// defaultId, cancelId, ... } — return shape is { response, checkboxChecked }.
+ipcMain.handle('show-message-box', async (_event, options) => {
+  const win = BrowserWindow.getAllWindows()[0] || null;
+  return await dialog.showMessageBox(win, options || {});
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

@@ -41,6 +41,25 @@ The 4-step wizard for generating new service scaffolds (proto + domain
 
 10 screenshots covering each step + the generated file tree.
 
+### [Generate Robot Framework resources](robot_generator.md)
+
+Turn a folder of `.proto` files into typed Robot Framework keyword
+libraries — one `.resource` per service, one keyword per RPC method —
+that wrap `QConnectBase.ConnectionManager` so tests don't have to
+hand-roll JSON `send_cmd` strings:
+
+- Output conventions (service-prefixed keyword names, `${conn_name}`
+  first, `Open/Close Connection` helpers chosen to avoid collisions
+  with proto-defined `Connect()` / `Disconnect()` RPCs)
+- GUI button location (methods panel toolbar + no-reflection
+  fallback card)
+- `python -m MicroserviceBase.tools.robot_gen` CLI (works without the
+  bridge — CI-friendly)
+- `POST /api/scaffold/robot` HTTP endpoint
+- Proto3 default-value-omission caveat + the bridge-side fix
+- Troubleshooting (Failed to fetch, "no .proto files matched", duplicate
+  keyword names — all the regressions previous users hit)
+
 ## Cross-references
 
 | When you need… | Go to |

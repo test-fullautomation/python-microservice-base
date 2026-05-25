@@ -5,8 +5,7 @@
 // qt_add_grpc(... CLIENT) (CMake) or proto/generate_qt_stubs.bat
 // (one-shot).  File names follow `<.proto stem>.qpb.h` and
 // `<stem>_client.grpc.qpb.h`.
-#include "@@{snake_name}.qpb.h"
-#include "@@{snake_name}_client.grpc.qpb.h"
+@@{proto_includes_block}
 
 // Qt 6.8+: the URL goes directly to QGrpcHttp2Channel's ctor;
 // QGrpcChannelOptions is no longer the URL container — it just carries

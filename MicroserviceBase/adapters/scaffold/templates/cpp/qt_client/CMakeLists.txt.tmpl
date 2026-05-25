@@ -104,13 +104,15 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 # outside CMake for one-shot pre-generation if you want to browse stubs
 # alongside the .proto source.
 qt_add_protobuf(@@{snake_name}_qt_gui
-    PROTO_FILES proto/@@{snake_name}.proto
+    PROTO_FILES
+@@{proto_files_block}
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qt_proto_gen")
 
 # Generate Qt-style gRPC client stubs (no SERVER variant — Qt 6 doesn't
 # provide one; the service is built with Google grpc++ separately).
 qt_add_grpc(@@{snake_name}_qt_gui CLIENT
-    PROTO_FILES proto/@@{snake_name}.proto
+    PROTO_FILES
+@@{proto_files_block}
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qt_proto_gen")
 
 target_include_directories(@@{snake_name}_qt_gui PRIVATE

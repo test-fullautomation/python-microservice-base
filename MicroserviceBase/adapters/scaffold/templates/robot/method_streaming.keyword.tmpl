@@ -1,0 +1,14 @@
+@@{service_name} @@{method_display}
+    [Documentation]    Call server-streaming @@{full_service_name}.@@{method_name}.
+    ...                @@{request_doc}
+    ...                Returns: list of @@{return_type} events
+    ...
+    ...                NOTE: server-streaming RPCs are surfaced as a single
+    ...                ``conn_manager.verify`` call.  QConnectBase's GrpcClient
+    ...                currently buffers the entire response stream into a list;
+    ...                long-running streams may block.  For incremental delivery
+    ...                use the lower-level ``wait_4_trace`` keyword directly.
+    [Arguments]    ${conn_name}@@{arg_signature}
+@@{arg_dict_build}    ${cmd}=    Evaluate    json.dumps({"method":"@@{method_name}","args":@@{args_var}})    json
+    ${res}=    conn_manager.verify    conn_name=${conn_name}    send_cmd=${cmd}
+    RETURN    ${res}

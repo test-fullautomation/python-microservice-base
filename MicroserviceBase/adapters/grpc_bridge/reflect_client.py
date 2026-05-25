@@ -33,6 +33,36 @@ from typing import Any, Dict, Iterable, List, Optional
 import grpc
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 from google.protobuf.json_format import MessageToDict, Parse, ParseError
+
+
+def _msg_to_dict(msg):
+    """Convert a protobuf message to a dict, **including** scalar fields
+    that hold their proto3 default value (0, false, "", …).
+
+    Stock ``MessageToDict`` omits default-valued scalars (proto3 has no
+    field presence for scalars), which surprises every caller who sees
+    e.g. a unary RPC response with ``errorcode=0`` come through as ``{}``
+    instead of ``{"errorcode": 0}``.  Robot tests asserting
+    ``${res}[errorcode]`` then fail with KeyError even though the wire
+    actually delivered a successful response.
+
+    Protobuf 5.27 renamed the opt-in flag from
+    ``including_default_value_fields`` to ``always_print_fields_with_no_presence``;
+    we try the new name first and fall back to the old.  Either kwarg
+    achieves the same on-the-wire-includes-default behaviour.
+    """
+    try:
+        return MessageToDict(
+            msg,
+            preserving_proto_field_name=True,
+            always_print_fields_with_no_presence=True,
+        )
+    except TypeError:
+        return MessageToDict(
+            msg,
+            preserving_proto_field_name=True,
+            including_default_value_fields=True,
+        )
 from grpc_reflection.v1alpha import reflection_pb2, reflection_pb2_grpc
 
 logger = logging.getLogger(__name__)
@@ -458,7 +488,7 @@ intentionally rejected here.
                 raise GrpcReflectError(self._fmt_rpc_err(exc)) from exc
             return {
                 "streaming": False,
-                "result": MessageToDict(resp, preserving_proto_field_name=True),
+                "result": _msg_to_dict(resp),
             }
 
         # ---- Server-streaming -------------------------------------------
@@ -475,7 +505,7 @@ intentionally rejected here.
         try:
             for item in stream:
                 events.append(
-                    MessageToDict(item, preserving_proto_field_name=True)
+                    _msg_to_dict(item)
                 )
                 if len(events) >= max_events:
                     truncated = True
@@ -573,11 +603,16 @@ class LocalProtoClient:
     def __init__(
         self,
         target: str,
-        proto_files: Iterable[str],
+        proto_files: Iterable[str] = (),
         *,
         include_paths: Optional[Iterable[str]] = None,
+        proto_dir: Optional[str] = None,
         timeout: float = 5.0,
     ) -> None:
+        # ``proto_dir`` is the QConnectBase-compatibility shape: a single
+        # directory to glob ``**/*.proto`` from.  Equivalent to calling
+        # :meth:`from_search_paths` with one search path; we inline the
+        # glob here so callers can use either keyword.
         self._target = target
         self._timeout = timeout
         self._channel = grpc.insecure_channel(target)
@@ -586,15 +621,66 @@ class LocalProtoClient:
         self._proto_sources: List[str] = list(proto_files)
         self._include_paths: List[str] = list(include_paths or [])
 
+        if proto_dir:
+            root = os.path.abspath(proto_dir)
+            if not os.path.isdir(root):
+                raise GrpcReflectError(
+                    f"proto_dir does not exist or is not a directory: {root}"
+                )
+            self._include_paths.append(root)
+            for path in glob.glob(
+                os.path.join(root, "**", "*.proto"), recursive=True
+            ):
+                self._proto_sources.append(os.path.abspath(path))
+
         if not self._proto_sources:
             raise GrpcReflectError(
-                "LocalProtoClient needs at least one .proto file"
+                "LocalProtoClient needs at least one .proto file "
+                "(pass proto_files=[...] or proto_dir=<path>)"
             )
+        # De-dup while preserving order.
+        seen: set[str] = set()
+        self._proto_sources = [
+            p for p in self._proto_sources
+            if not (p in seen or seen.add(p))
+        ]
         self._compile_and_load()
 
     # ------------------------------------------------------------------
     # Construction helpers
     # ------------------------------------------------------------------
+
+    # Path-fragments to skip when recursively globbing for .proto files.
+    # These are conventionally compile / vendor / generated-copy directories
+    # that almost always contain re-distributed copies of the same protos
+    # (especially Google's well-known types like ``any.proto``,
+    # ``timestamp.proto``).  Feeding duplicates to protoc makes it abort
+    # with ``<file> is already defined in <other-file>`` (exit code 1),
+    # which is what the GUI surfaces as ``protoc returned exit code 1
+    # for sources [<huge list>]``.
+    _EXCLUDE_FRAGMENTS = (
+        os.sep + "build" + os.sep,
+        os.sep + "vcpkg_installed" + os.sep,
+        os.sep + "node_modules" + os.sep,
+        os.sep + "_legacy" + os.sep,
+        os.sep + "__pycache__" + os.sep,
+        os.sep + ".git" + os.sep,
+    )
+    # Also exclude directories whose name STARTS with "build" (e.g.
+    # ``build-qt-vcpkg``, ``build-wasm``, ``build-msys2``) — common
+    # output dirs from the scaffold's build scripts.
+    _EXCLUDE_DIR_PREFIXES = ("build-", "build_")
+
+    @classmethod
+    def _is_excluded(cls, abs_path: str) -> bool:
+        norm = abs_path.replace("/", os.sep)
+        if any(frag in norm for frag in cls._EXCLUDE_FRAGMENTS):
+            return True
+        # Walk each path segment to see if it starts with an excluded prefix.
+        for seg in norm.split(os.sep):
+            if any(seg.startswith(p) for p in cls._EXCLUDE_DIR_PREFIXES):
+                return True
+        return False
 
     @classmethod
     def from_search_paths(
@@ -609,6 +695,11 @@ class LocalProtoClient:
         Empty/missing dirs are silently skipped.  Each search path is also
         added as a protoc ``-I`` include path so cross-file imports
         resolve.
+
+        Sub-directories matching :attr:`_EXCLUDE_FRAGMENTS` (``build/``,
+        ``vcpkg_installed/``, ``node_modules/``, …) are pruned so the
+        glob doesn't pick up vendor copies of well-known types or
+        duplicated stubs that would break ``protoc``.
         """
         files: List[str] = []
         includes: List[str] = []
@@ -620,11 +711,15 @@ class LocalProtoClient:
             for path in glob.glob(
                 os.path.join(root, "**", "*.proto"), recursive=True
             ):
-                files.append(os.path.abspath(path))
+                abs_path = os.path.abspath(path)
+                if cls._is_excluded(abs_path):
+                    continue
+                files.append(abs_path)
         if not files:
             raise GrpcReflectError(
                 "No .proto files found under search paths: "
                 + ", ".join(search_paths)
+                + " (build/ and vcpkg_installed/ subdirs are excluded)"
             )
         # De-dup while preserving order.
         seen: set[str] = set()
@@ -870,7 +965,7 @@ def _invoke_method(
             ) from exc
         return {
             "streaming": False,
-            "result": MessageToDict(resp, preserving_proto_field_name=True),
+            "result": _msg_to_dict(resp),
         }
 
     call = channel.unary_stream(
@@ -886,7 +981,7 @@ def _invoke_method(
     try:
         for item in stream:
             events.append(
-                MessageToDict(item, preserving_proto_field_name=True)
+                _msg_to_dict(item)
             )
             if len(events) >= max_events:
                 truncated = True

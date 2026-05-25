@@ -1,0 +1,8 @@
+@@{service_name} @@{method_display}
+    [Documentation]    Call @@{full_service_name}.@@{method_name}.
+    ...                @@{request_doc}
+    ...                Returns: @@{return_type}
+    [Arguments]    ${conn_name}@@{arg_signature}
+@@{arg_dict_build}    ${cmd}=    Evaluate    json.dumps({"method":"@@{method_name}","args":@@{args_var}})    json
+    ${res}=    conn_manager.verify    conn_name=${conn_name}    send_cmd=${cmd}
+    RETURN    ${res}

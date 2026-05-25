@@ -1679,7 +1679,13 @@
     // sees the spinner immediately even on slow Consul lookups.
     var bridgeOrigin = (MM.serviceClient && MM.serviceClient.apiUrl) || window.location.origin;
 
-    MM.grpcClient.getServiceMethods(serviceInfo.name, serviceInfo.consulUrl)
+    // Forward the stored proto path so the Helper benefits from the same
+    // fallback the main methods panel uses.  Without this, a server
+    // without grpc++_reflection always lands in the "Reflection failed
+    // … search paths (<empty>)" error path even when the user has
+    // already typed a folder for the main panel.
+    var helperProtoPath = _getStoredProtoPath(serviceInfo.name);
+    MM.grpcClient.getServiceMethods(serviceInfo.name, serviceInfo.consulUrl, helperProtoPath)
       .then(function (refl) {
         if (refl.error && (!refl.grpc_services || !refl.grpc_services.length)) {
           // Bridge couldn't talk to the service at all \u2014 show the error and
@@ -2466,11 +2472,21 @@
       (current ? '' : ' disabled') + '>' +
       '        Clear' +
       '      </button>' +
+      '      <button class="btn btn-outline-success" id="grpcProtoGenRobot" type="button"' +
+      '              title="Generate Robot Framework resource files (one per service) from this .proto folder">' +
+      '        <i class="bi bi-file-earmark-code me-1"></i>Generate Robot resources' +
+      '      </button>' +
       '    </div>' +
       '    <p class="small text-muted mt-2 mb-0">' +
       '      Tip: a permanent fix is either rebuilding the server with ' +
       '      <code>grpc++_reflection</code> linked, or setting ' +
       '      <code>MB_PROTO_SEARCH_PATH</code> in the bridge environment.' +
+      '      <br>' +
+      '      <i class="bi bi-info-circle me-1"></i>' +
+      '      <em>Generate Robot resources</em>: emits one ' +
+      '      <code>.resource</code> file per service into a folder you pick &mdash; ' +
+      '      each contains typed Robot keywords (one per RPC) that wrap ' +
+      '      <code>QConnectBase.ConnectionManager</code>.' +
       '    </p>' +
       '  </div>' +
       '</div>';
@@ -2520,6 +2536,143 @@
         submit('');
       });
     }
+
+    var genRobot = document.getElementById('grpcProtoGenRobot');
+    if (genRobot) {
+      genRobot.addEventListener('click', function () {
+        _runRobotGen(input.value.trim(), genRobot);
+      });
+    }
+  }
+
+  // Shared by both entry points (fallback-card button + methods-panel
+  // toolbar button).  Uses Electron's native dialogs when available —
+  // renderer-side window.prompt() / window.confirm() are disabled by
+  // default in Electron (they return null/false silently with no UI),
+  // which is exactly the "I click but nothing happens" failure mode.
+  // Falls back to the browser dialogs in non-Electron mode.
+  function _runRobotGen(protoDir, btn) {
+    var isElectron = !!(window.electronAPI && window.electronAPI.showOpenDialog);
+
+    function pickProtoDir() {
+      if (protoDir) return Promise.resolve(protoDir);
+      if (isElectron) {
+        return window.electronAPI.showOpenDialog({
+          title: 'Pick the .proto folder to scan',
+          properties: ['openDirectory']
+        }).then(function (res) {
+          return ((res && res.filePaths && res.filePaths[0]) || '').trim();
+        });
+      }
+      return Promise.resolve((window.prompt(
+        'Proto folder to scan (one .resource per service will be emitted):',
+        ''
+      ) || '').trim());
+    }
+
+    function pickOutDir(resolvedProtoDir) {
+      var sep = resolvedProtoDir.indexOf('\\') >= 0 ? '\\' : '/';
+      var parts = resolvedProtoDir.split(sep);
+      if (parts[parts.length - 1].toLowerCase() === 'proto') parts.pop();
+      var suggested = parts.join(sep) + sep + 'robot';
+
+      if (isElectron) {
+        return window.electronAPI.showOpenDialog({
+          title: 'Pick the output folder for the .resource files',
+          defaultPath: suggested,
+          properties: ['openDirectory', 'createDirectory']
+        }).then(function (res) {
+          return ((res && res.filePaths && res.filePaths[0]) || '').trim();
+        });
+      }
+      return Promise.resolve((window.prompt(
+        'Output folder for the generated .resource files:\n' +
+        '(one .resource per service; existing files are skipped unless you confirm overwrite)',
+        suggested
+      ) || '').trim());
+    }
+
+    function confirmOverwrite(nSkipped, outDir) {
+      if (isElectron && window.electronAPI.showMessageBox) {
+        return window.electronAPI.showMessageBox({
+          type: 'question',
+          title: 'Files already exist',
+          message: nSkipped + ' .resource file(s) already exist in ' + outDir,
+          detail: 'Overwrite them with the freshly generated content?',
+          buttons: ['Overwrite', 'Cancel'],
+          defaultId: 1, cancelId: 1
+        }).then(function (res) { return (res && res.response === 0); });
+      }
+      return Promise.resolve(window.confirm(
+        nSkipped + ' file(s) already exist in ' + outDir + '.  Overwrite them?'));
+    }
+
+    // Resolve the bridge origin.  In Electron mode MM.serviceClient.apiUrl
+    // is `file://...` (truthy but unfetchable); fall back to localhost:<bridgePort>.
+    // Matches the pattern used by ServiceCreator / ConsulClient / etc.
+    var apiUrl = (MM.serviceClient && MM.serviceClient.apiUrl) || '';
+    if (!apiUrl || apiUrl === 'null' ||
+        apiUrl.indexOf('file:') === 0 ||
+        apiUrl.indexOf('http') !== 0) {
+      var settings2 = MM.getSettings ? MM.getSettings() : {};
+      var bridgePort = settings2.bridgePort || 1112;
+      apiUrl = 'http://localhost:' + bridgePort;
+    }
+    var bridgeOrigin = apiUrl;
+    var originalHtml = btn ? btn.innerHTML : null;
+
+    function send(resolvedProtoDir, outDir, forceFlag) {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML =
+          '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
+      }
+      return fetch(bridgeOrigin + '/api/scaffold/robot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proto_dir: resolvedProtoDir, out_dir: outDir, force: forceFlag
+        })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status !== 'ok') {
+            MM.showToast('Robot generator',
+              data.error || 'Generation failed.', 'danger');
+            return;
+          }
+          var nW = (data.written || []).length;
+          var nS = (data.skipped || []).length;
+          if (nS && !nW) {
+            return confirmOverwrite(nS, outDir).then(function (ok) {
+              if (ok) return send(resolvedProtoDir, outDir, true);
+              MM.showToast('Robot generator',
+                'No files written (existing files skipped).', 'warning');
+            });
+          }
+          var msg = 'Wrote ' + nW + ' .resource file(s) to ' + outDir +
+                    (nS ? ' (' + nS + ' skipped)' : '');
+          MM.showToast('Robot generator', msg, 'success');
+        })
+        .catch(function (err) {
+          MM.showToast('Robot generator',
+            'Failed: ' + (err.message || err), 'danger');
+        })
+        .finally(function () {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+          }
+        });
+    }
+
+    pickProtoDir().then(function (resolvedProtoDir) {
+      if (!resolvedProtoDir) return;
+      pickOutDir(resolvedProtoDir).then(function (outDir) {
+        if (!outDir) return;
+        send(resolvedProtoDir, outDir, false);
+      });
+    });
   }
 
   function _renderGrpcMethods(svc, data) {
@@ -2548,6 +2701,20 @@
     }
 
     var html = '';
+
+    // Always-visible toolbar — independent of whether methods were
+    // discovered via reflection or by compiling a local .proto folder.
+    // Lets users generate Robot resources at any time (the generator
+    // itself needs a proto folder; if svc.protoPath isn't set, the
+    // handler prompts for one).
+    html += '<div class="d-flex justify-content-end mb-2">' +
+            '  <button type="button" class="btn btn-sm btn-outline-success"' +
+            '          id="grpcGenRobotTop"' +
+            '          title="Generate one Robot Framework .resource file per service from a .proto folder. ' +
+            'Each resource exposes typed keywords (one per RPC) on top of QConnectBase.">' +
+            '    <i class="bi bi-file-earmark-code me-1"></i>Generate Robot resources' +
+            '  </button>' +
+            '</div>';
     // Banner when the bridge fell back to compiling local .proto files
     // because the server didn't ship gRPC reflection (e.g. vcpkg's grpc
     // port without the reflection feature).  Calls still work — the
@@ -2662,6 +2829,17 @@
     });
 
     target.innerHTML = html;
+
+    // Always-visible "Generate Robot resources" toolbar button.
+    // svc.protoPath (set when the user provided one via the fallback form
+    // or by an earlier successful run) is the default — if not set, the
+    // helper prompts for it interactively.
+    var genTop = document.getElementById('grpcGenRobotTop');
+    if (genTop) {
+      genTop.addEventListener('click', function () {
+        _runRobotGen(svc && svc.protoPath ? svc.protoPath : '', genTop);
+      });
+    }
 
     // "Override proto path" link in the local-proto fallback banner —
     // reveals the same form that appears on hard failures.

@@ -27,16 +27,27 @@
     if (body !== undefined) {
       opts.body = JSON.stringify(body);
     }
-    return fetch(_bridgeOrigin() + path, opts).then(function (res) {
-      return res.json().then(function (data) {
-        if (!res.ok) {
-          var err = new Error(data.error || data.detail || 'Nomad API error ' + res.status);
-          err.status = res.status;
-          throw err;
+    return fetch(_bridgeOrigin() + path, opts)
+      .catch(function (err) {
+        if (err instanceof TypeError) {
+          var msg = 'Bridge not running on ' + _bridgeOrigin() +
+                    ' — click Start Bridge (top-right LED).';
+          var e = new Error(msg);
+          e.cause = 'bridge_down';
+          throw e;
         }
-        return data;
+        throw err;
+      })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) {
+            var err = new Error(data.error || data.detail || 'Nomad API error ' + res.status);
+            err.status = res.status;
+            throw err;
+          }
+          return data;
+        });
       });
-    });
   }
 
   var nomadClient = {
