@@ -405,8 +405,13 @@
           _waitAndConnect(data.consul_url || ('http://127.0.0.1:' + httpPort), startBtn);
         })
         .catch(function (err) {
-          _showStartError('Start failed: ' + err.message, '');
-          MM.showToast('Consul', 'Start failed — see details above', 'danger');
+          if (err && err.cause === 'bridge_down') {
+            _showStartError(err.message, '');
+            MM.showToast('Consul', 'Bridge is down — start it first', 'warning');
+          } else {
+            _showStartError('Start failed: ' + err.message, '');
+            MM.showToast('Consul', 'Start failed — see details above', 'danger');
+          }
           startBtn.disabled = false;
           startBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Start Agent';
         });

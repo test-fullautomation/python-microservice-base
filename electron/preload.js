@@ -249,6 +249,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * Native message box.  Renderer's blocking alert()/confirm()/prompt()
+   * are disabled by default in Electron — anything that needs a yes/no
+   * round-trip goes through this.  Options mirror dialog.showMessageBox:
+   * { type, title, message, detail, buttons, defaultId, cancelId }
+   * @param {object} options
+   * @returns {Promise<{response:number,checkboxChecked?:boolean}>}
+   */
+  showMessageBox: (options) => {
+    return ipcRenderer.invoke('show-message-box', options || {});
+  },
+
+  /**
    * Check if a folder exists.
    * @param {string} folderPath - Path to check (relative to web/).
    * @returns {Promise<boolean>}

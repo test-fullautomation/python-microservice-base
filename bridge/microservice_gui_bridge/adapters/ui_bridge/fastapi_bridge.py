@@ -1911,16 +1911,32 @@ Forward a request to the FleetWebAPI.
 
       def _proto_search_paths(extra: list = None) -> list:
          """Resolve the search paths used to find .proto files when the
-         server doesn't ship reflection.  Order: caller-supplied *extra*
-         paths first (highest priority — typically a user-typed override
-         from the GUI), then ``MB_PROTO_SEARCH_PATH`` env var
-         (semicolon-separated), then a few sensible defaults."""
+         server doesn't ship reflection.
+
+         When *extra* contains any non-empty path (typically a user-typed
+         override from the GUI), those paths are returned **exclusively** —
+         the env var ``MB_PROTO_SEARCH_PATH`` and the built-in
+         ``examples/`` / ``SampleServices/`` fallbacks are skipped.
+         Reason: when the user has explicitly picked a folder, mixing in
+         broad fallbacks invites protoc to slurp in build artefacts
+         (``build/vcpkg_installed/.../google/protobuf/any.proto`` and
+         friends) where the same well-known type is declared in multiple
+         dirs, which protoc rejects with exit code 1.
+
+         When *extra* is empty, we fall back to env var + defaults — the
+         unconfigured discovery path for users who haven't picked a
+         folder yet.
+         """
          import os
-         paths = []
+         explicit = []
          for p in (extra or []):
             p = (p or "").strip()
-            if p and p not in paths:
-               paths.append(p)
+            if p and p not in explicit:
+               explicit.append(p)
+         if explicit:
+            return explicit
+
+         paths = []
          raw = os.environ.get("MB_PROTO_SEARCH_PATH", "")
          for p in raw.split(os.pathsep):
             p = (p or "").strip()
@@ -2683,6 +2699,54 @@ Generate scaffolding for a new microservice project.
             "services": services,
             "warnings": warnings,
          }
+
+      class GenerateRobotResourcesRequest(BaseModel):
+         proto_dir: str
+         out_dir: str = ""              # empty = caller writes the files
+         services: list = []            # empty = all
+         force: bool = False            # overwrite existing files in out_dir
+
+      @app.post("/api/scaffold/robot")
+      def scaffold_generate_robot(body: GenerateRobotResourcesRequest):
+         """Generate Robot Framework resource files from a .proto folder.
+
+         When ``out_dir`` is non-empty, writes the resources to disk and
+         returns ``{written, skipped}`` lists.  When empty, returns
+         ``{files: {relpath: content}}`` so the caller can persist them.
+
+         See :mod:`MicroserviceBase.adapters.scaffold.robot_tmpl`.
+         """
+         from ..scaffold.robot_tmpl import (
+            RobotGenError, generate_robot_resources,
+         )
+         try:
+            files = generate_robot_resources(
+               body.proto_dir,
+               service_filter=body.services or None,
+            )
+         except RobotGenError as exc:
+            return {"status": "error", "error": str(exc)}
+         except Exception as exc:    # noqa: BLE001
+            return {"status": "error",
+                    "error": f"Unexpected failure: {type(exc).__name__}: {exc}"}
+
+         if not body.out_dir:
+            return {"status": "ok", "files": files}
+
+         import os
+         out_abs = os.path.abspath(body.out_dir)
+         os.makedirs(out_abs, exist_ok=True)
+         written, skipped = [], []
+         for relpath, content in files.items():
+            target = os.path.join(out_abs, relpath)
+            if os.path.exists(target) and not body.force:
+               skipped.append(target)
+               continue
+            with open(target, "w", encoding="utf-8", newline="\n") as fh:
+               fh.write(content)
+            written.append(target)
+         return {"status": "ok", "written": written, "skipped": skipped,
+                 "out_dir": out_abs}
 
       @app.post("/api/scaffold/generate-v2")
       def scaffold_generate_v2(body: ScaffoldV2Request):

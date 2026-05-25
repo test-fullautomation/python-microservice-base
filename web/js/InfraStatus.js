@@ -36,6 +36,16 @@
 
   function _fetchJson(path) {
     return fetch(_bridgeOrigin() + path, { method: 'GET', cache: 'no-store' })
+      .catch(function (err) {
+        if (err instanceof TypeError) {
+          var msg = 'Bridge not running on ' + _bridgeOrigin() +
+                    ' — click Start Bridge (top-right LED).';
+          var e = new Error(msg);
+          e.cause = 'bridge_down';
+          throw e;
+        }
+        throw err;
+      })
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
