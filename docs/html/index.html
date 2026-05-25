@@ -87,6 +87,31 @@
   <li>The <code>mb-scaffold</code> CLI equivalent + YAML config schema</li>
 </ul>
 <p>10 screenshots covering each step + the generated file tree.</p>
+
+<h3><a href="robot_generator.html">Generate Robot Framework resources</a></h3>
+<p>
+  Turn a folder of <code>.proto</code> files into typed Robot Framework
+  keyword libraries &mdash; one <code>.resource</code> per service, one
+  keyword per RPC method &mdash; that wrap
+  <code>QConnectBase.ConnectionManager</code> so tests don&rsquo;t have
+  to hand-roll JSON <code>send_cmd</code> strings:
+</p>
+<ul>
+  <li>Output conventions (service-prefixed keyword names,
+      <code>${conn_name}</code> first, <code>Open/Close Connection</code>
+      helpers chosen to avoid collisions with proto-defined
+      <code>Connect()</code> / <code>Disconnect()</code> RPCs)</li>
+  <li>GUI button location (methods panel toolbar + no-reflection
+      fallback card)</li>
+  <li><code>python -m MicroserviceBase.tools.robot_gen</code> CLI
+      &mdash; works without the bridge, CI-friendly</li>
+  <li><code>POST /api/scaffold/robot</code> HTTP endpoint</li>
+  <li>Proto3 default-value-omission caveat + the bridge-side fix
+      (<code>always_print_fields_with_no_presence=True</code>)</li>
+  <li>Troubleshooting (&ldquo;Failed to fetch&rdquo;, &ldquo;no .proto
+      files matched&rdquo;, duplicate keyword names &mdash; all the
+      regressions previous users hit)</li>
+</ul>
 </section>
 
 <section>

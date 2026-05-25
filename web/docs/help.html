@@ -256,6 +256,26 @@
         method list.  Plugins use the same
         <code>MM.serviceClient</code> API to talk to the bridge.
       </p>
+
+      <h3>Generate Robot Framework resources</h3>
+      <p>
+        The methods panel has a green <strong>Generate Robot
+        resources</strong> button in its top-right corner.  Clicking it
+        turns a <code>.proto</code> folder into one
+        <code>.resource</code> file per service &mdash; each containing
+        typed Robot keywords (one per RPC) on top of
+        <code>QConnectBase.ConnectionManager</code>.  Native folder
+        pickers prompt for the input and output dirs; existing
+        <code>.resource</code> files are skipped unless you confirm
+        the overwrite.  Same generator is available from the CLI for
+        CI use:
+      </p>
+      <pre><code>python -m MicroserviceBase.tools.robot_gen --proto-dir &lt;path&gt; --out &lt;path&gt;</code></pre>
+      <p>
+        Long-form doc (output conventions, all CLI flags,
+        troubleshooting):
+        <a href="../../docs/html/robot_generator.html" target="_blank">Generate Robot Framework resources</a>.
+      </p>
     </section>
 
     <!-- Service Creator -->
