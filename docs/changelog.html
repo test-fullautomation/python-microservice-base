@@ -205,6 +205,71 @@
 
 <p>Significant changes since the framework's RabbitMQ-era origins.  Architectural records (one file per decision) live in <a href="adr/"><code>adr/</code></a>; this is the chronological summary.</p>
 
+<h2 id="unreleased">Unreleased &mdash; Robot generator + bridge fixes</h2>
+
+<p>Manager GUI + bridge additions on top of 2.1.0.  Targets the
+last-mile gap between QConnectBase's generic <code>GrpcClient</code>
+connection type and the per-method readability test authors expect.</p>
+
+<p><strong>Highlights:</strong></p>
+
+<ul>
+  <li><strong>Robot Framework resource generator.</strong>  Turns a
+      folder of <code>.proto</code> files into one
+      <code>.resource</code> per service with typed keywords (one per
+      RPC), wrapping QConnectBase's <code>GrpcClient</code>.  Reachable
+      three ways: green button in the Manager GUI's methods panel, CLI
+      at <code>python -m MicroserviceBase.tools.robot_gen</code>, or
+      <code>POST /api/scaffold/robot</code>.  Output conventions:
+      service-prefixed keyword names, <code>${conn_name}</code> as the
+      first positional arg, Open/Close Connection helpers (not
+      Connect/Disconnect &mdash; they'd collide with same-named RPCs),
+      single-space-only headers.  Long-form doc:
+      <a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/robot_generator.html">Generate Robot Framework resources</a>.</li>
+  <li><strong>Proto3 default-value fix in the bridge.</strong>
+      <code>MessageToDict</code> now opts into
+      <code>always_print_fields_with_no_presence=True</code> (older
+      protobuf: <code>including_default_value_fields=True</code>).  A
+      unary RPC returning <code>{"errorcode": 0}</code> no longer
+      surfaces as <code>{}</code> &mdash; tests asserting
+      <code>${res}[errorcode]</code> resolve to <code>0</code> as
+      expected without any change.</li>
+  <li><strong>Stricter <code>.proto</code>-folder search.</strong>
+      <code>LocalProtoClient.from_search_paths</code> now prunes
+      <code>build/</code>, <code>build-*</code>,
+      <code>vcpkg_installed/</code>, <code>node_modules/</code>,
+      <code>_legacy/</code>, <code>.git/</code>,
+      <code>__pycache__/</code> from the recursive glob so vendored
+      copies of <code>google/protobuf/*.proto</code> no longer feed
+      into protoc.  When a user types an explicit proto folder in the
+      GUI, that folder is used <strong>exclusively</strong> (env-var
+      + default fallbacks skipped).</li>
+  <li><strong>QConnectBase compatibility shim.</strong>  Added
+      <code>MicroserviceBase.adapters.grpc_bridge.local_proto_client</code>
+      re-export + accepted a <code>proto_dir</code> kwarg on
+      <code>LocalProtoClient.__init__</code>, so QConnectBase 1.1.4's
+      expected import path and constructor shape both work without
+      modifying QConnectBase.</li>
+  <li><strong>Helper modal forwards <code>proto_path</code>.</strong>
+      The "Code Example" button now inherits the same proto folder
+      the main methods panel uses; without this, the Helper always
+      failed on no-reflection servers.</li>
+  <li><strong>Native dialogs in Electron.</strong>  The Robot
+      generator button uses Electron's
+      <code>dialog.showOpenDialog</code> / <code>showMessageBox</code>
+      for folder pickers and confirms &mdash;
+      <code>window.prompt()</code> / <code>window.confirm()</code>
+      are disabled in Electron renderers and were silently no-oping.</li>
+  <li><strong>MSB_0019 / MSB_0020 / MSB_0021 regression tests.</strong>
+      Multi-proto + Qt6::Grpc client emission,
+      <code>LocalProtoClient._is_excluded</code> pruning, and Robot
+      resource generator output shape.</li>
+</ul>
+
+<p>ADR-029 v1.2 records the generator addition and softens the
+"JSON-string response surface" negative consequence by pointing at
+the mitigation.</p>
+
 <h2 id="release-2-1-0">Release 2.1.0 — 2026-05-11</h2>
 
 <p>First minor release after the gRPC + Consul + Nomad migration shipped in 2.0.0.  Focus areas: Manager GUI parity with the new architecture, Service Creator wizard upgrades, installer modernisation, and a fully-documented Robot Framework test path.</p>

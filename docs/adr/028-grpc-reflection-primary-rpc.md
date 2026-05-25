@@ -22,6 +22,7 @@ Audit follow-up.  Aligns with the TA reference at
 | Date | Version | Description |
 |------|---------|-------------|
 | 2026-05-07 | 1.0 | Initial draft |
+| 2026-05-22 | 1.1 | Bridge-side fix recorded: `MessageToDict` on the bridge now opts into `always_print_fields_with_no_presence=True` (older protobuf: `including_default_value_fields=True`) so proto3 scalar fields holding their default value (0, false, "") are surfaced in the JSON response dict.  Without it, a successful unary RPC returning `{"errorcode": 0}` would appear as `{}` to clients (notably Robot tests via QConnectBase's `verify`).  Code in `MicroserviceBase/adapters/grpc_bridge/reflect_client.py::_msg_to_dict`. |
 
 ## Context
 

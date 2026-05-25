@@ -6,6 +6,60 @@ Significant changes since the framework's RabbitMQ-era origins.
 Architectural records (one file per decision) live in [`adr/`](adr/);
 this is the chronological summary.
 
+## Unreleased — Robot generator + bridge fixes
+
+Manager GUI + bridge additions on top of 2.1.0. Targets the
+last-mile gap between QConnectBase's generic `GrpcClient` connection
+type and the per-method readability test authors expect.
+
+**Highlights:**
+
+- **Robot Framework resource generator.** Turns a folder of `.proto`
+  files into one `.resource` per service with typed keywords (one per
+  RPC), wrapping QConnectBase's `GrpcClient`. Reachable three ways:
+  green button in the Manager GUI's methods panel, CLI at
+  `python -m MicroserviceBase.tools.robot_gen`, or
+  `POST /api/scaffold/robot`. Output conventions: service-prefixed
+  keyword names (so two services with same-named methods coexist),
+  `${conn_name}` as the first positional arg, Open/Close Connection
+  helpers (not Connect/Disconnect — they'd collide with same-named
+  RPCs), single-space-only headers (Robot's parser treats 2+ spaces as
+  delimiter). Long-form doc:
+  [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md).
+- **Proto3 default-value fix in the bridge.** `MessageToDict` now
+  opts into `always_print_fields_with_no_presence=True` (older
+  protobuf: `including_default_value_fields=True`). A unary RPC
+  returning `{"errorcode": 0}` no longer surfaces as `{}` — tests
+  asserting `${res}[errorcode]` resolve to `0` as expected without
+  any change.
+- **Stricter `.proto`-folder search.** `LocalProtoClient.from_search_paths`
+  now prunes `build/`, `build-*`, `vcpkg_installed/`, `node_modules/`,
+  `_legacy/`, `.git/`, `__pycache__/` from the recursive glob so
+  vendored copies of `google/protobuf/*.proto` no longer feed into
+  protoc and produce duplicate-definition failures. When a user types
+  an explicit proto folder in the GUI, that folder is used
+  **exclusively** (env-var + default fallbacks skipped).
+- **QConnectBase compatibility shim.** Added
+  `MicroserviceBase.adapters.grpc_bridge.local_proto_client` re-export
+  module + accepted a `proto_dir` kwarg on `LocalProtoClient.__init__`,
+  so QConnectBase 1.1.4's expected import path and constructor shape
+  both work without modifying QConnectBase itself.
+- **Helper modal forwards `proto_path`.** The "Code Example" button now
+  inherits the same proto folder the main methods panel uses; without
+  this, the Helper always failed on no-reflection servers.
+- **Native dialogs in Electron.** The Robot generator button uses
+  Electron's `dialog.showOpenDialog` / `showMessageBox` for folder
+  pickers and confirms — `window.prompt()` / `window.confirm()` are
+  disabled in Electron renderers and were silently no-oping.
+- **MSB_0019 / MSB_0020 / MSB_0021 regression tests.** Multi-proto +
+  Qt6::Grpc client emission, `LocalProtoClient._is_excluded` pruning,
+  and Robot resource generator output shape (all three carry
+  representative cases that previously broke real generations).
+
+ADR-029 v1.2 records the generator addition and softens the
+"JSON-string response surface" negative consequence by pointing at
+the mitigation.
+
 ## Release 2.1.0 — 2026-05-11
 
 First minor release after the gRPC + Consul + Nomad migration shipped
