@@ -120,20 +120,77 @@ def parse_proto_folder(proto_dir: str) -> List[_Service]:
         ) from exc
 
     services: List[_Service] = []
+    import logging
+    import sys
     import tempfile
+
+    _log = logging.getLogger(__name__)
+
+    def _capture_protoc(args):
+        """Run protoc and capture its stdout + stderr.
+
+        We deliberately invoke protoc in a **subprocess** rather than via
+        ``grpc_tools.protoc.main`` in-process, because the latter writes
+        diagnostics via the C runtime's cached stderr handle (``_stderrp``
+        on Windows), which Python-side ``os.dup2(2, ...)`` doesn't reach.
+        A subprocess gives us clean ``stdout=PIPE / stderr=PIPE`` capture
+        that works identically on Windows and POSIX.
+
+        ~200 ms per .proto file from interpreter startup; acceptable for
+        a once-per-button-click operation in the GUI.
+        """
+        import subprocess
+        # `python -m grpc_tools.protoc <args...>` is the canonical CLI
+        # form of the same code path; uses the same interpreter we're
+        # running in, so the grpc_tools install can't drift.
+        cmd = [sys.executable, "-m", "grpc_tools.protoc"] + list(args[1:])
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace",
+            check=False,
+        )
+        return proc.returncode, proc.stderr, proc.stdout
 
     for proto_path in proto_files:
         with tempfile.TemporaryDirectory() as tmpdir:
             desc_path = os.path.join(tmpdir, "out.pb")
-            rc = grpc_protoc.main([
+            rc, err_text, out_text = _capture_protoc([
                 "grpc_tools.protoc",
                 f"--proto_path={proto_dir}",
                 f"--descriptor_set_out={desc_path}",
                 proto_path,
             ])
+            err_text = err_text.strip()
+            out_text = out_text.strip()
+
+            # Always re-emit anything protoc said so it lands in
+            # launcher.log (the bridge captures the process's stderr).
+            if err_text:
+                sys.stderr.write(err_text + "\n")
+            if out_text:
+                sys.stdout.write(out_text + "\n")
+
             if rc != 0:
+                detail = err_text or out_text or "(no output from protoc)"
+                _log.error(
+                    "protoc rejected %s (exit %d):\n%s",
+                    proto_path, rc, detail,
+                )
+                # Keep the GUI-bound message short but actionable.  The
+                # first line of protoc's stderr is usually the most
+                # informative ("file.proto:23:5: expected field name");
+                # tail-trim very long output.
+                first_line = detail.splitlines()[0] if detail else ""
+                short = (detail[:600] + "..." + os.linesep + "(truncated)") \
+                        if len(detail) > 600 else detail
                 raise RobotGenError(
-                    f"protoc rejected {os.path.basename(proto_path)} (exit {rc})"
+                    f"protoc rejected {os.path.basename(proto_path)} "
+                    f"(exit {rc}): {first_line}\n\n"
+                    f"--- protoc output ---\n{short}\n"
+                    f"--- end ---\n"
+                    f"Full stderr also written to the bridge log "
+                    f"(Bridge -> Show log in the navbar)."
                 )
             with open(desc_path, "rb") as fh:
                 fds = descriptor_pb2.FileDescriptorSet()

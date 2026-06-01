@@ -6,7 +6,7 @@ Significant changes since the framework's RabbitMQ-era origins.
 Architectural records (one file per decision) live in [`adr/`](adr/);
 this is the chronological summary.
 
-## Unreleased — Robot generator + bridge fixes
+## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 
 Manager GUI + bridge additions on top of 2.1.0. Targets the
 last-mile gap between QConnectBase's generic `GrpcClient` connection

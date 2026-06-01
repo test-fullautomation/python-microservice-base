@@ -1,6 +1,6 @@
 {
   "name": "devatservgui",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Microservice Manager GUI - Dual hosting (Electron + Python Web)",
   "main": "electron/main.js",
   "scripts": {
@@ -87,10 +87,17 @@
           "!**/__pycache__/**",
           "!**/*.log",
           "!**/build/**",
+          "!**/build-*/**",
           "!**/dist/**",
-          "!**/dist-msys2/**",
+          "!**/dist-*/**",
           "!**/deploy/**",
           "!**/.qt/**",
+          "!**/.qtcreator/**",
+          "!**/*.user",
+          "!**/vcpkg_installed/**",
+          "!**/CMakeFiles/**",
+          "!**/CMakeCache.txt",
+          "!**/cmake_install.cmake",
           "!**/_legacy/**"
         ]
       }

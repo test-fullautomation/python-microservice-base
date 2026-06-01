@@ -2719,16 +2719,28 @@ Generate scaffolding for a new microservice project.
          from ..scaffold.robot_tmpl import (
             RobotGenError, generate_robot_resources,
          )
+         logger.info("[robot-gen] request proto_dir=%r out_dir=%r services=%r force=%s",
+                     body.proto_dir, body.out_dir, body.services, body.force)
          try:
             files = generate_robot_resources(
                body.proto_dir,
                service_filter=body.services or None,
             )
          except RobotGenError as exc:
+            # Expected failure path (bad input, protoc rejected the proto,
+            # etc.).  Logged at WARNING so it shows up in launcher.log
+            # without the noise of a traceback.
+            logger.warning("[robot-gen] %s", exc)
             return {"status": "error", "error": str(exc)}
          except Exception as exc:    # noqa: BLE001
+            # Unexpected failure — log with full traceback so post-mortem
+            # via launcher.log has everything.  The HTTP response still
+            # carries just the type+message.
+            logger.exception("[robot-gen] unexpected failure: %s", exc)
             return {"status": "error",
-                    "error": f"Unexpected failure: {type(exc).__name__}: {exc}"}
+                    "error": f"Unexpected failure: {type(exc).__name__}: {exc}\n"
+                             f"(Full traceback in the bridge log — "
+                             f"Bridge -> Show log in the navbar.)"}
 
          if not body.out_dir:
             return {"status": "ok", "files": files}

@@ -49,7 +49,7 @@
 
 !define ERLANG_VER  "26.2.5"
 !define RABBITMQ_VER "4.0.5"
-!define MSB_VER     "2.1.0"
+!define MSB_VER     "2.2.0"
 !define PHB_VER     "1.1.0"
 !define ERLANG_INSTALLER  "otp_win64_${ERLANG_VER}.exe"
 !define RABBITMQ_INSTALLER "rabbitmq-server-${RABBITMQ_VER}.exe"
@@ -891,7 +891,7 @@ Function InstallMicroserviceBase
 
   msb_install_wheel:
   DetailPrint "Found bundled wheel: $R2"
-  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install "$R2[rabbitmq,web]"'
+  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install --upgrade "$R2[rabbitmq,web]"'
   Pop $R0
   Pop $R1
   ${If} $R0 == "0"
