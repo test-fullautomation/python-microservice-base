@@ -1,0 +1,43 @@
+<div class="card" style="height: 100%; width: 100%; top: 0;">
+    <div class="card-header">
+      <h5 class="card-title">Alias Configuration</h5>
+    </div>
+    <div class="card-body">
+      <table class="table table-bordered" id="data-table">
+        <!-- Your table headers -->
+        <thead>
+          <tr>
+            <th>Alias name</th>
+            <th style="width: 300pt;">Service name</th>
+            <th style="width: 300pt;">Method name</th>
+            <th>Arguments</th>
+            <th></th>
+            <th></th>
+          </tr>
+        </thead>
+        <!-- Table body -->
+        <tbody>
+          <!-- Rows will be dynamically added here -->
+        </tbody>
+      </table>
+      <button class="btn btn-primary" id="applyButton" onclick="applyAliasConfig()">Apply</button>
+      <button class="btn btn-outline-secondary ms-2" id="aliasHelperButton" onclick="showAliasHelper()">
+        <i class="bi bi-code-slash me-1"></i>Code Helper
+      </button>
+      <div id="errorMessage" class="text-danger"  style="display: none;">Please fill in all textboxes.</div>
+
+      <div class="alert alert-info mt-3 mb-0" style="font-size: 0.85rem;">
+        <i class="bi bi-info-circle me-1"></i><strong>Arguments hint</strong>
+        <p class="mb-1 mt-1">
+          Use <code>${input}</code> for parameters the caller must provide at runtime.
+          Any other value becomes a fixed constant.
+        </p>
+        <p class="mb-0">
+          <strong>Example:</strong> If a service method is <code>add(param1, param2)</code> and you
+          set the alias arguments to <code>${input},4</code>, the alias becomes a
+          single-argument call &mdash; the caller supplies <code>param1</code>, while
+          <code>param2</code> is always <code>4</code>.
+        </p>
+      </div>
+    </div>
+</div>

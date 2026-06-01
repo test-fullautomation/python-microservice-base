@@ -1,0 +1,727 @@
+/* ==========================================================================
+   Microservice Manager - Professional Bootstrap 5 Theme
+   ========================================================================== */
+
+:root {
+  --sidebar-bg: #2c3e50;
+  --sidebar-text: #ecf0f1;
+  --sidebar-active: #3498db;
+  --sidebar-hover: #34495e;
+  --content-bg: #f8f9fa;
+  --navbar-bg: #1a252f;
+  --navbar-height: 56px;
+  --sidebar-width: 320px;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------- Global ---------- */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  overflow: hidden;
+}
+
+/* ---------- Navbar ---------- */
+.app-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--navbar-height);
+  background-color: var(--navbar-bg);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  z-index: 1030;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.app-navbar .navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.app-navbar .navbar-brand img {
+  height: 28px;
+  width: auto;
+}
+
+.app-navbar .navbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.connection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ecf0f1;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #e74c3c;
+  transition: background-color 0.3s;
+}
+
+.connection-dot.connected {
+  background-color: #2ecc71;
+}
+
+.btn-settings {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.btn-settings:hover {
+  color: #fff;
+}
+
+.btn-connect {
+  background-color: var(--sidebar-active);
+  color: #fff;
+  border: none;
+  padding: 0.35rem 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-connect:hover {
+  background-color: #2980b9;
+  color: #fff;
+}
+
+.btn-connect.disconnecting {
+  background-color: #e74c3c;
+}
+
+.btn-connect.disconnecting:hover {
+  background-color: #c0392b;
+}
+
+/* ---------- Connected Broker Chips (navbar) ---------- */
+.connected-brokers {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.broker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+  white-space: nowrap;
+}
+
+.broker-chip-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  padding: 0;
+  margin-left: 0.1rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.broker-chip-close:hover {
+  color: #fff;
+  background-color: #e74c3c;
+}
+
+/* ---------- Layout ---------- */
+.app-layout {
+  display: flex;
+  position: fixed;
+  top: var(--navbar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* ---------- Sidebar ---------- */
+.app-sidebar {
+  width: var(--sidebar-width);
+  min-width: 240px;
+  max-width: 500px;
+  background-color: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  resize: horizontal;
+  border-right: 1px solid #1a252f;
+}
+
+.sidebar-header {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-search {
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ecf0f1;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.sidebar-search::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.sidebar-search:focus {
+  outline: none;
+  border-color: var(--sidebar-active);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
+}
+
+.sidebar-content {
+  flex: 1;
+  padding: 0.5rem;
+  overflow-y: auto;
+}
+
+/* Sidebar accordion overrides */
+.sidebar-content .accordion-item {
+  background-color: transparent;
+  border: none;
+  margin-bottom: 0.25rem;
+}
+
+.sidebar-content .accordion-button {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--sidebar-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.65rem 1rem;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.sidebar-content .accordion-button:not(.collapsed) {
+  background-color: rgba(52, 152, 219, 0.2);
+  color: #fff;
+}
+
+.sidebar-content .accordion-button::after {
+  filter: invert(1);
+}
+
+.sidebar-content .accordion-collapse {
+  background-color: transparent;
+}
+
+.sidebar-content .accordion-body {
+  padding: 0.25rem 0;
+}
+
+.sidebar-content .list-group-item {
+  background-color: transparent;
+  border: none;
+  color: var(--sidebar-text);
+  padding: 0.5rem 1rem 0.5rem 1.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar-content .list-group-item:hover {
+  background-color: var(--sidebar-hover);
+}
+
+.sidebar-content .list-group-item.active {
+  background-color: var(--sidebar-active);
+  color: #fff;
+  font-weight: 500;
+}
+
+.sidebar-content .list-group-item .icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sidebar-content .list-group-item.service-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
+.sidebar-content .list-group-item.service-disabled:hover {
+  background-color: transparent;
+}
+
+/* ---------- Content Area ---------- */
+.app-content {
+  flex: 1;
+  background-color: var(--content-bg);
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.content-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #95a5a6;
+  font-size: 1.1rem;
+}
+
+/* ---------- LED Indicators ---------- */
+.led-indicator {
+  width: 40px;
+  height: 20px;
+  background-color: #e0e0e0;
+  border: 1px solid #a0a0a0;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  margin: 15px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.led {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #ccc;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.led-on {
+  background-color: #2ecc71 !important;
+  color: #fff;
+  box-shadow: 0 0 8px rgba(46, 204, 113, 0.5);
+}
+
+/* ---------- Group Box ---------- */
+.group-box {
+  text-align: center;
+  margin: 10px;
+  padding: 10px;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+
+.led-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.led-row {
+  display: flex;
+  gap: 25px;
+}
+
+/* ---------- Cards ---------- */
+.app-content .card {
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.app-content .card-header {
+  background-color: #fff;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+}
+
+/* ---------- Tables ---------- */
+.table-container {
+  overflow-x: auto;
+}
+
+#data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#data-table th {
+  border: none;
+  padding: 8px;
+  text-align: center;
+}
+
+#data-table td {
+  border: none;
+  padding: 8px;
+}
+
+/* ---------- Toolbar (for service content areas) ---------- */
+.toolbar {
+  background-color: #fff;
+  border-bottom: 1px solid #dee2e6;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.toolbar button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 5px 10px;
+  margin: 0 3px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+
+.toolbar button:hover {
+  background-color: #f0f0f0;
+}
+
+.toolbar button:active {
+  transform: translateY(1px);
+}
+
+.toolbar button img {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+}
+
+/* ---------- Suggestions (for debug board) ---------- */
+.suggestion-item {
+  cursor: pointer;
+  padding: 0.35rem 0.75rem;
+}
+
+.suggestion-item:hover {
+  background-color: #f0f0f0;
+}
+
+/* ---------- Error / Validation ---------- */
+.error {
+  border-color: #e74c3c;
+}
+
+/* ---------- Loading Overlay ---------- */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.loading-overlay.active {
+  display: flex;
+}
+
+.loading-overlay .spinner-border {
+  width: 3rem;
+  height: 3rem;
+  color: #fff;
+}
+
+/* ---------- Content Loading Spinner ---------- */
+.content-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: #6c757d;
+}
+.content-loading .spinner-border {
+  width: 2rem;
+  height: 2rem;
+  margin-right: 0.75rem;
+}
+
+/* ---------- Toast Container ---------- */
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1090;
+}
+
+/* ---------- Login Modal ---------- */
+#loginModal .modal-header {
+  background-color: var(--navbar-bg);
+  color: #fff;
+}
+
+#loginModal .modal-header .btn-close {
+  filter: invert(1);
+}
+
+/* ---------- Settings Modal ---------- */
+#settingsModal .modal-header {
+  background-color: var(--navbar-bg);
+  color: #fff;
+}
+
+#settingsModal .modal-header .btn-close {
+  filter: invert(1);
+}
+
+/* ---------- Report Issue Modal ---------- */
+#reportIssueModal .modal-header {
+  background-color: var(--navbar-bg);
+  color: #fff;
+}
+
+#reportIssueModal .modal-header .btn-close {
+  filter: invert(1);
+}
+
+/* ---------- Scrollbar Styling (sidebar) ---------- */
+.app-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-sidebar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.app-sidebar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+/* ---------- Combobox ---------- */
+.combobox {
+  width: 100%;
+}
+
+/* ---------- API Explorer ---------- */
+.api-explorer-card {
+  max-width: 900px;
+}
+
+.api-explorer-card .card-header h5 {
+  font-size: 1.1rem;
+}
+
+.api-explorer-card .card-header small {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.api-arg-field label code {
+  font-size: 0.9em;
+  color: #2c3e50;
+}
+
+.api-response-pre {
+  background-color: #1a252f;
+  color: #ecf0f1;
+  padding: 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* ---------- Helper Button (sidebar) ---------- */
+.helper-btn {
+  margin-left: auto;
+  opacity: 0;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  transition: opacity 0.15s;
+}
+
+.list-group-item:hover .helper-btn {
+  opacity: 0.7;
+}
+
+.helper-btn:hover {
+  opacity: 1 !important;
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.helper-btn.download-btn {
+  margin-left: 0;
+}
+
+/* ---------- Helper Modal ---------- */
+#helperModal .modal-header {
+  background-color: var(--navbar-bg);
+  color: #fff;
+}
+
+#helperModal .modal-header .btn-close {
+  filter: invert(1);
+}
+
+/* Helper language tabs */
+.helper-lang-tabs {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.helper-lang-tabs .nav-link {
+  color: #95a5a6;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.9rem;
+}
+
+.helper-lang-tabs .nav-link:hover {
+  color: #ecf0f1;
+  background-color: rgba(26, 37, 47, 0.5);
+}
+
+.helper-lang-tabs .nav-link.active {
+  color: #ecf0f1;
+  background-color: #1a252f;
+  border-color: #1a252f;
+}
+
+.helper-code-pre {
+  background-color: #1a252f;
+  color: #ecf0f1;
+  padding: 1rem;
+  border-radius: 0 6px 6px 6px;
+  font-size: 0.82rem;
+  max-height: 500px;
+  overflow: auto;
+  white-space: pre;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* ---------- Broker Sections (multi-broker) ---------- */
+.broker-section {
+  /* No extra spacing in single-broker mode */
+}
+
+#servicesList.multi-broker .broker-section {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+#servicesList.multi-broker .broker-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.broker-header {
+  display: none;
+}
+
+#servicesList.multi-broker .broker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.45);
+  user-select: none;
+}
+
+.broker-header .broker-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.broker-header .broker-badge {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.broker-disconnect-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.75rem;
+  padding: 0 0.3rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.15s, background-color 0.15s;
+  flex-shrink: 0;
+}
+
+.broker-disconnect-btn:hover {
+  color: #e74c3c;
+  background-color: rgba(231, 76, 60, 0.15);
+}

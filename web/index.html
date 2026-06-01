@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/fleet.css">
+  <link rel="stylesheet" href="css/creator.css">
+  <link rel="stylesheet" href="css/docs.css">
+  <title>Microservice Manager</title>
+</head>
+<body>
+
+  <!-- ===== Navbar ===== -->
+  <nav class="app-navbar">
+    <a class="navbar-brand" href="#">
+      <img src="img/logo.png" alt="Logo">
+      Microservice Manager
+    </a>
+    <div class="nav-mode-toggle">
+      <button class="mode-btn active" id="btnModeServices">Services</button>
+      <button class="mode-btn" id="btnModeFleet">Service Network</button>
+      <button class="mode-btn" id="btnModeCreator">Service Creator</button>
+    </div>
+    <div class="navbar-actions">
+      <div class="connected-brokers" id="connectedBrokers">
+        <!-- Broker chips dynamically inserted here -->
+      </div>
+      <span class="connection-badge">
+        <span class="connection-dot" id="connectionDot"></span>
+        <span id="connectionLabel">Disconnected</span>
+      </span>
+      <button class="btn-help" id="btnReportIssue" title="Report Issue">
+        <i class="bi bi-bug"></i>
+      </button>
+      <button class="btn-help" id="btnHelp" title="User Guide">
+        <i class="bi bi-question-circle"></i>
+      </button>
+      <button class="btn-settings" id="btnSettings" title="Settings">
+        <i class="bi bi-gear"></i>
+      </button>
+      <button class="btn-connect" id="btnConnect" title="Connect">
+        <i class="bi bi-plug"></i> Connect
+      </button>
+    </div>
+  </nav>
+
+  <!-- ===== Layout ===== -->
+  <div class="app-layout">
+
+    <!-- Sidebar -->
+    <aside class="app-sidebar">
+      <!-- Services sidebar -->
+      <div class="sidebar-mode active" id="sidebarServices">
+        <div class="sidebar-header">
+          <input type="text" class="sidebar-search" id="searchText" placeholder="Search services...">
+        </div>
+        <div class="sidebar-content">
+          <div class="accordion" id="servicesList">
+            <!-- Accordion items dynamically inserted here -->
+          </div>
+        </div>
+      </div>
+      <!-- Creator sidebar -->
+      <div class="sidebar-mode" id="sidebarCreator">
+        <div class="creator-sidebar" id="creatorStepList"></div>
+      </div>
+      <!-- Fleet sidebar -->
+      <div class="sidebar-mode" id="sidebarFleet">
+        <div class="fleet-sidebar-header">
+          <i class="bi bi-hdd-network"></i>
+          <span>Fleet Hubs</span>
+          <span class="badge" id="fleetTotalHubs">0</span>
+          <span class="badge" style="background:rgba(46,204,113,0.2);color:#2ecc71" id="fleetOnlineHubs">0</span>
+        </div>
+        <div class="fleet-hub-list" id="fleetHubList">
+          <!-- Hub items dynamically inserted here -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- Content -->
+    <main class="app-content">
+      <div id="serviceContent">
+        <div class="content-placeholder">
+          <span><i class="bi bi-box-seam me-2"></i>Select a service to view its content</span>
+        </div>
+      </div>
+      <div id="creatorContent" style="display:none;"></div>
+      <div id="helpContent" style="display:none;"></div>
+      <div id="fleetContent" style="display:none;">
+        <ul class="nav nav-tabs fleet-sub-tabs" id="fleetSubTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tabFleetRemote" data-bs-toggle="tab"
+                    data-bs-target="#fleetRemotePane" type="button" role="tab">
+              <i class="bi bi-cloud me-1"></i>Fleet</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tabLocalHub" data-bs-toggle="tab"
+                    data-bs-target="#localHubPane" type="button" role="tab">
+              <i class="bi bi-pc-display me-1"></i>Local Hub</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tabNomad" data-bs-toggle="tab"
+                    data-bs-target="#nomadPane" type="button" role="tab">
+              <i class="bi bi-hdd-rack me-1"></i>Nomad</button>
+          </li>
+        </ul>
+        <div class="tab-content fleet-tab-content" id="fleetSubTabContent">
+          <div class="tab-pane fade show active" id="fleetRemotePane" role="tabpanel"></div>
+          <div class="tab-pane fade" id="localHubPane" role="tabpanel"></div>
+          <div class="tab-pane fade" id="nomadPane" role="tabpanel"></div>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- ===== Login Modal ===== -->
+  <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="loginModalLabel"><i class="bi bi-hdd-network me-2"></i>Connect to Broker</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="loginForm">
+            <div class="mb-3">
+              <label for="brokerUrlInput" class="form-label">Broker URL</label>
+              <input type="text" class="form-control" id="brokerUrlInput" placeholder="localhost:5672" value="localhost:5672">
+              <div class="form-text">RabbitMQ broker address (host:port)</div>
+            </div>
+            <div class="mb-3">
+              <label for="routingKeyInput" class="form-label">Routing Key</label>
+              <input type="text" class="form-control" id="routingKeyInput" placeholder="ServiceRegistry">
+              <div class="form-text">Routing key for the Registry Service</div>
+            </div>
+            <div class="mb-2">
+              <a class="text-decoration-none" data-bs-toggle="collapse" href="#advancedSettings" role="button" aria-expanded="false">
+                <i class="bi bi-gear me-1"></i>Advanced Settings
+              </a>
+            </div>
+            <div class="collapse" id="advancedSettings">
+              <div class="mb-3">
+                <label for="fleetApiUrlInput" class="form-label">Fleet API URL</label>
+                <input type="text" class="form-control" id="fleetApiUrlInput" placeholder="http://localhost:2510">
+                <div class="form-text">Optional — FleetWebAPI address for Service Network tab</div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnLoginSubmit">
+            <i class="bi bi-plug me-1"></i>Connect
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Toast Container ===== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ===== Helper Modal ===== -->
+  <div class="modal fade" id="helperModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="helperModalTitle">Python Helper</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="helperModalBody"></div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-primary" id="btnCopyHelper">
+            <i class="bi bi-clipboard me-1"></i>Copy Code
+          </button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Settings Modal ===== -->
+  <div class="modal fade" id="settingsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-gear me-2"></i>Settings</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="settingsModalBody"></div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-primary" id="btnSettingsSave">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Report Issue Modal ===== -->
+  <div class="modal fade" id="reportIssueModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-bug me-2"></i>Report Issue</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Summary</label>
+            <input type="text" class="form-control" id="issueTitle" placeholder="Brief description of the issue">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Details (optional)</label>
+            <textarea class="form-control" id="issueBody" rows="4" placeholder="Steps to reproduce, expected vs actual behavior..."></textarea>
+          </div>
+          <div class="form-text">
+            This will open a pre-filled issue on GitHub. Environment info (version, platform) will be included automatically.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-danger" id="btnSubmitIssue">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Open on GitHub
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Confirm Modal ===== -->
+  <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="confirmModalLabel">Confirm</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="confirmModalBody">Are you sure?</div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="confirmModalOkBtn">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Loading Overlay ===== -->
+  <div class="loading-overlay active" id="loadingOverlay">
+    <div class="spinner-border" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+
+  <!-- ===== Scripts ===== -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/MessageProtocol.js"></script>
+  <script src="js/ServiceClient.js"></script>
+  <script src="js/FleetClient.js"></script>
+  <script src="js/FleetDashboard.js"></script>
+  <script src="js/LocalHubClient.js"></script>
+  <script src="js/LocalHubDashboard.js"></script>
+  <script src="js/NomadClient.js"></script>
+  <script src="js/NomadDashboard.js"></script>
+  <script src="js/SchemaRenderer.js"></script>
+  <script src="js/SchemaAutoGen.js"></script>
+  <script src="js/QtWasmLoader.js"></script>
+  <script src="js/QtShellManager.js"></script>
+  <script src="js/WidgetShellManager.js"></script>
+  <script src="js/ServiceCreator.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
