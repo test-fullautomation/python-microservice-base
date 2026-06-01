@@ -1,0 +1,131 @@
+@startuml component_qt_template_qml
+!theme plain
+title QML Service Template -- Architecture
+footer Shared QML Shell  |  Hot-reload  |  ~5 KB per service switch
+
+skinparam defaultFontSize 13
+skinparam rectangle {
+    BackgroundColor<<gui>> #BBDEFB
+    BackgroundColor<<service>> #FFF8E1
+    BackgroundColor<<ui>> #FFE0B2
+    BackgroundColor<<backend>> #C8E6C9
+}
+skinparam component {
+    BackgroundColor<<js>> #E3F2FD
+    BackgroundColor<<qml>> #FFE0B2
+    BackgroundColor<<cpp>> #F3E5F5
+    BackgroundColor<<infra>> #C8E6C9
+    BackgroundColor<<config>> #F5F5F5
+    BackgroundColor<<api>> #E3F2FD
+}
+skinparam nodesep 12
+skinparam ranksep 14
+
+legend top left
+  |=  Color |= Meaning |
+  | <#BBDEFB> | GUI (MicroserviceManagerGUI) |
+  | <#FFE0B2> | Service UI (QML) |
+  | <#F3E5F5> | Qt C++ Shell Runtime |
+  | <#E3F2FD> | Business API |
+  | <#C8E6C9> | Infrastructure |
+endlegend
+
+' ============================================================================
+' GUI LAYER (MicroserviceManagerGUI)
+' ============================================================================
+
+rectangle "GUI -- MicroserviceManagerGUI" <<gui>> as GUI {
+    component "app.js\ndetects *.qml or\nrenderer:\"qt\" in schema" <<js>> as AppJS
+    component "QtShellManager.js\nloadQml(url, container)" <<js>> as ShellMgr
+    component "window.callMicroservice()\n-> MM.requestService()\n-> POST /api/request" <<js>> as CallBridge
+    component "FastAPI Bridge\nPOST /api/request" <<infra>> as FastAPI
+
+    AppJS --> ShellMgr : QML detected
+    CallBridge --> FastAPI : HTTP POST
+}
+
+' ============================================================================
+' SERVICE LAYER (what the developer creates)
+' ============================================================================
+
+rectangle "SERVICE -- MyQmlService (developer creates this)" <<service>> as SVC {
+
+    ' --- UI sub-layer ---
+    rectangle "UI" <<ui>> as UILayer {
+        component "ServiceUI.qml\n(declarative QML + inline JS)\n~5 KB per service" <<qml>> as QmlFile
+
+        rectangle "QML Shell Runtime -- qtshell.wasm (~9 MB, loaded once)" <<cpp>> as ShellRT {
+            component "ShellController\nloadQmlSource(src, baseUrl)\nclearQml()" <<cpp>> as ShellCtrl
+            component "QML Engine\nQt Quick Controls" <<cpp>> as QmlEngine
+            component "ServiceBridge\ncallService() -> EM_ASM -> JS" <<cpp>> as SvcBridge
+
+            ShellCtrl --> QmlEngine : QQmlComponent\ncreate items
+            QmlEngine --> SvcBridge : user click\nin QML UI
+        }
+
+        QmlFile --> ShellCtrl : loaded into shell\n(swap ~5 KB)
+    }
+
+    ' --- Service backend sub-layer ---
+    rectangle "Service (Backend)" <<backend>> as BELayer {
+        component "main.cpp\nloads config, creates service,\nregisters, starts consuming" <<api>> as MainCpp
+        component "MyQmlService\nextends ServiceBase\nregisters svc_api_* methods" <<api>> as MySvc
+        component "service_config.json\nname, routing_key,\nbroker host/port" <<config>> as SvcCfg
+        component "CppServiceBase Library\nServiceBase, RabbitMQConnection,\nServiceInfo" <<infra>> as CppLib
+        component "RabbitMQ Broker\nservices_request exchange" <<infra>> as RMQ
+
+        MainCpp --> MySvc : creates
+        MainCpp --> SvcCfg : reads
+        MySvc --> CppLib : extends
+        RMQ --> CppLib : deliver to\nservice queue
+    }
+}
+
+' ============================================================================
+' CONNECTIONS: GUI <-> SERVICE
+' ============================================================================
+
+ShellMgr -[#FF8F00,bold]-> QmlFile : XHR fetch\nServiceUI.qml
+ShellMgr --> ShellCtrl : _qtshell_loadQmlSource(\nsrcPtr, urlPtr)
+SvcBridge -[#CC0000,bold]-> CallBridge : EM_ASM\n-> JS callback
+FastAPI -[#CC0000]-> RMQ : AMQP publish
+
+' Response flow
+RMQ -[#009900,dashed]-> FastAPI : callback queue
+FastAPI -[#009900,dashed]-> CallBridge : JSON response
+
+' ============================================================================
+' KEY NOTES
+' ============================================================================
+
+note right of ShellRT
+  **QML Shell Lifecycle:**
+  1. First service click -> load qtshell.wasm (~9 MB)
+  2. JS reads .qml via XHR
+  3. Pass source as UTF-8 to C++ (manual malloc)
+  4. ShellController creates QQmlComponent
+  5. Switch service -> clearQml + swap .qml (~5 KB)
+  6. Shell stays alive -- only QML changes
+  **Hot-reload: Yes**
+end note
+
+note right of QmlFile
+  **QML UI Features:**
+  - Declarative layout (QML)
+  - Inline JavaScript logic
+  - ServiceBridge.callService()
+    available in QML context
+  - Design with Qt Creator
+    or any text editor
+end note
+
+note bottom of RMQ
+  **QML Template at Scale:**
+  |= Metric          |= Value        |
+  | Shell size        | ~9 MB          |
+  | Per-service UI    | ~5 KB (.qml)   |
+  | 10 services total | ~9 MB + 50 KB  |
+  | Service switch    | ~5 KB download  |
+end note
+
+@enduml

@@ -1,0 +1,57 @@
+@startuml sequence_qml_shell_cleanup
+!theme plain
+title QML Shell — Cleanup Sequence
+
+participant "Caller" as caller
+participant "QtShellManager\n(JS)" as mgr
+participant "qtshell.wasm\n(C++)" as shell
+participant "ShellController\n(C++)" as ctrl
+participant "QML Engine" as qml
+
+== Clear Currently Loaded QML ==
+
+caller -> mgr : QtShellManager.clear()
+activate mgr
+
+mgr -> mgr : Check _shellLoaded\n&& _shellModule
+
+mgr -> shell : _shellModule._qtshell_clearQml()
+activate shell
+
+shell -> ctrl : ShellController::clearQml()
+activate ctrl
+
+ctrl -> qml : item->setParentItem(nullptr)
+activate qml
+qml -> qml : Remove from scene graph
+qml --> ctrl
+deactivate qml
+
+ctrl -> qml : item->deleteLater()
+activate qml
+qml -> qml : Destroy QML item tree\n(deferred to event loop)
+qml --> ctrl
+deactivate qml
+
+ctrl -> ctrl : component->deleteLater()
+ctrl -> ctrl : m_currentItem = nullptr\nm_component = nullptr\nm_loading = false
+
+ctrl --> shell
+deactivate ctrl
+
+shell --> mgr
+deactivate shell
+
+mgr -> mgr : _currentServiceName = null
+
+deactivate mgr
+
+note over caller, qml
+  **After cleanup:**
+  - The QML engine remains alive (shell is still loaded)
+  - The canvas stays in the DOM (but shows nothing)
+  - A new loadQml() call will reuse the same shell
+  - The shell itself is only destroyed when the page unloads
+end note
+
+@enduml

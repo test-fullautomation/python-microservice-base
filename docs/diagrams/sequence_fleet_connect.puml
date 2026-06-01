@@ -1,0 +1,105 @@
+@startuml sequence_fleet_connect
+!theme plain
+title Fleet Connect Sequence (GUI → Bridge → FleetWebAPI)
+
+participant "User" as user
+participant "FleetDashboard\n(FleetDashboard.js)" as dashboard
+participant "FleetClient\n(FleetClient.js)" as client
+participant "FastAPI Bridge\n(localhost:1112)" as bridge
+participant "FleetWebAPI\n(localhost:2510)" as fleet_api
+participant "FleetOrchestrator" as orch
+
+== 1. User Enters Fleet URL and Clicks Connect ==
+
+user -> dashboard : Enter "http://localhost:2510"\nand click Connect
+activate dashboard
+
+dashboard -> client : configure("http://localhost:2510")
+activate client
+
+client -> client : _fleetApiUrl = "http://localhost:2510"
+
+client -> bridge : POST /api/fleet/config\n{ fleet_api_url: "http://localhost:2510" }
+activate bridge
+note right of client
+  **_bridgeOrigin()** resolves bridge URL:
+  - Browser: MM.serviceClient.apiUrl
+  - Electron: fallback to http://localhost:1112
+end note
+
+bridge -> bridge : bridge._fleet_api_url\n= "http://localhost:2510"
+bridge --> client : { fleet_api_url: "http://localhost:2510" }
+deactivate bridge
+
+client --> dashboard : Promise resolved
+deactivate client
+
+dashboard -> dashboard : localStorage.setItem(\n'mm_fleet_api_url', url)
+dashboard -> dashboard : showToast("Fleet Connected")
+
+== 2. Register Callback and Start Polling ==
+
+dashboard -> client : onUpdate(onFleetUpdate)
+note right of dashboard
+  Registers the dashboard's
+  **onFleetUpdate** callback
+  to receive poll results.
+end note
+
+dashboard -> client : startPolling()
+activate client
+
+client -> client : stopPolling() (clear old timer)
+client -> client : poll()  (immediate first fetch)
+
+== 3. First Poll — Proxied Through Bridge ==
+
+client -> bridge : GET /api/fleet/status
+activate bridge
+note right of client
+  All fleet calls go through the bridge.
+  **_resolveUrl(path)** returns:
+  _bridgeOrigin() + "/api/fleet/status"
+end note
+
+bridge -> bridge : Check bridge._fleet_api_url\nis set → proxy request
+
+bridge -> fleet_api : GET http://localhost:2510/api/fleet/status
+activate fleet_api
+
+fleet_api -> orch : get_fleet_status()
+activate orch
+orch --> fleet_api : { hubs: [...], summary: {...} }
+deactivate orch
+
+fleet_api --> bridge : 200 OK  { hubs: [...], summary: {...} }
+deactivate fleet_api
+
+bridge --> client : 200 OK  { hubs: [...], summary: {...} }
+deactivate bridge
+
+== 4. Dashboard Renders Fleet Data ==
+
+client -> client : _updateCallbacks.forEach(\ncb(data, null))
+
+client -> dashboard : onFleetUpdate(data, null)
+deactivate client
+
+dashboard -> dashboard : _consecutiveErrors = 0
+dashboard -> dashboard : _fleetFingerprint(data)\n→ compare with _lastFleetJson
+dashboard -> dashboard : renderSidebar(data)\n→ hub list in left panel
+dashboard -> dashboard : renderDashboard(data)\n→ hub cards with status
+
+dashboard --> user : Fleet dashboard displayed\nwith hub cards
+deactivate dashboard
+
+== 5. Continuous Polling (every 5s) ==
+
+note over client, bridge
+  setInterval(poll, 5000) keeps
+  fetching /api/fleet/status.
+  **_fleetFingerprint** skips re-render
+  if data hasn't changed.
+end note
+
+@enduml

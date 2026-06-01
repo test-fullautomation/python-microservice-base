@@ -1,0 +1,273 @@
+@startuml class_adapters
+!theme plain
+title MicroserviceBase - Adapter Classes
+
+skinparam class {
+    BackgroundColor<<abstract>> #CCCCFF
+    BackgroundColor<<adapter>> #FFE0B2
+    BackgroundColor<<config>> #CCFFCC
+    BackgroundColor<<proxy>> #E0E0E0
+    BackgroundColor<<hub>> #B2EBF2
+}
+
+' ============================================================================
+' Port Interfaces (shown for context)
+' ============================================================================
+
+package "ports" {
+    abstract class TransportPort <<abstract>> {
+        {abstract} +connect()
+        {abstract} +disconnect()
+        {abstract} +consume(service_name, routing_key, exchange, handler)
+        {abstract} +rpc_call(request_data, exchange_name, routing_key): dict
+        {abstract} +publish(exchange, routing_key, body, properties)
+    }
+
+    abstract class ServiceRegistryPort <<abstract>> {
+        {abstract} +register(service_info)
+        {abstract} +unregister(service_info)
+        {abstract} +subscribe_to_events(handler)
+        {abstract} +notify_update(services_info)
+        {abstract} +get_update_channel_name(): str
+        {abstract} +cleanup()
+    }
+
+    abstract class UIBridgePort <<abstract>> {
+        {abstract} +start(request_handler, services_info_provider)
+        {abstract} +stop()
+        {abstract} +broadcast_update(services_info)
+    }
+}
+
+' ============================================================================
+' Config Classes
+' ============================================================================
+
+package "adapters.config" {
+    class RabbitMQConfig <<config>> {
+        +host: str = "localhost"
+        +port: int = 5672
+        +username: str = "guest"
+        +password: str = "guest"
+        --
+        +{static} from_cmd_args(args, service_name): RabbitMQConfig
+    }
+
+    class EventBusConfig <<config>> {
+        +config_path: str
+        --
+        +load_config(): dict
+        +to_config_source(**overrides): dict
+    }
+}
+
+' ============================================================================
+' RabbitMQ Adapters
+' ============================================================================
+
+package "adapters.transport" {
+    class RabbitMQTransportAdapter <<adapter>> {
+        -_config: RabbitMQConfig
+        -_connection: BlockingConnection
+        -_channel: BlockingChannel
+        -_consuming: bool
+        --
+        +connect()
+        +disconnect()
+        +consume(service_name, routing_key, exchange, handler)
+        +rpc_call(request_data, exchange_name, routing_key): dict
+        +publish(exchange, routing_key, body, properties)
+        +stop_consuming()
+    }
+
+    class EventBusTransportAdapter <<adapter>> {
+        -_config: EventBusConfig
+        -_client: EventBusClient
+        -_stop_event: threading.Event
+        --
+        +connect()
+        +disconnect()
+        +consume(service_name, routing_key, exchange, handler)
+        +rpc_call(request_data, exchange_name, routing_key): dict
+        +publish(exchange, routing_key, body, properties)
+    }
+}
+
+package "adapters.transport (proxies)" {
+    class _ChannelProxy <<proxy>> {
+        -_client: EventBusClient
+        +basic_publish(exchange, routing_key, properties, body)
+        +basic_ack(delivery_tag)
+    }
+
+    class _MethodProxy <<proxy>> {
+        +delivery_tag: int
+    }
+
+    class _PropertiesProxy <<proxy>> {
+        +reply_to: str
+        +correlation_id: str
+        +__call__(correlation_id): _PropertiesProxy
+    }
+}
+
+package "adapters.registry" {
+    class AMQPRegistryAdapter <<adapter>> {
+        -_config: RabbitMQConfig
+        -_connection: BlockingConnection
+        -_channel: BlockingChannel
+        -_update_exchange_name: str
+        --
+        +register(service_info)
+        +unregister(service_info)
+        +subscribe_to_events(handler)
+        +notify_update(services_info)
+        +get_update_channel_name(): str
+        +cleanup()
+    }
+
+    class EventBusRegistryAdapter <<adapter>> {
+        -_config: EventBusConfig
+        -_registry_client: EventBusClient
+        -_update_client: EventBusClient
+        -_update_exchange_name: str
+        --
+        +register(service_info)
+        +unregister(service_info)
+        +subscribe_to_events(handler)
+        +notify_update(services_info)
+        +get_update_channel_name(): str
+        +cleanup()
+        -_get_registry_client(): EventBusClient
+        -_get_update_client(): EventBusClient
+    }
+}
+
+package "adapters.ui_bridge" {
+    class FastAPIBridge <<adapter>> {
+        -_host: str
+        -_port: int
+        -_app: FastAPI
+        --
+        +start(request_handler, services_info_provider)
+        +stop()
+        +broadcast_update(services_info)
+    }
+}
+
+' ============================================================================
+' Local Hub Adapter Classes
+' ============================================================================
+
+package "adapters.local_hub" {
+    class LocalHubManager <<hub>> {
+        -_server: ProcessHubServer
+        -_executor: ServiceExecutor
+        -_running: bool
+        -_mode: str
+        -_process_config: dict
+        -_raw_config: dict
+        -_config_path: str
+        -_lock: threading.Lock
+        --
+        +start_hub(mode, xpub_port, xsub_port, ...): dict
+        +stop_hub(): dict
+        +get_status(): dict
+        +start_processes(names): dict
+        +stop_processes(names, force): dict
+        +get_config(): dict
+        +add_config(name, config): dict
+        +update_config(name, config): dict
+        +remove_config(name): dict
+        +remove_service(name): dict
+        +import_service(name, source_path, zip_data, wait_time): dict
+        +get_service_log(name, tail): dict
+        +get_services_dir(): str
+        +reset(): dict
+        -_validate_service_structure(service_dir): dict
+        -_resolve_placeholders(value, config_dir)
+        -_load_config_file()
+        -_save_config_file()
+        -_tick_loop()
+    }
+
+    class ServiceExecutor <<hub>> {
+        -_broker_host: str
+        -_broker_port: int
+        -_shutdown_timeout: float
+        -_log_dir: str
+        -_log_handles: dict
+        -_configs: dict
+        -_delegate: SimpleExecutor
+        --
+        +start(name, config)
+        +stop(name, force): bool
+        +is_running(name): bool
+        +get_pid(name): int
+        +get_log_path(name): str
+        +read_log(name, tail): str
+        -_start_logged(name, config)
+        -_start_with_cwd(name, config, cwd)
+        -_try_rpc_shutdown(process_name): bool
+        -_close_log(name)
+        -_read_log_tail(name, max_lines): str
+    }
+}
+
+' ============================================================================
+' Inheritance (implements port)
+' ============================================================================
+
+RabbitMQTransportAdapter ..|> TransportPort
+EventBusTransportAdapter ..|> TransportPort
+AMQPRegistryAdapter ..|> ServiceRegistryPort
+EventBusRegistryAdapter ..|> ServiceRegistryPort
+FastAPIBridge ..|> UIBridgePort
+
+' ============================================================================
+' Composition
+' ============================================================================
+
+RabbitMQTransportAdapter --> RabbitMQConfig : uses
+EventBusTransportAdapter --> EventBusConfig : uses
+EventBusTransportAdapter --> _ChannelProxy : creates
+EventBusTransportAdapter --> _MethodProxy : creates
+EventBusTransportAdapter --> _PropertiesProxy : creates
+AMQPRegistryAdapter --> RabbitMQConfig : uses
+EventBusRegistryAdapter --> EventBusConfig : uses
+LocalHubManager --> ServiceExecutor : _executor
+
+note bottom of _ChannelProxy
+  Proxy objects adapt EventBusClient
+  callbacks to the pika-style handler
+  signature (ch, method, props, body)
+  expected by the domain layer.
+end note
+
+note right of EventBusRegistryAdapter
+  Creates two lazy EventBusClient instances:
+  - Registry client (TopicExchangeHandler)
+  - Update client (FanoutExchangeHandler)
+  Both share the same base JSONP config
+  with exchange overrides via to_config_source().
+end note
+
+note right of LocalHubManager
+  **Config Persistence:**
+  _raw_config preserves ${python}
+  and ${config_dir} placeholders.
+  _process_config has resolved paths.
+  Only _raw_config is saved to disk.
+end note
+
+note bottom of ServiceExecutor
+  **Two-Phase Shutdown:**
+  1. RPC: publish svc_api_shutdown
+     to service's queue name
+  2. Fallback: CTRL_BREAK_EVENT (Win)
+     or SIGTERM (Linux)
+  **service_name** field in config
+  resolves queue name mismatch.
+end note
+
+@enduml

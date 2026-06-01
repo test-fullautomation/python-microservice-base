@@ -1,0 +1,134 @@
+@startuml component_qt_template_widget
+!theme plain
+title Widget Service Template -- Architecture
+footer Shared Widget Shell  |  Auto-Wired UI  |  ~3 KB per service switch
+
+skinparam defaultFontSize 13
+skinparam rectangle {
+    BackgroundColor<<gui>> #BBDEFB
+    BackgroundColor<<service>> #F3E5F5
+    BackgroundColor<<ui>> #E1BEE7
+    BackgroundColor<<backend>> #C8E6C9
+}
+skinparam component {
+    BackgroundColor<<js>> #E3F2FD
+    BackgroundColor<<widget>> #E1BEE7
+    BackgroundColor<<cpp>> #F3E5F5
+    BackgroundColor<<infra>> #C8E6C9
+    BackgroundColor<<config>> #F5F5F5
+    BackgroundColor<<api>> #E3F2FD
+}
+skinparam nodesep 12
+skinparam ranksep 14
+
+legend top left
+  |=  Color |= Meaning |
+  | <#BBDEFB> | GUI (MicroserviceManagerGUI) |
+  | <#E1BEE7> | Service UI (Widget) |
+  | <#F3E5F5> | Qt C++ Shell Runtime |
+  | <#E3F2FD> | Business API |
+  | <#C8E6C9> | Infrastructure |
+endlegend
+
+' ============================================================================
+' GUI LAYER (MicroserviceManagerGUI)
+' ============================================================================
+
+rectangle "GUI -- MicroserviceManagerGUI" <<gui>> as GUI {
+    component "app.js\ndetects *.ui or\nrenderer:\"widget\" in schema" <<js>> as AppJS
+    component "WidgetShellManager.js\nloadUi(url, container)" <<js>> as ShellMgr
+    component "window.callMicroservice()\n-> MM.requestService()\n-> POST /api/request" <<js>> as CallBridge
+    component "FastAPI Bridge\nPOST /api/request" <<infra>> as FastAPI
+
+    AppJS --> ShellMgr : Widget detected
+    CallBridge --> FastAPI : HTTP POST
+}
+
+' ============================================================================
+' SERVICE LAYER (what the developer creates)
+' ============================================================================
+
+rectangle "SERVICE -- MyWidgetService (developer creates this)" <<service>> as SVC {
+
+    ' --- UI sub-layer ---
+    rectangle "UI" <<ui>> as UILayer {
+        component "ServiceUI.ui\n(Qt Designer XML, no code)\n~3 KB per service" <<widget>> as UiFile
+
+        rectangle "Widget Shell Runtime -- widgetshell.wasm (~12 MB, loaded once)" <<cpp>> as ShellRT {
+            component "WidgetController\nloadUiSource(xml)\nclearUi()" <<cpp>> as WidgetCtrl
+            component "QUiLoader\nparses XML -> QWidget tree" <<cpp>> as UiLoader
+            component "wireButtons()\nscan QPushButton children\nread dynamic properties" <<cpp>> as WireBtn
+            component "ServiceBridge\ncallService() -> EM_ASM -> JS" <<cpp>> as SvcBridge
+
+            WidgetCtrl --> UiLoader : load XML
+            UiLoader --> WireBtn : QWidget tree
+            WireBtn --> SvcBridge : button click\n-> callService()
+        }
+
+        UiFile --> WidgetCtrl : loaded into shell\n(swap ~3 KB)
+    }
+
+    ' --- Service backend sub-layer ---
+    rectangle "Service (Backend)" <<backend>> as BELayer {
+        component "main.cpp\nloads config, creates service,\nregisters, starts consuming" <<api>> as MainCpp
+        component "MyWidgetService\nextends ServiceBase\nregisters svc_api_* methods" <<api>> as MySvc
+        component "service_config.json\nname, routing_key,\nbroker host/port" <<config>> as SvcCfg
+        component "CppServiceBase Library\nServiceBase, RabbitMQConnection,\nServiceInfo" <<infra>> as CppLib
+        component "RabbitMQ Broker\nservices_request exchange" <<infra>> as RMQ
+
+        MainCpp --> MySvc : creates
+        MainCpp --> SvcCfg : reads
+        MySvc --> CppLib : extends
+        RMQ --> CppLib : deliver to\nservice queue
+    }
+}
+
+' ============================================================================
+' CONNECTIONS: GUI <-> SERVICE
+' ============================================================================
+
+ShellMgr -[#9C27B0,bold]-> UiFile : XHR fetch\nServiceUI.ui
+ShellMgr --> WidgetCtrl : _widgetshell_loadUiSource(\nsrcPtr)
+SvcBridge -[#CC0000,bold]-> CallBridge : EM_ASM\n-> JS callback
+FastAPI -[#CC0000]-> RMQ : AMQP publish
+
+' Response flow
+RMQ -[#009900,dashed]-> FastAPI : callback queue
+FastAPI -[#009900,dashed]-> CallBridge : JSON response
+
+' ============================================================================
+' KEY NOTES
+' ============================================================================
+
+note right of ShellRT
+  **Widget Shell -- Auto-Wiring Flow:**
+  1. First service click -> load widgetshell.wasm (~12 MB)
+  2. JS reads .ui via XHR
+  3. Pass XML source to C++ via UTF-8
+  4. QUiLoader parses XML -> QWidget tree
+  5. wireButtons() scans QPushButton children:
+     reads serviceMethod, serviceArgs, serviceResult
+  6. Button click -> extract input values -> callService()
+  7. Response routed to serviceResult widget
+  **Hot-reload: Yes** (swap .ui, re-wire)
+end note
+
+note right of UiFile
+  **Dynamic Properties (set in Qt Designer):**
+  - serviceMethod = "svc_api_hello"
+  - serviceArgs = "nameInput,ageInput"
+  - serviceResult = "resultLabel"
+  No code needed -- auto-wired!
+end note
+
+note bottom of RMQ
+  **Widget Template at Scale:**
+  |= Metric          |= Value           |
+  | Shell size        | ~12 MB            |
+  | Per-service UI    | ~3 KB (.ui)       |
+  | 10 services total | ~12 MB + 30 KB    |
+  | Service switch    | ~3 KB download     |
+  | Code required     | Zero (auto-wired) |
+end note
+
+@enduml

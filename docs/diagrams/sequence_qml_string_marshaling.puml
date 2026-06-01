@@ -1,0 +1,81 @@
+@startuml sequence_qml_string_marshaling
+!theme plain
+title QML Shell — String Marshaling (JS ↔ C++)
+
+participant "QtShellMgr\n(JS)" as js
+participant "WASM Heap\n(Module.HEAPU8)" as heap
+participant "qtshell.wasm\n(C++)" as cpp
+
+note over js, cpp
+  **Why manual marshaling?**
+  Qt's qt_add_executable overrides Emscripten's
+  EXPORTED_RUNTIME_METHODS, stripping ccall / cwrap /
+  _malloc / _free. The C functions are still exported
+  via EMSCRIPTEN_KEEPALIVE, so we call them directly
+  with manual UTF-8 string encoding.
+end note
+
+== 1. Allocate: _allocUTF8(jsString) ==
+
+js -> js : encoder = new TextEncoder()\nencoded = encoder.encode(jsString)
+
+js -> cpp : _qtshell_malloc(encoded.length + 1)
+activate cpp
+cpp -> cpp : malloc(len + 1)
+cpp --> js : ptr (heap offset)
+deactivate cpp
+
+js -> heap : Module.HEAPU8.set(encoded, ptr)
+activate heap
+heap -> heap : Copy UTF-8 bytes\nto WASM linear memory
+heap --> js
+deactivate heap
+
+js -> heap : HEAPU8[ptr + len] = 0
+activate heap
+heap -> heap : Write null terminator
+heap --> js
+deactivate heap
+
+== 2. Call: Module._qtshell_XXX(ptr) ==
+
+js -> cpp : Module._qtshell_XXX(ptr)
+activate cpp
+cpp -> cpp : const char* arg = (const char*)ptr
+cpp -> cpp : QString str =\n  QString::fromUtf8(arg)
+note right: C++ now has a proper\nQString copy of the data
+cpp -> cpp : (process the string...)
+cpp --> js : (return)
+deactivate cpp
+
+== 3. Free: _qtshell_free(ptr) ==
+
+js -> cpp : _qtshell_free(ptr)
+activate cpp
+cpp -> cpp : free(ptr)
+note right: Release WASM heap memory
+cpp --> js
+deactivate cpp
+
+== Example: _callWithString() ==
+
+note over js, cpp
+  **Helper pattern used throughout QtShellManager.js:**
+  ─────────────────────────────────────────────────
+  function _callWithString(funcName, str) {
+    var func = _shellModule['_' + funcName];
+    var ptr = _allocUTF8(str);
+    try {
+      func(ptr);
+    } finally {
+      _shellModule._qtshell_free(ptr);
+    }
+  }
+  ─────────────────────────────────────────────────
+  Used for: qtshell_setServiceName,
+            qtshell_loadQmlSource (2 ptrs),
+            qtshell_onResponse (2 ptrs),
+            qtshell_onError (2 ptrs)
+end note
+
+@enduml

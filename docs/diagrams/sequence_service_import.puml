@@ -1,0 +1,127 @@
+@startuml sequence_service_import
+!theme plain
+title Service Import Sequence
+
+participant "GUI\n(LocalHubDashboard)" as GUI
+participant "FastAPI Bridge\n(/api/local-hub/import-service)" as Bridge
+participant "LocalHubManager" as HubMgr
+participant "File System" as FS
+
+== User Selects Import Mode ==
+
+alt Folder Path Mode
+    GUI -> GUI : Enter service name\n+ folder path
+    note right of GUI
+      Electron: native folder dialog
+      via showOpenDialog()
+      Browser: manual path input
+    end note
+else ZIP File Mode
+    GUI -> GUI : Drag-and-drop or\nfile picker for .zip
+    GUI -> GUI : FileReader.readAsArrayBuffer()\n→ base64 encode
+end
+
+== Import Request ==
+
+GUI -> Bridge : POST /api/local-hub/import-service\n{ name, source_path | zip_data, wait_time }
+activate Bridge
+Bridge -> HubMgr : import_service(name, source_path, zip_data, wait_time)
+activate HubMgr
+
+== Pre-Validation ==
+
+HubMgr -> HubMgr : Check name not in _process_config
+alt Name already exists
+    HubMgr --> Bridge : { success: false,\nmessage: "already exists" }
+    Bridge --> GUI : 200 { success: false }
+end
+
+== Source Resolution ==
+
+alt ZIP data provided
+    HubMgr -> FS : Create temp directory
+    HubMgr -> HubMgr : base64.b64decode(zip_data)
+    HubMgr -> FS : zipfile.extractall(temp_dir)
+    activate FS
+
+    HubMgr -> FS : os.listdir(temp_dir)
+    alt Single subdirectory (nested ZIP)
+        HubMgr -> HubMgr : source_dir = temp_dir/subdir
+        note right of HubMgr
+          Many ZIPs contain a single
+          root folder. We detect this
+          and use the inner folder.
+        end note
+    else Multiple entries
+        HubMgr -> HubMgr : source_dir = temp_dir
+    end
+    deactivate FS
+else Folder path provided
+    HubMgr -> FS : os.path.isdir(source_path)
+    HubMgr -> HubMgr : source_dir = source_path
+end
+
+== Structure Validation ==
+
+HubMgr -> FS : Check main.py exists in source_dir
+alt main.py not found
+    HubMgr --> Bridge : { success: false,\nmessage: "main.py not found" }
+end
+
+HubMgr -> FS : Read main.py
+HubMgr -> HubMgr : ast.parse(main.py)
+note right of HubMgr
+  **Hard check:** main.py must
+  parse without syntax errors.
+
+  **AST scan:** Detect _SERVICE_INFO
+  dict to extract service name
+  (for RPC shutdown routing).
+end note
+
+alt Syntax error in main.py
+    HubMgr --> Bridge : { success: false,\nmessage: "syntax error: ..." }
+end
+
+HubMgr -> HubMgr : Scan .py files for:\n- ServiceBase import (soft warning)\n- _SERVICE_INFO dict (extract 'name')
+
+== File Copy ==
+
+HubMgr -> FS : target_dir = <config_dir>/services/{name}/
+HubMgr -> FS : os.makedirs(target_dir, exist_ok=True)
+HubMgr -> FS : shutil.copytree(source_dir, target_dir)
+activate FS
+FS --> HubMgr : files copied
+deactivate FS
+
+== Config Creation ==
+
+HubMgr -> HubMgr : Create raw_config:\n{ "script": "${python}",\n  "args": [abs_path_to_main.py],\n  "process_name": name,\n  "wait_time": wait_time }
+
+alt Detected service_name != name
+    HubMgr -> HubMgr : Add "service_name"\nto config entry
+    note right of HubMgr
+      service_name ensures RPC
+      shutdown targets the correct
+      RabbitMQ queue name.
+    end note
+end
+
+HubMgr -> HubMgr : Store in _raw_config (placeholders)\nand _process_config (resolved)
+HubMgr -> FS : _save_config_file()\n→ hub_processes.json
+
+== Cleanup ==
+
+alt ZIP mode
+    HubMgr -> FS : shutil.rmtree(temp_dir)
+end
+
+HubMgr --> Bridge : { success: true,\nmessage: "imported",\nconfig: {...},\nwarnings: [...] }
+deactivate HubMgr
+
+Bridge --> GUI : 200 OK
+deactivate Bridge
+
+GUI -> GUI : Refresh dashboard\n(new process shown as Stopped)
+
+@enduml

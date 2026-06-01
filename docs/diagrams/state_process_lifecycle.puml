@@ -1,0 +1,105 @@
+@startuml state_process_lifecycle
+!theme plain
+title Local Hub - Process Lifecycle States
+
+skinparam state {
+    BackgroundColor<<normal>> #C8E6C9
+    BackgroundColor<<transient>> #FFF9C4
+    BackgroundColor<<error>> #FFCDD2
+}
+
+[*] --> Stopped
+
+state "Stopped" as Stopped <<normal>> {
+}
+note right of Stopped
+  Process not running.
+  Config exists in hub_processes.json.
+  PID = None.
+end note
+
+state "Starting" as Starting <<transient>> {
+}
+
+state "Running" as Running <<normal>> {
+}
+note right of Running
+  Process alive, PID tracked.
+  Service registered with Registry.
+  Log file actively written.
+end note
+
+state "Stopping" as Stopping <<transient>> {
+    state "RPC Shutdown" as RPC
+    state "Signal Fallback" as Signal
+    state "Force Kill" as Kill
+
+    [*] --> RPC
+    RPC --> Signal : timeout / RPC failed
+    Signal --> Kill : timeout / signal ignored
+    RPC --> [*] : process exited
+    Signal --> [*] : process exited
+    Kill --> [*] : terminated
+}
+note right of Stopping
+  **Phase 1 — RPC:**
+  Publish svc_api_shutdown to
+  service queue (by service_name).
+  Service unregisters from Registry.
+
+  **Phase 2 — Signal:**
+  CTRL_BREAK_EVENT (Windows)
+  or SIGTERM (Linux/macOS).
+  SIGBREAK → KeyboardInterrupt
+  via default_int_handler.
+
+  **Phase 3 — Force:**
+  TerminateProcess (Windows)
+  or SIGKILL (Linux/macOS).
+  No cleanup, no unregister.
+end note
+
+state "Crashed" as Crashed <<error>> {
+}
+note left of Crashed
+  Process exited unexpectedly.
+  PID no longer valid.
+  May not have unregistered
+  from Registry.
+end note
+
+' ============================================================================
+' Transitions
+' ============================================================================
+
+Stopped --> Starting : start_processes([name])
+Starting --> Running : process spawned\n(PID assigned)
+Starting --> Crashed : spawn failed\n(bad config, missing script)
+
+Running --> Stopping : stop_processes([name])
+Running --> Crashed : unexpected exit\n(exception, OOM, etc.)
+
+Stopping --> Stopped : clean exit\n(service unregistered)
+
+Crashed --> Stopped : acknowledged\n(next tick loop)
+Crashed --> Starting : restart attempt
+
+Stopped --> [*] : remove_config(name)\nor remove_service(name)
+
+' ============================================================================
+' Legend
+' ============================================================================
+
+legend right
+    |= Color |= Meaning |
+    | <#C8E6C9> | Stable state |
+    | <#FFF9C4> | Transient state |
+    | <#FFCDD2> | Error state |
+
+    **Key files:**
+    ServiceExecutor — start/stop logic
+    LocalHubManager — state orchestration
+    hub_processes.json — config persistence
+endlegend
+
+@enduml

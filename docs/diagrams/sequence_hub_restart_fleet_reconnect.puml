@@ -1,0 +1,145 @@
+@startuml sequence_hub_restart_fleet_reconnect
+!theme plain
+title Hub Restart → Fleet Reconnect Sequence
+
+participant "User" as user
+participant "LocalHubDashboard\n(LocalHubDashboard.js)" as lhd
+participant "LocalHubClient" as lhc
+participant "FastAPI Bridge\n(localhost:1112)" as bridge
+participant "LocalHubManager" as mgr
+participant "uvicorn.Server\n(new FleetWebAPI thread)" as uvi
+participant "FleetOrchestrator" as orch
+participant "FleetDashboard\n(FleetDashboard.js)" as fd
+participant "FleetClient\n(FleetClient.js)" as fc
+
+== 1. User Starts Hub as Orchestrator ==
+
+user -> lhd : Fill setup form:\n- Mode: Orchestrator\n- Fleet API port: 2510\nClick "Start Hub"
+activate lhd
+
+lhd -> lhc : startHub({ mode: "orchestrator",\nfleet_api_port: 2510, ... })
+activate lhc
+
+lhc -> bridge : POST /api/local-hub/start\n{ mode: "orchestrator",\n  fleet_api_port: 2510, ... }
+activate bridge
+
+bridge -> mgr : start_hub(...)
+activate mgr
+
+== 2. Start Orchestrator Components ==
+
+mgr -> mgr : Start EventBusTransport\n(fleet exchange on RabbitMQ)
+
+mgr -> orch : FleetOrchestrator(\ntransport, health_timeout=30s)
+activate orch
+orch -> orch : Start tick thread\n(5s interval)
+mgr <-- orch : started
+note right of orch
+  Orchestrator listens for
+  hub heartbeats on the
+  fleet exchange.
+end note
+
+== 3. Ensure Port is Free, Then Bind ==
+
+mgr -> mgr : _wait_for_port_free(2510)
+note right of mgr
+  Polls port availability for up to
+  3 seconds.  If an **orphan process**
+  from a previous session holds the
+  port, it is force-killed (Windows
+  taskkill).  If the same process holds
+  it (shouldn't happen after proper
+  shutdown), the wait times out.
+end note
+
+mgr -> uvi : uvicorn.Config(\n  app=FleetWebAPI._app,\n  host="0.0.0.0", port=2510)
+mgr -> uvi : Thread(target=server.run).start()
+activate uvi
+uvi -> uvi : Bind 0.0.0.0:2510\nStart event loop
+note right of uvi
+  We bypass FleetWebAPI.start()
+  and manage uvicorn.Server
+  directly — this allows
+  **should_exit** shutdown later.
+end note
+
+mgr --> bridge : { status: "running",\n  fleet_api_port: 2510, ... }
+deactivate mgr
+
+bridge -> bridge : Auto-set fleet URL:\nbridge._fleet_api_url =\n"http://localhost:2510"
+note right of bridge
+  Bridge now proxies
+  /api/fleet/* requests
+  to port 2510.
+end note
+
+bridge --> lhc : 200 OK  { status: "running",\n  fleet_api_port: 2510 }
+deactivate bridge
+
+lhc --> lhd : Promise resolved
+deactivate lhc
+
+lhd -> lhd : showToast("Hub Started")
+lhd -> lhd : renderDashboard(status)\nStart polling hub status
+
+lhd --> user : Hub dashboard displayed
+deactivate lhd
+
+== 4. User Switches to Fleet Tab ==
+
+user -> fd : Click "Service Network" tab
+activate fd
+
+fd -> fd : activate():\n_lastFleetData = null\n_lastFleetJson = null\n_consecutiveErrors = 0
+
+fd -> fc : onUpdate(onFleetUpdate)
+note right of fd
+  Registers callback. On first
+  visit, renderConfigurePrompt()
+  is shown because _fleetApiUrl
+  is null (was cleared on disconnect).
+end note
+
+fd -> fd : renderConfigurePrompt()
+fd --> user : URL input form shown
+
+== 5. User Connects to Fleet ==
+
+user -> fd : Enter "http://localhost:2510"\nClick "Connect"
+
+fd -> fc : configure("http://localhost:2510")
+activate fc
+fc -> bridge : POST /api/fleet/config\n{ fleet_api_url: "http://localhost:2510" }
+activate bridge
+bridge --> fc : { fleet_api_url: "http://localhost:2510" }
+deactivate bridge
+fc --> fd : configured
+deactivate fc
+
+fd -> fc : onUpdate(onFleetUpdate)
+fd -> fc : startPolling()
+activate fc
+
+== 6. First Successful Poll ==
+
+fc -> bridge : GET /api/fleet/status
+activate bridge
+bridge -> uvi : GET http://localhost:2510/api/fleet/status
+uvi -> orch : get_fleet_status()
+orch --> uvi : { hubs: [{ hub_id: "local-hub",\n  status: "online", ... }],\n  summary: { total_hubs: 1 } }
+uvi --> bridge : 200 OK
+deactivate bridge
+
+fc -> fd : onFleetUpdate(data, null)
+deactivate fc
+
+fd -> fd : renderSidebar(data)\n→ show hub in sidebar
+fd -> fd : renderDashboard(data)\n→ hub card: "online", processes listed
+
+fd --> user : Fleet dashboard shows\nlocal hub online
+deactivate fd
+deactivate uvi
+deactivate orch
+
+@enduml

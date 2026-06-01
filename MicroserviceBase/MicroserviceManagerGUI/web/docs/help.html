@@ -1,0 +1,473 @@
+<div class="docs-layout">
+
+  <!-- ===== TOC Sidebar ===== -->
+  <nav class="docs-toc">
+    <div class="docs-toc-header">
+      <h6><i class="bi bi-book me-1"></i>User Guide</h6>
+      <button class="docs-toc-close" id="docsCloseBtn" title="Close help">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <a href="#about">About</a>
+    <a href="#getting-started">Getting Started</a>
+    <a href="#connecting">Connecting to Broker</a>
+    <a href="#services-mode">Services Mode</a>
+    <a href="#alias-routing">Alias Routing</a>
+    <a href="#service-network">Service Network</a>
+    <a href="#service-creator">Service Creator</a>
+    <a href="#settings">Settings</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+
+  <!-- ===== Scrollable Content ===== -->
+  <div class="docs-body" id="docsBody">
+
+    <!-- About -->
+    <section class="docs-section" id="about">
+      <h2><i class="bi bi-info-circle"></i>About</h2>
+      <div class="docs-about-cards">
+        <div class="docs-about-card">
+          <div class="docs-about-card-icon"><i class="bi bi-box-seam"></i></div>
+          <div class="docs-about-card-body">
+            <div class="docs-about-card-label">MicroserviceBase</div>
+            <div class="docs-about-card-version" id="docsBaseVersion">loading...</div>
+          </div>
+        </div>
+        <div class="docs-about-card">
+          <div class="docs-about-card-icon"><i class="bi bi-window-stack"></i></div>
+          <div class="docs-about-card-body">
+            <div class="docs-about-card-label">Manager GUI</div>
+            <div class="docs-about-card-version" id="docsGuiVersion">loading...</div>
+          </div>
+        </div>
+      </div>
+      <p>
+        A microservice base framework with pluggable transport, registry adapters,
+        and a Manager GUI for monitoring, interacting with, and creating microservices.
+      </p>
+      <div class="docs-project-info">
+        <h3>Project</h3>
+        <table class="docs-info-table">
+          <tr>
+            <td><i class="bi bi-github me-1"></i>Repository</td>
+            <td><a href="https://github.com/test-fullautomation/python-microservice-base"
+                   target="_blank" rel="noopener">test-fullautomation/python-microservice-base</a></td>
+          </tr>
+          <tr>
+            <td><i class="bi bi-file-earmark-text me-1"></i>License</td>
+            <td>Apache-2.0</td>
+          </tr>
+          <tr>
+            <td><i class="bi bi-code-slash me-1"></i>Languages</td>
+            <td>Python, JavaScript, HTML</td>
+          </tr>
+          <tr>
+            <td><i class="bi bi-person me-1"></i>Author</td>
+            <td><a href="mailto:Cuong.NguyenHuynhTri@vn.bosch.com">Nguyen Huynh Tri Cuong</a>
+              (<a href="mailto:nhtcuong@gmail.com">nhtcuong@gmail.com</a>)</td>
+          </tr>
+          <tr>
+            <td><i class="bi bi-person-badge me-1"></i>Product Owner</td>
+            <td>Thomas Pollerspoeck</td>
+          </tr>
+          <tr>
+            <td><i class="bi bi-building me-1"></i>Organization</td>
+            <td>Bosch Global Software Technologies</td>
+          </tr>
+          <tr>
+            <td><i class="bi bi-tags me-1"></i>Keywords</td>
+            <td>
+              <span class="docs-tag">microservice</span>
+              <span class="docs-tag">rabbitmq</span>
+              <span class="docs-tag">eventbus</span>
+              <span class="docs-tag">registry</span>
+              <span class="docs-tag">rpc</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- Getting Started -->
+    <section class="docs-section" id="getting-started">
+      <h2><i class="bi bi-rocket-takeoff"></i>Getting Started</h2>
+      <p>
+        Microservice Manager is a graphical interface for managing, monitoring, and
+        interacting with microservices running on a RabbitMQ message broker. It provides
+        real-time service status, an API explorer, code helpers, fleet management, and
+        a service creation wizard.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/navbar-overview.png" alt="Application overview showing navbar, sidebar, and content area">
+        <figcaption>The main application layout &mdash; navbar with mode toggles, sidebar with service list, and content area.</figcaption>
+      </figure>
+
+      <h3>Dual Hosting</h3>
+      <p>The GUI runs in two modes:</p>
+      <ul>
+        <li><strong>Electron</strong> &mdash; standalone desktop app with native features
+          (settings file, Python bridge auto-launch)</li>
+        <li><strong>Browser</strong> &mdash; served by the FastAPI bridge at
+          <span class="docs-inline-code">http://localhost:1112/gui</span>; no installation
+          required</li>
+      </ul>
+      <p>Both modes share the same web front-end and connect to the same FastAPI bridge.</p>
+
+      <h3>Three Modes</h3>
+      <p>
+        Use the mode toggle buttons in the top navigation bar to switch between:
+      </p>
+      <ul>
+        <li><strong>Services</strong> &mdash; browse connected services, call APIs, view
+          code helpers</li>
+        <li><strong>Service Network</strong> &mdash; fleet dashboard and local hub
+          management</li>
+        <li><strong>Service Creator</strong> &mdash; step-by-step wizard to scaffold a
+          new microservice</li>
+      </ul>
+    </section>
+
+    <!-- Connecting to Broker -->
+    <section class="docs-section" id="connecting">
+      <h2><i class="bi bi-plug"></i>Connecting to Broker</h2>
+      <p>
+        Click the <strong>Connect</strong> button in the top-right corner to open the
+        login dialog.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/login-dialog.png" alt="Connect to Broker dialog with Broker URL, Routing Key, and Advanced Settings">
+        <figcaption>The connection dialog &mdash; enter the broker address and routing key, expand Advanced Settings for the Fleet API URL.</figcaption>
+      </figure>
+
+      <h3>Connection Fields</h3>
+      <ul>
+        <li><strong>Broker URL</strong> &mdash; the RabbitMQ host and port
+          (e.g. <span class="docs-inline-code">localhost:5672</span>)</li>
+        <li><strong>Routing Key</strong> &mdash; the routing key used by the
+          Registry Service (e.g. <span class="docs-inline-code">ServiceRegistry</span>)</li>
+        <li><strong>Fleet API URL</strong> (Advanced) &mdash; optional URL for the
+          Fleet Web API, used by the Service Network tab</li>
+      </ul>
+
+      <h3>Multi-Broker</h3>
+      <p>
+        You can connect to multiple brokers simultaneously. Each connection appears as a
+        <strong>chip</strong> in the navbar. Services from all brokers are merged into
+        the sidebar, grouped under collapsible broker headers.
+      </p>
+      <div class="docs-callout tip">
+        <div class="docs-callout-title"><i class="bi bi-lightbulb me-1"></i>Tip</div>
+        Click a broker chip to focus on its services. Click the
+        <i class="bi bi-x"></i> button on a chip to disconnect from that broker.
+      </div>
+
+      <h3>Disconnect</h3>
+      <p>
+        Click the <strong>Disconnect</strong> button (the Connect button changes label
+        once connected) to close all broker connections and clear the service list.
+      </p>
+    </section>
+
+    <!-- Services Mode -->
+    <section class="docs-section" id="services-mode">
+      <h2><i class="bi bi-box-seam"></i>Services Mode</h2>
+      <p>
+        The default mode. The sidebar lists all registered services. Click a service
+        to view its GUI panel in the content area.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/services-sidebar.png" alt="Services sidebar with connected broker, service list, and Calculator GUI">
+        <figcaption>Services mode &mdash; connected to a broker with services listed in the sidebar. Clicking a service loads its GUI panel.</figcaption>
+      </figure>
+
+      <h3>Sidebar Navigation</h3>
+      <ul>
+        <li>Use the <strong>search bar</strong> at the top to filter services by name</li>
+        <li>Services show a status icon &mdash; green for ready, red for not ready</li>
+        <li>When connected to multiple brokers, services are grouped under collapsible
+          broker headers</li>
+      </ul>
+
+      <h3>Service GUI Plugins</h3>
+      <p>
+        Each service can provide a custom GUI plugin (HTML + JS) loaded from
+        <span class="docs-inline-code">web/services/&lt;ServiceName&gt;/</span>. The
+        plugin is loaded once and cached for fast switching between services.
+      </p>
+
+      <h3>API Explorer</h3>
+      <p>
+        Click the <i class="bi bi-send"></i> icon next to a service name in the sidebar
+        to open the <strong>API Explorer</strong>. This lets you:
+      </p>
+      <ul>
+        <li>Browse the service's registered API endpoints</li>
+        <li>Send test requests with custom JSON payloads</li>
+        <li>View responses in real time</li>
+      </ul>
+      <figure class="docs-figure">
+        <img src="docs/img/api-explorer.png" alt="API Explorer showing available methods for the Calculator service">
+        <figcaption>API Explorer &mdash; select a method from the dropdown and execute it with custom parameters.</figcaption>
+      </figure>
+
+      <h3>Code Helper</h3>
+      <p>
+        Click the <i class="bi bi-code-slash"></i> icon to open the <strong>Code Helper</strong>
+        modal. It generates ready-to-use code snippets for calling the service from
+        Python, JavaScript, or Robot Framework.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/code-helper.png" alt="Code Helper modal showing Python code snippet with language tabs">
+        <figcaption>Code Helper &mdash; auto-generated Python snippet with language tabs (Python, JavaScript, Robot). Use "Copy Code" to grab it.</figcaption>
+      </figure>
+    </section>
+
+    <!-- Alias Routing -->
+    <section class="docs-section" id="alias-routing">
+      <h2><i class="bi bi-signpost-2"></i>Alias Routing</h2>
+      <p>
+        Aliases let you create <strong>user-friendly shortcuts</strong> that map to
+        service methods with pre-configured arguments. Instead of calling a complex
+        API with multiple parameters, you define an alias with fixed values and only
+        pass the variable parts at call time.
+      </p>
+
+      <h3>How It Works</h3>
+      <p>
+        An alias definition consists of three parts:
+      </p>
+      <ul>
+        <li><strong>Alias name</strong> &mdash; the shortcut name callers will use
+          (e.g. <span class="docs-inline-code">turn_on_led</span>)</li>
+        <li><strong>Target service &amp; method</strong> &mdash; the actual service
+          method to call
+          (e.g. <span class="docs-inline-code">ServiceCleware.svc_api_set_switch</span>)</li>
+        <li><strong>Arguments template</strong> &mdash; a comma-separated list of
+          values where <span class="docs-inline-code">${input}</span> placeholders
+          are replaced by the caller's arguments</li>
+      </ul>
+
+      <div class="docs-callout info">
+        <div class="docs-callout-title"><i class="bi bi-info-circle me-1"></i>Example</div>
+        <p style="margin-bottom:0.5rem;">
+          Alias <span class="docs-inline-code">turn_on_led</span> with arguments
+          <span class="docs-inline-code">710925,17,${input}</span> maps to
+          <span class="docs-inline-code">svc_api_set_switch</span>.
+        </p>
+        <p style="margin-bottom:0;">
+          Calling <span class="docs-inline-code">turn_on_led</span> with argument
+          <span class="docs-inline-code">[1]</span> becomes
+          <span class="docs-inline-code">svc_api_set_switch(710925, 17, 1)</span>
+          &mdash; the device ID and port are fixed, only the state is variable.
+        </p>
+      </div>
+
+      <h3>Managing Aliases</h3>
+      <p>
+        The <strong>Alias</strong> entry appears in the sidebar under
+        <strong>Alias Manager</strong> when connected to a broker. Click it to open
+        the alias configuration panel.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/alias.png" alt="Alias Configuration panel showing alias table with service and method dropdowns">
+        <figcaption>Alias Configuration &mdash; define aliases by selecting a target service and method, with an arguments template using <code>${input}</code> placeholders.</figcaption>
+      </figure>
+      <ul>
+        <li>Click <strong>+</strong> to add a new alias row</li>
+        <li>Select the target <strong>Service</strong> and <strong>Method</strong>
+          from the dropdowns</li>
+        <li>Enter the arguments template &mdash; use
+          <span class="docs-inline-code">${input}</span> for values the caller
+          provides</li>
+        <li>Click <strong>Apply</strong> to save the configuration</li>
+        <li>Click <strong>&minus;</strong> to remove an alias</li>
+      </ul>
+
+      <h3>Calling Aliases</h3>
+      <p>
+        Aliases are resolved by the <strong>Service Registry</strong>. Send alias
+        requests to the Registry's routing key, just like a normal service call, but
+        use the alias name as the method:
+      </p>
+      <pre class="docs-code">request = ServiceBase.create_request_data('turn_on_led', [1])
+response = transport.rpc_call(request, 'services_request', 'service.registry')</pre>
+      <p>
+        The Registry looks up the alias, substitutes
+        <span class="docs-inline-code">${input}</span> placeholders with your
+        arguments, and forwards the request to the target service.
+      </p>
+
+      <div class="docs-callout tip">
+        <div class="docs-callout-title"><i class="bi bi-lightbulb me-1"></i>Tip</div>
+        Click the <i class="bi bi-code-slash"></i> icon in the alias panel to open
+        the <strong>Code Helper</strong> with ready-to-use code snippets for calling
+        each configured alias from Python, JavaScript, or Robot Framework.
+      </div>
+
+      <h3>Multiple Inputs</h3>
+      <p>
+        You can use multiple <span class="docs-inline-code">${input}</span>
+        placeholders. Each one is replaced in order by the caller's arguments:
+      </p>
+      <pre class="docs-code"># Alias "quick_add" with arguments: ${input},${input}
+# Calling quick_add([3, 5]) → svc_api_add(3, 5)</pre>
+    </section>
+
+    <!-- Service Network -->
+    <section class="docs-section" id="service-network">
+      <h2><i class="bi bi-hdd-network"></i>Service Network</h2>
+      <p>
+        Switch to <strong>Service Network</strong> mode to manage distributed service
+        infrastructure. This mode has two sub-tabs:
+      </p>
+
+      <h3>Fleet Dashboard</h3>
+      <p>
+        Provides an overview of all hub nodes in your fleet:
+      </p>
+      <ul>
+        <li>View online/offline status of each hub</li>
+        <li>Monitor service counts and health across the fleet</li>
+        <li>Requires a Fleet API URL (configured in the login dialog or Settings)</li>
+      </ul>
+      <figure class="docs-figure">
+        <img src="docs/img/fleet-dashboard.png" alt="Fleet dashboard showing hub cards with online status and service counts">
+        <figcaption>Fleet dashboard &mdash; summary cards for total hubs, online count, and processes. Each hub card shows its services and a Details button.</figcaption>
+      </figure>
+      <div class="docs-callout info">
+        <div class="docs-callout-title"><i class="bi bi-info-circle me-1"></i>Note</div>
+        The Fleet dashboard polls the Fleet Web API periodically. If no Fleet API URL
+        is configured, the dashboard will show a setup prompt.
+      </div>
+
+      <h3>Local Hub</h3>
+      <p>
+        Manage processes on the local machine:
+      </p>
+      <ul>
+        <li>Start, stop, and restart service processes</li>
+        <li>View process logs and status</li>
+        <li>Import or add new service entries</li>
+        <li>Configure process entries in
+          <span class="docs-inline-code">hub_processes.json</span></li>
+      </ul>
+      <figure class="docs-figure">
+        <img src="docs/img/local-hub.png" alt="Local Hub tab with service process list and control buttons">
+        <figcaption>Local Hub &mdash; manage service processes with Start/Stop/Reset controls. Each row shows status and action buttons (start, logs, edit, delete).</figcaption>
+      </figure>
+    </section>
+
+    <!-- Service Creator -->
+    <section class="docs-section" id="service-creator">
+      <h2><i class="bi bi-plus-circle"></i>Service Creator</h2>
+      <p>
+        The <strong>Service Creator</strong> wizard guides you through scaffolding a
+        new microservice. Switch to Creator mode using the top navigation bar.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/service-creator.png" alt="Service Creator wizard showing Basic Information step with form fields">
+        <figcaption>Service Creator &mdash; step 1 (Basic Info) with fields for name, version, description, group, routing key, and transport type.</figcaption>
+      </figure>
+
+      <h3>Wizard Steps</h3>
+      <ol>
+        <li><strong>Basic Info</strong> &mdash; service name, version, description, group,
+          routing key, transport type</li>
+        <li><strong>API Methods</strong> &mdash; define request/response endpoints</li>
+        <li><strong>GUI Support</strong> &mdash; optional GUI plugin configuration</li>
+        <li><strong>Review &amp; Generate</strong> &mdash; preview and download the
+          scaffolded project</li>
+      </ol>
+      <div class="docs-callout tip">
+        <div class="docs-callout-title"><i class="bi bi-lightbulb me-1"></i>Tip</div>
+        The left sidebar shows your progress through the wizard steps. You can click
+        any completed step to go back and modify it.
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="docs-section" id="settings">
+      <h2><i class="bi bi-gear"></i>Settings</h2>
+      <p>
+        Click the <i class="bi bi-gear"></i> gear icon in the navbar to open the
+        Settings dialog.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/settings-dialog.png" alt="Settings dialog with Python Path, Infrastructure, and Bridge Port fields">
+        <figcaption>Settings dialog &mdash; configure the Python interpreter path, broker defaults, and bridge port.</figcaption>
+      </figure>
+
+      <h3>Available Settings</h3>
+      <ul>
+        <li><strong>Python Path</strong> &mdash; path to the Python interpreter
+          (used by Electron to spawn the FastAPI bridge)</li>
+        <li><strong>Broker Host / Port</strong> &mdash; default broker connection
+          values</li>
+        <li><strong>Bridge Port</strong> &mdash; port for the FastAPI bridge
+          (default: <span class="docs-inline-code">1112</span>)</li>
+      </ul>
+
+      <h3>Storage</h3>
+      <ul>
+        <li><strong>Electron mode</strong> &mdash; settings saved to a JSON file on
+          disk</li>
+        <li><strong>Browser mode</strong> &mdash; settings saved to
+          <span class="docs-inline-code">sessionStorage</span> (cleared when tab
+          closes)</li>
+      </ul>
+    </section>
+
+    <!-- Troubleshooting -->
+    <section class="docs-section" id="troubleshooting">
+      <h2><i class="bi bi-wrench"></i>Troubleshooting</h2>
+
+      <h3>Cannot connect to broker</h3>
+      <div class="docs-callout warning">
+        <div class="docs-callout-title"><i class="bi bi-exclamation-triangle me-1"></i>Check these first</div>
+        <ul style="margin-bottom:0;">
+          <li>Verify the RabbitMQ server is running on the specified host and port</li>
+          <li>Ensure the FastAPI bridge is running
+            (<span class="docs-inline-code">http://localhost:1112/docs</span> should
+            show the Swagger UI)</li>
+          <li>Check that no firewall is blocking the connection</li>
+        </ul>
+      </div>
+
+      <h3>Services not appearing</h3>
+      <ul>
+        <li>Confirm the <strong>Routing Key</strong> matches your Registry Service
+          configuration</li>
+        <li>Check the browser console (<kbd class="docs-kbd">F12</kbd>) for error
+          messages</li>
+        <li>Try disconnecting and reconnecting</li>
+      </ul>
+
+      <h3>Service GUI not loading</h3>
+      <ul>
+        <li>The GUI plugin must exist at
+          <span class="docs-inline-code">web/services/&lt;ServiceName&gt;/</span></li>
+        <li>Check the browser console for JavaScript errors in the plugin</li>
+        <li>Ensure the plugin's JS file uses the
+          <span class="docs-inline-code">window.MicroserviceManager</span> namespace</li>
+      </ul>
+
+      <h3>Fleet dashboard shows "No Fleet API configured"</h3>
+      <ul>
+        <li>Set the Fleet API URL in the login dialog (Advanced Settings) or in
+          Settings</li>
+        <li>Ensure the Fleet Web API service is running and reachable</li>
+      </ul>
+
+      <h3>Bridge not starting (Electron)</h3>
+      <ul>
+        <li>Verify the <strong>Python Path</strong> in Settings points to a valid
+          Python interpreter</li>
+        <li>Ensure <span class="docs-inline-code">MicroserviceBase</span> is installed
+          in that Python environment
+          (<span class="docs-inline-code">pip install MicroserviceBase</span>)</li>
+        <li>Check the Electron dev tools console for bridge startup errors</li>
+      </ul>
+    </section>
+
+  </div>
+</div>

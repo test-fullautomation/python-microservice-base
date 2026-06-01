@@ -1,0 +1,230 @@
+@startuml component_flow_qt_ui_loading
+!theme plain
+title Qt UI Loading — Component + Flow Diagram
+footer Three rendering strategies: QML Shell, Widget Shell, Per-Service WASM
+
+skinparam rectangle {
+    BackgroundColor<<browser>> #BBDEFB
+    BackgroundColor<<shell>> #E1BEE7
+    BackgroundColor<<wasm>> #FFE0B2
+    BackgroundColor<<backend>> #C8E6C9
+    BackgroundColor<<fs>> #F5F5F5
+}
+skinparam component {
+    BackgroundColor<<js>> #E3F2FD
+    BackgroundColor<<cpp>> #F3E5F5
+}
+skinparam nodesep 12
+skinparam ranksep 16
+
+legend top left
+  |=  Color |= Meaning |
+  | <#BBDEFB> | Browser / JS Layer |
+  | <#E1BEE7> | Qt WASM Runtime (C++) |
+  | <#FFE0B2> | Per-Service WASM |
+  | <#C8E6C9> | Backend |
+  | <#F5F5F5> | Static Assets |
+endlegend
+
+' ============================================================================
+' ROW 1: DETECTION & ROUTING
+' ============================================================================
+
+rectangle "Browser — Detection & Routing" <<browser>> as Row1 {
+    component "app.js\n_loadServiceGUIMultiTier()" <<js>> as AppJS
+    component "fetch gui_schema.json" <<js>> as FetchSchema
+    component "list-dir *.qml *.ui *.wasm" <<js>> as ListDir
+
+    AppJS --> FetchSchema : <b>(1)</b> Try schema
+    FetchSchema --> ListDir : <b>(2)</b> No schema?\nScan files
+}
+
+note right of Row1
+  **Detection Priority:**
+  Tier 1a: schema + renderer:"qt" → QML Shell
+  Tier 1b: schema + renderer:"widget" → Widget Shell
+  Tier 1c: schema (no renderer) → Bootstrap form
+  Tier 1d: *.qml auto-detect → QML Shell
+  Tier 1e: *.ui auto-detect → Widget Shell
+  Tier 2:  *.wasm → Per-service WASM
+  Tier 3:  *.html → Custom HTML
+  Tier 4:  fallback → API Explorer
+end note
+
+' ============================================================================
+' ROW 2: THREE JS MANAGERS (columns)
+' ============================================================================
+
+rectangle "Browser — JS Managers" <<browser>> as Row2 {
+
+    rectangle "QML Path" <<browser>> as QmlCol {
+        component "QtShellManager.js" <<js>> as QmlMgr
+        component "loadQml(url, container, svcName)" <<js>> as QmlLoad
+        component "_reparentAndLoad() + _allocUTF8()" <<js>> as QmlInternal
+        QmlMgr --> QmlLoad
+        QmlLoad --> QmlInternal : subsequent\nservice switch
+    }
+
+    rectangle "Widget Path" <<browser>> as WidgetCol {
+        component "WidgetShellManager.js" <<js>> as WidgetMgr
+        component "loadUi(url, container, svcName)" <<js>> as WidgetLoad
+        component "_reparentAndLoad() + _allocUTF8()" <<js>> as WidgetInternal
+        WidgetMgr --> WidgetLoad
+        WidgetLoad --> WidgetInternal : subsequent\nservice switch
+    }
+
+    rectangle "Legacy WASM Path" <<wasm>> as WasmCol {
+        component "QtWasmLoader.js" <<js>> as WasmMgr
+        component "load(folder, wrapper)" <<js>> as WasmLoad
+        component "_instances[svcName]\n{instance, container}" <<js>> as WasmCache
+        WasmMgr --> WasmLoad
+        WasmLoad --> WasmCache
+    }
+
+    QmlCol -[hidden]right-> WidgetCol
+    WidgetCol -[hidden]right-> WasmCol
+}
+
+' Detection → Managers
+FetchSchema -[#0066CC,dashed]-> QmlMgr : renderer:"qt"
+FetchSchema -[#0066CC,dashed]-> WidgetMgr : renderer:"widget"
+ListDir -[#0066CC,dashed]-> QmlMgr : <b>*.qml</b>
+ListDir -[#0066CC,dashed]-> WidgetMgr : <b>*.ui</b>
+ListDir -[#0066CC,dashed]-> WasmMgr : <b>*.wasm</b>
+
+' ============================================================================
+' ROW 3: STATIC ASSETS (what gets fetched)
+' ============================================================================
+
+rectangle "web/ (Static Files)" <<fs>> as Row3 {
+    component "qt-shell/\nqtshell.js + qtshell.wasm" as QtShellFiles
+    component "widget-shell/\nwidgetshell.js + widgetshell.wasm" as WidgetShellFiles
+    component "services/{Name}{Ver}/\nServiceUI.qml | .ui | .wasm" as SvcFiles
+
+    QtShellFiles -[hidden]right-> WidgetShellFiles
+    WidgetShellFiles -[hidden]right-> SvcFiles
+}
+
+QmlLoad -[#9C27B0,bold]-> QtShellFiles : <b>(3a)</b> First load:\nfetch shell WASM
+QmlInternal ..> SvcFiles : XHR read\nServiceUI.qml
+WidgetLoad -[#9C27B0,bold]-> WidgetShellFiles : <b>(3b)</b> First load:\nfetch shell WASM
+WidgetInternal ..> SvcFiles : XHR read\nServiceUI.ui
+WasmLoad -[#FF6600,bold]-> SvcFiles : <b>(3c)</b> Load per-svc\n.wasm + .js (~13 MB)
+
+' ============================================================================
+' ROW 4: QT WASM RUNTIMES (C++)
+' ============================================================================
+
+rectangle "QML Shell — qtshell.wasm\n(~9 MB, loaded once, shared)" <<shell>> as QmlShell {
+    component "ShellController" <<cpp>> as ShellCtrl
+    component "loadQmlSource(src, baseUrl)\nQQmlComponent → Asynchronous\nclearQml() → deleteLater" as LoadQml
+    component "QML Engine\n+ Qt Quick Controls" <<cpp>> as QmlEngine
+    component "ServiceBridge\ncallService() → EM_ASM → JS" <<cpp>> as QmlBridge
+
+    ShellCtrl --> LoadQml
+    LoadQml --> QmlEngine : create items
+    QmlEngine --> QmlBridge : user clicks\nbutton in QML UI
+}
+
+rectangle "Widget Shell — widgetshell.wasm\n(~12 MB, loaded once, shared)" <<shell>> as WidgetShell {
+    component "WidgetController" <<cpp>> as WidgetCtrl
+    component "loadUiSource(xml)\nQUiLoader → QWidget tree\nclearUi() → remove widgets" as LoadUi
+    component "wireButtons()\nauto-wire via\nQt dynamic properties" as WireButtons
+    component "ServiceBridge\ncallService() → EM_ASM → JS" <<cpp>> as WidgetBridge
+
+    WidgetCtrl --> LoadUi
+    LoadUi --> WireButtons : scan QPushButton\nchildren
+    WireButtons --> WidgetBridge : button click\n→ callService()
+}
+
+rectangle "Per-Service WASM\n(~13 MB each, NOT shared)" <<wasm>> as PerSvcWasm {
+    component "myservice.wasm\n(full Qt runtime per svc)" as SvcWasm
+    component "Standalone QWidget or QML app\nwith built-in service calls" as SvcApp
+    SvcWasm --> SvcApp
+}
+
+QmlShell -[hidden]right-> WidgetShell
+WidgetShell -[hidden]right-> PerSvcWasm
+
+QmlInternal -[#9C27B0]-> ShellCtrl : <b>(4a)</b> _qtshell_loadQmlSource(\nsrcPtr, urlPtr)
+WidgetInternal -[#9C27B0]-> WidgetCtrl : <b>(4b)</b> _widgetshell_loadUiSource(\nsrcPtr)
+
+' ============================================================================
+' ROW 5: JS BRIDGE (convergence point)
+' ============================================================================
+
+rectangle "Browser — JS Service Bridge" <<browser>> as Row5 {
+    component "window.callMicroservice(\nsvcName, method, args)" as CallBridge
+    component "MM.requestService()\n→ POST /api/request" as RequestSvc
+    CallBridge --> RequestSvc
+}
+
+QmlBridge -[#CC0000,bold]-> CallBridge : <b>(5)</b> EM_ASM → JS
+WidgetBridge -[#CC0000,bold]-> CallBridge : <b>(5)</b> EM_ASM → JS
+SvcApp -[#CC0000]-> CallBridge : direct JS call
+
+' ============================================================================
+' ROW 6: BACKEND
+' ============================================================================
+
+rectangle "Backend" <<backend>> as Row6 {
+    component "FastAPI Bridge\nPOST /api/request" as FastAPI
+    component "RabbitMQ\nservices_request exchange" as RabbitMQ
+    component "C++ / Python Service\nsvc_api_*(args) → result" as SvcBackend
+
+    FastAPI --> RabbitMQ : AMQP publish
+    RabbitMQ --> SvcBackend : deliver to\nservice queue
+}
+
+RequestSvc -[#CC0000,bold]-> FastAPI : <b>(6)</b> {method, args, broker_url}
+
+' Response flow (upward)
+SvcBackend -[#009900,bold]-> RabbitMQ : <b>(7)</b> reply {result, result_data}
+RabbitMQ -[#009900,bold]-> FastAPI : callback queue
+FastAPI -[#009900,bold]-> RequestSvc : JSON response
+RequestSvc -[#009900,bold]-> CallBridge : Promise.resolve()
+
+' ============================================================================
+' NOTES
+' ============================================================================
+
+note right of QmlShell
+  **QML Shell Lifecycle:**
+  1. First service → load qtshell.wasm (one-time)
+  2. JS reads .qml via XHR (file:// or http://)
+  3. Pass source as UTF-8 to C++ (manual malloc)
+  4. ShellController creates QQmlComponent
+  5. Switch svc → clearQml + reparent canvas
+  6. Shell stays alive — only QML changes
+
+  **String Marshaling (Qt strips ccall):**
+  _qtshell_malloc(len+1) → ptr
+  TextEncoder → HEAPU8.set(encoded, ptr)
+  Null-terminate → call C++ func(ptr)
+  _qtshell_free(ptr)
+end note
+
+note right of WidgetShell
+  **Widget Shell — Auto-Wiring:**
+  .ui files are pure XML (no code).
+  Set dynamic properties in Qt Designer:
+  • serviceMethod = "svc_api_hello"
+  • serviceArgs = "nameInput,ageInput"
+  wireButtons() scans QPushButton children,
+  extracts input values, calls ServiceBridge.
+  Response routed to resultLabel.
+end note
+
+note bottom of Row6
+  **Size & Performance Comparison:**
+  |=                |= QML Shell  |= Widget Shell |= Per-Svc WASM |
+  | First load      | ~9 MB shared | ~12 MB shared | ~13 MB each   |
+  | Switch service  | ~5 KB (.qml) | ~3 KB (.ui)   | ~13 MB (new)  |
+  | 10 services     | ~9 MB total  | ~12 MB total  | ~130 MB total |
+  | Design tool     | Qt Creator   | Qt Designer   | Qt Creator    |
+  | UI file         | .qml (text)  | .ui (XML)     | compiled in   |
+  | Hot reload      | Yes          | Yes           | No            |
+  | Code in UI      | Yes (QML/JS) | No (auto-wire)| Compiled      |
+end note
+
+@enduml

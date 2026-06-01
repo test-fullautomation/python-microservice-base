@@ -1,0 +1,33 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": { "major": 3, "minor": 16, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Default (vcpkg)",
+            "description": "Build with vcpkg dependencies from D:/Project/Out/vcpkg",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "toolchainFile": "D:/Project/Out/vcpkg/scripts/buildsystems/vcpkg.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release (vcpkg)",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "no-backend",
+            "displayName": "QML UI Only (no backend)",
+            "description": "Skip backend build — for editing QML files in Qt Creator",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "BUILD_BACKEND": "OFF"
+            }
+        }
+    ]
+}

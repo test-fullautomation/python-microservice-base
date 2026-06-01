@@ -1,0 +1,17 @@
+{
+    "name": "MyQtWasmService",
+    "version": "1.0.0",
+    "routing_key": "MyQtWasmService",
+    "description": "Example C++ service with Qt Widgets WASM UI — demonstrates the 3-part pattern.",
+    "shortdesc": "Example Qt WASM Service",
+    "group": "Examples",
+    "tag": "example",
+    "gui_support": true,
+    "downloadable": false,
+
+    "broker_host": "localhost",
+    "broker_port": 5672,
+    "broker_vhost": "/",
+    "broker_user": "guest",
+    "broker_pass": "guest"
+}

@@ -1,0 +1,79 @@
+@startuml sequence_alias
+!theme plain
+title Alias Routing Sequence
+
+participant "Caller\n(GUI / Client)" as caller
+participant "TransportPort" as transport
+participant "RabbitMQ\n(Broker)" as broker
+participant "ServiceRegistry" as registry
+participant "Target Service\n(e.g., ServiceDebugboard)" as target
+
+== Alias Request ==
+
+caller -> transport : rpc_call(\n  request_data={"method": "reset_device",\n                "args": ["board_01"]},\n  routing_key=service.registry)
+activate caller
+activate transport
+
+transport -> broker : publish to Registry
+activate broker
+broker -> registry : deliver
+activate registry
+
+== Alias Resolution ==
+
+registry -> registry : is_specific_request("reset_device")
+note right of registry
+  Checks _alias_dict loaded
+  from alias.json:
+  {
+    "reset_device": {
+      "Service name": "ServiceDebugboard",
+      "Method name": "svc_api_reset",
+      "Arguments": "${input},hard"
+    }
+  }
+end note
+
+registry -> registry : handle_alias_request(body)
+registry -> registry : Resolve arguments:\n"${input}" -> "board_01"\nResult: ["board_01", "hard"]
+
+registry -> registry : Look up routing key for\n"ServiceDebugboard" from\nservices_information dict
+
+== Forward to Target Service ==
+
+registry -> transport : request_service(\n  request_data={"method": "svc_api_reset",\n                "args": ["board_01", "hard"]},\n  routing_key=service.debugboard)
+activate transport
+
+transport -> broker : publish to Target
+broker -> target : deliver
+activate target
+
+target -> target : dispatch_request(body)
+target -> target : svc_api_reset("board_01", "hard")
+target -> target : Build ServiceResponse
+
+target --> broker : reply
+deactivate target
+broker --> transport : reply
+deactivate transport
+
+== Return to Caller ==
+
+registry -> registry : Wrap response as\nServiceResponse
+registry --> broker : reply to caller
+deactivate registry
+broker --> transport : reply
+deactivate broker
+transport --> caller : return response
+deactivate transport
+deactivate caller
+
+note over caller, target
+  **Alias routing enables:**
+  - User-friendly method names (no need to know service internals)
+  - Argument templates with ${input} substitution
+  - Transparent forwarding (caller doesn't know about the target service)
+  - Centralized routing configuration via alias.json
+end note
+
+@enduml

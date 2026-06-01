@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ServiceForm</class>
+ <widget class="QWidget" name="ServiceForm">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>520</width>
+    <height>500</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>ServiceCleware</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <property name="margin">
+    <number>12</number>
+   </property>
+
+   <!-- Header -->
+   <item>
+    <widget class="QLabel" name="headerLabel">
+     <property name="text">
+      <string>ServiceCleware</string>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>16</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+
+   <!-- Device Selection -->
+   <item>
+    <widget class="QGroupBox" name="deviceGroup">
+     <property name="title">
+      <string>Device Configuration</string>
+     </property>
+     <layout class="QGridLayout" name="deviceLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="deviceLabel">
+        <property name="text">
+         <string>Device:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="deviceCombo">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QPushButton" name="initButton">
+        <property name="text">
+         <string>Initialize</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="typeLabel">
+        <property name="text">
+         <string>Type:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1" colspan="2">
+       <widget class="QComboBox" name="typeCombo">
+        <item>
+         <property name="text">
+          <string>Switch Box</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>USB Multiplexer</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- Stacked widget: SwitchBox / Multiplexer -->
+   <item>
+    <widget class="QStackedWidget" name="viewStack">
+
+     <!-- Page 0: Switch Box -->
+     <widget class="QWidget" name="switchBoxPage">
+      <layout class="QVBoxLayout" name="switchBoxLayout">
+       <item>
+        <widget class="QLabel" name="switchBoxTitle">
+         <property name="text">
+          <string>Switch Box</string>
+         </property>
+         <property name="font">
+          <font><bold>true</bold></font>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="ledLayout">
+         <item>
+          <widget class="QPushButton" name="sw0">
+           <property name="text"><string>SW0</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="sw1">
+           <property name="text"><string>SW1</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="sw2">
+           <property name="text"><string>SW2</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="sw3">
+           <property name="text"><string>SW3</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="sw4">
+           <property name="text"><string>SW4</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="sw5">
+           <property name="text"><string>SW5</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="sw6">
+           <property name="text"><string>SW6</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="sw7">
+           <property name="text"><string>SW7</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>48</width><height>48</height></size></property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="switchBtnLayout">
+         <item>
+          <widget class="QPushButton" name="allOnButton">
+           <property name="text"><string>All On</string></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="allOffButton">
+           <property name="text"><string>All Off</string></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="refreshButton">
+           <property name="text"><string>Refresh</string></property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+
+     <!-- Page 1: USB Multiplexer -->
+     <widget class="QWidget" name="multiplexerPage">
+      <layout class="QVBoxLayout" name="muxLayout">
+       <item>
+        <widget class="QLabel" name="muxTitle">
+         <property name="text">
+          <string>USB Multiplexer</string>
+         </property>
+         <property name="font">
+          <font><bold>true</bold></font>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="muxInLabel">
+         <property name="text"><string>USB In:</string></property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="muxInLayout">
+         <item>
+          <widget class="QPushButton" name="in1">
+           <property name="text"><string>IN 1</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>64</width><height>40</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="in2">
+           <property name="text"><string>IN 2</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>64</width><height>40</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="inSpacer">
+           <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="muxOutLabel">
+         <property name="text"><string>USB Out:</string></property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="muxOutLayout">
+         <item>
+          <widget class="QPushButton" name="out1">
+           <property name="text"><string>OUT 1</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>64</width><height>40</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="out2">
+           <property name="text"><string>OUT 2</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>64</width><height>40</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="out3">
+           <property name="text"><string>OUT 3</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>64</width><height>40</height></size></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="out4">
+           <property name="text"><string>OUT 4</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="minimumSize"><size><width>64</width><height>40</height></size></property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="routeLabel">
+         <property name="text"><string>No active route</string></property>
+         <property name="alignment"><set>Qt::AlignCenter</set></property>
+         <property name="font"><font><pointsize>11</pointsize></font></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="muxRefreshButton">
+         <property name="text"><string>Refresh</string></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+
+    </widget>
+   </item>
+
+   <!-- Status -->
+   <item>
+    <widget class="QLabel" name="statusLabel">
+     <property name="text">
+      <string>Click Initialize to scan for Cleware devices...</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+     <property name="styleSheet">
+      <string>padding: 6px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px;</string>
+     </property>
+    </widget>
+   </item>
+
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

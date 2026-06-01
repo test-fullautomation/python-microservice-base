@@ -1,0 +1,111 @@
+@startuml sequence_communication
+!theme plain
+skinparam defaultTextAlignment center
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 250
+
+title Service Communication Flow\n(Exchanges, Queues, and Routing Keys)
+
+participant "Client\n(FastAPI Bridge\nor Service A)" as Client
+participant "RabbitMQ Broker" as Broker
+participant "ServiceRegistry" as Registry
+participant "MyService\n(ServiceBase)" as Service
+
+== Phase 1: Service Registration ==
+
+note over Service
+  On startup, service discovers
+  its svc_api_* methods and builds
+  _SERVICE_INFO dict automatically
+end note
+
+Service -> Broker : **publish** to exchange\n**""service_information""** (topic)\nrouting_key = ""service.information""\nbody = { info: _SERVICE_INFO, state: ""on"" }
+
+note over Broker #fff3e0
+  Exchange: **service_information** (topic)
+  Queue: **service_infor_queue** (durable)
+  Binding: routing_key = ""service.information""
+end note
+
+Broker -> Registry : deliver to **service_infor_queue**
+
+Registry -> Registry : handle_update()\nStore service in\nservices_information dict
+
+== Phase 2: Registry Broadcasts Update to All Subscribers ==
+
+Registry -> Broker : **publish** to exchange\n**""services_update""** (fanout)\nrouting_key = """"\nbody = { all services info }
+
+note over Broker #e0f7fa
+  Exchange: **services_update** (fanout)
+  Queues: exclusive auto-delete per subscriber
+  Routing: broadcast to ALL bound queues
+end note
+
+Broker -> Client : deliver to subscriber queue\n(FastAPI Bridge → WebSocket → GUI)
+
+note over Client
+  Client now knows MyService
+  is available with its methods
+  and routing_key
+end note
+
+== Phase 3: RPC Request / Response ==
+
+Client -> Client : Build request:\nServiceBase.create_request_data(\n  ""svc_api_add"", [3, 5])
+
+Client -> Broker : **publish** to exchange\n**""services_request""** (direct)\nrouting_key = ""service.myservice""\nreply_to = <exclusive callback queue>\ncorrelation_id = <uuid>
+
+note over Broker #fff3e0
+  Exchange: **services_request** (direct)
+  Queue: **MyService** (non-durable, purged on bind)
+  Binding: routing_key = ""service.myservice""
+end note
+
+Broker -> Service : deliver to **MyService** queue
+
+Service -> Service : dispatch_request()\nFind svc_api_add()\nCall with args [3, 5]\nBuild ServiceResponse
+
+Service -> Broker : **publish** to exchange\n**""""** (default direct)\nrouting_key = <reply_to queue name>\ncorrelation_id = <same uuid>
+
+note over Broker #f5f5f5
+  Exchange: **""** (default direct)
+  Routes directly to reply_to queue
+  Matched by correlation_id
+end note
+
+Broker -> Client : deliver to callback queue
+
+Client -> Client : Match correlation_id\nParse ServiceResponse:\n{ request: ""svc_api_add"",\n  result: ""pass"",\n  result_data: 8 }
+
+== Phase 4: Service Shutdown ==
+
+note over Service
+  On shutdown (KeyboardInterrupt
+  or svc_api_shutdown RPC)
+end note
+
+Service -> Service : unregister_service()\nstop_consuming()
+
+Service -> Broker : **publish** to exchange\n**""service_information""** (topic)\nrouting_key = ""service.information""\nbody = { info: _SERVICE_INFO, state: ""off"" }
+
+Broker -> Registry : deliver to **service_infor_queue**
+
+Registry -> Registry : handle_update()\nRemove service from\nservices_information dict
+
+Registry -> Broker : **publish** to exchange\n**""services_update""** (fanout)\nbody = { updated services\n+ ""__registry_shutdown__"" sentinel }
+
+Broker -> Client : deliver update\n(GUI removes service from list)
+
+== Exchange Summary ==
+
+note over Client, Service
+  **Exchanges used:**
+  | **Exchange** | **Type** | **Purpose** |
+  | ""services_request"" | Direct | RPC calls between services |
+  | ""service_information"" | Topic | Registration / unregistration events |
+  | ""services_update"" | Fanout | Broadcast service list to UI subscribers |
+  | """" (default) | Direct | RPC response routing via reply_to |
+end note
+
+@enduml

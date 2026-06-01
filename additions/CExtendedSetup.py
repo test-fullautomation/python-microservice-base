@@ -1,6 +1,6 @@
 # **************************************************************************************************************
 #
-#  Copyright 2020-2022 Robert Bosch GmbH
+#  Copyright 2020-2025 Robert Bosch GmbH
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -28,8 +28,7 @@
 #
 # --------------------------------------------------------------------------------------------------------------
 
-import os, sys, platform, shlex, subprocess, shutil
-import pypandoc
+import os, sys, shlex, subprocess, shutil
 import colorama as col
 
 col.init(autoreset=True)
@@ -66,10 +65,15 @@ class CExtendedSetup():
     # --------------------------------------------------------------------------------------------------------------
 
     def genpackagedoc(self):
-        """Executes genpackagedoc.py
+        """Executes genpackagedoc.py if it exists.
         """
-        sPython = self.__oRepositoryConfig.Get('PYTHON')
         sDocumentationBuilder = self.__oRepositoryConfig.Get('DOCUMENTATIONBUILDER')
+        if not os.path.isfile(sDocumentationBuilder):
+            print(f"Documentation builder not found: {sDocumentationBuilder}")
+            print("Skipping documentation generation.")
+            return SUCCESS
+
+        sPython = self.__oRepositoryConfig.Get('PYTHON')
         listCmdLineParts = []
         listCmdLineParts.append(f"\"{sPython}\"")
         listCmdLineParts.append(f"\"{sDocumentationBuilder}\"")
@@ -97,6 +101,9 @@ class CExtendedSetup():
 
     def convert_repo_readme(self):
         """Converts the main repository README from 'rst' to 'md' format.
+
+        Note: This requires pypandoc to be installed. If not available,
+        the conversion is skipped.
         """
 
         sReadMe_rst = self.__oRepositoryConfig.Get("README_RST")
@@ -114,22 +121,25 @@ class CExtendedSetup():
             return ERROR
 
         if os.path.isfile(sReadMe_rst) is False:
-            print()
-            printerror(f"Missing readme file '{sReadMe_rst}'")
-            print()
-            return ERROR
+            print(f"README.rst not found at '{sReadMe_rst}', skipping conversion.")
+            return SUCCESS
 
-        sFileContent = pypandoc.convert_file(sReadMe_rst, 'md')
-        hFile_md = open(sReadMe_md, "w", encoding="utf-8")
-        listFileContent = sFileContent.splitlines()
-        for sLine in listFileContent:
-            hFile_md.write(sLine + "\n")
-        hFile_md.close()
+        try:
+            import pypandoc
+            sFileContent = pypandoc.convert_file(sReadMe_rst, 'md')
+            hFile_md = open(sReadMe_md, "w", encoding="utf-8")
+            listFileContent = sFileContent.splitlines()
+            for sLine in listFileContent:
+                hFile_md.write(sLine + "\n")
+            hFile_md.close()
 
-        print(f"File '{sReadMe_rst}'")
-        print("converted to")
-        print(f"'{sReadMe_md}'")
-        print()
+            print(f"File '{sReadMe_rst}'")
+            print("converted to")
+            print(f"'{sReadMe_md}'")
+            print()
+        except ImportError:
+            print("pypandoc not installed, skipping README conversion.")
+            print()
 
         return SUCCESS
 
@@ -196,4 +206,3 @@ class CExtendedSetup():
 # eof class CExtendedSetup():
 
 # --------------------------------------------------------------------------------------------------------------
-

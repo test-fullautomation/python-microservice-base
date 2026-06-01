@@ -1,0 +1,106 @@
+@startuml sequence_qml_service_call
+!theme plain
+title QML Service Call — Runtime Interaction Sequence
+
+participant "User" as user
+participant "QML UI\n(ServiceUI.qml)" as qml
+participant "ServiceBridge\n(C++ Singleton)" as bridge
+participant "QtShellMgr\n(JS Bridge)" as mgr
+participant "ServiceClient\n(MM.requestService)" as client
+participant "FastAPI Bridge\n(/api/request)" as api
+participant "RabbitMQ\n(Broker)" as broker
+participant "C++ Backend\n(ServiceBase)" as backend
+
+== User Interacts with QML UI ==
+
+user -> qml : Click "Say Hello" button
+activate qml
+
+qml -> bridge : ServiceBridge.callService(\n"MyQMLService",\n"svc_api_hello",\n["World"])
+activate bridge
+
+== WASM → JS Bridge (fire-and-forget) ==
+
+bridge -> bridge : EM_ASM {\n  var svc = UTF8ToString($0);\n  var method = UTF8ToString($1);\n  var args = JSON.parse(\n    UTF8ToString($2));\n  window.callMicroservice(\n    svc, method, args);\n}
+
+bridge -> mgr : window.callMicroservice(\n"MyQMLService", "svc_api_hello", ["World"])
+activate mgr
+deactivate bridge
+
+mgr -> mgr : Lookup MM.servicesInfor["MyQMLService"]\n→ routing_key
+
+mgr -> client : MM.requestService(\n{method: "svc_api_hello",\n args: ["World"]},\n"services_request",\nroutingKey)
+activate client
+
+== Browser → FastAPI → RabbitMQ ==
+
+client -> api : POST /api/request\n{method, args,\n exchange, routing_key,\n broker_url}
+activate api
+
+api -> broker : rpc_call(request_data,\nexchange, routing_key)
+activate broker
+
+broker -> backend : AMQP deliver
+activate backend
+
+== C++ Backend Dispatch ==
+
+backend -> backend : ConsumeOne() receives message
+backend -> backend : ServiceRequest::from_message(body)
+backend -> backend : dispatchRequest(req)\n→ find "svc_api_hello" in m_apiMethods
+backend -> backend : svc_api_hello(["World"])\n→ "Hello, World!"
+backend -> backend : ServiceResponse::pass(\n"svc_api_hello",\n"Hello, World!")
+
+== Response Path ==
+
+backend -> broker : Publish to default exchange\nrouting_key = reply_to\nbody = {"request":"svc_api_hello",\n"result":"pass",\n"result_data":"Hello, World!"}
+deactivate backend
+
+broker -> api : Reply on callback queue
+deactivate broker
+
+api --> client : {request, result, result_data}
+deactivate api
+
+client --> mgr : Promise.resolve(\n{result_data: "Hello, World!"})
+deactivate client
+
+== JS → WASM Callback (via _allocUTF8) ==
+
+mgr -> mgr : Promise.then():\n_callbackResponse(\n  method, resultData)
+
+mgr -> mgr : mPtr = _allocUTF8("svc_api_hello")\nrPtr = _allocUTF8("Hello, World!")
+note right
+  Manual UTF-8 marshaling
+  (Qt strips _malloc/_free/ccall):
+  _qtshell_malloc(len+1)
+  HEAPU8.set(encoded, ptr)
+  HEAPU8[ptr+len] = 0
+end note
+
+mgr -> bridge : _shellModule._qtshell_onResponse(\nmPtr, rPtr)
+activate bridge
+
+mgr -> mgr : _qtshell_free(mPtr)\n_qtshell_free(rPtr)
+deactivate mgr
+
+bridge -> bridge : handleResponse(method, result)
+bridge -> qml : emit responseReceived(\n"svc_api_hello",\n"Hello, World!")
+deactivate bridge
+
+== QML UI Update ==
+
+qml -> qml : Connections {\n  onResponseReceived:\n  resultLabel.text =\n    method + " → " + data\n}
+
+qml --> user : Display "Hello, World!"
+deactivate qml
+
+note over user, backend
+  **Error path:** If the backend throws an exception,
+  the response has result="exception".
+  The JS .catch() calls _callbackError(),
+  which routes via _qtshell_onError() → handleError()
+  → emit errorOccurred() to the QML Connections handler.
+end note
+
+@enduml

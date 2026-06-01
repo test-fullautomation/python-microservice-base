@@ -1,0 +1,117 @@
+@startuml sequence_shutdown
+!theme plain
+title Service Shutdown Sequence (Two-Phase)
+
+participant "GUI\n(LocalHubDashboard)" as GUI
+participant "FastAPI Bridge\n(/api/local-hub/stop)" as Bridge
+participant "LocalHubManager" as HubMgr
+participant "ServiceExecutor" as Executor
+participant "RabbitMQ\n(Broker)" as Broker
+participant "Target Service\n(ServiceBase)" as Service
+participant "ServiceRegistryPort\n(AMQPRegistryAdapter)" as Registry
+
+== Phase 1: User Initiates Stop ==
+
+GUI -> Bridge : POST /api/local-hub/stop\n{ "names": ["MyService"] }
+activate Bridge
+Bridge -> HubMgr : stop_processes(["MyService"])
+activate HubMgr
+HubMgr -> Executor : stop("MyService")
+activate Executor
+
+== Phase 2: RPC Graceful Shutdown ==
+
+Executor -> Executor : Resolve queue name:\nconfig.service_name || process_name
+note right of Executor
+  service_name from config takes
+  priority over process_name.
+  e.g., config "ClewareService" has
+  service_name = "ServiceCleware"
+end note
+
+Executor -> Broker : publish(\n  exchange="",\n  routing_key=<queue_name>,\n  body={"method":"svc_api_shutdown"})
+activate Broker
+
+Broker -> Service : deliver to service queue
+activate Service
+
+Service -> Service : dispatch_request(body)
+Service -> Service : svc_api_shutdown()
+
+== Phase 3: Service Graceful Cleanup ==
+
+Service -> Registry : unregister(service_info)
+activate Registry
+Registry -> Broker : publish(service_information,\nstate="off")
+note right of Registry
+  Creates a new AMQP connection
+  to publish unregistration event.
+  This ensures the Registry knows
+  the service is gone.
+end note
+deactivate Registry
+
+Service -> Service : stop_consuming()
+note right of Service
+  Interruptible loop:
+  process_data_events(time_limit=1)
+  sets _consuming = False
+end note
+
+Service -> Service : finally: cleanup
+deactivate Service
+
+== Phase 4: Wait for Exit ==
+
+Executor -> Executor : Wait for process exit\n(timeout = shutdown_timeout)
+
+alt Process exits within timeout
+    Executor --> HubMgr : stopped = True
+else Process still running (timeout)
+    == Phase 5: Signal Fallback ==
+
+    alt Windows
+        Executor -> Service : CTRL_BREAK_EVENT
+        note right of Executor
+          signal.SIGBREAK is converted
+          to KeyboardInterrupt by
+          signal.default_int_handler
+          (installed in consume loop)
+        end note
+    else Linux/macOS
+        Executor -> Service : SIGTERM
+    end
+
+    Executor -> Executor : Wait for exit\n(stop_timeout)
+
+    alt Still running after signal
+        Executor -> Service : terminate()\n(TerminateProcess / SIGKILL)
+    end
+
+    Executor --> HubMgr : stopped
+end
+
+deactivate Executor
+
+HubMgr -> HubMgr : Update process state
+HubMgr --> Bridge : { "success": true, "results": {...} }
+deactivate HubMgr
+
+Bridge --> GUI : 200 OK
+deactivate Bridge
+
+== Registry Receives Unregistration ==
+
+Broker -> Broker : service_information exchange\ndelivers state="off" event
+Broker -> Broker : ServiceRegistry.handle_update()\nremoves service from tracking
+Broker -> Broker : notify_updates()\nbroadcasts to GUI via fanout
+
+note over GUI, Service
+  **Key Insight:** The default AMQP exchange (exchange="") routes
+  messages by **queue name**, not by routing_key from _SERVICE_INFO.
+  The service's queue name is _SERVICE_INFO['name'], which may differ
+  from the hub process name. The **service_name** field in config
+  bridges this gap.
+end note
+
+@enduml

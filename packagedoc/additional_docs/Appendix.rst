@@ -1,4 +1,4 @@
-.. Copyright 2020-2022 Robert Bosch GmbH
+.. Copyright 2020-2026 Robert Bosch GmbH
 
 .. Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -12,26 +12,39 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 
-**About this package:**
+Appendix
+========
 
-.. table:: Package setup
-   :widths: auto
+License
+-------
 
-   ==================  =========================
-   Setup parameter               Value
-   ==================  =========================
-   Name                ###PACKAGENAME###
-   Version             ###PACKAGEVERSION###
-   Date                ###PACKAGEDATE###
-   Description         ###DESCRIPTION###
-   Package URL         `###REPOSITORYNAME### <###URL###>`_
-   Author              ###AUTHOR###
-   Email               ###AUTHOREMAIL###
-   Language            ###PROGRAMMINGLANGUAGE###
-   License             ###LICENCE###
-   OS                  ###OPERATINGSYSTEM###
-   Python required     ###PYTHONREQUIRES###
-   Development status  ###DEVELOPMENTSTATUS###
-   Intended audience   ###INTENDEDAUDIENCE###
-   Topic               ###TOPIC###
-   ==================  =========================
+###PACKAGENAME### is licensed under the Apache License, Version 2.0.
+
+You may obtain a copy of the License at: http://www.apache.org/licenses/LICENSE-2.0
+
+References
+----------
+
+* RabbitMQ: https://www.rabbitmq.com
+
+* pika (RabbitMQ client for Python): https://pika.readthedocs.io
+
+* FastAPI: https://fastapi.tiangolo.com
+
+* Electron: https://www.electronjs.org
+
+* Python: https://www.python.org
+
+Repository
+----------
+
+Source code: https://github.com/test-fullautomation/python-microservice-base
+
+Issue tracker: https://github.com/test-fullautomation/python-microservice-base/issues
+
+Contact
+-------
+
+Author: Nguyen Huynh Tri Cuong
+
+Email: Cuong.NguyenHuynhTri@vn.bosch.com

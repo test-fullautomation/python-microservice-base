@@ -1,0 +1,59 @@
+@startuml sequence_rpc
+!theme plain
+title RPC Request-Response Sequence
+
+participant "Caller\n(Client / Service)" as caller
+participant "TransportPort\n(Adapter)" as transport
+participant "RabbitMQ\n(Broker)" as broker
+participant "Target Service\n(ServiceBase)" as target
+
+== RPC Call ==
+
+caller -> transport : rpc_call(request_data,\nexchange_name, routing_key)
+activate caller
+activate transport
+
+transport -> transport : Generate correlation_id
+transport -> transport : Create reply queue\n(exclusive, auto-delete)
+
+transport -> broker : publish(\nexchange=services_request,\nrouting_key=service.target,\nprops={reply_to, correlation_id},\nbody={"method": "svc_api_add",\n      "args": [3, 5]})
+activate broker
+
+broker -> target : deliver message
+activate target
+
+== Request Dispatch ==
+
+target -> target : on_request(ch, method, props, body)
+target -> target : dispatch_request(body)
+
+alt method found
+    target -> target : Call svc_api_add(3, 5)
+    target -> target : Build ServiceResponse(\n  request="svc_api_add",\n  result="pass",\n  result_data=8)
+else method not found
+    target -> target : Build ServiceResponse(\n  request="svc_api_add",\n  result="exception",\n  result_data="Method not found")
+end
+
+== Reply ==
+
+target -> broker : basic_publish(\nexchange="",\nrouting_key=reply_to,\nprops={correlation_id},\nbody=response.to_json())
+deactivate target
+
+broker -> transport : deliver reply\n(matched by correlation_id)
+deactivate broker
+
+transport -> transport : Parse response
+transport --> caller : return response dict
+deactivate transport
+deactivate caller
+
+note over caller, target
+  **Wire Format:**
+  Request:  {"method": "svc_api_add", "args": [3, 5]}
+  Response: {"request": "svc_api_add", "result": "pass", "result_data": 8}
+
+  The correlation_id ensures the reply matches the original request,
+  even when multiple RPC calls are in flight concurrently.
+end note
+
+@enduml

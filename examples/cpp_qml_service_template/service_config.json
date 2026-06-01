@@ -1,0 +1,17 @@
+{
+    "name": "MyQMLService",
+    "version": "1.0.0",
+    "routing_key": "MyQMLService",
+    "description": "Example C++ service with QML UI — demonstrates the 3-part pattern.",
+    "shortdesc": "Example QML Service",
+    "group": "Examples",
+    "tag": "example",
+    "gui_support": true,
+    "downloadable": false,
+
+    "broker_host": "localhost",
+    "broker_port": 5672,
+    "broker_vhost": "/",
+    "broker_user": "guest",
+    "broker_pass": "guest"
+}

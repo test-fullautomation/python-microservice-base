@@ -1,28 +1,119 @@
-% --------------------------------------------------------------------------------------------------------------
+% **************************************************************************************************************
 %
-% Copyright 2020-2022 Robert Bosch GmbH
-
-% Licensed under the Apache License, Version 2.0 (the "License");
-% you may not use this file except in compliance with the License.
-% You may obtain a copy of the License at
-
-% http://www.apache.org/licenses/LICENSE-2.0
-
-% Unless required by applicable law or agreed to in writing, software
-% distributed under the License is distributed on an "AS IS" BASIS,
-% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-% See the License for the specific language governing permissions and
-% limitations under the License.
+%  Copyright 2020-2026 Robert Bosch GmbH
 %
-% --------------------------------------------------------------------------------------------------------------
+%  Licensed under the Apache License, Version 2.0 (the "License");
+%  you may not use this file except in compliance with the License.
+%  You may obtain a copy of the License at
+%
+%      http://www.apache.org/licenses/LICENSE-2.0
+%
+%  Unless required by applicable law or agreed to in writing, software
+%  distributed under the License is distributed on an "AS IS" BASIS,
+%  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%  See the License for the specific language governing permissions and
+%  limitations under the License.
+%
+% **************************************************************************************************************
 
-\begin{packagehistory}
+\section{History}
 
-\historyversiondate{0.1.0}{02/2023}
-\historychange{Initial version}
+\subsection{Version 2.0.0 - 09.02.2026}
 
-% \historyversiondate{0.2.0}{...}
-% \historychange{...}
+Major restructure: hexagonal architecture, dual-host GUI, multi-broker support,
+local process hub, standalone installer.
 
-\end{packagehistory}
+\subsubsection{Architecture}
 
+\begin{itemize}
+   \item \textbf{Hexagonal Architecture}: Reorganized codebase into domain, ports, and adapters layers
+   \item \textbf{Factory Pattern}: All components created through \texttt{factory.py} for easy swapping
+   \item \textbf{Port Interfaces}: \texttt{TransportPort}, \texttt{RegistryPort}, \texttt{UIBridgePort}
+   \item \textbf{Adapter Implementations}: RabbitMQ transport, RabbitMQ registry, FastAPI bridge,
+         Local Hub Manager, Service Executor
+\end{itemize}
+
+\subsubsection{GUI v2.0}
+
+\begin{itemize}
+   \item \textbf{Dual Hosting}: Electron desktop app and browser mode via FastAPI bridge
+   \item \textbf{Pure Web Frontend}: HTML/CSS/JS with Bootstrap 5 CDN (no Node.js dependencies)
+   \item \textbf{Namespace}: \texttt{window.MicroserviceManager} (alias \texttt{MM}) replaces
+         Node.js \texttt{global} and \texttt{require()} patterns
+   \item \textbf{Service Plugins}: Dynamically loaded per-service UI components in \texttt{web/services/}
+   \item \textbf{Dark Sidebar Theme}: Custom Bootstrap dark sidebar with accordion navigation
+   \item \textbf{Login Modal}: Bootstrap modal replaces separate Electron popup window
+   \item \textbf{Toast Notifications}: \texttt{MM.showToast()} replaces \texttt{notifier.notify()}
+         and \texttt{dialog.showMessageBox()}
+\end{itemize}
+
+\subsubsection{Multi-Broker Support}
+
+\begin{itemize}
+   \item \textbf{Connection Map}: \texttt{MM.connections} tracks per-broker state
+   \item \textbf{Reverse Lookup}: \texttt{serviceToBroker} maps service names to broker endpoints
+   \item \textbf{Progressive Disclosure}: Broker headers shown only with multiple connections
+   \item \textbf{Session Persistence}: Connection state saved via \texttt{sessionStorage}
+\end{itemize}
+
+\subsubsection{Local Process Hub}
+
+\begin{itemize}
+   \item \textbf{Hub Manager}: Start, stop, and monitor local service processes
+   \item \textbf{Service Executor}: Process execution with \texttt{CTRL\_BREAK\_EVENT} for
+         graceful shutdown on Windows
+   \item \textbf{Config Persistence}: \texttt{hub\_processes.json} with \texttt{\$\{python\}} and
+         \texttt{\$\{config\_dir\}} placeholders preserved across save operations
+   \item \textbf{Hub Dashboard}: Real-time process status display in the GUI
+   \item \textbf{REST API}: Full hub management via \texttt{/api/local-hub/*} endpoints
+\end{itemize}
+
+\subsubsection{Service Management}
+
+\begin{itemize}
+   \item \textbf{Service Import}: Import microservice packages from folders or zip archives
+   \item \textbf{Service Creator}: Interactive wizard for scaffolding new microservices
+   \item \textbf{Registry Shutdown}: \texttt{\_\_registry\_shutdown\_\_} sentinel notifies subscribers
+         when a service unregisters
+\end{itemize}
+
+\subsubsection{Electron Packaging}
+
+\begin{itemize}
+   \item \textbf{Standalone Installer}: NSIS installer for Windows (\texttt{build.bat}),
+         Linux packages (\texttt{build.sh})
+   \item \textbf{Read-only Resources}: Scripts in \texttt{resources/python/}, app in \texttt{app.asar}
+   \item \textbf{Writable User Data}: Settings, config, services, logs in
+         \texttt{\%APPDATA\%/devatservgui/}
+   \item \textbf{First-Run Init}: Template files copied from resources on first launch
+   \item \textbf{Bridge Lifecycle}: Detached bridge process managed via PID file
+\end{itemize}
+
+\subsubsection{Windows Process Fixes}
+
+\begin{itemize}
+   \item \texttt{SIGBREAK} handler converted to \texttt{KeyboardInterrupt} for graceful Python cleanup
+   \item Pika \texttt{start\_consuming()} replaced with \texttt{process\_data\_events(time\_limit=1)}
+         loop for interruptible consumption
+   \item \texttt{subprocess.PIPE} blocking prevented by using \texttt{FileHandler} instead of
+         \texttt{StreamHandler} for logging in subprocess mode
+\end{itemize}
+
+\subsubsection{Documentation}
+
+\begin{itemize}
+   \item 12 Architecture Decision Records (ADR-001 through ADR-012)
+   \item 12 PlantUML diagrams (overview, architecture, component, class, sequence, state)
+   \item Updated README with architecture diagrams, quick start guide, and API reference
+   \item Package documentation with Introduction, Description, and History
+\end{itemize}
+
+\subsection{Version 0.1.0 - 02/2023}
+
+Initial version.
+
+\begin{itemize}
+   \item Basic microservice framework with RabbitMQ communication
+   \item Service registration and discovery
+   \item Electron-based GUI for service monitoring
+\end{itemize}

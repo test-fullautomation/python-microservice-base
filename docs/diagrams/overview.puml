@@ -1,0 +1,152 @@
+@startuml overview
+!theme plain
+
+top to bottom direction
+
+skinparam {
+    ComponentStyle rectangle
+    ComponentBorderColor #555
+    ComponentFontSize 13
+    PackageBorderColor #888
+    PackageFontSize 14
+    PackageStyle frame
+    ArrowColor #555
+    ArrowFontSize 11
+    NoteBorderColor #aaa
+    NoteBackgroundColor #FFFFEE
+    NoteFontSize 11
+    DefaultFontSize 12
+    Padding 8
+    RoundCorner 8
+}
+
+skinparam package {
+    BackgroundColor<<services>> #F3E5F5
+    BackgroundColor<<broker>> #FFF8E1
+    BackgroundColor<<middleware>> #E3F2FD
+    BackgroundColor<<frontend>> #FFEBEE
+    BackgroundColor<<hub>> #E0F7FA
+    BackgroundColor<<client>> #E8EAF6
+}
+
+' ══════════════════════════════════════════
+' LAYER 1: Services
+' ══════════════════════════════════════════
+
+package "Services" <<services>> {
+    component "**ServiceBase**\nsvc_api_* methods, auto-registration,\nhexagonal architecture (Domain/Ports/Adapters)" as svc_base #DDD
+
+    package "GUI Delivery  (varies by service type)" {
+        component "**Qt C++ Service**\nWidget / QML / WASM" as svc_qt #E1BEE7
+        component "**HTML/JS Service**\nWeb Plugin (ZIP)" as svc_html #C8E6C9
+        component "**API-Only Service**\nAuto-generated" as svc_auto #FFE0B2
+    }
+
+    svc_qt -up-> svc_base : extends
+    svc_html -up-> svc_base : extends
+    svc_auto -up-> svc_base : extends
+}
+
+' ══════════════════════════════════════════
+' LAYER 1b: External RPC Client
+' ══════════════════════════════════════════
+
+package "External Client" <<client>> {
+    component "**RPC Client**\nPython script / test framework /\nexternal system" as rpc_client #C5CAE9
+}
+
+' ══════════════════════════════════════════
+' LAYER 2: Message Broker
+' ══════════════════════════════════════════
+
+package "Message Broker" <<broker>> {
+    component "**service_information**\nTopic Exchange" as ex_info #FFF3E0
+    component "**services_request**\nTopic Exchange" as ex_req #FFF3E0
+    component "**Realtime Updates**\nFanout Exchange" as ex_update #FFF3E0
+}
+
+' ══════════════════════════════════════════
+' LAYER 3: Registry + Bridge
+' ══════════════════════════════════════════
+
+together {
+    package "Service Registry" <<middleware>> {
+        component "**Discovery Hub**\nTracking, Alias Routing,\nShutdown Sentinel" as registry #BBDEFB
+    }
+
+    package "FastAPI Bridge" <<middleware>> {
+        component "**REST API**\n/api/request" as rest #FFE0B2
+        component "**WebSocket**\n/ws/updates" as ws #FFE0B2
+        component "**Hub API**\n/api/local-hub/*" as hub_api #FFE0B2
+    }
+}
+
+' ══════════════════════════════════════════
+' LAYER 4: GUI
+' ══════════════════════════════════════════
+
+package "MicroserviceManagerGUI" <<frontend>> {
+    component "**Dual-Host Frontend**\nElectron (desktop) + Browser" as gui #FFCDD2
+    component "**ServiceClient.js**\nRPC transport layer" as gui_client #FFCDD2
+    component "**Service Plugins**\nDynamic UI panels per service" as gui_plugins #FFCDD2
+    component "**LocalHubDashboard.js**\nProcess management UI" as gui_hub #FFCDD2
+
+    gui -down-> gui_client : uses
+    gui -down-> gui_plugins : loads
+    gui -down-> gui_hub : uses
+}
+
+' ══════════════════════════════════════════
+' LAYER 5: Local Hub
+' ══════════════════════════════════════════
+
+package "Local Hub" <<hub>> {
+    component "**LocalHubManager**\nProcess orchestration" as hub_mgr #B2EBF2
+    component "**ServiceExecutor**\nRPC shutdown + signal fallback" as executor #B2EBF2
+    component "**Service Import**\nZIP/Folder + AST validation" as importer #B2EBF2
+    component "**hub_processes.json**\n${python} / ${config_dir} placeholders" as hub_config #B2EBF2
+
+    hub_mgr -down-> executor : start / stop
+    hub_mgr -down-> importer : import service
+    hub_mgr -down-> hub_config : read / write
+}
+
+' ══════════════════════════════════════════
+' RELATIONSHIPS
+' ══════════════════════════════════════════
+
+' Services -> Broker (shared infrastructure via ServiceBase)
+svc_base -down-> ex_info : register
+svc_base -down-> ex_req : consume RPC
+
+' External Client -> Broker
+rpc_client -down-> ex_req : send RPC request
+rpc_client -down-> ex_update : subscribe updates
+
+' Broker -> Registry
+ex_info -down-> registry : service events
+
+' Registry -> Broker (broadcast)
+registry -right-> ex_update : broadcast
+
+' Bridge <-> Broker
+rest -up-> ex_req : forward
+ws -up-> ex_update : subscribe
+
+' GUI -> Bridge
+gui_client -up-> rest : HTTP POST
+gui -up-> ws : realtime
+gui_hub -up-> hub_api : REST
+
+' Bridge -> Hub
+hub_api -down-> hub_mgr : delegates
+
+' Hub -> Services (process management)
+executor -up-> svc_base : manage processes
+
+' Service GUI delivery -> GUI plugins
+svc_qt ..down..> gui_plugins : deliver Qt panel
+svc_html ..down..> gui_plugins : deliver HTML/JS
+svc_auto ..down..> gui_plugins : auto-render
+
+@enduml

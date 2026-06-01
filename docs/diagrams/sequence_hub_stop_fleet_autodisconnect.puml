@@ -1,0 +1,123 @@
+@startuml sequence_hub_stop_fleet_autodisconnect
+!theme plain
+title Hub Stop → Fleet Auto-Disconnect Sequence
+
+participant "User" as user
+participant "LocalHubDashboard\n(LocalHubDashboard.js)" as lhd
+participant "LocalHubClient" as lhc
+participant "Bootstrap Modal\n(#confirmModal)" as modal
+participant "FastAPI Bridge\n(localhost:1112)" as bridge
+participant "LocalHubManager" as mgr
+participant "uvicorn.Server\n(FleetWebAPI thread)" as uvi
+participant "FleetClient\n(FleetClient.js)" as fc
+participant "FleetDashboard\n(FleetDashboard.js)" as fd
+
+== 1. User Clicks Stop Hub ==
+
+user -> lhd : Click "Stop Hub" button
+activate lhd
+
+lhd -> modal : MM.showConfirm(\n"Stop the local hub?",\nonConfirm)
+activate modal
+modal --> user : Bootstrap modal shown
+user -> modal : Click Confirm
+modal -> lhd : onConfirm()
+deactivate modal
+
+lhd -> lhc : stopHub()
+activate lhc
+
+lhc -> bridge : POST /api/local-hub/stop
+activate bridge
+
+== 2. Bridge Stops Hub and Releases Port ==
+
+bridge -> mgr : stop_hub()
+activate mgr
+
+mgr -> mgr : _running = False
+
+mgr -> uvi : should_exit = True
+activate uvi
+note right of mgr
+  Signals uvicorn to shut down
+  gracefully.  FleetWebAPI.stop()
+  alone is a **no-op** — it never
+  actually stops the server thread.
+end note
+
+mgr -> uvi : _server_thread.join(timeout=5)
+uvi -> uvi : Uvicorn event loop exits\n→ socket closed\n→ port 2510 released
+uvi --> mgr : Thread joined
+deactivate uvi
+
+mgr -> mgr : _fleet_web_api = None\n_fleet_uvi_server = None
+mgr -> mgr : _wait_for_port_free(2510)\n(safety net)
+
+mgr -> mgr : Stop FleetOrchestrator
+mgr -> mgr : Stop EventBusTransport
+mgr -> mgr : Stop ProcessHub server
+
+mgr --> bridge : { status: "stopped" }
+deactivate mgr
+
+bridge -> bridge : Clear fleet API URL:\nbridge._fleet_api_url = None
+note right of bridge
+  Ensures future fleet proxy
+  requests return 503 instead
+  of forwarding to dead server.
+end note
+
+bridge --> lhc : 200 OK  { status: "stopped" }
+deactivate bridge
+
+lhc --> lhd : Promise resolved
+deactivate lhc
+
+== 3. Frontend Cleanup ==
+
+lhd -> lhd : showToast("Hub Stopped")
+lhd -> lhc : stopPolling()
+lhd -> lhd : renderSetupForm()
+
+== 4. Fleet Auto-Disconnect (from Local Hub Dashboard) ==
+
+lhd -> fc : disconnect()
+activate fc
+fc -> fc : stopPolling()\n_fleetApiUrl = null\n_updateCallbacks = []
+fc -> fc : localStorage.removeItem(\n'mm_fleet_api_url')
+fc -> bridge : POST /api/fleet/config\n{ fleet_api_url: "" }
+fc --> lhd : done
+deactivate fc
+
+lhd -> fd : renderSidebar(null)
+activate fd
+fd -> fd : Clear fleet sidebar
+deactivate fd
+
+lhd -> fd : renderConfigurePrompt()
+activate fd
+fd -> fd : Show URL input form
+deactivate fd
+
+lhd --> user : Hub stopped,\nfleet disconnected
+deactivate lhd
+
+== Alternative: User is Viewing Fleet Tab During Hub Stop ==
+
+note over fd, fc
+  If the user is on the **Fleet tab** and the hub is
+  stopped externally (e.g., via another client), the
+  poll-based auto-disconnect kicks in:
+
+  1. Bridge returns 503 (fleet URL cleared)
+  2. **onFleetUpdate(null, err)** fires
+  3. _consecutiveErrors increments
+  4. After **2 consecutive errors** (with _lastFleetData ≠ null):
+     → fleetClient.disconnect()
+     → renderConfigurePrompt()
+     → showToast("Fleet Disconnected — Lost connection
+        to fleet orchestrator.")
+end note
+
+@enduml

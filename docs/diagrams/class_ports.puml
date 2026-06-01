@@ -1,0 +1,83 @@
+@startuml class_ports
+!theme plain
+title MicroserviceBase - Port Interfaces
+
+skinparam class {
+    BackgroundColor<<abstract>> #CCCCFF
+    BackgroundColor<<service>> #CCE5FF
+}
+
+package "ports" {
+
+    abstract class TransportPort <<abstract>> {
+        {abstract} +connect()
+        {abstract} +disconnect()
+        {abstract} +consume(service_name, routing_key, exchange, handler)
+        {abstract} +rpc_call(request_data, exchange_name, routing_key): dict
+        {abstract} +publish(exchange, routing_key, body, properties)
+    }
+
+    abstract class ServiceRegistryPort <<abstract>> {
+        {abstract} +register(service_info)
+        {abstract} +unregister(service_info)
+        {abstract} +subscribe_to_events(handler)
+        {abstract} +notify_update(services_info)
+        {abstract} +get_update_channel_name(): str
+        {abstract} +cleanup()
+    }
+
+    abstract class UIBridgePort <<abstract>> {
+        {abstract} +start(request_handler, services_info_provider)
+        {abstract} +stop()
+        {abstract} +broadcast_update(services_info)
+    }
+
+    note right of TransportPort
+      **Handler signature:**
+      handler(ch, method, props, body)
+
+      **consume()** blocks the caller.
+      **rpc_call()** is synchronous
+      request-response with correlation ID.
+    end note
+
+    note right of ServiceRegistryPort
+      **subscribe_to_events()** blocks
+      the caller (run in daemon thread).
+
+      **notify_update()** broadcasts to
+      all connected UI clients.
+    end note
+
+    note right of UIBridgePort
+      **request_handler** routes
+      ServiceRequest -> ServiceResponse.
+
+      **services_info_provider** returns
+      current service registry state.
+    end note
+}
+
+package "domain" {
+
+    class ServiceBase <<service>> {
+        -_transport: TransportPort
+        -_registry: ServiceRegistryPort
+        +serve()
+        +register_service()
+        +request_service()
+    }
+
+    class ServiceRegistry <<service>> {
+        +notify_updates()
+        +handle_update()
+    }
+
+    ServiceRegistry --|> ServiceBase
+}
+
+' Dependency direction: domain depends on ports (inward)
+ServiceBase --> TransportPort : depends on
+ServiceBase --> ServiceRegistryPort : depends on
+
+@enduml
