@@ -1,6 +1,6 @@
 {
   "name": "microservice-manager-gui",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Electron wrapper for Microservice Manager GUI",
   "main": "main.js",
   "scripts": {
