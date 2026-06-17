@@ -194,7 +194,38 @@ Runs in the calling thread (blocking). Typically called from a daemon thread.
       try:
          self._event_channel.start_consuming()
       finally:
+         # start_consuming() has returned (normally, or because cleanup()
+         # scheduled stop_consuming() onto this thread). Close the channel and
+         # connection HERE, on the thread that owns the I/O loop. Closing from
+         # another thread, or from inside an add_callback_threadsafe callback,
+         # re-enters the I/O loop and corrupts pika's internal buffers.
          self._event_consuming = False
+         self._close_event_resources()
+
+   def _close_event_resources(self):
+      """
+Close the event subscription channel and connection.
+
+Must only be called on the thread that owns the event connection's I/O loop
+(the thread running ``subscribe_to_events``), or when no I/O loop is running.
+      """
+      channel = self._event_channel
+      connection = self._event_connection
+      self._event_channel = None
+      self._event_connection = None
+
+      if channel is not None:
+         try:
+            if channel.is_open:
+               channel.close()
+         except pika.exceptions.AMQPError:
+            logger.debug("Error closing event channel", exc_info=True)
+      if connection is not None:
+         try:
+            if not connection.is_closed:
+               connection.close()
+         except pika.exceptions.AMQPError:
+            logger.debug("Error closing event connection", exc_info=True)
 
    def notify_update(self, services_info):
       """
@@ -305,48 +336,36 @@ Close event subscription resources and clean up the update exchange.
 
 The event connection may be running ``start_consuming()`` on a different
 thread (see ``subscribe_to_events``). pika's ``BlockingConnection`` is not
-thread-safe, so stopping/closing it must be scheduled onto the connection's
-own I/O thread via ``add_callback_threadsafe`` instead of being called
-directly from here. Calling ``stop_consuming``/``close`` cross-thread races
-the consuming thread on the same socket and triggers pika internal
-assertions (e.g. ``_tx_buffers is empty``).
+thread-safe, and the only safe cross-thread operation is
+``add_callback_threadsafe``. So when a subscription is active we merely
+*signal* it to stop by scheduling ``stop_consuming`` onto the consuming
+thread; that thread then breaks out of ``start_consuming`` and closes the
+channel/connection itself (in ``subscribe_to_events``'s ``finally``).
+
+The actual close must NOT happen here or inside the scheduled callback:
+``channel.close``/``connection.close`` flush output by running the I/O loop,
+and doing that from another thread (or re-entering the loop from within a
+dispatched callback) corrupts pika's internal buffers — surfacing as
+``_tx_buffers is empty`` assertions or ``StreamLostError: pop from an empty
+deque``.
       """
       connection = self._event_connection
       channel = self._event_channel
       consuming = self._event_consuming
-      self._event_channel = None
-      self._event_connection = None
-      self._event_consuming = False
 
-      if connection is not None:
-         def _close():
-            try:
-               if channel is not None and channel.is_open:
-                  channel.stop_consuming()
-                  channel.close()
-            except pika.exceptions.AMQPError:
-               logger.debug("Error closing event channel", exc_info=True)
-            try:
-               if not connection.is_closed:
-                  connection.close()
-            except pika.exceptions.AMQPError:
-               logger.debug("Error closing event connection", exc_info=True)
-
-         if consuming:
-            # Another thread is blocked in start_consuming(); the connection's
-            # I/O loop is live there. Schedule the close onto that thread so we
-            # don't drive the same socket from two threads (which trips pika
-            # internal assertions). This also wakes start_consuming() so the
-            # consuming thread unblocks and exits.
-            try:
-               connection.add_callback_threadsafe(_close)
-            except (pika.exceptions.AMQPError, AssertionError):
-               logger.debug("Could not schedule threadsafe close, closing directly",
-                            exc_info=True)
-               _close()
-         else:
-            # No I/O loop running: it is safe (and necessary) to close directly,
-            # otherwise a threadsafe callback would never fire.
-            _close()
+      if consuming and connection is not None and channel is not None:
+         # Subscription is live on another thread. Ask that thread to stop;
+         # it owns the connection and will close it once start_consuming()
+         # returns. Don't touch the channel/connection from this thread.
+         try:
+            connection.add_callback_threadsafe(channel.stop_consuming)
+         except (pika.exceptions.AMQPError, AssertionError):
+            logger.debug("Could not schedule threadsafe stop_consuming",
+                         exc_info=True)
+      else:
+         # No I/O loop running: close directly on this thread (safe, and a
+         # scheduled callback would never fire without a running loop).
+         self._close_event_resources()
+         self._event_consuming = False
 
       self.cleanup_update_exchange()
