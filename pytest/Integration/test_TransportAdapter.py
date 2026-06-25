@@ -61,8 +61,9 @@ class TestTransportAdapter:
 
         t = threading.Thread(target=consume_thread, daemon=True)
         t.start()
-        # on_ready fires only after the queue is declared, bound and consuming,
-        # so publishing after this point cannot race the binding setup.
+        # on_ready fires only after the queue is declared, bound and the consumer
+        # callback is registered, so publishing after this point cannot race the
+        # binding setup.
         assert ready_event.wait(timeout=5), "Consumer did not become ready"
 
         # Publish using a separate transport (rpc_call creates its own connection,

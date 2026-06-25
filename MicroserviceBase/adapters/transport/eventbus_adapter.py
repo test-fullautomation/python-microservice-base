@@ -220,7 +220,7 @@ Close the EventBusClient connection.
             logger.debug("Error closing EventBusClient connection", exc_info=True)
          self._client = None
 
-   def consume(self, service_name, routing_key, exchange, handler):
+   def consume(self, service_name, routing_key, exchange, handler, on_ready=None):
       """
 Start consuming RPC requests for a service.
 
@@ -252,6 +252,14 @@ Incoming messages are adapted to the pika-style handler signature.
   / *Condition*: required / *Type*: callable /
 
   Callback function(ch, method, props, body).
+
+* ``on_ready``
+
+  / *Condition*: optional / *Type*: callable / *Default*: None /
+
+  Called with no arguments once the subscription is registered, i.e. once
+  it is safe for a publisher to send messages that this consumer will
+  receive.
       """
       if self._client is None:
          raise TransportError("Not connected. Call connect() first.")
@@ -273,6 +281,14 @@ Incoming messages are adapted to the pika-style handler signature.
 
       self._client.on_sync(routing_key, DictMessage, _on_message)
       logger.info("Awaiting RPC requests via EventBusClient")
+
+      # The subscription is registered: signal readiness so a publisher can
+      # safely send without racing the subscription setup.
+      if on_ready is not None:
+         try:
+            on_ready()
+         except Exception:
+            logger.warning("on_ready callback raised", exc_info=True)
 
       self._stop_event.clear()
       self._stop_event.wait()

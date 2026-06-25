@@ -95,8 +95,8 @@ Start consuming messages for a service.
 
   / *Condition*: optional / *Type*: callable / *Default*: None /
 
-  Called with no arguments once the queue is bound and consuming has
-  started, i.e. once it is safe for a publisher to send messages.
+  Called with no arguments once the queue is bound and the consumer has
+  been registered, i.e. once it is safe for a publisher to send messages.
       """
       ...
 

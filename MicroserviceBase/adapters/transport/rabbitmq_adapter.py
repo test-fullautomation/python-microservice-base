@@ -148,10 +148,11 @@ Sets up the exchange, queue, binding, and starts blocking consumption.
 
   / *Condition*: optional / *Type*: callable / *Default*: None /
 
-  Called with no arguments once the queue is declared, bound and consuming
-  has started, i.e. once it is safe for a publisher to send messages that
-  this consumer will receive. Useful to avoid the publish-before-bind race
-  where a ``direct`` exchange drops unroutable messages.
+  Called with no arguments once the queue is declared, purged, bound and the
+  consumer callback is registered, i.e. once it is safe for a publisher to
+  send messages that this consumer will receive. Useful to avoid the
+  publish-before-bind race where a ``direct`` exchange drops unroutable
+  messages.
       """
       if self._connection is None:
          raise TransportError("Not connected. Call connect() first.")
@@ -171,13 +172,14 @@ Sets up the exchange, queue, binding, and starts blocking consumption.
       self._consume_channel.basic_qos(prefetch_count=1)
       self._consume_channel.basic_consume(queue=service_name, on_message_callback=handler)
 
-      # The queue is now declared, bound and consuming: signal readiness so a
-      # publisher can safely send without racing the binding setup.
+      # The queue is now declared, bound and the consumer callback is
+      # registered: signal readiness so a publisher can safely send without
+      # racing the binding setup.
       if on_ready is not None:
          try:
             on_ready()
          except Exception:
-            logger.debug("on_ready callback raised", exc_info=True)
+            logger.warning("on_ready callback raised", exc_info=True)
 
       logger.info("Awaiting RPC requests (interruptible loop, PID=%d)", os.getpid())
 
