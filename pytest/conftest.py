@@ -2,12 +2,19 @@
 Shared fixtures for MicroserviceBase unit tests.
 """
 
+import logging
 import os
 import sys
 import uuid
 from unittest.mock import MagicMock
 
 import pytest
+
+# pika logs extremely verbose DEBUG traffic (every socket read/write, callback
+# bookkeeping, frame state). With log_cli=true + log_level=NOTSET in pytest.ini
+# this floods the test output. Silence pika (and its sub-loggers) down to
+# WARNING; our own MicroserviceBase logs are unaffected.
+logging.getLogger("pika").setLevel(logging.WARNING)
 
 # Ensure the project root is on sys.path so we can import MicroserviceBase
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
