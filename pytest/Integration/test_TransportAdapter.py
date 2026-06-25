@@ -50,20 +50,20 @@ class TestTransportAdapter:
             rabbitmq_transport.stop_consuming()
 
         def consume_thread():
-            ready_event.set()
             rabbitmq_transport.consume(
                 service_name=queue_name,
                 routing_key=routing_key,
                 exchange=exchange,
                 handler=handler,
+                on_ready=ready_event.set,
             )
             done_event.set()
 
         t = threading.Thread(target=consume_thread, daemon=True)
         t.start()
-        ready_event.wait(timeout=5)
-        # Small delay to let consume setup complete
-        time.sleep(0.5)
+        # on_ready fires only after the queue is declared, bound and consuming,
+        # so publishing after this point cannot race the binding setup.
+        assert ready_event.wait(timeout=5), "Consumer did not become ready"
 
         # Publish using a separate transport (rpc_call creates its own connection,
         # but publish needs the same connection — use a second transport)

@@ -61,7 +61,7 @@ Signal the consume loop to stop.
       ...
 
    @abstractmethod
-   def consume(self, service_name, routing_key, exchange, handler):
+   def consume(self, service_name, routing_key, exchange, handler, on_ready=None):
       """
 Start consuming messages for a service.
 
@@ -90,6 +90,13 @@ Start consuming messages for a service.
   / *Condition*: required / *Type*: callable /
 
   Callback function(ch, method, props, body) for incoming messages.
+
+* ``on_ready``
+
+  / *Condition*: optional / *Type*: callable / *Default*: None /
+
+  Called with no arguments once the queue is bound and consuming has
+  started, i.e. once it is safe for a publisher to send messages.
       """
       ...
 
