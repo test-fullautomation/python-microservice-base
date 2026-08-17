@@ -233,10 +233,24 @@ Build the FastAPI application with all routes.
 
       app = FastAPI(title="MicroserviceBase UI Bridge")
 
+      # NOTE on allow_credentials: it is deliberately False (the default).
+      #
+      # `allow_origins=["*"]` together with `allow_credentials=True` is
+      # invalid per the CORS spec -- a browser refuses to honour
+      # `Access-Control-Allow-Origin: *` on a credentialed request -- so
+      # the credentialed path never actually worked. It also made every
+      # origin on the machine able to drive an API that starts/stops
+      # Consul and Nomad agents and writes files via the scaffold
+      # generator (CodeQL: overly permissive CORS, CWE-942).
+      #
+      # The bridge has no cookie/session/bearer auth and the GUI never
+      # sends `credentials:` on fetch(), so dropping the flag changes no
+      # working behaviour. The wildcard origin is kept because the GUI
+      # legitimately calls in from `file://` (Electron, which sends
+      # `Origin: null`) as well as from the bridge's own HTTP origin.
       app.add_middleware(
          CORSMiddleware,
          allow_origins=["*"],
-         allow_credentials=True,
          allow_methods=["*"],
          allow_headers=["*"],
       )
