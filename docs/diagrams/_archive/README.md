@@ -9,7 +9,7 @@ that no longer exist** in the current codebase.  They are kept here for:
 
 If you're trying to understand the **current** architecture, do **not**
 read these.  Read [`00_canonical_architecture.puml`](../00_canonical_architecture.puml)
-+ [`../../architecture.md`](../../architecture.md) instead.
++ [`../../architecture.md`](../../architecture/overview.md) instead.
 
 ## Why each one was archived
 

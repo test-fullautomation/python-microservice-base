@@ -4,13 +4,13 @@
 > RabbitMQ-era ServiceBase + ServiceBridge that no longer exists. The
 > QML shell idea is still on the roadmap but needs a fresh design
 > against the current gRPC + Consul + Nomad runtime. See
-> [`../changelog.md`](../changelog.md) for the migration that
+> [`../changelog.md`](../reference/changelog.md) for the migration that
 > invalidated this design.
 >
 > Kept for reference because:
 > - The Qt-WASM shell architecture concept (one ~9 MB binary loading
 >   per-service `.qml` files at runtime) is still useful.
-> - The `qml_*_template/` examples in [`examples/_legacy/`](../../examples/_legacy/README.md)
+> - The `qml_*_template/` examples in [`examples/_legacy/`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/_legacy/README.md)
 >   were written against this plan and remain in `_legacy/` for fork
 >   maintainers.
 

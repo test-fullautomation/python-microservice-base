@@ -1,0 +1,47 @@
+@startuml
+' The dependency rule inside one service binary (or the framework):
+' adapters -> ports -> domain, and never the other way round.
+' Rendered into docs/architecture/overview.md.
+
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 12
+skinparam ArrowFontSize 11
+skinparam roundCorner 6
+
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #7A7A7A
+}
+skinparam package {
+  BorderColor #6E6E6E
+  FontStyle bold
+}
+
+title Hexagonal layering — dependencies point inward only
+
+package "Adapters — infra-aware" as adapters #FDF3E7 {
+  rectangle "gRPC adapter\n(api/...)"                       as AGrpc
+  rectangle "Consul adapter\n(registration + discovery)"    as AConsul
+  rectangle "scaffold generator\n(cpp_tmpl.py)"             as AScaffold
+  rectangle "FastAPI bridge\n(REST front)"                  as ABridge
+  rectangle "Nomad subprocess manager"                      as ANomad
+}
+
+package "Ports — interfaces / protocols" as ports #EEF4FB {
+  rectangle "service registry port"   as Pregistry
+  rectangle "process lifecycle port"  as Plife
+  rectangle "serialization port"      as Pserial
+  rectangle "subprocess port"         as Pproc
+}
+
+package "Domain — zero-deps" as domain #EDF6ED {
+  rectangle "Service business logic\nplain functions + value types\nno grpc / fastapi / consul / nomad / qt\nunit-testable in isolation" as D
+}
+
+adapters --> ports  : talks via
+ports    --> domain : consumed by
+domain   ..> adapters : **never** reaches up
+
+@enduml

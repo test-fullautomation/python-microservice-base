@@ -1,9 +1,8 @@
 # Changelog
 
-> 📄 *Also available as HTML:* [`changelog.html`](changelog.html)
 
 Significant changes since the framework's RabbitMQ-era origins.
-Architectural records (one file per decision) live in [`adr/`](adr/);
+Architectural records (one file per decision) live in [`adr/`](../adr);
 this is the chronological summary.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
@@ -25,7 +24,7 @@ type and the per-method readability test authors expect.
   helpers (not Connect/Disconnect — they'd collide with same-named
   RPCs), single-space-only headers (Robot's parser treats 2+ spaces as
   delimiter). Long-form doc:
-  [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md).
+  [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md).
 - **Proto3 default-value fix in the bridge.** `MessageToDict` now
   opts into `always_print_fields_with_no_presence=True` (older
   protobuf: `including_default_value_fields=True`). A unary RPC
@@ -111,9 +110,9 @@ fully-documented Robot Framework test path.
   Direct (host:port) and Consul-resolved (service_name + consul_addr)
   modes; reflection client with automatic LocalProtoClient fallback.
 - **Documentation refresh:** new canonical
-  [`00_canonical_architecture.puml`](diagrams/00_canonical_architecture.puml)
-  and [`component.puml`](diagrams/component.puml); 14 legacy diagrams
-  archived under [`diagrams/_archive/`](diagrams/_archive/); class /
+  [`00_canonical_architecture.puml`](../diagrams/00_canonical_architecture.puml)
+  and [`component.puml`](../diagrams/component.puml); 14 legacy diagrams
+  archived under [`diagrams/_archive/`](../diagrams/_archive); class /
   sequence diagrams refreshed; Service Creator wizard documentation
   rewritten with new screenshots; framework + scaffold + Tier-A
   source files brought in line with QConnect docstring style.
@@ -172,7 +171,7 @@ written for the RabbitMQ-era framework needed minor adjustments
 - Three target names exported for back-compat: `microservice_base::runtime`
   (modern alias), `microservice_base::microservice_base_runtime` (default
   vcpkg-style), `microservice_base_runtime` (legacy bare name).
-- New doc: [`runtime_cpp_install.md`](runtime_cpp_install.md).
+- New doc: [`runtime_cpp_install.md`](../guides/runtime-cpp-install.md).
 
 ### Python monorepo support added to scaffold generator
 - `python_tmpl.generate_monorepo()` mirrors the C++ monorepo emitter:
@@ -235,7 +234,7 @@ written for the RabbitMQ-era framework needed minor adjustments
 Hexagonal-architecture refactor on top of the original RabbitMQ
 broker.  Still broker-era — the gRPC + Consul + Nomad migration came
 later in 2.1.0.  See
-[`packagedoc/additional_docs/History.tex`](../packagedoc/additional_docs/History.tex)
+[`packagedoc/additional_docs/History.tex`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/packagedoc/additional_docs/History.tex)
 for the full sub-section list (Architecture / GUI v2.0 / Multi-Broker
 Support / Local Process Hub / Service Management / Electron Packaging
 / Windows Process Fixes / Documentation).
@@ -293,12 +292,12 @@ read them with the migration in mind.
 | 017 — `svc_api_*` naming convention | Superseded — gRPC method names are explicit |
 | 018 — Alias routing design | Superseded — no broker, no aliasing layer |
 
-A full ADR refresh is queued; in the meantime, [`concepts.md`](concepts.md)
+A full ADR refresh is queued; in the meantime, [`concepts.md`](../architecture/concepts.md)
 has a side-by-side "old term → new term" mapping table.
 
 ## See also
 
-- [`architecture.md`](architecture.md) — current shape
-- [`concepts.md`](concepts.md) — current terminology
-- [`adr/`](adr/) — per-decision rationale
-- [`_legacy/CONCEPT.md`](_legacy/CONCEPT.md) — pre-migration architecture in detail
+- [`architecture.md`](../architecture/overview.md) — current shape
+- [`concepts.md`](../architecture/concepts.md) — current terminology
+- [`adr/`](../adr) — per-decision rationale
+- [`_legacy/CONCEPT.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/CONCEPT.md) — pre-migration architecture in detail

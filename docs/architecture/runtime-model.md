@@ -1,11 +1,10 @@
 # Runtime model
 
-> 📄 *Also available as HTML:* [`runtime_model.html`](runtime_model.html)
 
 What actually happens inside one service from `main()` to handling
 the first RPC, and what `ServiceClient` does when invoking. For the
 big picture (where Consul, Nomad, and the bridge sit) see
-[`architecture.md`](architecture.md).
+[`architecture.md`](overview.md).
 
 ## Server-side: ServiceRunner
 
@@ -199,8 +198,8 @@ rotation in the `.hcl` `logs` block).
 
 ## See also
 
-- [`architecture.md`](architecture.md) — overall layering
+- [`architecture.md`](overview.md) — overall layering
 - [`concepts.md`](concepts.md) — terminology
-- [`troubleshooting.md`](troubleshooting.md) — symptom-keyed problems + fixes
+- [`troubleshooting.md`](../reference/troubleshooting.md) — symptom-keyed problems + fixes
 - `MicroserviceBase/adapters/grpc_bridge/reflect_client.py` — `GrpcReflectClient` + `LocalProtoClient` source
 - `MicroserviceBase/runtime_cpp/include/MicroserviceBase/ServiceRunner.h` — the canonical lifecycle

@@ -36,6 +36,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -136,16 +137,54 @@ def skip_if_no_nomad():
 # Free port allocation
 # --------------------------------------------------------------------------------------------------------------
 
-def free_port():
-    """Ask the OS for a free TCP port (race-prone but good enough for
-    test-fixture spin-up; we hand the port straight to the agent which
-    grabs it within milliseconds).
+# Every port this process has already handed out.  See free_port().
+_issued_ports = set()
+_issued_ports_lock = threading.Lock()
+
+
+def free_port(max_attempts=50):
+    """Return a TCP port that is free *and* has not already been handed
+    out by this process.
+
+    The naive ``bind(0)`` / ``close()`` dance is racy in two distinct
+    ways:
+
+      1. Between ``close()`` and the caller's subprocess actually
+         binding, any other process on the box can take the port.
+      2. Two calls **within this same process** can be handed the SAME
+         port, because the first socket was already closed by the time
+         the second call asks the OS.
+
+    (2) is the dominant failure mode in this suite: a testfile typically
+    calls ``free_port()`` for its own gRPC port and then
+    ``spawn_consul_dev()`` calls ``free_port()`` again for the agent's
+    HTTP port.  When the OS reuses the just-released number, the two
+    fixtures collide and whichever binds second dies -- which is how
+    MSB_0011 could fail in a full-suite run yet pass in isolation.
+
+    We close (2) completely by remembering every port issued and never
+    issuing one twice.  (1) is inherently unfixable without holding the
+    socket open across the handoff, but is far rarer; the retry loop
+    below at least re-rolls rather than returning a known-bad port.
     """
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+    for _ in range(max_attempts):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        finally:
+            s.close()
+
+        with _issued_ports_lock:
+            if port in _issued_ports:
+                continue          # already handed out -- roll again
+            _issued_ports.add(port)
+        return port
+
+    raise RuntimeError(
+        f"free_port(): could not find an unused port in {max_attempts} attempts "
+        f"({len(_issued_ports)} already issued this session)"
+    )
 
 
 def wait_for_port(host, port, timeout=15.0, interval=0.2):

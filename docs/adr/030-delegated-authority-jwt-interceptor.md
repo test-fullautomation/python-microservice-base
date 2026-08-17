@@ -16,11 +16,11 @@ reference.
 
 Companion design docs (offline-readable, with diagrams + Gantt):
 
-- [`consul_auth_architecture.html`](../../../TA/tmp/consul_auth_architecture.html) (English)
-- [`consul_auth_architecture_vi.html`](../../../TA/tmp/consul_auth_architecture_vi.html) (Tiếng Việt)
-- [`consul_auth_implementation_plan.html`](../../../TA/tmp/consul_auth_implementation_plan.html)
+- [`consul_auth_architecture.html`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/TA/tmp/consul_auth_architecture.html) (English)
+- [`consul_auth_architecture_vi.html`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/TA/tmp/consul_auth_architecture_vi.html) (Tiếng Việt)
+- [`consul_auth_implementation_plan.html`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/TA/tmp/consul_auth_implementation_plan.html)
   (English implementation plan)
-- [`consul_auth_implementation_plan_vi.html`](../../../TA/tmp/consul_auth_implementation_plan_vi.html)
+- [`consul_auth_implementation_plan_vi.html`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/TA/tmp/consul_auth_implementation_plan_vi.html)
   (Vietnamese implementation plan)
 
 ## Reviewer
@@ -465,9 +465,9 @@ Rejected because:
 ## References
 
 - Companion design doc:
-  [`D:\Project\TA\tmp\consul_auth_architecture.html`](../../../TA/tmp/consul_auth_architecture.html)
+  [`D:\Project\TA\tmp\consul_auth_architecture.html`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/TA/tmp/consul_auth_architecture.html)
 - Companion implementation plan:
-  [`D:\Project\TA\tmp\consul_auth_implementation_plan.html`](../../../TA/tmp/consul_auth_implementation_plan.html)
+  [`D:\Project\TA\tmp\consul_auth_implementation_plan.html`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/TA/tmp/consul_auth_implementation_plan.html)
 - ADR-022: Nomad orchestrator integration (provides the per-process
   identity for service-account tokens)
 - ADR-023 / 024: multi-node Consul / Nomad cluster (target topology

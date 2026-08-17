@@ -79,7 +79,19 @@ include = ["MicroserviceBase*"]
 "MicroserviceBase.adapters.scaffold" = ["templates/**/*.tmpl"]
 
 [tool.pytest.ini_options]
-testpaths = ["pytest"]
+# Both suites run by default.  Keeping only "pytest" here meant a bare
+# `pytest` invocation exercised ONLY the legacy RabbitMQ/AMQP unit tests
+# and silently skipped every test covering the current gRPC + Consul +
+# Nomad + scaffold-generator architecture -- so CI could report green
+# while testing none of the migration.
+#
+#   pytest/                     legacy transport/registry unit tests.
+#                               Still valid: the RabbitMQ adapters were
+#                               superseded by gRPC (ADR-028), not deleted.
+#   test/pytest/pytestfiles/    current architecture: scaffold generator,
+#                               gRPC reflection, Consul registration,
+#                               Robot resource generator (MSB_0001-0021).
+testpaths = ["pytest", "test/pytest/pytestfiles"]
 
 [tool.mypy]
 python_version = "3.10"

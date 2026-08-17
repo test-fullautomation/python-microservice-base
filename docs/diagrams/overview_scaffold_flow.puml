@@ -1,0 +1,31 @@
+@startuml
+' mb-scaffold: one spec in, a complete service project out.
+' Both the CLI and the GUI wizard drive the same emitter code.
+' Rendered into docs/architecture/overview.md.
+
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 12
+skinparam ArrowFontSize 11
+skinparam roundCorner 6
+
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #7A7A7A
+}
+
+title Scaffold generator — spec to project tree
+
+left to right direction
+
+rectangle "spec\n(CLI flags or YAML)"                                  as Spec
+rectangle "CLI / GUI wizard"                                           as UI
+rectangle "FastAPI bridge\ndelegates to cpp_tmpl.py"                   as Bridge
+rectangle "out/<svc>/\nproto/  src/  deploy/\nbuild_*.bat  README"     as Out
+
+Spec   --> UI
+UI     --> Bridge : POST /api/scaffold/generate-v2
+Bridge --> Out    : writes files
+
+@enduml

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (updated post-migration: the "broker" concept now refers to a Consul cluster — the GUI can connect to multiple Consul clusters simultaneously with the same chip-based UI; see [`docs/changelog.md`](../changelog.md)).
+Accepted (updated post-migration: the "broker" concept now refers to a Consul cluster — the GUI can connect to multiple Consul clusters simultaneously with the same chip-based UI; see [`docs/changelog.md`](../reference/changelog.md)).
 
 ## Date
 

@@ -1,12 +1,11 @@
 # Concepts & glossary
 
-> 📄 *Also available as HTML:* [`concepts.html`](concepts.html)
 
 Quick lookup for terms that show up across the docs and the codebase.
-For the architectural shape see [`architecture.md`](architecture.md);
-for the runtime lifecycle see [`runtime_model.md`](runtime_model.md).
+For the architectural shape see [`architecture.md`](overview.md);
+for the runtime lifecycle see [`runtime_model.md`](runtime-model.md).
 
-This file replaces [`_legacy/CONCEPT.md`](_legacy/CONCEPT.md), which
+This file replaces [`_legacy/CONCEPT.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/CONCEPT.md), which
 described the older RabbitMQ-era runtime — kept for fork maintainers.
 
 ## A → Z
@@ -83,7 +82,7 @@ The Bootstrap-based desktop / browser app at
 `MicroserviceBase/MicroserviceManagerGUI/`. Three modes: **Services**
 (browse + invoke registered services), **Service Network** (start /
 stop Consul + Nomad), **Service Creator** (the scaffold wizard).
-See [`MicroserviceManagerGUI/README.md`](../MicroserviceBase/MicroserviceManagerGUI/README.md).
+See [`MicroserviceManagerGUI/README.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/README.md).
 
 ### `mb-scaffold`
 
@@ -112,7 +111,7 @@ Manager GUI Nomad tab.
 A local copy of an upstream vcpkg port that takes precedence when
 vcpkg looks up the package. We ship one for `grpc` at
 `<project>/ports/grpc/` so we can apply the gcc 13 ICE patch and
-force `gRPC_BUILD_CODEGEN=ON`. See [`changelog.md`](changelog.md) for
+force `gRPC_BUILD_CODEGEN=ON`. See [`changelog.md`](../reference/changelog.md) for
 why.
 
 ### Port (hexagonal)
@@ -139,7 +138,7 @@ which is why we default to it. Production deployments can swap to
 The convenience helper for outbound calls. Resolves via Consul,
 opens a channel, uses reflection to discover methods, dynamically
 builds + sends + parses messages. See
-[`runtime_model.md`](runtime_model.md). Source:
+[`runtime_model.md`](runtime-model.md). Source:
 `MicroserviceBase/runtime/service_client.py` (Python),
 `MicroserviceBase/runtime_cpp/include/MicroserviceBase/ClientRegistry.h` (C++).
 
@@ -156,7 +155,7 @@ and the legacy CONCEPT.
 The boot helper every generated service uses. Builds the gRPC
 server, registers in Consul, installs signal handlers, blocks until
 shutdown, deregisters on exit. See
-[`runtime_model.md`](runtime_model.md). Source:
+[`runtime_model.md`](runtime-model.md). Source:
 `MicroserviceBase/runtime/service_runner.py` (Python),
 `MicroserviceBase/runtime_cpp/include/MicroserviceBase/ServiceRunner.h` (C++).
 
@@ -194,7 +193,7 @@ The architectural ideas that **didn't** change:
 
 ## See also
 
-- [`architecture.md`](architecture.md) — what the pieces are and how they connect
-- [`runtime_model.md`](runtime_model.md) — how a service runs and how a client invokes
-- [`changelog.md`](changelog.md) — when each change happened and why
-- [`_legacy/CONCEPT.md`](_legacy/CONCEPT.md) — pre-migration concept doc
+- [`architecture.md`](overview.md) — what the pieces are and how they connect
+- [`runtime_model.md`](runtime-model.md) — how a service runs and how a client invokes
+- [`changelog.md`](../reference/changelog.md) — when each change happened and why
+- [`_legacy/CONCEPT.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/CONCEPT.md) — pre-migration concept doc

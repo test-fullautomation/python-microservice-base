@@ -145,4 +145,4 @@ See [`docs/diagrams/AUDIT.md`](../diagrams/AUDIT.md) for the full triage and sup
 
 - [ADR GitHub Organization](https://adr.github.io/)
 - [Michael Nygard's ADR Article](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)
-- [MicroserviceBase Concept Document](../_legacy/CONCEPT.md)
+- [MicroserviceBase Concept Document](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/CONCEPT.md)

@@ -1,0 +1,152 @@
+# ProperDocs configuration for the MicroserviceBase framework docs.
+#
+# Build:  "C:\Program Files\RobotFramework\python3\python.exe" -m properdocs build --clean
+# Serve:  "C:\Program Files\RobotFramework\python3\python.exe" -m properdocs serve
+#
+# PlantUML renders through the VENDORED jar at tools/plantuml.jar (no
+# plantuml.com round-trip), so the build works behind the corporate proxy.
+# Graphviz 2.44.1 is installed and detected, so graph diagrams (class /
+# component / state) render with dot; no Smetana pragma is required.
+
+site_name: MicroserviceBase
+site_description: Hexagonal microservice framework - gRPC, Consul, Nomad
+site_author: BITS Test Automation Solutions
+repo_url: https://github.com/test-fullautomation/python-microservice-base
+repo_name: python-microservice-base
+edit_uri: edit/develop/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: readthedocs
+  navigation_depth: 3
+  highlightjs: true
+
+extra_css:
+  - css/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+  - fenced_code
+  - codehilite:
+      guess_lang: false
+  # NOTE: no quotes around the jar path - plantuml-markdown passes the
+  # string to java verbatim, and quotes would be taken literally.
+  - plantuml_markdown:
+      plantuml_cmd: java -Dplantuml.include.path=docs -jar tools/plantuml.jar
+      base_dir: docs
+      format: svg
+
+plugins:
+  # A plugins: block REPLACES the defaults, so search must be re-listed.
+  - search
+  - glightbox:
+      zoomable: true
+      draggable: true
+
+# Manager GUI docs and examples docs cannot be moved into docs/ -- their
+# HTML twins are shipped runtime assets (in-app help + Electron bundle),
+# and examples/docs/ ships in the installer. The hook copies their
+# Markdown into docs/gui/ and docs/examples/ at build time and rewrites
+# the links. Both destinations are gitignored build artefacts.
+hooks:
+  - docs_hooks/copy_external_docs.py
+
+# Live-reload when the CANONICAL sources of the generated trees change,
+# so editing a GUI or examples page still refreshes the browser.
+#
+# (There is no `watch_ignore` option in MkDocs/ProperDocs -- setting one
+# aborts a --strict build. The hook writing into docs/ does not cause a
+# rebuild loop because it writes byte-identical content each time, so the
+# file watcher sees no modification after the first pass.)
+watch:
+  - docs_hooks
+  - MicroserviceBase/MicroserviceManagerGUI/docs/md
+  - examples/docs/md
+
+# docs/_legacy/ holds pre-migration (RabbitMQ-era) material kept for
+# historical reference only. It is excluded from the build entirely --
+# its links point at diagrams that have since moved to diagrams/_archive/,
+# and publishing superseded architecture alongside the current one is
+# actively misleading. The files remain in git; see ADR-028 for what
+# replaced them.
+exclude_docs: |
+  _legacy/
+
+# Kept in the build but deliberately out of the sidebar: the .puml sources
+# are embedded into architecture/diagrams.md rather than served as pages.
+not_in_nav: |
+  diagrams/**
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Concepts: architecture/concepts.md
+      - Runtime model: architecture/runtime-model.md
+      - Diagrams: architecture/diagrams.md
+  - Guides:
+      - "C++ runtime install": guides/runtime-cpp-install.md
+  # --- generated at build time by docs_hooks/copy_external_docs.py ---
+  - Manager GUI:
+      - Overview: gui/index.md
+      - Service Creator wizard: gui/service_creator.md
+      - Robot resource generator: gui/robot_generator.md
+      - "Operating Consul + Nomad": gui/ops_consul_nomad.md
+  - Examples and toolchain:
+      - Overview: examples/index.md
+      - Creating a service: examples/service_creation.md
+      - MinGW setup: examples/mingw_setup.md
+      - vcpkg setup: examples/vcpkg_setup.md
+      - "Qt + gRPC setup": examples/qt_grpc_setup.md
+      - WASM Cleware service: examples/wasm_cleware_service_guide.md
+  # -------------------------------------------------------------------
+  - Reference:
+      - Troubleshooting: reference/troubleshooting.md
+      - Changelog: reference/changelog.md
+  - Architecture decisions:
+      - "Architecture Decision Records": adr/README.md
+      - "ADR-XXX: [Title]": adr/000-template.md
+      - "001 · Hexagonal Architecture (Ports and Adapters)": adr/001-hexagonal-architecture.md
+      - "002 · Factory Pattern for Dependency Injection": adr/002-factory-pattern-dependency-injection.md
+      - "003 · Custom Service Registry over ZooKeeper": adr/003-service-registry-over-zookeeper.md
+      - "004 · Electron over Qt for GUI Framework": adr/004-electron-over-qt-for-gui-framework.md
+      - "005 · Dual-Host GUI Architecture (Electron + Browser)": adr/005-dual-host-gui-architecture.md
+      - "006 · FastAPI Bridge for Browser GUI": adr/006-fastapi-bridge-for-browser-gui.md
+      - "007 · Multi-Broker Connection Architecture": adr/007-multi-broker-connection-architecture.md
+      - "008 · Electron Bridge Lifecycle Decoupling": adr/008-electron-bridge-lifecycle-decoupling.md
+      - "009 · Service Executor with RPC Graceful Shutdown": adr/009-service-executor-with-rpc-shutdown.md
+      - "010 · Local Hub Manager for ProcessHub Integration": adr/010-local-hub-manager.md
+      - "011 · Service Import with Module Execution Pattern": adr/011-service-import-with-module-execution.md
+      - "012 · Registry Shutdown Notification to GUI": adr/012-registry-shutdown-notification.md
+      - "013 · Windows Process Lifecycle Fixes": adr/013-windows-process-lifecycle-fixes.md
+      - "014 · Config Placeholder Persistence": adr/014-config-placeholder-persistence.md
+      - "015 · Fleet Orchestrator for Multi-Hub Process Management": adr/015-fleet-orchestrator-architecture.md
+      - "016 · RabbitMQ as Message Broker": adr/016-rabbitmq-as-message-broker.md
+      - "017 · svc_api_ Naming Convention for Method Discovery": adr/017-svc-api-naming-convention.md
+      - "018 · Alias Routing via Service Registry": adr/018-alias-routing-design.md
+      - "019 · Service-Delivered GUI Plugin Architecture": adr/019-service-delivered-gui-plugins.md
+      - "020 · Exchange Topology Design": adr/020-exchange-topology-design.md
+      - "021 · Multi-Tier GUI Loading Architecture": adr/021-schema-driven-ui-builder.md
+      - "022 · Nomad Orchestrator Integration": adr/022-nomad-orchestrator-integration.md
+      - "023 · Multi-node Consul cluster with serf gossip": adr/023-multi-node-consul-cluster.md
+      - "024 · Multi-node Nomad cluster": adr/024-multi-node-nomad-cluster.md
+      - "025 · Wrapper layer for Nomad raw_exec workloads": adr/025-wrapper-layer-for-raw-exec.md
+      - "026 · uv-based Python service environments": adr/026-uv-python-service-envs.md
+      - "027 · Kafka event bus alongside gRPC": adr/027-kafka-event-bus-alongside-grpc.md
+      - "028 · gRPC + reflection as the primary RPC layer": adr/028-grpc-reflection-primary-rpc.md
+      - "029 · Robot Framework as the primary test client": adr/029-robot-framework-primary-test-client.md
+      - "030 · Per-user authorisation via delegated authority service + JWT interceptor": adr/030-delegated-authority-jwt-interceptor.md
+      - "ADR audit (post-migration alignment)": adr/AUDIT.md
+  - Plans:
+      - "Plans": plans/README.md
+      - "GUI Loading Mechanism — Multi-Tier Detection & Rendering": plans/gui-loading-flow.md
+      - "QML Shell + C++ Service Infrastructure": plans/qml-shell-cpp-infrastructure.md
+      - "Schema-Driven UI Builder for MicroserviceBase Services": plans/schema-driven-ui-builder.md

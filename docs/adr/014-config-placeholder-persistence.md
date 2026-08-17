@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (still active post-migration: the same `${python}` / `${config_dir}` placeholder pattern is used by `prep_nomad_paths.bat` to resolve paths in generated `.nomad.hcl` files — see [`examples/PowerDeviceService/`](../../examples/PowerDeviceService/README.md)).
+Accepted (still active post-migration: the same `${python}` / `${config_dir}` placeholder pattern is used by `prep_nomad_paths.bat` to resolve paths in generated `.nomad.hcl` files — see [`examples/PowerDeviceService/`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/PowerDeviceService/README.md)).
 
 ## Date
 

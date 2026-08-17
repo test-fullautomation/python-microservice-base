@@ -1,0 +1,35 @@
+@startuml
+' How the Manager GUI enumerates a service's methods with no .proto file:
+' Consul resolves the address, gRPC reflection supplies the descriptors.
+' Rendered into docs/architecture/overview.md.
+
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 12
+skinparam ArrowFontSize 11
+
+skinparam sequence {
+  ParticipantBackgroundColor #FFFFFF
+  ParticipantBorderColor #7A7A7A
+  LifeLineBorderColor #B0B0B0
+  ArrowColor #3C3C3C
+}
+
+title Method discovery via gRPC server reflection
+
+autonumber
+
+participant "Manager GUI"     as GUI
+participant "FastAPI bridge"  as Bridge
+participant "Consul agent"    as Consul
+participant "Service"         as Svc
+
+GUI    -> Bridge : GET /api/grpc/services/<name>
+Bridge -> Consul : lookup <name> (HTTP)
+Consul --> Bridge : host : port
+Bridge -> Svc    : gRPC reflection\n(ServerReflectionInfo)
+Svc    --> Bridge : file descriptors\n(services, methods, message schemas)
+Bridge --> GUI   : methods + schemas (JSON)
+
+@enduml

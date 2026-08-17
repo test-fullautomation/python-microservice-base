@@ -23,7 +23,7 @@ Audit follow-up.  Aligns with the TA reference at
 |------------|---------|-------------|
 | 2026-05-07 | 1.0     | Initial draft — proposed a bespoke `MicroserviceBaseLibrary` Robot keyword library wrapping `LocalProtoClient` |
 | 2026-05-10 | 1.1     | Implementation switched: instead of a custom keyword library, ship a `GrpcClient` connection type for the existing **QConnectBase** library.  Robot keywords (`Connect`, `Send Command`, `Verify`, `Disconnect`) are reused unchanged. |
-| 2026-05-22 | 1.2     | **Robot resource generator added on top of `GrpcClient`.**  The earlier "JSON-string response surface" trade-off (see *Negative consequences*) is now mitigated by an emitter that turns a folder of `.proto` files into typed per-service `.resource` libraries (one keyword per RPC, prefixed with the service name).  Generator UI in the Manager GUI methods panel; CLI at `MicroserviceBase.tools.robot_gen`; HTTP at `POST /api/scaffold/robot`.  Tests get the readability of a per-method keyword wrapper without the maintenance cost &mdash; regenerate, don't hand-write.  See [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md). |
+| 2026-05-22 | 1.2     | **Robot resource generator added on top of `GrpcClient`.**  The earlier "JSON-string response surface" trade-off (see *Negative consequences*) is now mitigated by an emitter that turns a folder of `.proto` files into typed per-service `.resource` libraries (one keyword per RPC, prefixed with the service name).  Generator UI in the Manager GUI methods panel; CLI at `MicroserviceBase.tools.robot_gen`; HTTP at `POST /api/scaffold/robot`.  Tests get the readability of a per-method keyword wrapper without the maintenance cost &mdash; regenerate, don't hand-write.  See [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md). |
 
 ## Context
 
@@ -163,7 +163,7 @@ real services over the network.
 - **JSON-string response surface** — testers regex-match the response,
   not strongly-typed proto fields.  Acceptable given Robot's text-first
   nature.  Mitigated since 1.2 by the
-  [Robot resource generator](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md)
+  [Robot resource generator](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/docs/md/robot_generator.md)
   which emits one typed keyword per RPC on top of `GrpcClient`, giving
   tests `Com Setup Device Service Set Interface Type    conn=device
   type=0` instead of a raw `send_cmd` string.

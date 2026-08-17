@@ -1,50 +1,27 @@
 # Architecture
 
-> 📄 *Also available as HTML:* [`architecture.html`](architecture.html)
 
 A walk through the major pieces of MicroserviceBase, what they do, and
 how they connect. For the lifecycle of a single running service, see
-[`runtime_model.md`](runtime_model.md). For a glossary of unfamiliar
+[`runtime_model.md`](runtime-model.md). For a glossary of unfamiliar
 terms, see [`concepts.md`](concepts.md).
 
 > **Canonical diagram**: the multi-node Consul + Nomad cluster topology
 > with the wrapper layer is in
-> [`diagrams/00_canonical_architecture.puml`](diagrams/00_canonical_architecture.puml)
+> [`diagrams/00_canonical_architecture.puml`](../diagrams/00_canonical_architecture.puml)
 > (single source of truth, adapted from the TA reference architecture).
 > The simplified Mermaid below shows the same shape inline; for the
 > deeper component view (Nomad server + 3 clients, Consul gossip ring,
 > Robot Framework / grpcurl test paths), open the PUML.
 >
 > Audit status of all ADRs and diagrams during the post-migration
-> alignment pass: [`adr/AUDIT.md`](adr/AUDIT.md) and
-> [`diagrams/AUDIT.md`](diagrams/AUDIT.md).
+> alignment pass: [`adr/AUDIT.md`](../adr/AUDIT.md) and
+> [`diagrams/AUDIT.md`](../diagrams/AUDIT.md).
 
 ## High-level picture
 
-```mermaid
-flowchart TB
-    subgraph dev["Developer machine"]
-        GUI["Manager GUI<br/>(Electron / Web)"]
-        Bridge["FastAPI bridge<br/>(Python, one process)<br/>/api/grpc · /api/consul ·<br/>/api/nomad · /api/scaffold"]
-        Consul[("Consul agent<br/>:8500")]
-        Nomad[("Nomad agent<br/>:4646")]
-        SvcA["Service A<br/>(gRPC :NNNNN)"]
-        SvcB["Service B<br/>(gRPC :NNNNN)"]
-    end
-    Client["Other clients<br/>(CLI, Qt GUI,<br/>another service)"]
-
-    GUI <-->|HTTP / JSON| Bridge
-    Bridge -->|Consul HTTP API| Consul
-    Bridge -->|Nomad HTTP API| Nomad
-    Nomad -->|raw_exec| SvcA
-    Nomad -->|raw_exec| SvcB
-    SvcA -.registers.-> Consul
-    SvcB -.registers.-> Consul
-    Consul -.health probes.-> SvcA
-    Consul -.health probes.-> SvcB
-    Client -->|"discover (Consul HTTP)"| Consul
-    Client ==>|gRPC over HTTP/2| SvcA
-    Client ==>|gRPC over HTTP/2| SvcB
+```plantuml
+!include diagrams/overview_high_level.puml
 ```
 
 Three independent runtime processes (Consul agent, Nomad agent, the
@@ -57,30 +34,8 @@ clean shutdown.
 
 Inside any one service binary or the framework itself:
 
-```mermaid
-flowchart TB
-    subgraph adapters["<b>Adapters</b> — infra-aware"]
-        AGrpc["gRPC adapter<br/>(api/...)"]
-        AConsul["Consul adapter<br/>(registration + discovery)"]
-        AScaffold["scaffold generator<br/>(cpp_tmpl.py)"]
-        ABridge["FastAPI bridge<br/>(REST front)"]
-        ANomad["Nomad subprocess manager"]
-    end
-
-    subgraph ports["<b>Ports</b> — interfaces / protocols"]
-        Pregistry["service registry port"]
-        Plife["process lifecycle port"]
-        Pserial["serialization port"]
-        Pproc["subprocess port"]
-    end
-
-    subgraph domain["<b>Domain</b> — zero-deps"]
-        D["Service business logic<br/>plain functions + value types<br/>no grpc / fastapi / consul / nomad / qt<br/>unit-testable in isolation"]
-    end
-
-    adapters -->|"talks via"| ports
-    ports -->|"consumed by"| domain
-    domain -.->|"never reaches up"| adapters
+```plantuml
+!include diagrams/overview_hexagonal_layers.puml
 ```
 
 | Layer | Lives in | Imports | Imported by |
@@ -111,7 +66,7 @@ gRPC calls.
 
 Local-dev typically runs `consul agent -dev`, which is single-node
 in-memory. The Manager GUI's Service Network → Consul tab can launch
-this for you (see [`ops_consul_nomad.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md)).
+this for you (see [`ops_consul_nomad.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md)).
 
 ## Orchestration: Nomad
 
@@ -134,25 +89,13 @@ without changing the framework — only the `.hcl` template.
 
 Servers built with our scaffold include
 `grpc++_reflection` (vcpkg overlay-port forces it on; see
-[`changelog.md`](changelog.md)) and call
+[`changelog.md`](../reference/changelog.md)) and call
 `grpc::reflection::InitProtoReflectionServerBuilderPlugin()` at
 startup. Clients can then enumerate services + methods + message
 schemas at runtime without any `.proto` file:
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant GUI as Manager GUI
-    participant Bridge as FastAPI bridge
-    participant Consul as Consul agent
-    participant Svc as Service
-
-    GUI->>Bridge: GET /api/grpc/services/<name>
-    Bridge->>Consul: lookup <name> (HTTP)
-    Consul-->>Bridge: host : port
-    Bridge->>Svc: gRPC reflection (ServerReflectionInfo)
-    Svc-->>Bridge: file descriptors<br/>(services, methods, message schemas)
-    Bridge-->>GUI: methods + schemas (JSON)
+```plantuml
+!include diagrams/overview_reflection_discovery.puml
 ```
 
 Fallback: when reflection isn't available (older servers, custom
@@ -178,23 +121,15 @@ automating.
 
 Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`. Full
 endpoint list: see "CLI equivalents" in
-[`ops_consul_nomad.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
+[`ops_consul_nomad.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
 
 ## The scaffold generator
 
 `mb-scaffold` (`python -m MicroserviceBase.tools.scaffold_cli`) emits
 a complete service project from a small spec:
 
-```mermaid
-flowchart LR
-    Spec["spec<br/>(CLI flags or YAML)"]
-    UI["CLI / GUI wizard"]
-    Bridge["FastAPI bridge<br/>delegates to cpp_tmpl.py"]
-    Out["out/&lt;svc&gt;/<br/>proto/  src/  deploy/<br/>build_*.bat  README"]
-
-    Spec --> UI
-    UI -->|"POST /api/scaffold/generate-v2"| Bridge
-    Bridge -->|writes files| Out
+```plantuml
+!include diagrams/overview_scaffold_flow.puml
 ```
 
 Source: `MicroserviceBase/adapters/scaffold/cpp_tmpl.py` (~7000 lines
@@ -235,7 +170,7 @@ not the API.
 
 ## See also
 
-- [`runtime_model.md`](runtime_model.md) — what happens inside one service from `main()` to first RPC handled
+- [`runtime_model.md`](runtime-model.md) — what happens inside one service from `main()` to first RPC handled
 - [`concepts.md`](concepts.md) — terminology
-- [`changelog.md`](changelog.md) — what this architecture replaced
-- [`adr/`](adr/) — per-decision rationale
+- [`changelog.md`](../reference/changelog.md) — what this architecture replaced
+- [`adr/`](../adr) — per-decision rationale

@@ -56,8 +56,8 @@ The service starts but the GUI sidebar never shows it.
 | [ADR-016](../adr/016-rabbitmq-as-message-broker.md) | Is RabbitMQ running and reachable? Check `localhost:15672` management UI. |
 | [ADR-003](../adr/003-service-registry-over-zookeeper.md) | Is the Service Registry running? Services register via the registry. |
 | [sequence_registration.puml](../diagrams/sequence_registration.puml) | Full registration message flow |
-| [`amqp_registry_adapter.py`](../../MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | `publish_event()` — publishes to `service_information` topic exchange |
-| [`service_base.py`](../../MicroserviceBase/domain/service_base.py) | `register_service()` — calls registry port |
+| [`amqp_registry_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | `publish_event()` — publishes to `service_information` topic exchange |
+| [`service_base.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_base.py) | `register_service()` — calls registry port |
 
 **Common causes:**
 - Registry not running (no consumer on `service_information` exchange)
@@ -80,9 +80,9 @@ services) don't push to the GUI.
 | [ADR-006](../adr/006-fastapi-bridge-for-browser-gui.md) | Is the FastAPI bridge running? Browser GUI depends on the bridge for WebSocket updates. |
 | [ADR-008](../adr/008-electron-bridge-lifecycle-decoupling.md) | Did the bridge process die while the GUI stayed open? |
 | [gui_architecture.puml](../diagrams/gui_architecture.puml) | GUI dual-host architecture — Electron vs browser data flow |
-| [`amqp_registry_adapter.py`](../../MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | `broadcast_update()` — publishes to fanout; `subscribe_to_updates()` — creates exclusive queue |
-| [`fastapi_bridge.py`](../../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | WebSocket handler at `/ws/updates` — relays fanout messages to browser |
-| [`app.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | WebSocket client connection and `onmessage` handler |
+| [`amqp_registry_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | `broadcast_update()` — publishes to fanout; `subscribe_to_updates()` — creates exclusive queue |
+| [`fastapi_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | WebSocket handler at `/ws/updates` — relays fanout messages to browser |
+| [`app.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | WebSocket client connection and `onmessage` handler |
 
 **Common causes:**
 - `update_exchange_name` not configured in `config.json` (defaults to `'services_update'`)
@@ -104,8 +104,8 @@ Calling a service method returns a timeout error.
 | [ADR-020](../adr/020-exchange-topology-design.md) | Is the target service's queue bound to `services_request` with the correct routing key? |
 | [ADR-016](../adr/016-rabbitmq-as-message-broker.md) | RPC pattern: `reply_to` callback queue + `correlation_id` matching |
 | [sequence_rpc.puml](../diagrams/sequence_rpc.puml) | Full RPC request-response sequence |
-| [`rabbitmq_adapter.py`](../../MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | `rpc_call()` — creates callback queue, publishes, waits for response |
-| [`service_base.py`](../../MicroserviceBase/domain/service_base.py) | `dispatch_request()` — processes incoming RPC and sends response |
+| [`rabbitmq_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | `rpc_call()` — creates callback queue, publishes, waits for response |
+| [`service_base.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_base.py) | `dispatch_request()` — processes incoming RPC and sends response |
 
 **Common causes:**
 - Target service is not running (nobody consuming from its queue)
@@ -127,7 +127,7 @@ The service is running and registered, but never receives any RPC calls.
 | [ADR-020](../adr/020-exchange-topology-design.md) | Queue binding: is `queue_bind(exchange, queue, routing_key)` correct? |
 | [ADR-017](../adr/017-svc-api-naming-convention.md) | Is the method name prefixed with `svc_api_`? Only `svc_api_*` methods are dispatchable. |
 | [ADR-013](../adr/013-windows-process-lifecycle-fixes.md) | On Windows, is `process_data_events(time_limit=1)` loop running? (not `start_consuming()`) |
-| [`rabbitmq_adapter.py`](../../MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | `consume()` — exchange declare, queue declare, queue bind, consume loop |
+| [`rabbitmq_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | `consume()` — exchange declare, queue declare, queue bind, consume loop |
 
 **Common causes:**
 - Queue was purged by a second instance starting (`queue_purge` on startup)
@@ -149,8 +149,8 @@ Calling an alias name returns a failure instead of routing to the target service
 |----------|---------------|
 | [ADR-018](../adr/018-alias-routing-design.md) | Alias routing flow: Registry looks up `_alias_dict`, substitutes `${input}`, forwards to target |
 | [sequence_alias.puml](../diagrams/sequence_alias.puml) | Alias request flow through the Registry |
-| [`service_registry.py`](../../MicroserviceBase/domain/service_registry.py) | `is_specific_request()` — checks if alias exists; `on_specific_request()` — handles alias routing |
-| [`service_base.py`](../../MicroserviceBase/domain/service_base.py) | `dispatch_request()` — three-level fallback: `_api_dict` → `is_specific_request()` → fail |
+| [`service_registry.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_registry.py) | `is_specific_request()` — checks if alias exists; `on_specific_request()` — handles alias routing |
+| [`service_base.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_base.py) | `dispatch_request()` — three-level fallback: `_api_dict` → `is_specific_request()` → fail |
 
 **Common causes:**
 - Alias name not in `alias.json` (typo or not saved via GUI)
@@ -169,8 +169,8 @@ The alias resolves but the target method receives too many or too few arguments.
 | Resource | What to check |
 |----------|---------------|
 | [ADR-018](../adr/018-alias-routing-design.md) | `${input}` placeholder mechanism: count of `${input}` must match count of caller args |
-| [`service_registry.py`](../../MicroserviceBase/domain/service_registry.py) | `handle_alias_request()` — `"${input}"` → `"{}"` → `.format(*args)` → `.split(',')` |
-| [ServiceAlias GUI](../../MicroserviceBase/MicroserviceManagerGUI/web/services/ServiceAlias1.0.0/) | Alias editor table and arguments hint |
+| [`service_registry.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_registry.py) | `handle_alias_request()` — `"${input}"` → `"{}"` → `.format(*args)` → `.split(',')` |
+| [ServiceAlias GUI](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/services/ServiceAlias1.0.0) | Alias editor table and arguments hint |
 
 **Common causes:**
 - Arguments template has 2 `${input}` but caller sends 1 (or vice versa)
@@ -190,7 +190,7 @@ A method exists in the service code but doesn't show in the GUI's method list.
 | Resource | What to check |
 |----------|---------------|
 | [ADR-017](../adr/017-svc-api-naming-convention.md) | Method must be prefixed with `svc_api_`. The `_internal` set hides certain methods from the public list. |
-| [`service_base.py`](../../MicroserviceBase/domain/service_base.py) | `get_svc_api_methods_dict()` — `dir(self)` + `startswith('svc_api')` filtering |
+| [`service_base.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_base.py) | `get_svc_api_methods_dict()` — `dir(self)` + `startswith('svc_api')` filtering |
 
 **Common causes:**
 - Method name typo (e.g. `svc_ap_add` instead of `svc_api_add`)
@@ -212,9 +212,9 @@ Clicking a service in the sidebar shows a blank panel or an error.
 |----------|---------------|
 | [ADR-019](../adr/019-service-delivered-gui-plugins.md) | Plugin lifecycle: checksum check → ZIP download → extract to `web/services/` → fetch HTML → inject script |
 | [ADR-005](../adr/005-dual-host-gui-architecture.md) | Dual-host: extraction path differs between Electron and browser |
-| [`app.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `checkAndGetTheServiceGUIResources()` — checksum + download flow; `loadServiceContent()` — HTML fetch + script injection |
-| [`fastapi_bridge.py`](../../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | `/api/service-gui-download/{name}` — server-side ZIP extraction for browser mode |
-| [`service_base.py`](../../MicroserviceBase/domain/service_base.py) | `svc_api_get_gui_files()` — returns base64 ZIP of `GUIs/` directory |
+| [`app.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `checkAndGetTheServiceGUIResources()` — checksum + download flow; `loadServiceContent()` — HTML fetch + script injection |
+| [`fastapi_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | `/api/service-gui-download/{name}` — server-side ZIP extraction for browser mode |
+| [`service_base.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_base.py) | `svc_api_get_gui_files()` — returns base64 ZIP of `GUIs/` directory |
 
 **Common causes:**
 - Service has `gui_support: false` in `_SERVICE_INFO` (no GUI shipped)
@@ -234,7 +234,7 @@ The service's GUI was updated but the old version still displays.
 | Resource | What to check |
 |----------|---------------|
 | [ADR-019](../adr/019-service-delivered-gui-plugins.md) | Checksum caching: `sessionStorage` stores MD5, compared before download |
-| [`app.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `checkAndGetTheServiceGUIResources()` — `sessionStorage.getItem('gui_checksum_' + serviceName)` |
+| [`app.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `checkAndGetTheServiceGUIResources()` — `sessionStorage.getItem('gui_checksum_' + serviceName)` |
 
 **Common causes:**
 - In-memory panel cache (`_servicePanels[serviceName]`) still holds the old DOM
@@ -259,8 +259,8 @@ Stopping a service from the Local Hub kills it instantly without cleanup.
 | [ADR-013](../adr/013-windows-process-lifecycle-fixes.md) | `CTRL_BREAK_EVENT` → SIGBREAK → default handler calls `ExitProcess` (no cleanup). Fix: `signal.SIGBREAK` → `default_int_handler` |
 | [sequence_shutdown.puml](../diagrams/sequence_shutdown.puml) | Two-phase shutdown sequence |
 | [state_process_lifecycle.puml](../diagrams/state_process_lifecycle.puml) | Process state machine |
-| [`service_executor.py`](../../MicroserviceBase/adapters/local_hub/service_executor.py) | `stop()` — RPC shutdown attempt, then `CTRL_BREAK_EVENT` |
-| [`rabbitmq_adapter.py`](../../MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | `consume()` — installs `signal.SIGBREAK` handler, uses `process_data_events(time_limit=1)` loop |
+| [`service_executor.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/service_executor.py) | `stop()` — RPC shutdown attempt, then `CTRL_BREAK_EVENT` |
+| [`rabbitmq_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | `consume()` — installs `signal.SIGBREAK` handler, uses `process_data_events(time_limit=1)` loop |
 
 **Common causes:**
 - Service does not handle `svc_api_shutdown` (RPC phase fails, falls through to signal)
@@ -279,7 +279,7 @@ A service works initially but freezes after running for a while.
 | Resource | What to check |
 |----------|---------------|
 | [ADR-013](../adr/013-windows-process-lifecycle-fixes.md) | `subprocess.PIPE` blocking: pipe buffer (~4KB on Windows) fills, `sys.stdout.write()` blocks |
-| [`service_executor.py`](../../MicroserviceBase/adapters/local_hub/service_executor.py) | `subprocess.Popen()` — check `stdout`/`stderr` params |
+| [`service_executor.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/service_executor.py) | `subprocess.Popen()` — check `stdout`/`stderr` params |
 
 **Common causes:**
 - Process launched with `stdout=subprocess.PIPE` but nobody reads the pipe
@@ -299,8 +299,8 @@ it as running.
 |----------|---------------|
 | [ADR-010](../adr/010-local-hub-manager.md) | Local Hub Manager polls process status via `ProcessHubServer` |
 | [ADR-012](../adr/012-registry-shutdown-notification.md) | If killed without cleanup, no unregister event is sent |
-| [`local_hub_manager.py`](../../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | Status polling — checks `poll()` on subprocess handles |
-| [`service_executor.py`](../../MicroserviceBase/adapters/local_hub/service_executor.py) | Process state tracking |
+| [`local_hub_manager.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/local_hub_manager.py) | Status polling — checks `poll()` on subprocess handles |
+| [`service_executor.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/service_executor.py) | Process state tracking |
 
 **Common causes:**
 - Process killed externally without going through the executor's `stop()` method
@@ -321,7 +321,7 @@ the new machine.
 | Resource | What to check |
 |----------|---------------|
 | [ADR-014](../adr/014-config-placeholder-persistence.md) | `${python}` and `${config_dir}` placeholders — resolved at runtime, saved as placeholders |
-| [`local_hub_manager.py`](../../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | `_load_config_file()` — resolves placeholders; `_save_config_file()` — preserves `_raw_config` with placeholders |
+| [`local_hub_manager.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/local_hub_manager.py) | `_load_config_file()` — resolves placeholders; `_save_config_file()` — preserves `_raw_config` with placeholders |
 
 **Common causes:**
 - Config was saved with resolved absolute paths instead of `${python}`/`${config_dir}`
@@ -346,8 +346,8 @@ Features work in the Electron desktop app but fail when accessed via
 | [ADR-006](../adr/006-fastapi-bridge-for-browser-gui.md) | FastAPI bridge provides REST + WebSocket + static file serving |
 | [ADR-004](../adr/004-electron-over-qt-for-gui-framework.md) | Why Electron: service-delivered HTML GUIs need a browser engine |
 | [gui_architecture.puml](../diagrams/gui_architecture.puml) | Electron vs browser data flow |
-| [`fastapi_bridge.py`](../../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | All REST endpoints and WebSocket handlers |
-| [`app.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `isElectron` detection — different code paths for Electron vs browser |
+| [`fastapi_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | All REST endpoints and WebSocket handlers |
+| [`app.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `isElectron` detection — different code paths for Electron vs browser |
 
 **Common causes:**
 - FastAPI bridge not running (`start_bridge.py` not started)
@@ -367,7 +367,7 @@ Services from different brokers are grouped incorrectly in the sidebar.
 | Resource | What to check |
 |----------|---------------|
 | [ADR-007](../adr/007-multi-broker-connection-architecture.md) | `MM.connections` map, `serviceToBroker` reverse lookup |
-| [`app.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `MM.connections` map structure, broker section DOM rendering |
+| [`app.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | `MM.connections` map structure, broker section DOM rendering |
 
 **Common causes:**
 - `serviceToBroker` reverse lookup has stale entries
@@ -386,8 +386,8 @@ The GUI loads initially but stops receiving real-time updates.
 |----------|---------------|
 | [ADR-006](../adr/006-fastapi-bridge-for-browser-gui.md) | FastAPI bridge WebSocket at `/ws/updates` |
 | [ADR-008](../adr/008-electron-bridge-lifecycle-decoupling.md) | Bridge lifecycle independent of GUI |
-| [`fastapi_bridge.py`](../../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | WebSocket handler — connection management |
-| [`app.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | WebSocket `onclose`/`onerror` handlers, reconnect logic |
+| [`fastapi_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | WebSocket handler — connection management |
+| [`app.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | WebSocket `onclose`/`onerror` handlers, reconnect logic |
 
 **Common causes:**
 - Bridge process crashed or was restarted
@@ -409,8 +409,8 @@ A remote hub was online but now shows as offline in the Fleet dashboard.
 |----------|---------------|
 | [ADR-015](../adr/015-fleet-orchestrator-architecture.md) | Health monitoring: 3 states (online/degraded/offline), heartbeat intervals |
 | [component_fleet.puml](../diagrams/component_fleet.puml) | Fleet orchestrator component diagram |
-| [`FleetClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | Fleet client communication |
-| [`FleetDashboard.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | Hub status rendering |
+| [`FleetClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | Fleet client communication |
+| [`FleetDashboard.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | Hub status rendering |
 
 **Common causes:**
 - Remote hub's heartbeat stopped (hub process crashed)
@@ -430,9 +430,9 @@ Connect.
 | Resource | What to check |
 |----------|---------------|
 | [sequence_fleet_connect.puml](../diagrams/sequence_fleet_connect.puml) | Full fleet connect sequence: configure → poll → render |
-| [`FleetDashboard.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | `onFleetUpdate()` — fingerprint comparison, `_lastFleetJson` initial value |
-| [`FleetClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `_resolveUrl()` — is the poll reaching the bridge? Check browser console for network errors |
-| [`fastapi_bridge.py`](../../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | `/api/fleet/status` proxy — is `bridge._fleet_api_url` set? |
+| [`FleetDashboard.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | `onFleetUpdate()` — fingerprint comparison, `_lastFleetJson` initial value |
+| [`FleetClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `_resolveUrl()` — is the poll reaching the bridge? Check browser console for network errors |
+| [`fastapi_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | `/api/fleet/status` proxy — is `bridge._fleet_api_url` set? |
 
 **Common causes:**
 - `_lastFleetJson` initialized to `''` instead of `null`, causing the first
@@ -459,8 +459,8 @@ back to "Fleet Unreachable — Failed to fetch".
 | Resource | What to check |
 |----------|---------------|
 | [sequence_fleet_disconnect.puml](../diagrams/sequence_fleet_disconnect.puml) | Manual disconnect sequence |
-| [`FleetDashboard.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | Disconnect handler — does it re-register `onUpdate` after `disconnect()`? |
-| [`FleetClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `disconnect()` — does it clear `_updateCallbacks`? |
+| [`FleetDashboard.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | Disconnect handler — does it re-register `onUpdate` after `disconnect()`? |
+| [`FleetClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `disconnect()` — does it clear `_updateCallbacks`? |
 
 **Common causes:**
 - **Race condition:** disconnect handler calls `fleetClient.disconnect()` (which
@@ -485,7 +485,7 @@ Starting the hub as orchestrator after a stop fails with:
 |----------|---------------|
 | [sequence_hub_stop_fleet_autodisconnect.puml](../diagrams/sequence_hub_stop_fleet_autodisconnect.puml) | Hub stop sequence — uvicorn graceful shutdown |
 | [sequence_hub_restart_fleet_reconnect.puml](../diagrams/sequence_hub_restart_fleet_reconnect.puml) | Hub restart — `_wait_for_port_free` before bind |
-| [`local_hub_manager.py`](../../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | `stop_hub()` — uvicorn `should_exit` + thread join; `_start_orchestrator()` — `_wait_for_port_free()` |
+| [`local_hub_manager.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/local_hub_manager.py) | `stop_hub()` — uvicorn `should_exit` + thread join; `_start_orchestrator()` — `_wait_for_port_free()` |
 
 **Common causes:**
 - **`FleetWebAPI.stop()` is a no-op** — it logs a message but never actually
@@ -513,9 +513,9 @@ instead of proxying through the bridge at port 1112.
 | Resource | What to check |
 |----------|---------------|
 | [sequence_fleet_connect.puml](../diagrams/sequence_fleet_connect.puml) | Fleet connect — `_bridgeOrigin()` resolution |
-| [`FleetClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `_bridgeOrigin()` — does it return `http://localhost:1112` in Electron? |
-| [`LocalHubClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubClient.js) | `_apiUrl()` — reference implementation with correct Electron fallback |
-| [`ServiceClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceClient.js) | `constructor()` — `apiUrl` defaults to `window.location.origin` which is `file://` in Electron |
+| [`FleetClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | `_bridgeOrigin()` — does it return `http://localhost:1112` in Electron? |
+| [`LocalHubClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubClient.js) | `_apiUrl()` — reference implementation with correct Electron fallback |
+| [`ServiceClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceClient.js) | `constructor()` — `apiUrl` defaults to `window.location.origin` which is `file://` in Electron |
 
 **Common causes:**
 - `MM.serviceClient.apiUrl` is `file://` in Electron (set from
@@ -543,8 +543,8 @@ Importing a service ZIP or folder fails during validation.
 |----------|---------------|
 | [ADR-011](../adr/011-service-import-with-module-execution.md) | Import flow: validate structure → extract → configure `python -m` execution |
 | [sequence_service_import.puml](../diagrams/sequence_service_import.puml) | Service import sequence diagram |
-| [`local_hub_manager.py`](../../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | `import_service()` — validation, extraction, path safety checks |
-| [`fastapi_bridge.py`](../../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | `/api/local-hub/import-service` — REST endpoint |
+| [`local_hub_manager.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/local_hub_manager.py) | `import_service()` — validation, extraction, path safety checks |
+| [`fastapi_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | `/api/local-hub/import-service` — REST endpoint |
 
 **Common causes:**
 - Service package missing `__main__.py` (required for `python -m` execution)
@@ -565,8 +565,8 @@ The Registry process exits but the GUI doesn't clear the service list.
 | Resource | What to check |
 |----------|---------------|
 | [ADR-012](../adr/012-registry-shutdown-notification.md) | Registry shutdown sentinel: broadcasts empty service list before exiting |
-| [`service_registry.py`](../../MicroserviceBase/domain/service_registry.py) | Shutdown sequence — unregister all services, broadcast empty list |
-| [`amqp_registry_adapter.py`](../../MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | `broadcast_update({})` — final fanout with empty dict |
+| [`service_registry.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_registry.py) | Shutdown sequence — unregister all services, broadcast empty list |
+| [`amqp_registry_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | `broadcast_update({})` — final fanout with empty dict |
 
 **Common causes:**
 - Registry was killed with `TerminateProcess` (no shutdown sequence executed)
@@ -586,7 +586,7 @@ A service shows up briefly in the GUI and then vanishes.
 | [ADR-003](../adr/003-service-registry-over-zookeeper.md) | Registry maintains `services_information` dict; services register `'on'` and unregister `'off'` |
 | [ADR-020](../adr/020-exchange-topology-design.md) | `service_information` topic exchange with durable queue |
 | [sequence_registration.puml](../diagrams/sequence_registration.puml) | Registration sequence |
-| [`service_base.py`](../../MicroserviceBase/domain/service_base.py) | `register_service()` → `serve()` — if `serve()` fails, `finally` block calls `unregister_service()` |
+| [`service_base.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_base.py) | `register_service()` → `serve()` — if `serve()` fails, `finally` block calls `unregister_service()` |
 
 **Common causes:**
 - Service crashes immediately after registering (exception in `serve()` → `finally` unregisters)
@@ -605,39 +605,39 @@ resources for that layer.
 
 | Component | Source | ADRs | Diagrams |
 |-----------|--------|------|----------|
-| ServiceBase | [`service_base.py`](../../MicroserviceBase/domain/service_base.py) | [001](../adr/001-hexagonal-architecture.md), [017](../adr/017-svc-api-naming-convention.md) | [class_domain.puml](../diagrams/class_domain.puml) |
-| ServiceRegistry | [`service_registry.py`](../../MicroserviceBase/domain/service_registry.py) | [003](../adr/003-service-registry-over-zookeeper.md), [018](../adr/018-alias-routing-design.md) | [class_domain.puml](../diagrams/class_domain.puml), [sequence_alias.puml](../diagrams/sequence_alias.puml) |
-| Factory | [`factory.py`](../../MicroserviceBase/factory.py) | [002](../adr/002-factory-pattern-dependency-injection.md) | [architecture.puml](../diagrams/architecture.puml) |
+| ServiceBase | [`service_base.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_base.py) | [001](../adr/001-hexagonal-architecture.md), [017](../adr/017-svc-api-naming-convention.md) | [class_domain.puml](../diagrams/class_domain.puml) |
+| ServiceRegistry | [`service_registry.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/domain/service_registry.py) | [003](../adr/003-service-registry-over-zookeeper.md), [018](../adr/018-alias-routing-design.md) | [class_domain.puml](../diagrams/class_domain.puml), [sequence_alias.puml](../diagrams/sequence_alias.puml) |
+| Factory | [`factory.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/factory.py) | [002](../adr/002-factory-pattern-dependency-injection.md) | [architecture.puml](../diagrams/architecture.puml) |
 
 ### Ports Layer
 
 | Component | Source | ADRs | Diagrams |
 |-----------|--------|------|----------|
-| TransportPort | [`transport.py`](../../MicroserviceBase/ports/transport.py) | [001](../adr/001-hexagonal-architecture.md), [016](../adr/016-rabbitmq-as-message-broker.md) | [class_ports.puml](../diagrams/class_ports.puml) |
-| ServiceRegistryPort | [`registry.py`](../../MicroserviceBase/ports/registry.py) | [001](../adr/001-hexagonal-architecture.md) | [class_ports.puml](../diagrams/class_ports.puml) |
-| UIBridgePort | [`ui_bridge.py`](../../MicroserviceBase/ports/ui_bridge.py) | [001](../adr/001-hexagonal-architecture.md), [006](../adr/006-fastapi-bridge-for-browser-gui.md) | [class_ports.puml](../diagrams/class_ports.puml) |
+| TransportPort | [`transport.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/ports/transport.py) | [001](../adr/001-hexagonal-architecture.md), [016](../adr/016-rabbitmq-as-message-broker.md) | [class_ports.puml](../diagrams/class_ports.puml) |
+| ServiceRegistryPort | [`registry.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/ports/registry.py) | [001](../adr/001-hexagonal-architecture.md) | [class_ports.puml](../diagrams/class_ports.puml) |
+| UIBridgePort | [`ui_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/ports/ui_bridge.py) | [001](../adr/001-hexagonal-architecture.md), [006](../adr/006-fastapi-bridge-for-browser-gui.md) | [class_ports.puml](../diagrams/class_ports.puml) |
 
 ### Adapters Layer
 
 | Component | Source | ADRs | Diagrams |
 |-----------|--------|------|----------|
-| RabbitMQ Transport | [`rabbitmq_adapter.py`](../../MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | [016](../adr/016-rabbitmq-as-message-broker.md), [020](../adr/020-exchange-topology-design.md), [013](../adr/013-windows-process-lifecycle-fixes.md) | [class_adapters.puml](../diagrams/class_adapters.puml), [sequence_rpc.puml](../diagrams/sequence_rpc.puml) |
-| AMQP Registry | [`amqp_registry_adapter.py`](../../MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | [020](../adr/020-exchange-topology-design.md), [012](../adr/012-registry-shutdown-notification.md) | [sequence_registration.puml](../diagrams/sequence_registration.puml) |
-| FastAPI Bridge | [`fastapi_bridge.py`](../../MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | [006](../adr/006-fastapi-bridge-for-browser-gui.md), [008](../adr/008-electron-bridge-lifecycle-decoupling.md) | [gui_architecture.puml](../diagrams/gui_architecture.puml) |
-| Service Executor | [`service_executor.py`](../../MicroserviceBase/adapters/local_hub/service_executor.py) | [009](../adr/009-service-executor-with-rpc-shutdown.md), [013](../adr/013-windows-process-lifecycle-fixes.md) | [sequence_shutdown.puml](../diagrams/sequence_shutdown.puml), [state_process_lifecycle.puml](../diagrams/state_process_lifecycle.puml) |
-| Local Hub Manager | [`local_hub_manager.py`](../../MicroserviceBase/adapters/local_hub/local_hub_manager.py) | [010](../adr/010-local-hub-manager.md), [014](../adr/014-config-placeholder-persistence.md) | [component_local_hub.puml](../diagrams/component_local_hub.puml), [sequence_hub_stop_fleet_autodisconnect.puml](../diagrams/sequence_hub_stop_fleet_autodisconnect.puml), [sequence_hub_restart_fleet_reconnect.puml](../diagrams/sequence_hub_restart_fleet_reconnect.puml) |
+| RabbitMQ Transport | [`rabbitmq_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/transport/rabbitmq_adapter.py) | [016](../adr/016-rabbitmq-as-message-broker.md), [020](../adr/020-exchange-topology-design.md), [013](../adr/013-windows-process-lifecycle-fixes.md) | [class_adapters.puml](../diagrams/class_adapters.puml), [sequence_rpc.puml](../diagrams/sequence_rpc.puml) |
+| AMQP Registry | [`amqp_registry_adapter.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/registry/amqp_registry_adapter.py) | [020](../adr/020-exchange-topology-design.md), [012](../adr/012-registry-shutdown-notification.md) | [sequence_registration.puml](../diagrams/sequence_registration.puml) |
+| FastAPI Bridge | [`fastapi_bridge.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py) | [006](../adr/006-fastapi-bridge-for-browser-gui.md), [008](../adr/008-electron-bridge-lifecycle-decoupling.md) | [gui_architecture.puml](../diagrams/gui_architecture.puml) |
+| Service Executor | [`service_executor.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/service_executor.py) | [009](../adr/009-service-executor-with-rpc-shutdown.md), [013](../adr/013-windows-process-lifecycle-fixes.md) | [sequence_shutdown.puml](../diagrams/sequence_shutdown.puml), [state_process_lifecycle.puml](../diagrams/state_process_lifecycle.puml) |
+| Local Hub Manager | [`local_hub_manager.py`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/adapters/local_hub/local_hub_manager.py) | [010](../adr/010-local-hub-manager.md), [014](../adr/014-config-placeholder-persistence.md) | [component_local_hub.puml](../diagrams/component_local_hub.puml), [sequence_hub_stop_fleet_autodisconnect.puml](../diagrams/sequence_hub_stop_fleet_autodisconnect.puml), [sequence_hub_restart_fleet_reconnect.puml](../diagrams/sequence_hub_restart_fleet_reconnect.puml) |
 
 ### GUI Layer
 
 | Component | Source | ADRs | Diagrams |
 |-----------|--------|------|----------|
-| Main App | [`app.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | [005](../adr/005-dual-host-gui-architecture.md), [007](../adr/007-multi-broker-connection-architecture.md), [019](../adr/019-service-delivered-gui-plugins.md) | [gui_architecture.puml](../diagrams/gui_architecture.puml) |
-| Service Client | [`ServiceClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceClient.js) | [016](../adr/016-rabbitmq-as-message-broker.md) | [sequence_rpc.puml](../diagrams/sequence_rpc.puml) |
-| Local Hub Dashboard | [`LocalHubDashboard.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubDashboard.js) | [010](../adr/010-local-hub-manager.md) | [component_local_hub.puml](../diagrams/component_local_hub.puml) |
-| Fleet Dashboard | [`FleetDashboard.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | [015](../adr/015-fleet-orchestrator-architecture.md) | [component_fleet.puml](../diagrams/component_fleet.puml), [sequence_fleet_connect.puml](../diagrams/sequence_fleet_connect.puml), [sequence_fleet_disconnect.puml](../diagrams/sequence_fleet_disconnect.puml) |
-| Fleet Client | [`FleetClient.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | [015](../adr/015-fleet-orchestrator-architecture.md) | [sequence_fleet_connect.puml](../diagrams/sequence_fleet_connect.puml), [sequence_fleet_disconnect.puml](../diagrams/sequence_fleet_disconnect.puml) |
-| Service Creator | [`ServiceCreator.js`](../../MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceCreator.js) | [011](../adr/011-service-import-with-module-execution.md) | — |
-| Electron Wrapper | [`electron/`](../../MicroserviceBase/MicroserviceManagerGUI/electron/) | [004](../adr/004-electron-over-qt-for-gui-framework.md), [005](../adr/005-dual-host-gui-architecture.md) | [gui_architecture.puml](../diagrams/gui_architecture.puml) |
+| Main App | [`app.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js) | [005](../adr/005-dual-host-gui-architecture.md), [007](../adr/007-multi-broker-connection-architecture.md), [019](../adr/019-service-delivered-gui-plugins.md) | [gui_architecture.puml](../diagrams/gui_architecture.puml) |
+| Service Client | [`ServiceClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceClient.js) | [016](../adr/016-rabbitmq-as-message-broker.md) | [sequence_rpc.puml](../diagrams/sequence_rpc.puml) |
+| Local Hub Dashboard | [`LocalHubDashboard.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubDashboard.js) | [010](../adr/010-local-hub-manager.md) | [component_local_hub.puml](../diagrams/component_local_hub.puml) |
+| Fleet Dashboard | [`FleetDashboard.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetDashboard.js) | [015](../adr/015-fleet-orchestrator-architecture.md) | [component_fleet.puml](../diagrams/component_fleet.puml), [sequence_fleet_connect.puml](../diagrams/sequence_fleet_connect.puml), [sequence_fleet_disconnect.puml](../diagrams/sequence_fleet_disconnect.puml) |
+| Fleet Client | [`FleetClient.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js) | [015](../adr/015-fleet-orchestrator-architecture.md) | [sequence_fleet_connect.puml](../diagrams/sequence_fleet_connect.puml), [sequence_fleet_disconnect.puml](../diagrams/sequence_fleet_disconnect.puml) |
+| Service Creator | [`ServiceCreator.js`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceCreator.js) | [011](../adr/011-service-import-with-module-execution.md) | — |
+| Electron Wrapper | [`electron/`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/electron) | [004](../adr/004-electron-over-qt-for-gui-framework.md), [005](../adr/005-dual-host-gui-architecture.md) | [gui_architecture.puml](../diagrams/gui_architecture.puml) |
 
 ---
 

@@ -1,11 +1,10 @@
 # Troubleshooting
 
-> 📄 *Also available as HTML:* [`troubleshooting.html`](troubleshooting.html)
 
 Symptom-indexed problems and fixes for the current
 gRPC + Consul + Nomad stack. For pre-migration symptoms (RabbitMQ,
 ServiceRegistry, ProcessHub, Fleet hubs), see
-[`_legacy/troubleshooting-guide.md`](_legacy/troubleshooting-guide.md).
+[`_legacy/troubleshooting-guide.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/troubleshooting-guide.md).
 
 > **How to use:** `Ctrl+F` for the symptom you're seeing, or browse
 > by category. Each entry says what it usually means and what to do.
@@ -306,11 +305,11 @@ Most likely: missing toolchain. Match the `--client-grpc` /
 `--server-grpc` you scaffolded with the toolchain you have:
 
 - `--server-grpc msys2`: needs MSYS2 + `mingw-w64-x86_64-grpc`
-  installed. See [`../examples/docs/md/mingw_setup.md`](../examples/docs/md/mingw_setup.md).
+  installed. See [`../examples/docs/md/mingw_setup.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/md/mingw_setup.md).
 - `--server-grpc vcpkg`: needs vcpkg checkout + Qt installer's
-  MinGW. See [`../examples/docs/md/vcpkg_setup.md`](../examples/docs/md/vcpkg_setup.md).
+  MinGW. See [`../examples/docs/md/vcpkg_setup.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/md/vcpkg_setup.md).
 - `--gui qt`: needs Qt 6.8+ with the GRPC + Protobuf modules. See
-  [`../examples/docs/md/qt_grpc_setup.md`](../examples/docs/md/qt_grpc_setup.md).
+  [`../examples/docs/md/qt_grpc_setup.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/md/qt_grpc_setup.md).
 
 After the toolchain is set up:
 
@@ -321,7 +320,7 @@ build_deploy_msys2.bat        # or build_qt_vcpkg.bat for vcpkg
 
 ## See also
 
-- [`architecture.md`](architecture.md) / [`runtime_model.md`](runtime_model.md) — to understand why a symptom happens
-- [`../examples/docs/md/index.md`](../examples/docs/md/index.md) — toolchain setup for build problems
-- [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) — Consul/Nomad GUI ops + their own troubleshooting tail
-- [`_legacy/troubleshooting-guide.md`](_legacy/troubleshooting-guide.md) — pre-migration symptoms (RabbitMQ, ProcessHub, Fleet)
+- [`architecture.md`](../architecture/overview.md) / [`runtime_model.md`](../architecture/runtime-model.md) — to understand why a symptom happens
+- [`../examples/docs/md/index.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/md/index.md) — toolchain setup for build problems
+- [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) — Consul/Nomad GUI ops + their own troubleshooting tail
+- [`_legacy/troubleshooting-guide.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/troubleshooting-guide.md) — pre-migration symptoms (RabbitMQ, ProcessHub, Fleet)

@@ -16,6 +16,6 @@ implementation work.
 
 - [`../adr/`](../adr/README.md) — Architecture Decision Records (each
   references the plan(s) it built on)
-- [`../changelog.md`](../changelog.md) — what the gRPC + Consul + Nomad
+- [`../changelog.md`](../reference/changelog.md) — what the gRPC + Consul + Nomad
   migration invalidated and what survived
-- [`../architecture.md`](../architecture.md) — current shape
+- [`../architecture.md`](../architecture/overview.md) — current shape

@@ -3,13 +3,13 @@
 > **⚠ Superseded** — 2026-05-07.  Pre-migration decision; no longer
 > applies to the gRPC + Consul + Nomad architecture.  See the existing
 > Status note below for the immediate successor, and
-> [`docs/changelog.md`](../changelog.md) +
+> [`docs/changelog.md`](../reference/changelog.md) +
 > [`docs/adr/AUDIT.md`](AUDIT.md) for the full triage.  Kept here for
 > git archaeology.
 
 ## Status
 
-**Superseded** — replaced by direct gRPC over HTTP/2 with Consul-based service discovery. See [`docs/changelog.md`](../changelog.md) for the migration rationale and [`docs/architecture.md`](../architecture.md) for the current shape. RabbitMQ + the broker-coupled `ServiceRegistry` are gone; service-to-service traffic is now point-to-point.
+**Superseded** — replaced by direct gRPC over HTTP/2 with Consul-based service discovery. See [`docs/changelog.md`](../reference/changelog.md) for the migration rationale and [`docs/architecture.md`](../architecture/overview.md) for the current shape. RabbitMQ + the broker-coupled `ServiceRegistry` are gone; service-to-service traffic is now point-to-point.
 
 ## Date
 

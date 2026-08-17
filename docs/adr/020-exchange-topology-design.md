@@ -3,7 +3,7 @@
 > **🗄 Archived** — 2026-05-07.  Pre-migration mechanism; no specific
 > successor decision.  gRPC has no exchanges, so there's nothing to
 > design.  Kept here for git archaeology.  See
-> [`docs/changelog.md`](../changelog.md) +
+> [`docs/changelog.md`](../reference/changelog.md) +
 > [`docs/adr/AUDIT.md`](AUDIT.md).
 
 ## Status

@@ -8,8 +8,8 @@
 
 | File | Status | Modern replacement |
 |---|---|---|
-| `CONCEPT.md` | Pre-migration architecture overview (RabbitMQ, alias routing, Fleet, ProcessHub) | [`../concepts.md`](../concepts.md) + [`../architecture.md`](../architecture.md) |
-| `troubleshooting-guide.md` | 23 symptoms keyed to RabbitMQ/ServiceRegistry/ProcessHub | [`../troubleshooting.md`](../troubleshooting.md) |
+| `CONCEPT.md` | Pre-migration architecture overview (RabbitMQ, alias routing, Fleet, ProcessHub) | [`../concepts.md`](../architecture/concepts.md) + [`../architecture.md`](../architecture/overview.md) |
+| `troubleshooting-guide.md` | 23 symptoms keyed to RabbitMQ/ServiceRegistry/ProcessHub | [`../troubleshooting.md`](../reference/troubleshooting.md) |
 
 ## Why kept
 

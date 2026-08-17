@@ -4,7 +4,7 @@
 > successor decision.  Consul handles this transparently via TTL-based
 > deregistration on graceful shutdown — there's nothing left to design.
 > Kept here for git archaeology.  See
-> [`docs/changelog.md`](../changelog.md) +
+> [`docs/changelog.md`](../reference/changelog.md) +
 > [`docs/adr/AUDIT.md`](AUDIT.md).
 
 ## Status

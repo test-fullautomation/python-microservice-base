@@ -1,74 +1,100 @@
-# MicroserviceBase repo docs
-
-> 📄 *Also available as HTML:* [`index.html`](index.html)
+# MicroserviceBase
 
 Framework-level reference: how MicroserviceBase is structured, what each
-piece does, and how the runtime fits together. For toolchain setup or
-per-example walkthroughs, see [`../examples/docs/`](../examples/docs/).
-For the Manager GUI specifically, see [`../MicroserviceBase/MicroserviceManagerGUI/`](../MicroserviceBase/MicroserviceManagerGUI/).
+piece does, and how the runtime fits together.
+
+MicroserviceBase is a hexagonal microservice framework. Services expose
+**gRPC** with server reflection, register themselves in **Consul** for
+discovery, and are launched and supervised by **Nomad**. A Manager GUI
+(Electron + FastAPI bridge) drives all of it, and a scaffold generator
+produces new services in Python or C++/Qt.
+
+!!! info "Recently migrated"
+    The framework moved off RabbitMQ. gRPC + Consul + Nomad replaced the
+    broker, service registry and process hub respectively. The AMQP
+    adapters still exist and still work, but they are superseded — see
+    [ADR-028](adr/028-grpc-reflection-primary-rpc.md) for the rationale
+    and the [Changelog](reference/changelog.md) for what changed.
 
 ## Where to start
-
-Grouped by intent.  Same content as the flat list before, just easier to scan when you know whether you want to *get oriented*, *operate*, *develop*, or *reference*.
 
 **Get oriented**
 
 | You want to… | Read |
 |---|---|
-| Get the 5-minute pitch | [Repo `README.md`](../README.md) |
-| Understand the architecture (layers, runtime, transport) | [`architecture.md`](architecture.md) |
-| Understand how a single service runs end-to-end | [`runtime_model.md`](runtime_model.md) |
-| Look up a term you don't know | [`concepts.md`](concepts.md) |
+| Get the 5-minute pitch | [Repo README](https://github.com/test-fullautomation/python-microservice-base/blob/develop/README.md) |
+| Understand the architecture (layers, runtime, transport) | [Architecture overview](architecture/overview.md) |
+| Understand how a single service runs end-to-end | [Runtime model](architecture/runtime-model.md) |
+| See it rather than read it | [Diagrams](architecture/diagrams.md) |
+| Look up a term you don't know | [Concepts glossary](architecture/concepts.md) |
 
 **Operate**
 
 | You want to… | Read |
 |---|---|
-| Read the Manager GUI guides | [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md) |
-| Run Consul + Nomad without two terminals | [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) |
-| Diagnose a problem | [`troubleshooting.md`](troubleshooting.md) |
+| Learn the Manager GUI | [Manager GUI overview](gui/index.md) |
+| Run Consul + Nomad without two terminals | [Operating Consul + Nomad](gui/ops_consul_nomad.md) |
+| Diagnose a problem | [Troubleshooting](reference/troubleshooting.md) |
 
 **Develop**
 
 | You want to… | Read |
 |---|---|
-| Walk through generating a service | [`../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md`](../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) |
-| Set up a toolchain (MSYS2, Qt6::Grpc, vcpkg+QtMinGW) | [`../examples/docs/md/index.md`](../examples/docs/md/index.md) |
-| Install the C++ runtime as a CMake / vcpkg package | [`runtime_cpp_install.md`](runtime_cpp_install.md) |
+| Generate a new service | [Service Creator wizard](gui/service_creator.md) |
+| Generate Robot Framework keywords from `.proto` | [Robot resource generator](gui/robot_generator.md) |
+| Walk through building a service by hand | [Creating a service](examples/service_creation.md) |
+| Set up a C++ toolchain | [Examples and toolchain](examples/index.md) |
+| Install the C++ runtime as a CMake / vcpkg package | [C++ runtime install](guides/runtime-cpp-install.md) |
 
 **Reference**
 
 | You want to… | Read |
 |---|---|
-| See what changed in the recent migration | [`changelog.md`](changelog.md) |
-| Find the rationale for a design choice | [`adr/`](adr/) — Architecture Decision Records |
+| See what changed in the migration | [Changelog](reference/changelog.md) |
+| Find the rationale for a design choice | [Architecture Decision Records](adr/README.md) |
 
-## Repo-level docs in this folder
+## What's in this site
 
-| File | What |
+| Section | Contents |
 |---|---|
-| [`architecture.md`](architecture.md) | Hexagonal layers (domain/ports/adapters), Consul service discovery, Nomad orchestration, gRPC reflection, the FastAPI bridge — where each piece lives and why |
-| [`runtime_model.md`](runtime_model.md) | `ServiceRunner` lifecycle (boot → register → serve → graceful shutdown), `ServiceClient` discovery flow, channel pooling, dynamic invocation via reflection |
-| [`concepts.md`](concepts.md) | Glossary of terms: bridge, hub (legacy), runtime, port, adapter, scaffold, etc. Modernised from `_legacy/CONCEPT.md` |
-| [`changelog.md`](changelog.md) | Migration history — RabbitMQ → gRPC, ServiceRegistry → Consul, ProcessHub → Nomad, prebuilt vcpkg, Manager GUI rewrite |
-| [`troubleshooting.md`](troubleshooting.md) | Cross-cutting symptoms keyed to current architecture (gRPC errors, Consul/Nomad agent issues, GUI bridge connectivity, vcpkg/MinGW build problems) |
-| [`runtime_cpp_install.md`](runtime_cpp_install.md) | How to install the C++ runtime as a CMake / vcpkg package so generated services can `find_package(MicroserviceBase)` from outside this repo |
-| [`adr/`](adr/) | Architecture Decision Records — one file per significant choice, dated, marked Active / Superseded / Deprecated |
-| [`diagrams/`](diagrams/) | `.drawio` source + rendered PNGs of the architecture diagrams referenced from `architecture.md` |
-| [`imgs/`](imgs/) | Other screenshots / illustrations |
-| [`plans/`](plans/) | Forward-looking plans (under audit; some pre-date the migration) |
-| [`_legacy/`](_legacy/) | Pre-migration `CONCEPT.md` and `troubleshooting-guide.md` — kept for reference |
+| [Architecture](architecture/overview.md) | Hexagonal layers (domain / ports / adapters), Consul discovery, Nomad orchestration, gRPC reflection, the FastAPI bridge — where each piece lives and why |
+| [Runtime model](architecture/runtime-model.md) | `ServiceRunner` lifecycle (boot → register → serve → graceful shutdown), `ServiceClient` discovery, channel pooling, dynamic invocation via reflection |
+| [Diagrams](architecture/diagrams.md) | Every `.puml` in the repo, rendered — architecture, class structure, runtime sequences, GUI internals, Qt templates |
+| [Concepts](architecture/concepts.md) | Glossary: bridge, runtime, port, adapter, scaffold, hub (legacy) |
+| [Manager GUI](gui/index.md) | The Electron + web GUI: service creation, Consul/Nomad operation, Robot generation |
+| [Examples and toolchain](examples/index.md) | MinGW, vcpkg, Qt + gRPC setup; building a service end to end; the WASM Cleware walkthrough |
+| [Architecture decisions](adr/README.md) | One record per significant choice, dated and marked Active / Superseded / Archived |
+| [Changelog](reference/changelog.md) | Migration history — RabbitMQ → gRPC, ServiceRegistry → Consul, ProcessHub → Nomad, Manager GUI rewrite |
+| [Troubleshooting](reference/troubleshooting.md) | Symptoms keyed to the current architecture: gRPC errors, Consul/Nomad agents, GUI bridge connectivity, vcpkg/MinGW builds |
 
 ## Reading paths
 
-**For a new contributor**: `README.md` (root) → `architecture.md` →
-`runtime_model.md` → walk an example (`examples/PowerDeviceService/README.md`)
-while the Manager GUI runs in another window.
+**New contributor** — [Architecture overview](architecture/overview.md) →
+[Runtime model](architecture/runtime-model.md) →
+[Diagrams](architecture/diagrams.md), then walk a real example
+([`cpp_hello_service`](https://github.com/test-fullautomation/python-microservice-base/tree/develop/examples/cpp_hello_service))
+with the Manager GUI open in another window.
 
-**For someone migrating a downstream fork**: `changelog.md` first,
-then `_legacy/CONCEPT.md` ↔ `concepts.md` side-by-side to map old
-terms onto new.
+**Migrating a downstream fork** — [Changelog](reference/changelog.md)
+first, then read [Concepts](architecture/concepts.md) against the
+pre-migration
+[`_legacy/CONCEPT.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/CONCEPT.md)
+side by side to map old terms onto new.
 
-**For an operator who just needs to run things**:
-`MicroserviceManagerGUI/README.md` → `ops_consul_nomad.md` (the
-GUI-driven path replaces all CLI ops).
+**Operator who just needs to run things** —
+[Manager GUI overview](gui/index.md) →
+[Operating Consul + Nomad](gui/ops_consul_nomad.md). The GUI-driven path
+replaces the CLI operations entirely.
+
+---
+
+!!! note "Building these docs"
+    ```
+    python -m properdocs build --clean     # render to site/
+    python -m properdocs serve             # live preview on :8000
+    python tools/verify_diagrams.py site   # decode SVGs, catch render errors
+    ```
+    PlantUML renders through the vendored `tools/plantuml.jar`, so no
+    `plantuml.com` round-trip is needed. The Manager GUI and examples
+    pages are copied in at build time from their canonical locations by
+    `docs_hooks/copy_external_docs.py`.

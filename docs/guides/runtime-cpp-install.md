@@ -1,6 +1,5 @@
 # Installing the C++ runtime
 
-> 📄 *Also available as HTML:* [`runtime_cpp_install.html`](runtime_cpp_install.html)
 
 How to make `MicroserviceBase`'s C++ runtime available to a generated
 service that lives **outside** this framework repo. After install,
@@ -110,7 +109,7 @@ and have every machine point `CMAKE_PREFIX_PATH` at it.
 
 ## Path B — vcpkg overlay-port (recommended for vcpkg-using teams)
 
-The framework ships an overlay-port at [`ports/microservice-base/`](../ports/README.md).
+The framework ships an overlay-port at [`ports/microservice-base/`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/ports/README.md).
 
 ### Wire it into your project's `vcpkg.json`
 
@@ -240,7 +239,7 @@ vcpkg setup for both.
 
 ## See also
 
-- [`../ports/README.md`](../ports/README.md) — overlay-port details
-- [`architecture.md`](architecture.md) — where the C++ runtime fits in the stack
-- [`runtime_model.md`](runtime_model.md) — what `ServiceRunner` actually does
-- [`changelog.md`](changelog.md) — when this packaging landed
+- [`../ports/README.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/ports/README.md) — overlay-port details
+- [`architecture.md`](../architecture/overview.md) — where the C++ runtime fits in the stack
+- [`runtime_model.md`](../architecture/runtime-model.md) — what `ServiceRunner` actually does
+- [`changelog.md`](../reference/changelog.md) — when this packaging landed

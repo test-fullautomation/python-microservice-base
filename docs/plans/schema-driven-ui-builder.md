@@ -9,7 +9,7 @@
 > Note: the original "method discovery" flow described below referred to
 > the RabbitMQ-era `methods_info` payload. With gRPC, the equivalent is
 > server reflection — the same schema-driven UI generation works against
-> the descriptor pool instead. See [`../runtime_model.md`](../runtime_model.md).
+> the descriptor pool instead. See [`../runtime_model.md`](../architecture/runtime-model.md).
 
 ## Context
 
