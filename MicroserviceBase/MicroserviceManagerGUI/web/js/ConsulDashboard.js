@@ -50,9 +50,16 @@
   // Helpers
   // ----------------------------------------------------------------------
 
+  // Escapes quotes as well as angle brackets: the output is interpolated
+  // into HTML *attributes* (value="...", data-url="..."), where a bare
+  // double quote would close the attribute and allow injection.
   function _esc(s) {
     return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function _pane() { return document.getElementById(PANE_ID); }

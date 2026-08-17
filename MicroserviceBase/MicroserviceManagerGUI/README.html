@@ -370,7 +370,7 @@ flowchart LR
     btn.textContent = 'copy';
     btn.addEventListener('click', function (ev) {
       ev.preventDefault();
-      var text = code.textContent.replace(/ /g, ' ').trimEnd();
+      var text = code.textContent.trimEnd();
       var ok = function () {
         btn.textContent = 'copied!';
         btn.classList.add('copied');
