@@ -1,0 +1,95 @@
+@echo off
+REM Bundle the @@{service_name} console + Qt GUI client (built via vcpkg
+REM + Qt MinGW) into client\dist-qt-vcpkg\.  Self-contained.
+setlocal EnableDelayedExpansion
+
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+set "DIST=%SCRIPT_DIR%\dist-qt-vcpkg"
+
+if not defined QT_MINGW_BIN set "QT_MINGW_BIN=C:\Qt\Tools\mingw1310_64\bin"
+if not defined QT_DIR       set "QT_DIR=C:\Qt\6.11.0\mingw_64"
+
+set "BUILD_DIR="
+if exist "%SCRIPT_DIR%\build-qt-vcpkg\@@{snake_name}_client.exe" (
+    set "BUILD_DIR=%SCRIPT_DIR%\build-qt-vcpkg"
+    set "BUILD_LABEL=CLI build-qt-vcpkg"
+)
+if not defined BUILD_DIR (
+    for /d %%D in ("%SCRIPT_DIR%\build\Desktop_Qt_*") do (
+        if exist "%%D\@@{snake_name}_client.exe" (
+            if not defined BUILD_DIR (
+                set "BUILD_DIR=%%D"
+                set "BUILD_LABEL=Qt Creator [%%~nxD]"
+            )
+        )
+    )
+)
+if not defined BUILD_DIR (
+    echo [deploy] ERROR: no @@{snake_name}_client.exe found in any build dir.
+    exit /b 1
+)
+set "VCPKG_BIN=%BUILD_DIR%\vcpkg_installed\x64-mingw-qt\bin"
+if not exist "%VCPKG_BIN%" ( echo [deploy] ERROR: %VCPKG_BIN% missing. & exit /b 1 )
+if not exist "%QT_MINGW_BIN%\g++.exe" ( echo [deploy] ERROR: Qt MinGW not at %QT_MINGW_BIN%. & exit /b 1 )
+
+echo [deploy] Build dir : %BUILD_DIR%
+echo [deploy] Source    : !BUILD_LABEL!
+
+if exist "%DIST%" rmdir /s /q "%DIST%"
+mkdir "%DIST%"
+
+echo [deploy] Copying client executables
+for %%F in ("%BUILD_DIR%\*.exe") do (
+    copy /y "%%F" "%DIST%\" >nul
+    echo   - %%~nxF
+)
+
+echo [deploy] Copying vcpkg runtime DLLs from %VCPKG_BIN%
+for %%F in (libabseil_dll.dll libcares.dll libcrypto-3-x64.dll libprotobuf.dll libprotobuf-lite.dll libre2.dll libssl-3-x64.dll libzlib1.dll legacy.dll libcurl.dll) do (
+    if exist "%VCPKG_BIN%\%%F" copy /y "%VCPKG_BIN%\%%F" "%DIST%\" >nul && echo   - %%F
+)
+for %%F in ("%VCPKG_BIN%\*.dll") do (
+    if not exist "%DIST%\%%~nxF" (
+        copy /y "%%F" "%DIST%\" >nul
+        echo   - %%~nxF [extra]
+    )
+)
+
+echo [deploy] Copying MinGW runtime DLLs from %QT_MINGW_BIN%
+for %%F in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll) do (
+    if exist "%QT_MINGW_BIN%\%%F" copy /y "%QT_MINGW_BIN%\%%F" "%DIST%\" >nul && echo   - %%F
+)
+
+REM windeployqt: try multiple names (Qt 6.5-6.7: windeployqt-qt6, 6.8+: windeployqt6, generic: windeployqt).
+set "WINDEPLOYQT="
+for %%E in (windeployqt-qt6.exe windeployqt6.exe windeployqt.exe) do (
+    if not defined WINDEPLOYQT if exist "%QT_DIR%\bin\%%E" set "WINDEPLOYQT=%QT_DIR%\bin\%%E"
+)
+if exist "%DIST%\@@{snake_name}_gui.exe" (
+    if defined WINDEPLOYQT (
+        echo [deploy] Running !WINDEPLOYQT! for @@{snake_name}_gui.exe
+        REM Auto-detect Debug/Release from PE header.  --compiler-runtime is MSVC-only.
+        "!WINDEPLOYQT!" --no-translations ^
+            --no-system-d3d-compiler --no-opengl-sw ^
+            "%DIST%\@@{snake_name}_gui.exe"
+    ) else (
+        echo [deploy] WARN: no windeployqt at %QT_DIR%\bin - GUI will fail without Qt DLLs.
+    )
+)
+
+echo [deploy] Emitting run_*.bat launchers
+for %%F in ("%DIST%\*.exe") do (
+    call :emit_launcher "%DIST%\run_%%~nF.bat" "%%~nxF"
+)
+
+echo;
+echo [deploy] Bundle ready at %DIST%
+echo [deploy] Run console:  %DIST%\run_@@{snake_name}_client.bat
+echo [deploy] Run GUI:      %DIST%\run_@@{snake_name}_gui.bat
+goto :eof
+
+:emit_launcher
+> "%~1" echo @echo off
+>> "%~1" echo "%%~dp0%~2" %%*
+exit /b 0

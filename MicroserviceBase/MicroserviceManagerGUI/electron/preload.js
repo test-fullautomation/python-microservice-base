@@ -221,12 +221,43 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * Open the installer-bundled README.html that lives at the install
+   * root (alongside DevAtServGUI.exe).  Resolved relative to the app
+   * executable so it works regardless of install location
+   * (per-machine = C:\Program Files\DevAtServGUI\, per-user =
+   * %LOCALAPPDATA%\Programs\DevAtServGUI\).  Opens in the user's
+   * default HTML handler (their browser).
+   *
+   * @returns {Promise<string>} Empty string on success, error message
+   *     otherwise.  shell.openPath returns "" when the OS handler launches.
+   */
+  openInstallReadme: () => {
+    // process.execPath is the absolute path to DevAtServGUI.exe;
+    // the README is its sibling.
+    const exeDir = path.dirname(process.execPath);
+    const readmePath = path.join(exeDir, 'README.html');
+    return shell.openPath(readmePath);
+  },
+
+  /**
    * Show a native open dialog (folder or file picker).
    * @param {object} options - Electron dialog.showOpenDialog options.
    * @returns {Promise<{filePaths: string[]}>}
    */
   showOpenDialog: (options) => {
     return ipcRenderer.invoke('show-open-dialog', options || {});
+  },
+
+  /**
+   * Native message box.  Renderer's blocking alert()/confirm()/prompt()
+   * are disabled by default in Electron — anything that needs a yes/no
+   * round-trip goes through this.  Options mirror dialog.showMessageBox:
+   * { type, title, message, detail, buttons, defaultId, cancelId }
+   * @param {object} options
+   * @returns {Promise<{response:number,checkboxChecked?:boolean}>}
+   */
+  showMessageBox: (options) => {
+    return ipcRenderer.invoke('show-message-box', options || {});
   },
 
   /**
@@ -740,6 +771,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     _removePidFile();
     return { killed: false };
+  },
+
+  /**
+   * Read the tail of the launcher.log file.  Used by the bridge control to
+   * surface spawn failures to the user instead of silently showing a red LED.
+   * @param {number} [maxLines=50] - How many lines from the end to return.
+   * @returns {Promise<{ log: string, path: string }>} Log tail (empty on error).
+   */
+  getBridgeLog: (maxLines) => {
+    return new Promise((resolve) => {
+      const logPath = path.join(_pythonDataPath, 'launcher.log');
+      const limit = (typeof maxLines === 'number' && maxLines > 0) ? maxLines : 50;
+      fs.readFile(logPath, 'utf8', (err, data) => {
+        if (err) {
+          resolve({ log: '', path: logPath });
+          return;
+        }
+        const lines = data.split(/\r?\n/);
+        const tail = lines.slice(Math.max(0, lines.length - limit)).join('\n');
+        resolve({ log: tail, path: logPath });
+      });
+    });
   },
 
   /**

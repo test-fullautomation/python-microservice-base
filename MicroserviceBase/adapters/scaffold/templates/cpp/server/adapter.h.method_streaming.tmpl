@@ -1,0 +1,13 @@
+    /**
+     * Handle a server-streaming @@{method_name} RPC.  Writes one or more
+     * @@{output_type} responses to the writer.
+     *
+     * @param ctx     gRPC server context (deadline, metadata, …).
+     * @param request Inbound @@{input_type}.
+     * @param writer  Stream writer to push responses through.
+     * @return        grpc::Status::OK on success.
+     */
+    grpc::Status @@{method_name}(grpc::ServerContext* ctx,
+        const @@{input_type}* request,
+        grpc::ServerWriter<@@{output_type}>* writer) override;
+

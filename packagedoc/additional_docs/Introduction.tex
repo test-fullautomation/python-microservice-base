@@ -18,43 +18,81 @@
 
 \section{Introduction}
 
-\textbf{MicroserviceBase} is a Python framework for building, managing, and orchestrating
-microservices with RabbitMQ-based communication.
+\textbf{MicroserviceBase} is a Python + C++ framework for building, discovering, and
+orchestrating microservices on top of an industry-standard runtime stack: \textbf{gRPC}
+over HTTP/2 for the wire protocol, \textbf{HashiCorp Consul} for the service catalog and
+health checking, and \textbf{HashiCorp Nomad} for process orchestration.  A single
+\textbf{FastAPI bridge} ties everything together and powers the cross-platform
+\textbf{Manager GUI} (Electron desktop and browser).
 
 It provides:
 
 \begin{itemize}
-   \item \textbf{Microservice Framework}: Base classes for creating services with RPC and pub/sub patterns
-   \item \textbf{Service Registry}: Dynamic service registration and discovery via RabbitMQ exchange
-   \item \textbf{FastAPI Bridge}: REST API and WebSocket gateway connecting GUI to microservices
-   \item \textbf{Manager GUI}: Electron and browser-based dashboard for monitoring and controlling services
-   \item \textbf{Local Process Hub}: Process lifecycle management with graceful shutdown
-   \item \textbf{Hexagonal Architecture}: Clean separation via ports and adapters pattern
+   \item \textbf{Hexagonal microservice framework}: domain / ports / adapters layout for
+         both Python and C++ services -- swap a transport without touching domain code
+   \item \textbf{gRPC + reflection}: services advertise methods and message schemas at
+         runtime, no \texttt{.proto} file needed at the call site
+   \item \textbf{Consul-based service discovery}: services self-register on startup and
+         deregister on clean shutdown; clients resolve via the standard Consul HTTP API
+   \item \textbf{Nomad orchestration}: every generated project ships a
+         \texttt{deploy/<svc>.nomad.hcl} job (\texttt{raw\_exec}) with dynamic port
+         allocation; the same file works on Windows and Linux
+   \item \textbf{FastAPI bridge}: REST endpoints for scaffold, gRPC, Consul, and Nomad,
+         backing both the Manager GUI and any \texttt{curl}-driven script
+   \item \textbf{Manager GUI}: dual-host (Electron + browser) dashboard with a Services
+         tab driven by Consul, a Service Network tab for managing the Consul / Nomad
+         agents, and a Service Creator wizard
+   \item \textbf{Service Creator wizard \& \texttt{mb-scaffold} CLI}: emits a complete,
+         ready-to-build service project (Python or C++) with hexagonal layout, Nomad
+         job, Consul registration metadata, optional GUI plugin, and a build/run README
+   \item \textbf{Robot Framework integration}: ships a \texttt{GrpcClient} connection
+         type for QConnectBase so test cases drive gRPC services with the same
+         \texttt{Connect} / \texttt{Send Command} / \texttt{Verify} / \texttt{Disconnect}
+         keywords used for TCP, Serial, SSH, and the legacy RabbitMQ broker
 \end{itemize}
 
 \subsection{Target Audience}
 
-This package is designed for developers who need to:
+This package is designed for developers and test engineers who need to:
 
 \begin{itemize}
-   \item Build microservices that communicate via RabbitMQ message broker
-   \item Monitor and manage services through a graphical dashboard
-   \item Manage local service processes with start, stop, and import capabilities
-   \item Deploy a standalone desktop application for service management
+   \item Build microservices that communicate over gRPC and discover each other via Consul
+   \item Generate complete service projects (Python or C++) from a small specification
+         instead of hand-writing the boilerplate
+   \item Run, monitor, and orchestrate services locally and across machines via Nomad,
+         driven from a graphical dashboard
+   \item Integrate gRPC services into existing Robot Framework test suites without
+         leaving the QConnectBase keyword model
+   \item Deploy a standalone desktop installer (NSIS on Windows, AppImage / \texttt{.deb}
+         on Linux) that detects or installs the underlying Consul / Nomad agents
 \end{itemize}
 
 \subsection{Prerequisites}
 
 \begin{itemize}
-   \item Python 3.10 or higher
-   \item RabbitMQ server (message broker)
-   \item pika package (RabbitMQ client for Python)
-   \item FastAPI and uvicorn (for the bridge)
-   \item Node.js and npm (for GUI development)
+   \item Python 3.10 or higher (3.11 recommended)
+   \item HashiCorp \textbf{Consul} agent (1.16 or newer) -- runs locally as
+         \texttt{consul agent -dev} for development; the installer can fetch it via
+         \texttt{winget} on Windows or via the official HashiCorp apt / yum repos on Linux
+   \item HashiCorp \textbf{Nomad} agent (1.6 or newer) -- same install story as Consul
+   \item For C++ services: \textbf{vcpkg} (any recent version) and either MSVC
+         (MSYS2 \texttt{mingw-w64}) or GCC.  Reflection is forced on through a vcpkg
+         \texttt{overlay-port}
+   \item For the Manager GUI: optional Node.js + npm if you want to build the Electron
+         shell from source; not required for browser mode
 \end{itemize}
 
-The sources of \pkg\ are available in
+\noindent
+The Python package itself pulls in \texttt{grpcio}, \texttt{grpcio-tools}, \texttt{fastapi},
+\texttt{uvicorn}, \texttt{pydantic}, and \texttt{python-consul} as direct dependencies --
+no message broker is required for the core gRPC + Consul + Nomad path.
+
+The sources of \pkg\ are available on
 \href{https://github.com/test-fullautomation/python-microservice-base}{GitHub}.
 
-Information about how to install the \pkg\ can be found in the
-\href{https://github.com/test-fullautomation/python-microservice-base/blob/develop/README.rst}{README}.
+Installation steps and the desktop installer (\textit{DevAtServGUI}) are documented in
+the \href{https://github.com/test-fullautomation/python-microservice-base/blob/develop/README.rst}{README}
+and in the project's \texttt{docs/} folder
+(\href{https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/runtime\_cpp\_install.html}{C++ runtime install},
+\href{https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/architecture.html}{architecture overview},
+and \href{https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/changelog.html}{changelog}).

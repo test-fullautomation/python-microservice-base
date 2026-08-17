@@ -1,0 +1,64 @@
+@echo off
+:: MinGW variant (vcpkg + x64-mingw-dynamic triplet).
+setlocal
+set "SCRIPT_DIR=%~dp0"
+call "%SCRIPT_DIR%set_env_mingw.bat"
+
+where g++   >nul 2>&1 || ( echo ERROR: g++ not found.   & exit /b 1 )
+where ninja >nul 2>&1 || ( echo ERROR: ninja not found. & exit /b 1 )
+
+if not exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\share\grpc" (
+    echo ERROR: vcpkg packages for %VCPKG_TRIPLET% are not installed.
+    echo        "%VCPKG_ROOT%\vcpkg" install grpc:%VCPKG_TRIPLET% protobuf:%VCPKG_TRIPLET% curl:%VCPKG_TRIPLET%
+    exit /b 1
+)
+
+:: ----- Force-regenerate stubs with MinGW protoc -----
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.pb.h"       >nul 2>&1
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.pb.cc"      >nul 2>&1
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.grpc.pb.h"  >nul 2>&1
+del /q "%SCRIPT_DIR%proto\@@{snake_name}.grpc.pb.cc" >nul 2>&1
+call "%SCRIPT_DIR%proto\generate_stubs.bat"
+if errorlevel 1 ( echo Stub generation failed. & exit /b 1 )
+
+:: ----- Build services -----
+set "SERVICE_BUILD=%SCRIPT_DIR%build-mingw"
+if not exist "%SERVICE_BUILD%" mkdir "%SERVICE_BUILD%"
+pushd "%SERVICE_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ..
+if errorlevel 1 ( echo Service configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Service build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Build clients -----
+set "CLIENT_BUILD=%SCRIPT_DIR%client\build-mingw"
+if not exist "%CLIENT_BUILD%" mkdir "%CLIENT_BUILD%"
+pushd "%CLIENT_BUILD%"
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
+      -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ..
+if errorlevel 1 ( echo Client configure failed. & popd & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Client build failed. & popd & exit /b 1 )
+popd
+
+:: ----- Collect -----
+set "DIST=%SCRIPT_DIR%dist-mingw"
+if not exist "%DIST%" mkdir "%DIST%"
+@@{exe_copies}
+@@{client_copies}
+xcopy /Y /Q "%SERVICE_BUILD%\*.dll" "%DIST%\" >nul 2>&1
+xcopy /Y /Q "%CLIENT_BUILD%\*.dll"  "%DIST%\" >nul 2>&1
+
+if defined MINGW_DIR (
+    for %%L in (libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll) do (
+        if exist "%MINGW_DIR%\%%L" copy /Y "%MINGW_DIR%\%%L" "%DIST%\" >nul
+    )
+)
+
+echo.
+echo MinGW monorepo build complete.  Binaries in: %DIST%
+endlocal

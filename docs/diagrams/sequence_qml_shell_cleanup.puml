@@ -1,5 +1,4 @@
 @startuml sequence_qml_shell_cleanup
-!theme plain
 title QML Shell — Cleanup Sequence
 
 participant "Caller" as caller

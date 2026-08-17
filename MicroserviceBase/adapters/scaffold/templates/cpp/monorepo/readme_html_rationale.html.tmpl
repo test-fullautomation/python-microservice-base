@@ -1,0 +1,65 @@
+
+        <p>
+          Both server and client need Google&rsquo;s grpc++ and protobuf C++
+          libraries.  We compile them <strong>from source via vcpkg</strong>
+          using the <strong>Qt-installer&rsquo;s MinGW 13.1.0</strong>
+          compiler so every binary in the project shares one libstdc++ ABI.
+          Mixing toolchains (e.g. MSYS2 grpc + Qt MinGW client) yields
+          cryptic link errors and silent crashes at <code>std::string</code>
+          boundaries.
+        </p>
+        <p>The pieces that make this work:</p>
+        <ol>
+          <li><strong><code>triplets/x64-mingw-qt.cmake</code></strong> &mdash;
+              custom vcpkg triplet.  Pins <code>VCPKG_TARGET_ARCHITECTURE=x64</code>,
+              dynamic CRT/library linkage, and chainloads
+              <code>qt-mingw-toolchain.cmake</code> which sets
+              <code>CMAKE_C_COMPILER</code> and <code>CMAKE_CXX_COMPILER</code>
+              to absolute paths inside <code>C:\Qt\Tools\mingw1310_64\bin\</code>.
+              Vcpkg uses Qt&rsquo;s gcc to build every port regardless of
+              what&rsquo;s on <code>PATH</code>.</li>
+          <li><strong><code>ports/grpc/00018-gcc13-per-cpu-ice-workaround.patch</code></strong>
+              &mdash; gcc 13.1.0 has an internal compiler error on grpc 1.76&rsquo;s
+              <code>per_cpu.h</code> NSDMI brace-init.  The patch moves the
+              <code>std::unique_ptr&lt;T[]&gt;</code> allocation into the
+              constructor body, sidestepping the ICE.  An overlay-port
+              applies it on top of vcpkg&rsquo;s stock grpc port.</li>
+          <li><strong>Host tools (cross-triplet codegen)</strong> &mdash;
+              vcpkg builds <code>protoc</code> and <code>grpc_cpp_plugin</code>
+              for the host triplet (<code>x64-windows</code>) and uses them at
+              build time to generate <code>.pb.h/.pb.cc</code> stubs.  Our
+              CMakeLists pre-sets <code>Protobuf_PROTOC_EXECUTABLE</code> at
+              <code>build/.../vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe</code>
+              so it doesn&rsquo;t require <code>x64-windows/tools/protobuf/</code>.
+              <code>grpc_cpp_plugin</code> still ships from
+              <code>x64-windows/tools/grpc/</code> because vcpkg&rsquo;s grpc
+              port doesn&rsquo;t build it for the target triplet.</li>
+          <li><strong>Server reflection</strong> &mdash; the overlay-port
+              forces <code>gRPC_BUILD_CODEGEN=ON</code> in
+              <code>portfile.cmake</code>, which causes upstream grpc to
+              build and install <code>libgrpc++_reflection.a</code> +
+              register the <code>gRPC::grpc++_reflection</code> CMake
+              target.  Without that override, vcpkg&rsquo;s manifest-mode
+              feature selection drops <code>codegen</code> for the target
+              triplet (it stays on for the host triplet only) and
+              upstream&rsquo;s <code>add_library(grpc++_reflection ...)</code>
+              block gets skipped &mdash; the Manager GUI then sees
+              <code>UNIMPLEMENTED</code> from every reflection RPC.
+              CMakeLists keeps an <code>if(TARGET gRPC::grpc++_reflection)</code>
+              guard for unusual grpc distributions; the bridge also
+              has a <code>LocalProtoClient</code> fallback that compiles
+              <code>.proto</code> files from disk if reflection is
+              somehow still missing.</li>
+          <li><strong>vcpkg.json declares</strong> grpc + protobuf + curl
+              (Consul HTTP), with <code>features: ["codegen"]</code> for grpc
+              so <code>protoc-gen-grpc</code> is available.  Manifest names
+              are hyphenated (<code>@@{vcpkg_manifest_name}</code>);
+              underscores are reserved.</li>
+        </ol>
+        <p>
+          <strong>First build cost</strong>: vcpkg compiles boringssl, abseil,
+          c-ares, re2, zlib, openssl, protobuf, grpc, curl &mdash; about
+          30&ndash;60 min on a typical workstation, mostly idle.  Subsequent
+          builds in the same triplet hit the binary cache at
+          <code>%LOCALAPPDATA%\vcpkg\archives\</code> and complete in seconds.
+        </p>

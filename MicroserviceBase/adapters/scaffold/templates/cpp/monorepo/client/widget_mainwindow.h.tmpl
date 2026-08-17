@@ -1,0 +1,38 @@
+#pragma once
+
+#include <QWidget>
+
+QT_BEGIN_NAMESPACE
+class QComboBox;
+class QTextEdit;
+class QLineEdit;
+class QCheckBox;
+class QPushButton;
+class QLabel;
+QT_END_NAMESPACE
+
+class MainWindow : public QWidget {
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+
+private slots:
+    void onServiceChanged(int);
+    void onSend();
+    void onConnect();
+    void onConsulToggled(bool consul);
+
+private:
+    void applyHostMode();
+
+    QLineEdit*   m_directHost = nullptr;
+    QLineEdit*   m_consulAddr = nullptr;
+    QCheckBox*   m_useConsul  = nullptr;
+    QComboBox*   m_serviceCombo = nullptr;
+    QComboBox*   m_methodCombo  = nullptr;
+    QTextEdit*   m_requestEdit  = nullptr;
+    QTextEdit*   m_responseEdit = nullptr;
+    QPushButton* m_connectButton = nullptr;
+    QPushButton* m_sendButton   = nullptr;
+    QLabel*      m_statusLabel  = nullptr;
+};

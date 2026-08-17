@@ -1,8 +1,14 @@
 # ADR-020: Exchange Topology Design
 
+> **🗄 Archived** — 2026-05-07.  Pre-migration mechanism; no specific
+> successor decision.  gRPC has no exchanges, so there's nothing to
+> design.  Kept here for git archaeology.  See
+> [`docs/changelog.md`](../reference/changelog.md) +
+> [`docs/adr/AUDIT.md`](AUDIT.md).
+
 ## Status
 
-Accepted
+Superseded — gRPC has no exchanges. Service-to-service is point-to-point over HTTP/2; service discovery is via Consul; method discovery is via gRPC reflection. The exchange-topology decision is no longer load-bearing.
 
 ## Date
 

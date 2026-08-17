@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>cpp_hello_client</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+  header{background:linear-gradient(135deg,#10b981,#0ea5e9);padding:30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1{display:none;}
+  h2{color:var(--green);margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  h3{color:var(--amber);margin-top:22px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+  pre code{background:none;padding:0;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--green);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header><h1 style="display:block;">cpp_hello_client</h1></header>
+<main>
+<h1 id="cpp_hello_client">cpp_hello_client</h1>
+
+<blockquote><p>↑ <a href="../README.html">Examples index</a> · 📄 <a href="README.html">HTML version</a> · ⚙️ <a href="../cpp_hello_service/README.html">Server side</a></p></blockquote>
+
+<p>Standalone C++ client for the <code>hello</code> gRPC service. Demonstrates the <strong>client-side workflow</strong>: receive a <code>.proto</code> from the service team, generate stubs once, then develop against the generated API using <code>ServiceClient&lt;T&gt;</code> for Consul-based service discovery.</p>
+
+<p>Pair with <a href="../cpp_hello_service/README.html"><code>cpp_hello_service/</code></a> for an end-to-end demo.</p>
+
+<h2 id="project-layout">Project layout</h2>
+
+<pre><code>cpp_hello_client/
+├── proto/
+│   └── hello.proto           # received from the service team
+├── gen/                      # generated .h/.cc (after running generate_stubs)
+│   ├── hello.pb.h
+│   ├── hello.pb.cc
+│   ├── hello.grpc.pb.h
+│   └── hello.grpc.pb.cc
+├── src/
+│   └── client.cpp            # client code — uses ServiceClient&lt;T&gt;
+├── CMakeLists.txt            # builds against pre-generated stubs
+├── generate_stubs.bat        # one-time stub generation (Windows)
+├── generate_stubs.sh         # one-time stub generation (Linux)
+└── README.md
+</code></pre>
+
+<p>The client owns its own copy of <code>hello.proto</code> and the generated stubs. The server's <code>.proto</code> (in <a href="../cpp_hello_service/proto/"><code>../cpp_hello_service/proto/</code></a>) is the source of truth — when it changes, copy and regenerate.</p>
+
+<h2 id="quick-start">Quick start</h2>
+
+<h3 id="1-generate-stubs-one-time">1. Generate stubs (one-time)</h3>
+
+<p><strong>Windows:</strong></p>
+<pre><code>cd examples\cpp_hello_client
+generate_stubs.bat
+</code></pre>
+
+<p><strong>Linux:</strong></p>
+<pre><code>cd examples/cpp_hello_client
+chmod +x generate_stubs.sh
+./generate_stubs.sh
+</code></pre>
+
+<p>This produces four files in <code>gen/</code>. You can commit them to your repo — after this step, <code>protoc</code> is no longer needed.</p>
+
+<h3 id="2-build">2. Build</h3>
+
+<p><strong>Windows:</strong></p>
+<pre><code>mkdir build &amp;&amp; cd build
+cmake -DCMAKE_TOOLCHAIN_FILE=&lt;path-to-vcpkg&gt;/scripts/buildsystems/vcpkg.cmake ..
+cmake --build . --config Release
+</code></pre>
+
+<p><strong>Linux:</strong></p>
+<pre><code>mkdir -p build &amp;&amp; cd build
+cmake -DCMAKE_TOOLCHAIN_FILE=&lt;path-to-vcpkg&gt;/scripts/buildsystems/vcpkg.cmake \
+      -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --parallel $(nproc)
+</code></pre>
+
+<p>For toolchain details, see <a href="../docs/html/vcpkg_setup.html"><code>../docs/md/vcpkg_setup.md</code></a> (recommended) or <a href="../docs/html/mingw_setup.html"><code>../docs/md/mingw_setup.md</code></a>.</p>
+
+<h3 id="3-run">3. Run</h3>
+
+<p>Make sure the <a href="../cpp_hello_service/README.html">server</a> is running and registered in Consul.</p>
+
+<pre><code># Consul discovery (service must be registered):
+cpp_hello_client hello greet Cuong
+
+# Direct connection (no Consul needed):
+cpp_hello_client --direct 127.0.0.1:50051 greet Cuong
+
+# All RPCs at once:
+cpp_hello_client hello
+</code></pre>
+
+<h2 id="how-the-client-code-works">How the client code works</h2>
+
+<pre><code>#include "MicroserviceBase/ServiceClient.h"   // the library
+#include "hello.grpc.pb.h"                     // generated from proto
+
+// One line to create a client with Consul discovery:
+microservice_base::ServiceClient&lt;HelloService&gt; client("hello");
+
+// Then use the stub normally — standard gRPC API:
+auto&amp; stub = client.stub();
+grpc::ClientContext ctx;
+GreetRequest req;
+req.set_name("Cuong");
+GreetResponse resp;
+stub.Greet(&amp;ctx, req, &amp;resp);
+</code></pre>
+
+<p><code>ServiceClient&lt;T&gt;</code> handles:</p>
+<ul>
+<li>Consul HTTP lookup (<code>/v1/health/service/{name}?passing=true</code>)</li>
+<li>gRPC channel creation and caching</li>
+<li>Thread-safe stub access</li>
+<li><code>reconnect()</code> for re-resolution after failures</li>
+<li><code>CONSUL_ADDR</code> env var for Consul URL configuration</li>
+</ul>
+
+<p>For the runtime model behind it (channel pool, descriptor caching, fallback to <code>LocalProtoClient</code> when reflection is unavailable), see <a href="../../docs/runtime_model.html"><code>../../docs/runtime_model.md</code></a>.</p>
+
+<h2 id="compared-to-dynamic-invocation-manager-gui">Compared to dynamic invocation (Manager GUI)</h2>
+
+<table>
+  <tr><th>Approach</th><th>Generated stubs (this client)</th><th>Dynamic via reflection (the GUI)</th></tr>
+  <tr><td>Compile-time type safety</td><td>✅</td><td>❌ — JSON dict</td></tr>
+  <tr><td>Performance</td><td>Native protobuf serialization</td><td>Slightly slower (reflection round-trip on first call)</td></tr>
+  <tr><td>Setup</td><td>Generate stubs once, link</td><td>None — works against any reflection-enabled server</td></tr>
+  <tr><td>Best for</td><td>Production code, perf-sensitive paths</td><td>Test scripting, ops, exploring an unknown service</td></tr>
+</table>
+
+<p>Both end up at the same gRPC call. Use whichever fits the situation.</p>
+
+<h2 id="dependencies">Dependencies</h2>
+
+<table>
+  <tr><th>Package</th><th>Purpose</th><th>Install</th></tr>
+  <tr><td><code>grpc</code></td><td>gRPC C++ runtime</td><td><code>vcpkg install grpc</code></td></tr>
+  <tr><td><code>protobuf</code></td><td>Protobuf C++ runtime</td><td>pulled by grpc</td></tr>
+  <tr><td>MicroserviceBase runtime</td><td><code>ServiceClient&lt;T&gt;</code> + Consul resolver</td><td><code>add_subdirectory(...)</code> in CMake</td></tr>
+</table>
+
+<p>No <code>libcurl</code> needed on the client side — the Consul resolver uses raw sockets.</p>
+
+<h2 id="cross-references">Cross-references</h2>
+
+<ul>
+<li><a href="../cpp_hello_service/README.html"><code>../cpp_hello_service/README.md</code></a> — the matching server</li>
+<li><a href="../../docs/runtime_model.html"><code>../../docs/runtime_model.md</code></a> — <code>ServiceClient</code> discovery + invocation flow</li>
+<li><a href="../../docs/architecture.html"><code>../../docs/architecture.md</code></a> — where <code>ServiceClient</code> fits in the layers</li>
+<li><a href="../docs/html/vcpkg_setup.html"><code>../docs/md/vcpkg_setup.md</code></a> — vcpkg + Qt MinGW toolchain (recommended)</li>
+<li><a href="../docs/html/mingw_setup.html"><code>../docs/md/mingw_setup.md</code></a> — MSYS2 alternative</li>
+<li><a href="../../docs/troubleshooting.html"><code>../../docs/troubleshooting.md</code></a> — symptom-indexed problem fixes</li>
+</ul>
+
+</main>
+</body>
+</html>

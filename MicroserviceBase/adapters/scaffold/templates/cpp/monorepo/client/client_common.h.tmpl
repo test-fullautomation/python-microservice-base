@@ -1,0 +1,18 @@
+#pragma once
+
+// Shared helpers for the unified monorepo client.
+
+#include <string>
+#include <vector>
+
+namespace client_common {
+
+// Optional "host:port" for --direct mode.  Empty = use Consul.
+extern std::string g_direct_host;
+
+// Render a numbered menu and read one choice.  Returns 0 on "back/quit"
+// or invalid input, 1..choices.size() on a valid pick.
+int prompt_choice(const std::string& title,
+                  const std::vector<std::string>& choices);
+
+}  // namespace client_common

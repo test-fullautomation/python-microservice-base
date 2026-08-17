@@ -1,8 +1,15 @@
 # ADR-011: Service Import with Module Execution Pattern
 
+> **⚠ Superseded** — 2026-05-07.  Pre-migration decision; no longer
+> applies to the gRPC + Consul + Nomad architecture.  See the existing
+> Status note below for the immediate successor, and
+> [`docs/changelog.md`](../reference/changelog.md) +
+> [`docs/adr/AUDIT.md`](AUDIT.md) for the full triage.  Kept here for
+> git archaeology.
+
 ## Status
 
-Accepted
+Superseded — Nomad jobs (`deploy/<svc>.nomad.hcl`) replace runtime "service import". Generated services ship their own `.hcl`; `nomad job run` (or the Manager GUI Submit Job dialog) replaces the old `import-service` REST endpoint.
 
 ## Date
 

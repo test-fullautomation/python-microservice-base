@@ -1,0 +1,23 @@
+
+add_executable(@@{snake_name}
+    src/main.cpp
+    src/Settings.h
+    src/domain/@@{grpc_name}.h
+    src/domain/@@{grpc_name}.cpp
+    src/adapters/api/@@{service_name}GrpcAdapter.h
+    src/adapters/api/@@{service_name}GrpcAdapter.cpp
+    ${@@{service_upper}_SRCS}
+)
+
+target_include_directories(@@{snake_name} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${@@{service_upper}_INC}"
+)
+
+target_link_libraries(@@{snake_name} PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++
+    ${GRPC_REFL_LIB}
+    protobuf::libprotobuf
+)
+mb_deploy_runtime(@@{snake_name})

@@ -1,0 +1,10 @@
+#include "MainWidget.h"
+#include <QLabel>
+#include <QVBoxLayout>
+
+MainWidget::MainWidget(QWidget *parent) : QWidget(parent) {
+    auto *layout = new QVBoxLayout(this);
+    layout->addWidget(new QLabel("@@{service_name} WASM UI"));
+    setWindowTitle("@@{service_name}");
+    resize(400, 300);
+}

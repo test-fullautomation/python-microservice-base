@@ -1,0 +1,59 @@
+/* ------------------------------------------------------------------
+   ProperDocs / readthedocs theme overrides.
+
+   The stock RTD theme caps content at ~800px, which leaves a large right
+   gutter and clips wide PlantUML diagrams. These rules widen the content
+   column and make diagrams, tables and code blocks behave responsively.
+   ------------------------------------------------------------------ */
+
+/* Full-width content column */
+.wy-nav-content {
+    max-width: none;
+}
+
+/* Diagrams and images scale to the column instead of overflowing */
+.rst-content img,
+.rst-content svg,
+img.uml {
+    max-width: 100%;
+    height: auto;
+}
+
+/* PlantUML SVGs sit on white; give them a light frame so they read as
+   figures rather than floating ink, and centre them in the column. */
+.rst-content .plantuml,
+.rst-content p > img.uml {
+    display: block;
+    margin: 1.5rem auto;
+    background: #ffffff;
+    border: 1px solid #e1e4e5;
+    border-radius: 3px;
+    padding: 0.75rem;
+}
+
+/* Wide tables scroll inside their own container rather than pushing the
+   page sideways */
+.rst-content table.docutils,
+.rst-content table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+/* Long code samples scroll horizontally instead of wrapping badly */
+.rst-content pre,
+.highlight pre {
+    overflow-x: auto;
+}
+
+/* Tabular figures wherever digits line up (version tables, error codes) */
+.rst-content table td code {
+    font-variant-numeric: tabular-nums;
+}
+
+/* The ADR list in the sidebar is long - tighten it so more fits on screen */
+.wy-menu-vertical li.toctree-l2 a {
+    padding: 0.3rem 1.8rem;
+    font-size: 0.85em;
+    line-height: 1.35;
+}

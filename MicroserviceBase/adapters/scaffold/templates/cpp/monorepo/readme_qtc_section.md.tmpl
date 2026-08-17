@@ -1,0 +1,180 @@
+
+
+## Build in Qt Creator (Desktop Qt 6.x MinGW 64-bit kit)
+
+**Recommended**: import the project via the bundled `vcpkg-x64-mingw-qt`
+preset (Qt Creator detects `CMakePresets.json` automatically).  The preset
+already has `CMAKE_TOOLCHAIN_FILE`, `VCPKG_TARGET_TRIPLET`, and overlays
+baked in — no manual wiring.
+
+**If you must use the Qt kit instead of the preset**, Qt Creator does *not*
+auto-detect vcpkg.  Tell it explicitly:
+
+1. `setx VCPKG_ROOT C:\vcpkg` (your vcpkg checkout) → **fully close and
+   reopen Qt Creator** so the env var is in its process.
+2. Open project → pick `Desktop Qt 6.x MinGW 64-bit` → in *Initial
+   Configuration*, **Add → String** the four entries (replace the
+   project path with yours):
+   - `CMAKE_TOOLCHAIN_FILE = C:/vcpkg/scripts/buildsystems/vcpkg.cmake`
+   - `VCPKG_TARGET_TRIPLET = x64-mingw-qt`
+   - `VCPKG_OVERLAY_TRIPLETS = C:/path/to/your/project/triplets`
+   - `VCPKG_OVERLAY_PORTS = C:/path/to/your/project/ports`
+
+   Pitfalls:
+   - Use **absolute paths** for the overlay vars. Qt Creator does *not*
+     expand `${sourceDir}` in *Initial Configuration* (CMakePresets-only
+     macro). Literal `${sourceDir}/triplets` reaches vcpkg → can't find
+     `x64-mingw-qt.cmake` → manifest install aborts.
+   - Var name is **plural**: `VCPKG_OVERLAY_TRIPLETS` (with S). Singular
+     `VCPKG_OVERLAY_TRIPLET` is silently ignored.
+   - Forward slashes `/` only — `\` triggers CMake's `Invalid character
+     escape \Q` error.
+3. Click *Configure Project*.
+
+### Troubleshooting: `Could not find a package configuration file provided by "gRPC"`
+
+If the cmake invocation has no `-DCMAKE_TOOLCHAIN_FILE=` flag, vcpkg never
+loaded.  Two fixes:
+
+- **Switch to the preset** (`vcpkg-x64-mingw-qt`) — quickest.
+- **Stay on the kit**: *Build → Clear CMake Configuration*, then add the
+  four `Initial Configuration` entries above, then *Run CMake*.  CMake
+  caches the toolchain on first configure; subsequent runs do *not*
+  re-pass `-D` flags, which is why a partially-configured build dir keeps
+  failing even after you add the entries.
+
+### Troubleshooting: `The ABI of the selected debugger does not match the toolchain ABI`
+
+Qt Creator shows this warning (yellow triangle) on the auto-imported
+preset kit because CMakePresets cannot specify a debugger path — only
+compiler paths.  Qt Creator pairs the MinGW compiler from the preset
+with whatever debugger it auto-detects, which often picks an MSVC
+`cdb.exe` or a system `gdb` whose ABI doesn't match.
+
+**One-time fix** (per machine, not per project):
+
+1. *Edit → Preferences → Kits → Debuggers* tab → check there's an entry
+   for `C:\Qt\Tools\mingw1310_64\bin\gdb.exe`.  If not: *Add* →
+   *Path* = that path, *Name* = `MinGW gdb (Qt 6.11)`.  *Apply*.
+2. *Kits* tab → select the auto-imported kit named after the preset
+   (e.g. `vcpkg + Qt MinGW 13.1.0 (Release)`) → set *Debugger* to the
+   `MinGW gdb (Qt 6.11)` entry from step 1.  *Apply* + *OK*.
+
+The warning disappears, and breakpoint debugging works against the
+generated executables.  The fix sticks across project re-imports
+because Qt Creator stores it in the kit, not the preset.
+
+> If the Qt Creator installer registered the bundled gdb under a
+> different name (sometimes `MinGW Debugger`), step 1 is unnecessary —
+> just pick the existing entry in step 2.
+
+### Skip vcpkg compile (use prebuilt) — step-by-step
+
+Download `vcpkg_installed_x64-mingw-qt.zip` from the SharePoint folder
+linked in `README.html` (~50–80 MB).
+
+#### Preset flow (recommended)
+
+1. If a full vcpkg compile is currently running, **Build → Cancel Build**.
+2. Use the bundled `vcpkg-x64-mingw-qt-prebuilt` preset (it has
+   `VCPKG_MANIFEST_INSTALL=OFF` baked in).  If the project was opened
+   with a kit instead: *File → Close Project*, delete
+   `CMakeLists.txt.user`, reopen `CMakeLists.txt`, tick the
+   `vcpkg-x64-mingw-qt-prebuilt` preset.
+3. **Configure Project** → fails at `find_package(gRPC)` (expected — the
+   build dir is now created).
+4. From a terminal at project root:
+
+   ```cmd
+   import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip
+   ```
+
+5. Back in Qt Creator: *Build → Run CMake* (1–3 sec) → *Build → Build All*.
+
+#### Kit flow (Desktop Qt 6.x MinGW 64-bit)
+
+1. **Build → Cancel Build** if a vcpkg compile is running.
+2. **Build → Clear CMake Configuration** (not *Clean* — that leaves
+   `CMakeCache.txt`).
+3. *Projects (Ctrl+5) → Build → Initial Configuration → Add → Boolean*:
+
+   ```
+   VCPKG_MANIFEST_INSTALL = OFF
+   ```
+
+   (or *Add → String* with value `OFF` — vcpkg parses both).  Without
+   this, vcpkg will overwrite the imported tree.
+4. **Run CMake** → fails at `find_package(gRPC)` (expected; build dir is
+   created).
+5. From a terminal at project root:
+
+   ```cmd
+   import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip
+   ```
+
+   Verify:
+
+   ```cmd
+   dir build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\
+   ```
+
+   should list `gRPCConfig.cmake`.
+6. Back in Qt Creator: **Run CMake** (1–3 sec) → **Build All**.
+
+#### Verify it really used the prebuilt
+
+In *General Messages* after configure, you should see:
+
+```
+-- The CXX compiler identification is GNU 13.1.0
+-- Found gRPC: <build-dir>/vcpkg_installed/x64-mingw-qt/share/grpc
+-- Found Protobuf: ...
+-- Configuring done (X.Xs)
+```
+
+You should **NOT** see lines like:
+
+```
+-- Building boringssl[core]:x64-mingw-qt...
+-- Building abseil[core]:x64-mingw-qt...
+```
+
+If you do, `VCPKG_MANIFEST_INSTALL=OFF` didn't reach the toolchain —
+check *Initial Configuration* still has the entry, then *Clear CMake
+Configuration* + *Run CMake* again.
+
+### Running the GUI from Qt Creator (F5) — fix `libprotobuf.dll not found`
+
+After a successful build, F5 launches the `.exe` directly from the build
+dir.  Windows only searches the `.exe`'s folder and `%PATH%` for DLLs —
+neither has the vcpkg deps, Qt, or MinGW runtime.  You'll see one of:
+
+```
+The code execution cannot proceed because libprotobuf.dll was not found.
+... Qt6Core.dll was not found.
+... libgcc_s_seh-1.dll was not found.
+```
+
+**Fix once per kit/preset**: *Projects (Ctrl+5) → Run → Environment →
+Details*, select `Path`, click *Edit*.  Prepend (semicolon-separated,
+replace `<build-dir>` with the build dir shown in the *Build* tab —
+e.g. `build/Desktop_Qt_*-Debug` or `build-qt-vcpkg`):
+
+```
+<build-dir>\vcpkg_installed\x64-mingw-qt\bin;C:\Qt\6.x.y\mingw_64\bin;C:\Qt\Tools\mingw1310_64\bin
+```
+
+Repeat on `qt_client_grpcpp/`'s own *Run → Environment* (separate
+sub-project, separate build dir).  Survives rebuilds; only redo when the
+build dir name changes (Debug↔Release, kit switch).
+
+**Permanent alternative — deploy script**:
+
+```cmd
+deploy_qt_vcpkg.bat                       :: server
+cd qt_client_grpcpp && deploy_qt.bat      :: client
+```
+
+Each copies every DLL next to the `.exe` in `dist-qt-vcpkg/`.  That
+folder is fully self-contained and runs without any PATH setup —
+ideal when shipping to a teammate or test machine.

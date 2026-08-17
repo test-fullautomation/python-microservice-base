@@ -1,6 +1,5 @@
 @startuml state_process_lifecycle
-!theme plain
-title Local Hub - Process Lifecycle States
+title Service Lifecycle States (Nomad job + ServiceRunner, post-migration)
 
 skinparam state {
     BackgroundColor<<normal>> #C8E6C9
@@ -13,9 +12,9 @@ skinparam state {
 state "Stopped" as Stopped <<normal>> {
 }
 note right of Stopped
-  Process not running.
-  Config exists in hub_processes.json.
-  PID = None.
+  Job spec exists in Nomad
+  (or local config), no allocation
+  is currently running.
 end note
 
 state "Starting" as Starting <<transient>> {
@@ -24,48 +23,51 @@ state "Starting" as Starting <<transient>> {
 state "Running" as Running <<normal>> {
 }
 note right of Running
-  Process alive, PID tracked.
-  Service registered with Registry.
-  Log file actively written.
+  Allocation alive on a Nomad client.
+  Wrapper has exec'd the service binary.
+  ServiceRunner has registered with Consul
+  and the gRPC health check is passing.
 end note
 
 state "Stopping" as Stopping <<transient>> {
-    state "RPC Shutdown" as RPC
-    state "Signal Fallback" as Signal
-    state "Force Kill" as Kill
+    state "Nomad signal" as Sig
+    state "Drain gRPC" as Drain
+    state "Force kill" as Kill
 
-    [*] --> RPC
-    RPC --> Signal : timeout / RPC failed
-    Signal --> Kill : timeout / signal ignored
-    RPC --> [*] : process exited
-    Signal --> [*] : process exited
-    Kill --> [*] : terminated
+    [*] --> Sig
+    Sig --> Drain : signal forwarded\nby wrapper
+    Drain --> Kill : kill_timeout exceeded
+    Drain --> [*] : Server::Shutdown\ncompletes + Consul\ndereg ok
+    Kill --> [*] : SIGKILL /\nTerminateProcess
 }
 note right of Stopping
-  **Phase 1 — RPC:**
-  Publish svc_api_shutdown to
-  service queue (by service_name).
-  Service unregisters from Registry.
+  **Phase 1 — Nomad signal:**
+  Operator hits "Stop job" → Nomad
+  sends SIGTERM (Linux) or
+  CTRL_BREAK_EVENT (Windows).
+  Wrapper forwards to the service.
 
-  **Phase 2 — Signal:**
-  CTRL_BREAK_EVENT (Windows)
-  or SIGTERM (Linux/macOS).
-  SIGBREAK → KeyboardInterrupt
-  via default_int_handler.
+  **Phase 2 — Drain:**
+  ServiceRunner signal handler calls
+  grpc::Server::Shutdown(deadline);
+  in-flight RPCs complete, then
+  ConsulRegistration.deregisterService().
 
   **Phase 3 — Force:**
-  TerminateProcess (Windows)
-  or SIGKILL (Linux/macOS).
-  No cleanup, no unregister.
+  If kill_timeout (default 5s) elapses
+  before drain completes, Nomad sends
+  SIGKILL / TerminateProcess.  Consul
+  TTL eventually reaps the entry.
 end note
 
 state "Crashed" as Crashed <<error>> {
 }
 note left of Crashed
   Process exited unexpectedly.
-  PID no longer valid.
-  May not have unregistered
-  from Registry.
+  Consul health check fails
+  within ~3s; entry is marked
+  critical, then deregistered
+  by Nomad after deregister_after.
 end note
 
 ' ============================================================================
@@ -97,9 +99,9 @@ legend right
     | <#FFCDD2> | Error state |
 
     **Key files:**
-    ServiceExecutor — start/stop logic
-    LocalHubManager — state orchestration
-    hub_processes.json — config persistence
+    ServiceRunner — gRPC + Consul lifecycle
+    NomadHubAdapter — start/stop via HTTP API
+    wrapper.bat / .sh — signal forwarding
 endlegend
 
 @enduml

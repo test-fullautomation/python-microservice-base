@@ -1,5 +1,4 @@
 @startuml sequence_qml_shell_switch
-!theme plain
 title QML Shell — Switching Between QML Services
 
 participant "User" as user

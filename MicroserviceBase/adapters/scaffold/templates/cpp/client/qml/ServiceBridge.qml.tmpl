@@ -1,0 +1,15 @@
+pragma Singleton
+import QtQuick 2.15
+
+QtObject {
+    property string serviceName: "MockService"
+    signal responseReceived(string method, string result)
+    signal errorOccurred(string method, string error)
+
+    function callService(serviceName, method, args) {
+        console.log("[Stub]", serviceName, method, JSON.stringify(args));
+        Qt.callLater(function() {
+            responseReceived(method, "(stub response)");
+        });
+    }
+}

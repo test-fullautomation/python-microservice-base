@@ -1,5 +1,4 @@
 @startuml component_qt_template_qml
-!theme plain
 title QML Service Template -- Architecture
 footer Shared QML Shell  |  Hot-reload  |  ~5 KB per service switch
 

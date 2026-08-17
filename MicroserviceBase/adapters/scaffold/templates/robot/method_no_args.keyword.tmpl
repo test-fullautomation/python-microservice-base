@@ -1,0 +1,7 @@
+@@{service_name} @@{method_display}
+    [Documentation]    Call @@{full_service_name}.@@{method_name}.
+    ...                Request fields: (none)
+    ...                Returns: @@{return_type}
+    [Arguments]    ${conn_name}
+    ${res}=    conn_manager.verify    conn_name=${conn_name}    send_cmd={"method":"@@{method_name}"}
+    RETURN    ${res}

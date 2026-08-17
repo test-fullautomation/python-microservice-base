@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "@@{proj_name_dash}"
+version = "@@{version}"
+description = "@@{description}"
+requires-python = ">=3.10"
+dependencies = [
+    "MicroserviceBase",
+    "grpcio>=1.60",
+    "grpcio-tools>=1.60",
+    "protobuf>=4.25",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+]
+
+[project.scripts]
+@@{scripts_block}
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/@@{proj_snake}", "proto"]

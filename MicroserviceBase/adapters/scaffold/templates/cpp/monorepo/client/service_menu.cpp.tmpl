@@ -1,0 +1,60 @@
+// @@{svc_pascal} interactive test menu.
+//
+// Each entry invokes one RPC on a persistent ServiceClient<@@{svc_pascal}>
+// (opened on first use, reused while this menu is active).
+
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+#include <grpcpp/grpcpp.h>
+#include "@@{sn}.grpc.pb.h"
+#include "MicroserviceBase/ServiceClient.h"
+#include "client_common.h"
+#include "@@{svc_snake}_menu.h"
+
+using @@{ns}::@@{svc_pascal};
+
+namespace @@{svc_snake}_menu {
+
+static std::unique_ptr<microservice_base::ServiceClient<@@{svc_pascal}>> s_client;
+
+static bool ensure_client() {
+    if (s_client) return true;
+    try {
+        if (!client_common::g_direct_host.empty()) {
+            s_client = std::make_unique<microservice_base::ServiceClient<@@{svc_pascal}>>(
+                "@@{svc_snake}", client_common::g_direct_host, true);
+            std::cout << "@@{svc_pascal}: connected direct -> "
+                      << s_client->target() << "\n";
+        } else {
+            s_client = std::make_unique<microservice_base::ServiceClient<@@{svc_pascal}>>(
+                "@@{svc_snake}");
+            std::cout << "@@{svc_pascal}: resolved via Consul -> "
+                      << s_client->target() << "\n";
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "@@{svc_pascal}: connect failed: " << e.what() << "\n";
+        s_client.reset();
+        return false;
+    }
+    return true;
+}
+
+void run() {
+    if (!ensure_client()) return;
+    auto& stub = s_client->stub();
+
+    std::vector<std::string> labels = { @@{method_labels} };
+    while (true) {
+        int pick = client_common::prompt_choice(
+            "@@{svc_pascal} — pick a method:", labels);
+        if (pick == 0) return;
+        switch (pick) {
+@@{cases_joined}
+            default: break;
+        }
+    }
+}
+
+}  // namespace @@{svc_snake}_menu

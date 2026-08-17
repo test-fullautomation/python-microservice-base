@@ -1,0 +1,12 @@
+
+grpc::Status @@{service_name}GrpcAdapter::@@{method_name}(
+    grpc::ServerContext* ctx,
+    const @@{input_type}* request,
+    grpc::ServerWriter<@@{output_type}>* writer) {
+@@{param_reads}
+    // TODO: implement streaming
+    @@{output_type} resp;
+    resp.set_result(m_domain.@@{snake_method}(@@{args}));
+    writer->Write(resp);
+    return grpc::Status::OK;
+}

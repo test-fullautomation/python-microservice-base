@@ -1,0 +1,655 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=windows-1252">
+   <meta name="MicroserviceBase" content="MicroserviceBase">
+   <title>MicroserviceBase Test Cases</title>
+</head>
+<body vlink="#000000" text="#000000" link="#000000" bgcolor="#FFFFFF" alink="#000000">
+<hr width="100%" color="#FF8C00" align="center">
+<div align="center">
+<font size="6" face="Arial" color="#595959">
+<b>
+MicroserviceBase Test Cases<br>
+(<em>gRPC + Consul + Nomad scaffold generator</em>)
+</b></font>
+</div>
+<hr width="100%" color="#FF8C00" align="center">
+
+<div>&nbsp;</div>
+
+<div align="center">
+
+<table frame="box" rules="all" valign="middle" width="1100" cellspacing="0" cellpadding="6" border="1" align="center">
+<colgroup>
+   <col width="4%" span="1">
+   <col width="8%" span="1">
+   <col width="16%" span="1">
+   <col width="9%" span="1">
+   <col width="63%" span="1">
+</colgroup>
+<tbody>
+
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+1
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0001.py">MSB_0001</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generate a Python single-service project and assert file layout</b><br>
+Expected: All expected files written; key markers present in main.py / .proto / nomad.hcl
+<br>
+L1 static check
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+2
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0002.py">MSB_0002</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generated Python project compiles (py_compile + protoc)</b><br>
+Expected: Every .py compiles; protoc generates calculator_pb2.py + calculator_pb2_grpc.py
+<br>
+L2 syntactic check
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+3
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0003.py">MSB_0003</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generated Python project's scripts/generate_protos.py runs cleanly</b><br>
+Expected: scripts/generate_protos.py exits 0 and writes proto/*_pb2*.py
+<br>
+L3 build check
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+4
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0004.py">MSB_0004</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generated Python service registers in Consul and answers a gRPC call</b><br>
+Expected: calculator_service appears in Consul catalog (passing); reflection lists Calculator.Add
+<br>
+L4 runtime check (uses real Consul agent in -dev mode)
+<br>
+Requires consul on PATH; SKIPPED otherwise
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+5
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0005.py">MSB_0005</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generate a C++ multi_proto project (Toolbox=Calculator+Echo) and assert layout</b><br>
+Expected: Per-service .proto + domain + adapter present; CMakeLists / main.cpp / nomad.hcl emitted
+<br>
+L1 static check, multi_proto layout
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+6
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0006.py">MSB_0006</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generate a Python monorepo project (Toolbox = Calculator + Echo) and assert layout</b><br>
+Expected: Per-service src tree + shared toolbox.proto + per-service deploy artefacts emitted
+<br>
+L1 static check, monorepo layout
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+7
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0007.py">MSB_0007</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Python monorepo compiles + shared .proto compiles</b><br>
+Expected: py_compile clean; protoc emits toolbox_pb2.py + toolbox_pb2_grpc.py
+<br>
+L2 syntactic check, monorepo layout
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+8
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0008.py">MSB_0008</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generate a C++ single-service project (Echo) and assert layout</b><br>
+Expected: CMakeLists, main.cpp, EchoService domain + adapter, echo.proto + .nomad.hcl emitted
+<br>
+L1 static check, single-service C++
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+9
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0009.py">MSB_0009</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#FF0000">
+BADCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Python + multi_proto layout must raise NotImplementedError</b><br>
+Expected: generate_scaffold raises NotImplementedError mentioning python multi_proto
+<br>
+Documents that multi_proto is C++-only in this release
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+10
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0010.py">MSB_0010</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Python monorepo's scripts/generate_protos.py runs cleanly</b><br>
+Expected: exit 0; toolbox_pb2.py + toolbox_pb2_grpc.py written under proto/
+<br>
+L3 build check, monorepo layout
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+11
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0011.py">MSB_0011</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Python monorepo Calculator service registers in Consul + reflection works</b><br>
+Expected: Service appears in Consul (passing); reflection lists calculator.v1.CalculatorService
+<br>
+L4 runtime check, monorepo layout
+<br>
+Requires consul on PATH; SKIPPED otherwise
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+12
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0012.py">MSB_0012</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>C++ single-service .proto parses cleanly through protoc</b><br>
+Expected: echo.proto compiles to a FileDescriptorSet without errors
+<br>
+L2 syntactic check, single-service C++
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+13
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0013.py">MSB_0013</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>C++ multi_proto: every per-service .proto parses cleanly</b><br>
+Expected: calculator.proto and echo.proto each compile independently
+<br>
+L2 syntactic check, multi_proto layout
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+14
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0014.py">MSB_0014</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Generate a C++ monorepo project (Toolbox = Calculator + Echo) and assert layout</b><br>
+Expected: Per-service src tree + shared toolbox.proto + per-service deploy artefacts emitted
+<br>
+L1 static check, C++ monorepo
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+15
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0015.py">MSB_0015</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>C++ monorepo shared toolbox.proto parses cleanly</b><br>
+Expected: Single shared .proto declaring multiple services compiles
+<br>
+L2 syntactic check, C++ monorepo
+
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+16
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0016.py">MSB_0016</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Cpp
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>C++ single-service CMake configure step succeeds</b><br>
+Expected: cmake -S . -B build_test exits 0 (or skips when cmake/gRPC absent)
+<br>
+L3 build check, C++ single-service
+<br>
+Skips when cmake or system gRPC is unavailable
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+17
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0017.py">MSB_0017</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_E2E
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#008000">
+GOODCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Submit generated calculator.nomad.hcl to Nomad; service registers + answers reflection</b><br>
+Expected: Nomad allocation runs; service registers via Consul; reflection lists CalculatorService
+<br>
+L5 end-to-end check
+<br>
+Requires both consul AND nomad on PATH; SKIPPED otherwise
+</i></font></td>
+
+
+</tr>
+<tr valign="middle" align="left">
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="right">
+<font size="2" face="Arial" color="#FF0000">
+<b>
+18
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#595959">
+<b>
+<a target="_blank" href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/test/testfiles/MSB_0018.py">MSB_0018</a>
+</b></font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#4169E1">
+ScaffoldGenerator_Python
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="middle">
+<font size="2" face="Arial" color="#FF0000">
+BADCASE
+</font></td>
+
+<td colspan="1" valign="center" bgcolor="#F5F5F5" align="left">
+<font size="2" face="Arial" color="#595959"><i>
+<b>Empty service_name produces malformed file paths (no input validation)</b><br>
+Expected: Generator currently accepts empty input and emits leading-dot paths
+<br>
+Generator-side bug — open follow-up to add input validation
+<br>
+Documents missing input validation; remove if generator gains a ValueError
+</i></font></td>
+
+
+</tr>
+
+</tbody></table></div>
+<div>&nbsp;</div>
+<hr width="100%" color="#FF8C00" align="center">
+<div align="center"><font size="2" color="#27408B">Generated: 10.05.2026 - 15:35:51</font></div>
+<div>&nbsp;</div>
+</body></html>
+

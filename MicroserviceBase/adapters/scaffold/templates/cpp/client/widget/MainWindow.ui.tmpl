@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QWidget" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>640</width><height>520</height></rect>
+  </property>
+  <property name="windowTitle">
+   <string>@@{service_name} Client</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="methodRow">
+     <item>
+      <widget class="QLabel" name="methodLabel">
+       <property name="text"><string>Method:</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="methodCombo"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="paramsGroup">
+     <property name="title"><string>Parameters</string></property>
+     <layout class="QVBoxLayout" name="paramsOuter">
+      <item><widget class="QWidget" name="formContainer" native="true"/></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="sendButton">
+     <property name="text"><string>Send</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="outputTextEdit">
+     <property name="readOnly"><bool>true</bool></property>
+     <property name="placeholderText"><string>Responses appear here...</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

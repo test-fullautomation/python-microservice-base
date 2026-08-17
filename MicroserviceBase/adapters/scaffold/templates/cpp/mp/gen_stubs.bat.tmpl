@@ -1,0 +1,15 @@
+@echo off
+:: Generate C++ proto + grpc stubs for all .proto files.
+setlocal EnableDelayedExpansion
+set "SCRIPT_DIR=%~dp0"
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+where protoc >nul 2>&1 || ( echo [stubs] ERROR: protoc not in PATH & exit /b 1 )
+where grpc_cpp_plugin >nul 2>&1 || ( echo [stubs] ERROR: grpc_cpp_plugin not in PATH & exit /b 1 )
+for %%P in (@@{proto_list}) do (
+    echo [stubs] %%P
+    protoc --proto_path="%SCRIPT_DIR%" --cpp_out="%SCRIPT_DIR%" --grpc_out="%SCRIPT_DIR%" ^
+        --plugin=protoc-gen-grpc="%~dp0..\..\grpc_cpp_plugin.exe" ^
+        "%SCRIPT_DIR%\%%P" || exit /b 1
+)
+echo [stubs] Done.
+endlocal

@@ -1,0 +1,25 @@
+# @@{service_name} client
+
+Single interactive client for the whole **@@{service_name}**
+monorepo.  On launch it shows a menu of services; pick one and it
+shows that service's RPC methods; pick one and it's invoked.
+
+## Services
+
+@@{svc_list}
+
+## Usage (console)
+
+```cmd
+:: Consul-based discovery (default)
+@@{project_snake}_client
+
+:: Direct connection (bypass Consul) - applied to every service
+@@{project_snake}_client --direct 127.0.0.1:50051
+```
+@@{ui_section}
+For methods whose request/response come from an imported .proto, the
+console client calls the RPC with a default-constructed request and
+prints status only.  Fill in `req.set_<field>(...)` in
+`client/src/<svc>_menu.cpp` to exercise real values - or use the JSON
+UI (if generated) which handles arbitrary messages via reflection.

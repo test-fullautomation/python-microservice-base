@@ -1,5 +1,19 @@
 # QML Shell + C++ Service Infrastructure
 
+> **Status: ⚠️ Obsolete (pre-gRPC migration).** This plan describes a
+> RabbitMQ-era ServiceBase + ServiceBridge that no longer exists. The
+> QML shell idea is still on the roadmap but needs a fresh design
+> against the current gRPC + Consul + Nomad runtime. See
+> [`../changelog.md`](../reference/changelog.md) for the migration that
+> invalidated this design.
+>
+> Kept for reference because:
+> - The Qt-WASM shell architecture concept (one ~9 MB binary loading
+>   per-service `.qml` files at runtime) is still useful.
+> - The `qml_*_template/` examples in [`examples/_legacy/`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/_legacy/README.md)
+>   were written against this plan and remain in `_legacy/` for fork
+>   maintainers.
+
 ## Context
 
 Service developers familiar with Qt/C++ need to build microservices with GUIs using familiar tools (Qt Creator, drag-and-drop QML designer). Currently they must hand-write HTML/JS or compile a full ~13MB WASM binary per service.

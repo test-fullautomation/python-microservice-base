@@ -28,5 +28,16 @@
 #
 # *******************************************************************************
 
-from .rabbitmq_adapter import RabbitMQTransportAdapter
-from .eventbus_adapter import EventBusTransportAdapter
+# Lazy imports: the legacy RabbitMQ and EventBus transports are only needed
+# by services that still opt into them.  The new gRPC/Consul runtime does not
+# require `pika`, so don't let a missing optional dep break every import of
+# MicroserviceBase.
+try:
+    from .rabbitmq_adapter import RabbitMQTransportAdapter  # noqa: F401
+except ImportError:
+    RabbitMQTransportAdapter = None  # type: ignore[assignment]
+
+try:
+    from .eventbus_adapter import EventBusTransportAdapter  # noqa: F401
+except ImportError:
+    EventBusTransportAdapter = None  # type: ignore[assignment]

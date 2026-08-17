@@ -1,0 +1,10 @@
+{
+  "name": "@@{snake_hyphen}-server-vcpkg",
+  "version-string": "@@{version}",
+  "description": "Server build with Google grpc++ via vcpkg + Qt MinGW.",
+  "dependencies": [
+    { "name": "grpc", "default-features": false, "features": ["codegen"] },
+    "protobuf",
+    "curl"
+  ]
+}

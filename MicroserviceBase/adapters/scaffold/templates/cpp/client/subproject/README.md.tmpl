@@ -1,0 +1,27 @@
+# @@{service_name} Client
+
+C++ gRPC client for the `@@{snake_name}` service.
+
+## Quick start
+
+```bash
+# 1. Generate stubs (one time, from the project root)
+cd proto
+generate_stubs.bat        # Windows
+./generate_stubs.sh       # Linux
+cd ..
+
+# 2. Build the client
+cd client
+mkdir build && cd build
+cmake -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake ..
+cmake --build . --config Release
+
+# 3. Run
+@@{snake_name}_client @@{snake_name}               # Consul discovery
+@@{snake_name}_client --direct host:port  # direct connection
+```
+
+Proto stubs are shared with the service from `../proto/`.
+Uses `ServiceClient<@@{grpc_name}>` from MicroserviceBase runtime for
+automatic Consul discovery and channel management.

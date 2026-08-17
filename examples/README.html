@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Examples</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --muted:#94a3b8;
+          --accent:#38bdf8; --green:#10b981; --amber:#fbbf24; --border:#334155; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+       background:var(--bg);color:var(--text);line-height:1.65;}
+  header{background:linear-gradient(135deg,#10b981,#0ea5e9);padding:30px;
+         box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+  header h1{margin:0;font-size:1.9em;text-shadow:0 2px 4px rgba(0,0,0,0.4);}
+  main{max-width:1100px;margin:0 auto;padding:30px;}
+  h1{display:none;}
+  h2{color:var(--green);margin-top:30px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+  h3{color:var(--amber);margin-top:22px;}
+  h4{color:var(--text);margin-top:18px;font-size:1em;}
+  p{margin:10px 0;}
+  code{background:#0b1220;padding:2px 6px;border-radius:4px;color:#fcd34d;
+       font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:0.9em;}
+  pre{background:#0b1220;padding:14px;border-radius:8px;overflow-x:auto;
+      border:1px solid var(--border);font-size:0.86em;line-height:1.45;}
+  pre code{background:none;padding:0;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;
+        background:rgba(0,0,0,0.2);border-radius:8px;overflow:hidden;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);
+        font-size:0.92em;vertical-align:top;}
+  th{background:#0b1220;color:var(--green);}
+  tr:last-child td{border-bottom:none;}
+  blockquote{background:rgba(56,189,248,0.06);border-left:4px solid var(--accent);
+             margin:14px 0;padding:8px 16px;border-radius:0 6px 6px 0;}
+  blockquote p{margin:6px 0;}
+  ul li{margin-bottom:4px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<header><h1 style="display:block;">Examples</h1></header>
+<main>
+<h1 id="examples">Examples</h1>
+
+<blockquote><p>📄 <em>Also available as HTML:</em> <a href="README.html"><code>README.html</code></a></p></blockquote>
+
+<p>Worked examples of MicroserviceBase services and clients on the current gRPC + Consul + Nomad runtime. Each folder is a complete project — clone it as a starting point or run it as-is.</p>
+
+<p>For toolchain setup (MSYS2 / Qt6::Grpc / vcpkg + Qt MinGW), per-feature walkthroughs, and the Service Creator wizard, see <a href="docs/README.md"><code>docs/</code></a>.</p>
+
+<h2 id="pick-an-example">Pick an example</h2>
+
+<table>
+  <tr><th>Situation</th><th>Go to</th></tr>
+  <tr><td>🚀 I want to build my <strong>first service</strong> in C++</td><td><a href="cpp_hello_service/README.html"><code>cpp_hello_service/</code></a> — single service, ~150 lines, hexagonal layout, all the wiring you need to copy</td></tr>
+  <tr><td>🐍 Same but in <strong>Python</strong></td><td><a href="hello_service/README.html"><code>hello_service/</code></a> — async gRPC + ServiceRunner, three RPC flavours (unary, server-streaming)</td></tr>
+  <tr><td>🛰 I want a <strong>client</strong> that talks to a service</td><td><a href="cpp_hello_client/README.html"><code>cpp_hello_client/</code></a> — typed C++ client with generated stubs + <code>ServiceClient&lt;T&gt;</code> for Consul lookup</td></tr>
+  <tr><td>🏭 I want to see a <strong>multi-service</strong> real-world project</td><td><a href="PowerDeviceService/README.html"><code>PowerDeviceService/</code></a> — 6 services in one C++ monorepo with vcpkg toolchain, Qt client, prebuilt zip workflow — <strong>canonical reference</strong></td></tr>
+  <tr><td>📚 I want to learn the toolchain choices</td><td><a href="docs/README.md"><code>docs/</code></a> — MSYS2 / Qt6::Grpc / vcpkg + Qt MinGW setup guides</td></tr>
+  <tr><td>🪄 I want the GUI to scaffold one for me</td><td><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html">Service Creator wizard</a> — same generator backend as the <code>mb-scaffold</code> CLI</td></tr>
+</table>
+
+<h2 id="whats-the-difference-between-these-examples">What's the difference between these examples?</h2>
+
+<table>
+  <tr><th></th><th>Lang</th><th>Server</th><th>Client</th><th>Toolchain</th><th>Best for</th></tr>
+  <tr><td><code>cpp_hello_service/</code></td><td>C++</td><td>✅</td><td>(paired with cpp_hello_client)</td><td>vcpkg or MSYS2</td><td>First C++ service from scratch</td></tr>
+  <tr><td><code>cpp_hello_client/</code></td><td>C++</td><td>–</td><td>✅ console</td><td>vcpkg or MSYS2</td><td>Learning the client-side flow + generated stubs</td></tr>
+  <tr><td><code>hello_service/</code></td><td>Python</td><td>✅</td><td>–</td><td>pip</td><td>First Python service from scratch</td></tr>
+  <tr><td><code>PowerDeviceService/</code></td><td>C++</td><td>✅ × 6</td><td>✅ Qt-Widget + qt_client_grpcpp</td><td>vcpkg + Qt MinGW (canonical)</td><td>Real-world multi-service architecture</td></tr>
+</table>
+
+<p><code>cpp_hello_service</code> + <code>cpp_hello_client</code> work as a pair — start the service, then the client connects via Consul lookup.</p>
+
+<h2 id="layout">Layout</h2>
+
+<pre><code>examples/
+├── README.md / README.html              ← you are here
+├── docs/                                ← toolchain setup + per-feature walkthroughs
+│   ├── md/  index | mingw_setup | qt_grpc_setup | vcpkg_setup | service_creation | wasm_cleware
+│   └── html/ (mirror)
+├── PowerDeviceService/                  ← canonical multi-service C++ monorepo
+├── cpp_hello_service/                   ← single C++ service
+├── cpp_hello_client/                    ← matching console client
+├── hello_service/                       ← single Python service
+└── _legacy/                             ← pre-gRPC-migration examples (RabbitMQ-era)
+                                          kept for reference / fork maintainers
+</code></pre>
+
+<h2 id="running-any-example-the-common-loop">Running any example: the common loop</h2>
+
+<p>The shape of the workflow is the same across all examples:</p>
+
+<p>1. <strong>Start Consul + Nomad</strong> — either <code>consul agent -dev</code> and    <code>nomad agent -dev</code> in two terminals, or use the    <a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html">Manager GUI's Service Network tab</a>    to launch both with one click each. 2. <strong>Build the service</strong> — <code>build_deploy_msys2.bat</code> (or    <code>build_qt_vcpkg.bat</code>) for C++ scaffolds; <code>pip install -e .</code> for    Python. 3. <strong>Deploy</strong> — <code>nomad job run deploy/&lt;svc&gt;.nomad.hcl</code> (or click    <strong>Submit Job</strong> in the Manager GUI's Nomad tab). 4. <strong>Inspect</strong> — open the Manager GUI → Services tab → click the    service. gRPC reflection enumerates methods automatically;    click <strong>Send</strong> on a method to invoke it interactively.</p>
+
+<p>For the per-example specifics (env vars, build flags, deploy variants), see each folder's README.</p>
+
+<h2 id="cross-references">Cross-references</h2>
+
+<ul>
+<li><a href="../docs/index.html">Repo docs</a> — framework architecture, runtime</li>
+</ul>
+<p>  model, glossary, changelog</p>
+<ul>
+<li><a href="../MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html">Manager GUI guides</a></li>
+</ul>
+<p>  — operate Consul + Nomad, drive the Service Creator wizard, invoke   services</p>
+<ul>
+<li><a href="docs/html/index.html">Toolchain setup</a> — MSYS2, Qt6::Grpc, vcpkg + Qt MinGW</li>
+<li><a href="../docs/troubleshooting.html">Troubleshooting</a> — symptom-indexed</li>
+</ul>
+<p>  problems for current-stack issues</p>
+
+<h2 id="pre-migration-examples">Pre-migration examples</h2>
+
+<p><code>_legacy/</code> holds the RabbitMQ + ServiceRegistry + ProcessHub examples (<code>01_basic_service.py</code> through <code>08_fleet_demo.py</code>, <code>cpp_qml_service_template/</code>, <code>fleet_demo/</code>, <code>service_template/</code>, etc.). They demonstrate framework features that have since been replaced — useful for fork maintainers who haven't migrated yet, or for diff-comparing an old example against its modern counterpart. See <a href="_legacy/README.md"><code>_legacy/README.md</code></a> for a per-folder mapping to current replacements.</p>
+
+</main>
+</body>
+</html>

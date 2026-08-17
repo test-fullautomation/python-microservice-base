@@ -27,16 +27,27 @@
     if (body !== undefined) {
       opts.body = JSON.stringify(body);
     }
-    return fetch(_bridgeOrigin() + path, opts).then(function (res) {
-      return res.json().then(function (data) {
-        if (!res.ok) {
-          var err = new Error(data.error || data.detail || 'Nomad API error ' + res.status);
-          err.status = res.status;
-          throw err;
+    return fetch(_bridgeOrigin() + path, opts)
+      .catch(function (err) {
+        if (err instanceof TypeError) {
+          var msg = 'Bridge not running on ' + _bridgeOrigin() +
+                    ' — click Start Bridge (top-right LED).';
+          var e = new Error(msg);
+          e.cause = 'bridge_down';
+          throw e;
         }
-        return data;
+        throw err;
+      })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) {
+            var err = new Error(data.error || data.detail || 'Nomad API error ' + res.status);
+            err.status = res.status;
+            throw err;
+          }
+          return data;
+        });
       });
-    });
   }
 
   var nomadClient = {
@@ -72,6 +83,16 @@
       return _fetchJson('GET', '/api/nomad/health');
     },
 
+    /**
+     * Find running Nomad agents on the local machine by inspecting
+     * processes named ``nomad`` and probing their listening TCP ports.
+     *
+     * @returns {Promise<{instances: Array, error?: string}>}
+     */
+    discover: function () {
+      return _fetchJson('GET', '/api/nomad/discover');
+    },
+
     getJobs: function () {
       return _fetchJson('GET', '/api/nomad/jobs');
     },
@@ -96,6 +117,22 @@
     getJobLogs: function (jobId, logType) {
       var q = logType ? '?type=' + logType : '';
       return _fetchJson('GET', '/api/nomad/jobs/' + encodeURIComponent(jobId) + '/logs' + q);
+    },
+
+    /**
+     * Submit a new job to Nomad.  Accepts either raw HCL or a JSON job spec
+     * (with or without the top-level {"Job": ...} wrapper).
+     *
+     * @param {string} content       Raw HCL or JSON text.
+     * @param {string} [contentType] 'hcl' (default) or 'json'.
+     * @returns {Promise<object>}    { success, eval_id, job_id, warnings }
+     *                               or { success: false, stage, message }.
+     */
+    submitJob: function (content, contentType) {
+      return _fetchJson('POST', '/api/nomad/jobs/submit', {
+        content: content,
+        content_type: (contentType || 'hcl').toLowerCase()
+      });
     }
   };
 

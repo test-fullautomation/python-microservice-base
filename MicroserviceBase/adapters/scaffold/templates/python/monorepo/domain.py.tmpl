@@ -1,0 +1,15 @@
+@@{header}"""
+Pure business logic for @@{svc_name} — no gRPC, no I/O.
+"""
+
+from __future__ import annotations
+
+from typing import AsyncIterator
+
+
+class @@{cls}:
+    """
+Domain service for @@{svc_name}.  One method per RPC.  Edit bodies to
+plug in real logic.
+    """
+@@{methods}

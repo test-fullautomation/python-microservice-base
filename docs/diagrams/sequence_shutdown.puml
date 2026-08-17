@@ -1,117 +1,111 @@
 @startuml sequence_shutdown
-!theme plain
-title Service Shutdown Sequence (Two-Phase)
+title Service Shutdown Sequence (Nomad signals → ServiceRunner drain → Consul deregister)
 
-participant "GUI\n(LocalHubDashboard)" as GUI
-participant "FastAPI Bridge\n(/api/local-hub/stop)" as Bridge
-participant "LocalHubManager" as HubMgr
-participant "ServiceExecutor" as Executor
-participant "RabbitMQ\n(Broker)" as Broker
-participant "Target Service\n(ServiceBase)" as Service
-participant "ServiceRegistryPort\n(AMQPRegistryAdapter)" as Registry
+participant "Operator" as op
+participant "Manager GUI" as gui
+participant "FastAPI bridge\n(/api/nomad/*)" as bridge
+participant "Nomad server" as ns
+participant "Nomad client" as nc
+participant "wrapper.bat / .py" as wrapper
+participant "ServiceRunner\n(in service process)" as runner
+participant "grpc::Server" as grpc
+participant "Consul agent" as consul
 
-== Phase 1: User Initiates Stop ==
+== Phase 1: User initiates stop ==
 
-GUI -> Bridge : POST /api/local-hub/stop\n{ "names": ["MyService"] }
-activate Bridge
-Bridge -> HubMgr : stop_processes(["MyService"])
-activate HubMgr
-HubMgr -> Executor : stop("MyService")
-activate Executor
+op -> gui : Click "Stop job"\nin Service Network tab
+gui -> bridge : POST /api/nomad/jobs/<id>/stop
+activate bridge
+bridge -> ns : DELETE /v1/job/<id>
+activate ns
+ns --> bridge : 200 OK\nstop_evaluation_id
+deactivate bridge
 
-== Phase 2: RPC Graceful Shutdown ==
+== Phase 2: Nomad propagates the stop ==
 
-Executor -> Executor : Resolve queue name:\nconfig.service_name || process_name
-note right of Executor
-  service_name from config takes
-  priority over process_name.
-  e.g., config "ClewareService" has
-  service_name = "ServiceCleware"
+ns -> nc : task stop directive\nfor allocation <alloc-id>
+deactivate ns
+activate nc
+
+nc -> wrapper : send SIGTERM (Linux)\nor CTRL_BREAK_EVENT (Windows)
+activate wrapper
+
+== Phase 3: Signal reaches ServiceRunner ==
+
+wrapper -> runner : signal forwarded to child
+note right of runner
+  signal.signal(SIGBREAK,\n  signal.default_int_handler)\nensures Windows SIGBREAK becomes\nKeyboardInterrupt → finally blocks\nrun (otherwise default handler\ncalls ExitProcess and skips cleanup).
 end note
 
-Executor -> Broker : publish(\n  exchange="",\n  routing_key=<queue_name>,\n  body={"method":"svc_api_shutdown"})
-activate Broker
+activate runner
 
-Broker -> Service : deliver to service queue
-activate Service
+runner -> runner : signal handler sets\nshutdown flag
+runner -> grpc : Server::Shutdown(deadline=5s)
+activate grpc
 
-Service -> Service : dispatch_request(body)
-Service -> Service : svc_api_shutdown()
-
-== Phase 3: Service Graceful Cleanup ==
-
-Service -> Registry : unregister(service_info)
-activate Registry
-Registry -> Broker : publish(service_information,\nstate="off")
-note right of Registry
-  Creates a new AMQP connection
-  to publish unregistration event.
-  This ensures the Registry knows
-  the service is gone.
-end note
-deactivate Registry
-
-Service -> Service : stop_consuming()
-note right of Service
-  Interruptible loop:
-  process_data_events(time_limit=1)
-  sets _consuming = False
+note right of grpc
+  In-flight RPCs given the deadline
+  to complete.  New RPCs receive
+  UNAVAILABLE.
 end note
 
-Service -> Service : finally: cleanup
-deactivate Service
+grpc -> grpc : drain in-flight streams
+grpc --> runner : drained
+deactivate grpc
 
-== Phase 4: Wait for Exit ==
+== Phase 4: Consul deregistration ==
 
-Executor -> Executor : Wait for process exit\n(timeout = shutdown_timeout)
+runner -> consul : PUT /v1/agent/service/deregister/<id>
+activate consul
+consul -> consul : remove instance from catalog
+consul --> runner : 200 OK
+deactivate consul
 
-alt Process exits within timeout
-    Executor --> HubMgr : stopped = True
-else Process still running (timeout)
-    == Phase 5: Signal Fallback ==
+note over consul
+  Any client that does
+  GET /v1/health/service/<name>?passing
+  immediately after no longer sees
+  this instance — no stale endpoints.
+end note
 
-    alt Windows
-        Executor -> Service : CTRL_BREAK_EVENT
-        note right of Executor
-          signal.SIGBREAK is converted
-          to KeyboardInterrupt by
-          signal.default_int_handler
-          (installed in consume loop)
-        end note
-    else Linux/macOS
-        Executor -> Service : SIGTERM
-    end
+== Phase 5: Process exit ==
 
-    Executor -> Executor : Wait for exit\n(stop_timeout)
+runner --> wrapper : main() returns\nor sys.exit(0)
+deactivate runner
+wrapper --> nc : exit code 0
+deactivate wrapper
+nc -> ns : alloc status: complete
+deactivate nc
 
-    alt Still running after signal
-        Executor -> Service : terminate()\n(TerminateProcess / SIGKILL)
-    end
+== Phase 6: GUI confirms ==
 
-    Executor --> HubMgr : stopped
-end
+gui -> bridge : GET /api/consul/health/<name>\n(periodic refresh)
+activate bridge
+bridge -> consul : GET /v1/health/service/<name>?passing
+activate consul
+consul --> bridge : [] (empty — instance is gone)
+deactivate consul
+bridge --> gui : empty list
+deactivate bridge
 
-deactivate Executor
+note over gui
+  Sidebar drops the service entry;
+  if the service detail panel was
+  open for it, the right pane clears
+  (see ServiceCreator.js: active panel
+   is deactivated when the service name
+   is no longer in MM.servicesInfor).
+end note
 
-HubMgr -> HubMgr : Update process state
-HubMgr --> Bridge : { "success": true, "results": {...} }
-deactivate HubMgr
+== Hard-kill fallback (only if Phase 3 timeouts) ==
 
-Bridge --> GUI : 200 OK
-deactivate Bridge
-
-== Registry Receives Unregistration ==
-
-Broker -> Broker : service_information exchange\ndelivers state="off" event
-Broker -> Broker : ServiceRegistry.handle_update()\nremoves service from tracking
-Broker -> Broker : notify_updates()\nbroadcasts to GUI via fanout
-
-note over GUI, Service
-  **Key Insight:** The default AMQP exchange (exchange="") routes
-  messages by **queue name**, not by routing_key from _SERVICE_INFO.
-  The service's queue name is _SERVICE_INFO['name'], which may differ
-  from the hub process name. The **service_name** field in config
-  bridges this gap.
+note over nc, wrapper
+  If ServiceRunner doesn't exit within
+  the kill_timeout (default 5s), Nomad
+  follows up with SIGKILL / TerminateProcess.
+  Consul TTL eventually reaps the entry
+  (~30s default) — but with kill_signal +
+  graceful runner code, this path is rare.
 end note
 
 @enduml

@@ -20,10 +20,14 @@
 
 \subsection{Overview}
 
-MicroserviceBase is a Python framework for building microservices that communicate through RabbitMQ,
-with a built-in GUI for monitoring, a local process hub for lifecycle management, and a service
-registry for dynamic discovery. The system follows hexagonal architecture principles,
-ensuring testability, maintainability, and extensibility.
+MicroserviceBase is a framework for building microservices in Python or C++ that talk
+\textbf{gRPC over HTTP/2}, register themselves in a \textbf{HashiCorp Consul} service
+catalog, and run as \textbf{HashiCorp Nomad} jobs.  A \textbf{FastAPI bridge} hosts the
+REST endpoints used by the cross-platform \textbf{Manager GUI}, and the same endpoints
+are usable from \texttt{curl} or any scripting language.  All generated code follows
+\textbf{hexagonal architecture} (domain / ports / adapters), so the transport,
+discovery, and orchestration choices stay confined to the adapter layer and never leak
+into the business logic.
 
 \begin{figure}[!htb]
 \centering
@@ -35,34 +39,64 @@ ensuring testability, maintainability, and extensibility.
 \subsubsection{Key Features}
 
 \begin{itemize}
-   \item \textbf{Microservice Framework}: Base classes for creating services with RPC and pub/sub patterns
-   \item \textbf{Service Registry}: Dynamic service registration and discovery via RabbitMQ exchange
-   \item \textbf{FastAPI Bridge}: REST API and WebSocket gateway connecting GUI to microservices
-   \item \textbf{Manager GUI}: Electron + browser-based dashboard for monitoring and controlling services
-   \item \textbf{Local Process Hub}: Start, stop, and manage service processes with graceful shutdown
-   \item \textbf{Multi-Broker Support}: Connect to multiple RabbitMQ brokers simultaneously
-   \item \textbf{Service Import}: Import microservice packages (folder or zip) into the local hub
-   \item \textbf{Service Creator}: Interactive wizard for scaffolding new microservices
-   \item \textbf{Standalone Installer}: Package as Windows desktop application (DevAtServGUI)
+   \item \textbf{gRPC + reflection}: services advertise their methods and message
+         schemas at runtime through the standard \texttt{grpc.reflection} plugin --
+         clients enumerate without a local \texttt{.proto}
+   \item \textbf{Consul service catalog}: every service self-registers on startup with
+         name, dynamic port, health check, and a \texttt{grpc\_services} meta tag, and
+         deregisters cleanly on shutdown
+   \item \textbf{Nomad orchestration}: every generated project ships
+         \texttt{deploy/<svc>.nomad.hcl} with a single \texttt{raw\_exec} task and a
+         dynamic \texttt{grpc} port; the same job runs on Windows and Linux
+   \item \textbf{Hexagonal scaffold for Python and C++}: \texttt{mb-scaffold} (CLI) and
+         the \textbf{Service Creator wizard} (GUI) emit a complete project with
+         \texttt{domain/}, \texttt{adapters/}, \texttt{proto/}, \texttt{deploy/}, build
+         scripts, and an optional \texttt{GUIs/} plugin
+   \item \textbf{C++ build via vcpkg}: a project-local
+         \texttt{vcpkg-overlay-ports/grpc/} forces
+         \texttt{gRPC\_BUILD\_GRPC\_CPP\_REFLECTION\_PLUGIN=ON} so reflection is always
+         available regardless of the upstream port's defaults
+   \item \textbf{FastAPI bridge}: \texttt{/api/scaffold}, \texttt{/api/grpc},
+         \texttt{/api/consul}, \texttt{/api/nomad} -- one process, four namespaces;
+         used by the GUI and equally by automation scripts
+   \item \textbf{Manager GUI}: dual-host (Electron desktop + browser) with a
+         Consul-driven Services sidebar, a Service Network tab for managing the agents,
+         and a Service Creator wizard
+   \item \textbf{QConnectBase \texttt{GrpcClient}}: contributed upstream so Robot
+         Framework tests drive gRPC services with the same keyword model used for TCP,
+         Serial, SSH, and the legacy RabbitMQ broker
+   \item \textbf{Standalone installers}: NSIS for Windows (with Consul / Nomad detection
+         + \texttt{winget} install fallbacks), \texttt{.deb} / AppImage for Linux (with
+         a \texttt{bootstrap.sh} that installs the agents from the official HashiCorp
+         repos)
 \end{itemize}
 
 \subsubsection{Design Philosophy}
 
-MicroserviceBase follows several key design principles:
-
 \begin{enumerate}
-   \item \textbf{Hexagonal Architecture}: Domain logic is isolated from external concerns via ports and adapters
-   \item \textbf{Factory Pattern}: All components are created through factories, enabling easy swapping
-   \item \textbf{Dual Hosting}: GUI works in both Electron (desktop) and browser modes
-   \item \textbf{Graceful Shutdown}: Proper process cleanup on Windows using CTRL\_BREAK\_EVENT signals
-   \item \textbf{Config Persistence}: Placeholder-based configuration that works across environments
+   \item \textbf{Standards over bespoke}: gRPC, Consul, Nomad -- pick the boring,
+         widely-used building blocks instead of inventing transport / discovery /
+         orchestration in-house
+   \item \textbf{Hexagonal architecture}: domain code never imports gRPC, Consul, Nomad,
+         FastAPI, or Qt; swapping a transport is purely an adapter problem
+   \item \textbf{Same code generates same shape}: \texttt{mb-scaffold} produces the same
+         file layout for Python and C++, single-service and multi-proto, so a developer
+         familiar with one knows the other on sight
+   \item \textbf{Reflect-first, fall back to compile}: clients prefer gRPC reflection
+         and only compile a local \texttt{.proto} (\texttt{LocalProtoClient}) when
+         reflection is not available
+   \item \textbf{Graceful shutdown on every platform}: Python services convert
+         \texttt{SIGBREAK} (Windows) and \texttt{SIGTERM} (Linux) into a clean
+         deregister-then-exit path; C++ services do the same via the \texttt{Server}
+         shutdown handler
 \end{enumerate}
 
 % ============================================================================
 \subsection{Architecture}
 % ============================================================================
 
-MicroserviceBase is organized into distinct layers following hexagonal architecture:
+MicroserviceBase is organised into the classic hexagonal layers, applied uniformly to
+both the framework itself and to every generated service:
 
 \begin{figure}[!htb]
 \centering
@@ -71,7 +105,9 @@ MicroserviceBase is organized into distinct layers following hexagonal architect
 \label{fig:architecture_overview}
 \end{figure}
 
-The detailed architecture with method signatures and implementation specifics:
+\noindent
+The detailed architecture with the major adapters (gRPC, Consul, Nomad, FastAPI bridge,
+scaffold generator) wired through their port interfaces:
 
 \begin{figure}[!htb]
 \centering
@@ -83,27 +119,46 @@ The detailed architecture with method signatures and implementation specifics:
 \subsubsection{Layer Responsibilities}
 
 \begin{description}
-   \item[Domain Layer] Core business logic: \texttt{ServiceBase} (base class for microservices),
-        \texttt{ServiceRegistry} (service registration and discovery), and \texttt{Factory}
-        (component creation).
+   \item[Domain Layer] Pure business logic with zero infrastructure dependencies:
+        \texttt{ServiceBase} (the abstract microservice contract), value types,
+        and generated service classes
+        (\texttt{src/<svc>/domain/<svc>\_service.\{py,cpp\}}).  The domain never imports
+        \texttt{grpc}, \texttt{python-consul}, \texttt{fastapi}, \texttt{httpx}, or Qt
+        and is unit-testable in isolation.
 
-   \item[Ports Layer] Abstract interfaces defining contracts: \texttt{TransportPort} (message passing),
-        \texttt{RegistryPort} (service registration), \texttt{UIBridgePort} (GUI communication).
+   \item[Ports Layer] Abstract protocol interfaces that the domain talks to:
+        \texttt{TransportPort} (RPC in / out), \texttt{RegistryPort} (registration +
+        discovery), \texttt{ProcessPort} (subprocess management),
+        \texttt{SerializationPort}, and \texttt{UIBridgePort} (HTTP for the GUI).
 
-   \item[Adapters Layer] Concrete implementations:
+   \item[Adapters Layer] Concrete infrastructure-aware implementations:
         \begin{itemize}
-           \item \texttt{RabbitMQ Transport} -- RPC calls and message consumption via pika
-           \item \texttt{RabbitMQ Registry} -- Service registration via exchange broadcasting
-           \item \texttt{FastAPI Bridge} -- REST API, WebSocket, and Local Hub endpoints
-           \item \texttt{Local Hub Manager} -- Process lifecycle management
-           \item \texttt{Service Executor} -- Process execution with platform-specific shutdown
+           \item \texttt{gRPC adapter} -- \texttt{adapters/grpc\_bridge/} -- request
+                 routing, reflection client (\texttt{ReflectClient}), and a
+                 \texttt{LocalProtoClient} fallback that compiles \texttt{.proto} files
+                 with \texttt{grpc\_tools.protoc}
+           \item \texttt{Consul adapter} -- \texttt{adapters/consul/} -- HTTP wrapper
+                 around \texttt{/v1/agent/service/register},
+                 \texttt{/v1/health/service/<name>?passing=true}, and the catalog
+                 endpoints
+           \item \texttt{Nomad adapter} -- \texttt{adapters/nomad/} -- agent lifecycle
+                 (start / stop / status), job submission, and per-task status streaming
+           \item \texttt{FastAPI bridge} -- \texttt{adapters/ui\_bridge/fastapi\_bridge.py}
+                 -- the single REST front for the GUI; mounts the GUI's static assets
+                 in browser mode
+           \item \texttt{scaffold generator} -- \texttt{adapters/scaffold/cpp\_tmpl.py}
+                 and \texttt{python\_tmpl.py} -- one templated emitter per output file;
+                 backs both the wizard and the CLI
         \end{itemize}
 
-   \item[GUI Layer] MicroserviceManagerGUI with dual hosting:
+   \item[GUI Layer] \texttt{MicroserviceManagerGUI} runs in two modes:
         \begin{itemize}
-           \item \texttt{Electron} -- Desktop wrapper with contextBridge preload
-           \item \texttt{Web} -- Pure browser-compatible HTML/CSS/JS
-           \item \texttt{Service Plugins} -- Dynamically loaded per-service UI components
+           \item \texttt{Electron} -- desktop wrapper with \texttt{contextBridge} preload
+           \item \texttt{Web} -- pure browser-compatible HTML / CSS / JS, served by the
+                 FastAPI bridge under \texttt{http://localhost:1112}
+           \item \texttt{Service Plugins} -- per-service HTML + JS dropped into
+                 \texttt{web/services/} and loaded into the Manager GUI namespace
+                 (\texttt{window.MicroserviceManager}, alias \texttt{MM})
         \end{itemize}
 \end{description}
 
@@ -111,228 +166,196 @@ The detailed architecture with method signatures and implementation specifics:
 \subsection{Components}
 % ============================================================================
 
-\subsubsection{ServiceBase}
+\subsubsection{Service Discovery: Consul}
 
-The base class for all microservices provides:
+Every service registers itself in Consul on startup with:
 
 \begin{itemize}
-   \item API method discovery via \texttt{svc\_api\_} prefix convention
-   \item Automatic service registration with the registry
-   \item Graceful shutdown with \texttt{unregister\_service()} on exit
-   \item Service info exposure for discovery via \texttt{\_SERVICE\_INFO} dict
-   \item Docstring-based API documentation generation
+   \item \textbf{Name}: snake-case service name (e.g.\ \texttt{analog\_input\_service})
+   \item \textbf{Address + port}: where its gRPC server is listening
+        (Nomad-allocated, exposed as the \texttt{\$\{NOMAD\_PORT\_grpc\}} env var)
+   \item \textbf{Health check}: a TCP probe to the gRPC port, polled every few seconds
+   \item \textbf{Tags}: \texttt{v1} (or whatever the service version is)
+   \item \textbf{Meta}: \texttt{grpc\_services} -- comma-separated list of fully-qualified
+        gRPC service names the binary implements (lets the GUI skip a reflection
+        round-trip when listing services to enumerate)
 \end{itemize}
-
-\begin{verbatim}
-from MicroserviceBase.domain.service_base import ServiceBase
-from MicroserviceBase.factory import create_transport, create_registry
-
-class MyService(ServiceBase):
-    _SERVICE_INFO = {
-        'name': 'MyService',
-        'routing_key': 'service.myservice',
-        'version': '1.0.0',
-        'gui_support': False,
-        'methods': [], 'methods_info': {},
-    }
-
-    def svc_api_my_method(self, arg1, arg2):
-        """My API method."""
-        return some_result
-
-transport = create_transport('rabbitmq',
-    cmd_args=['--host', 'localhost', '--port', '5672'],
-    service_name='MyService')
-registry = create_registry('rabbitmq',
-    cmd_args=['--host', 'localhost', '--port', '5672'],
-    service_name='MyService')
-
-service = MyService(transport=transport, registry=registry)
-service.register_service()
-service.serve()
-\end{verbatim}
-
-\subsubsection{Service Properties (\_SERVICE\_INFO)}
-
-Every microservice must define a \texttt{\_SERVICE\_INFO} class-level dictionary that describes
-the service to the framework. The registry, the GUI, and the service creator all rely on
-these properties. The following table lists every recognized key:
-
-\vspace{0.5em}
-\begin{center}
-\small
-\begin{tabular}{|l|l|c|l|p{5.5cm}|}
-\hline
-\textbf{Property} & \textbf{Type} & \textbf{Required} & \textbf{Default} & \textbf{Description} \\
-\hline
-\texttt{name}        & str  & yes & ---       & Unique service name (PascalCase recommended) \\
-\texttt{description} & str  & no  & \texttt{''} & Full description, displayed in the Code Helper modal \\
-\texttt{shortdesc}   & str  & no  & \texttt{''} & Short description shown in the GUI sidebar \\
-\texttt{group}       & str  & no  & \texttt{''} & Category group for sidebar organization (e.g.\ \texttt{examples}) \\
-\texttt{tag}         & str  & no  & \texttt{''} & Optional version tag \\
-\texttt{version}     & str  & no  & \texttt{'1.0.0'} & Semantic version string \\
-\texttt{routing\_key} & str & no  & \texttt{''} & RabbitMQ routing key for RPC requests \\
-\texttt{gui\_support} & bool & no & \texttt{False} & Whether the service ships a GUI plugin
-                                                        (\texttt{GUIs/} folder) \\
-\texttt{downloadable} & bool & no & \texttt{False} & Whether the service exposes
-                                                        \texttt{svc\_api\_get\_service\_files}
-                                                        for remote download \\
-\texttt{methods}      & list & auto & \texttt{[]} & \textit{Auto-populated} by \texttt{ServiceBase.\_\_init\_\_}
-                                                       from \texttt{svc\_api\_*} methods \\
-\texttt{methods\_info} & dict & auto & \texttt{\{\}} & \textit{Auto-populated} from method docstrings \\
-\hline
-\end{tabular}
-\end{center}
-\vspace{0.5em}
 
 \noindent
-Custom properties (e.g.\ \texttt{sample\_path}) may be added freely---the framework ignores
-unknown keys but they are broadcast with the service info, so the GUI or other clients
-can read them.
+Clients resolve via \texttt{GET /v1/health/service/<name>?passing=true} which returns
+the healthy \texttt{address:port} pairs.  The Manager GUI uses this for its Services
+sidebar; \texttt{ServiceClient} uses it for outbound gRPC calls.  Local-dev typically
+runs \texttt{consul agent -dev} (single-node, in-memory); the Manager GUI's
+\textbf{Service Network} \(\to\) \textbf{Consul} tab can launch and manage that for you.
 
-\paragraph{Example}
+\subsubsection{Orchestration: Nomad}
 
-\begin{verbatim}
-_SERVICE_INFO = {
-    'name': 'ServiceCleware',
-    'description': 'Service to control Cleware switch box devices.',
-    'shortdesc': 'Cleware Controllers',
-    'group': 'Switch Boxes',
-    'tag': '',
-    'version': '1.0.0',
-    'routing_key': 'ServiceClewareKey',
-    'gui_support': True,
-    'downloadable': False,
-    'methods': [],       # auto-populated at __init__
-    'methods_info': {},  # auto-populated from docstrings
-}
-\end{verbatim}
-
-\subsubsection{Generated Service Template}
-
-The \textbf{Service Creator} wizard (or the \texttt{POST /api/scaffold/generate} REST endpoint)
-produces a ready-to-run service package with the following file structure:
-
-\begin{verbatim}
-<ServiceName>/
-|-- <service_name>.py     # Service class with _SERVICE_INFO and svc_api_* methods
-|-- main.py               # Entry point: creates transport, registry, registers, serves
-|-- __main__.py           # Enables: python -m <ServiceName>
-|-- config.jsonp          # (EventBus only) transport configuration
-|-- GUIs/                 # (if gui_support is enabled)
-|   |-- service.html      # Bootstrap card template (or custom HTML)
-|   |-- service.js        # IIFE with load/unload functions
-\end{verbatim}
-
-\paragraph{Service class (\texttt{<service\_name>.py})} contains the \texttt{\_SERVICE\_INFO}
-dict with all metadata, and one \texttt{svc\_api\_*} method stub per API method defined in the
-wizard. Each method stub includes a full docstring with \texttt{**Arguments:**} and
-\texttt{**Returns:**} sections following the project convention.
-
-\paragraph{Entry point (\texttt{main.py})} configures logging, creates the transport and
-registry via the factory, instantiates the service, calls \texttt{register\_service()}, and
-enters \texttt{serve()}. Graceful shutdown is handled in a \texttt{try/except/finally} block
-that calls \texttt{unregister\_service()} and \texttt{close()}.
-
-\paragraph{Package entry point (\texttt{\_\_main\_\_.py})} allows the service to be started
-with \texttt{python -m <ServiceName>} from its parent directory, which is how the Local Hub
-launches imported services.
-
-\paragraph{GUI plugin (\texttt{GUIs/})} is only generated when the \textbf{Generate GUI template}
-toggle is enabled in step~3 of the wizard. The HTML file provides a Bootstrap card layout
-and the JS file exposes \texttt{load<ServiceName>()} / \texttt{unload<ServiceName>()} functions
-using the \texttt{window.MicroserviceManager} namespace.
-
-\subsubsection{Service Registry}
-
-The registry manages dynamic service discovery:
+Each generated service ships a \texttt{deploy/<svc>.nomad.hcl} job that declares:
 
 \begin{itemize}
-   \item Services register on startup with their method list and metadata
-   \item Registry broadcasts updates to all subscribers via RabbitMQ exchange
-   \item Shutdown notification via \texttt{\_\_registry\_shutdown\_\_} sentinel
-   \item GUI receives real-time updates via WebSocket
+   \item A single task running the service binary under \texttt{raw\_exec}
+   \item A dynamic port labelled \texttt{grpc} -- Nomad picks a free port and exports it
+        as the \texttt{\$\{NOMAD\_PORT\_grpc\}} env var
+   \item Environment variables to point the binary at Consul (\texttt{CONSUL\_ADDR})
 \end{itemize}
 
-\subsubsection{FastAPI Bridge}
+\noindent
+Submit with \texttt{nomad job run deploy/<svc>.nomad.hcl}, or via the GUI's Nomad tab
+\(\to\) \textbf{Submit Job} dialog.  \texttt{raw\_exec} runs the process directly (no
+container) so the same job works on Windows and Linux without Docker / cgroups setup.
+For production you can swap to \texttt{exec} (Linux container) or \texttt{docker}
+without changing the framework -- only the \texttt{.hcl} template.
 
-The bridge connects the GUI to microservices:
+\subsubsection{Method Discovery: gRPC Server Reflection}
+
+Servers built with our scaffold include \texttt{grpc++\_reflection} (the vcpkg
+overlay-port forces it on; see \texttt{changelog.html}) and call
+\texttt{grpc::reflection::InitProtoReflectionServerBuilderPlugin()} at startup.
+Clients can then enumerate services, methods, and message schemas at runtime
+without any \texttt{.proto} file.  Fallback: when reflection is not available
+(older servers, custom builds), the bridge can compile local \texttt{.proto}
+files via \texttt{grpc\_tools.protoc} and use the descriptors that way -- see
+\texttt{LocalProtoClient} in
+\texttt{MicroserviceBase/adapters/grpc\_bridge/reflect\_client.py}.
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.85\textwidth]{pictures/sequence_communication.png}
+\caption{Method discovery + invocation: GUI -- bridge -- Consul -- Service}
+\label{fig:sequence_communication}
+\end{figure}
+
+\subsubsection{The FastAPI Bridge}
+
+The bridge is a single Python process that:
+
+\begin{enumerate}
+   \item Hosts the Manager GUI's static assets at \texttt{/} (when running in browser
+         mode, default \texttt{http://localhost:1112})
+   \item Exposes REST endpoints for everything the GUI does:
+         \begin{itemize}
+            \item \texttt{/api/scaffold/...} -- generate service projects
+                  (\texttt{mb-scaffold} backend)
+            \item \texttt{/api/grpc/...} -- list methods + invoke (via reflect\_client)
+            \item \texttt{/api/consul/...} -- start / stop the agent + read the catalog
+            \item \texttt{/api/nomad/...} -- start / stop the agent + submit / stop jobs
+         \end{itemize}
+   \item Manages Consul + Nomad agents as Python subprocesses (PID-tracked in
+         \texttt{\%TEMP\%/msbase\_*\_agent.pid} for restart resilience)
+\end{enumerate}
+
+\noindent
+The GUI is a thin client over this -- every button maps to one or two endpoints.  The
+same endpoints are usable from \texttt{curl} or scripts when automating.  Source:
+\texttt{MicroserviceBase/adapters/ui\_bridge/fastapi\_bridge.py}.
+
+\subsubsection{The Scaffold Generator}
+
+\texttt{mb-scaffold} (\texttt{python -m MicroserviceBase.tools.scaffold\_cli}) emits a
+complete service project from a small spec.  Three layout selectors are supported:
 
 \begin{description}
-   \item[POST /api/request] RPC call forwarding to services
-   \item[GET /api/services] Registered service list
-   \item[WS /ws/updates] Real-time service update stream
-   \item[/api/local-hub/*] Local process hub management endpoints
-   \item[GET /docs] Auto-generated Swagger API documentation
+   \item[\texttt{monorepo}] (default) -- N services share one \texttt{.proto}; each
+        service compiles into its own binary
+   \item[\texttt{multi\_proto}] -- N services from N separate \texttt{.proto} files,
+        all hosted in one binary on one port with one Consul registration
+   \item[\texttt{separate}] -- one service per project (degenerate case of monorepo)
 \end{description}
 
-\subsubsection{Local Hub Manager}
+\noindent
+For Python the scaffold emits \texttt{main.py}, \texttt{config.py}, \texttt{context.py},
+\texttt{pyproject.toml}, the hexagonal \texttt{domain/} and \texttt{adapters/api/}
+folders, the \texttt{proto/} contract plus \texttt{scripts/generate\_protos.py}, and
+optional \texttt{deploy/} (Nomad job + \texttt{*\_service\_config.json} for Consul) and
+\texttt{GUIs/} (HTML + JS plugin) directories.  For C++ it additionally emits
+\texttt{CMakeLists.txt}, \texttt{vcpkg.json}, the \texttt{vcpkg-overlay-ports/grpc/}
+folder, and \texttt{build\_msvc.bat} / \texttt{build\_msys2.bat} wrappers.  Source:
+\texttt{MicroserviceBase/adapters/scaffold/} (cpp\_tmpl.py + python\_tmpl.py).
 
-The Local Hub provides process lifecycle management:
+\subsubsection{Generated Service Layout}
 
-\begin{itemize}
-   \item Start, stop, and monitor local service processes
-   \item Process configuration via \texttt{hub\_processes.json} with placeholder support
-   \item Service import from folders or zip archives
-   \item Service executor with graceful shutdown using \texttt{CTRL\_BREAK\_EVENT} on Windows
-   \item Log file management per process
-\end{itemize}
+The same shape is produced for every service.  Files marked \emph{generic} are
+templated and safe to regenerate; files marked \emph{specific} hold the parts you
+actually write (your \texttt{.proto} contract and the corresponding domain class):
+
+\begin{verbatim}
+out/<service>/
++-- main.py | main.cpp           # Entry point (generic)
++-- config.py | config.h         # Settings, env vars, ports        (generic)
++-- context.py                   # ServiceContext / DI              (generic, Python)
++-- pyproject.toml               # uv / pip deps                    (generic, Python)
++-- CMakeLists.txt | vcpkg.json  # Build files                      (generic, C++)
++-- vcpkg-overlay-ports/grpc/    # Forces reflection plugin ON      (generic, C++)
++-- proto/<svc>.proto            # gRPC contract                    (SPECIFIC)
++-- domain/<svc>_service.{py,cpp}  # Business logic                 (SPECIFIC)
++-- adapters/api/grpc_adapter.{py,cpp}  # Servicer (proto -> domain) (generic)
++-- scripts/generate_protos.py   # Pre-builds *_pb2[_grpc].py       (generic, Python)
++-- deploy/<svc>.nomad.hcl       # Nomad raw_exec job               (generic)
++-- deploy/<svc>_service_config.json  # Consul registration meta    (generic)
++-- GUIs/<svc>.html | <svc>.js   # Optional Manager GUI plugin      (generic + custom)
++-- README.md                    # Build / run / deploy steps       (generic)
+\end{verbatim}
+
+\noindent
+Re-running \texttt{mb-scaffold} on an existing project overwrites the generic files and
+leaves the specific ones alone, so your \texttt{.proto} and domain code survive a
+regen.
 
 % ============================================================================
 \subsection{Communication Patterns}
 % ============================================================================
 
-\subsubsection{RPC via RabbitMQ}
+\subsubsection{RPC via gRPC over HTTP/2}
 
-Services communicate using RPC (Remote Procedure Call) pattern through RabbitMQ.
-The following diagram shows the complete communication flow between a service,
-the Service Registry, and a client, including all exchanges and routing keys used:
-
-\begin{figure}[!htb]
-\centering
-\includegraphics[width=0.85\textwidth]{pictures/sequence_communication.png}
-\caption{Service Communication Flow (Exchanges, Queues, and Routing Keys)}
-\label{fig:sequence_communication}
-\end{figure}
+Clients call services through generated stubs (when they have the \texttt{.proto}) or
+via the bridge's reflection-driven generic invoker (when they do not).  Below is the
+generic-invoker path in Python -- the same call from JavaScript or Robot Framework goes
+through the bridge in exactly the same way:
 
 \begin{verbatim}
-from MicroserviceBase.domain.service_base import ServiceBase
+import httpx
 
-# Client sends request
-request_data = ServiceBase.create_request_data('svc_api_add', [1, 2])
-response = transport.rpc_call(
-    request_data,
-    exchange_name='services_request',
-    routing_key='service.calculator'
-)
-# response = {"request": "svc_api_add", "result": "pass",
-#              "result_data": 3}
+# Resolve via Consul (handled by the bridge)
+r = httpx.post("http://localhost:1112/api/grpc/invoke", json={
+    "service": "calculator_service",            # Consul service name
+    "method":  "Calculator.Add",                # FQN: <package>.<svc>.<method>
+    "request": {"a": 1, "b": 2},                # message as JSON
+})
+print(r.json())   # {"result": 3}
 \end{verbatim}
+
+\noindent
+The bridge looks the service up in Consul, opens a gRPC channel, calls the method
+(synthesising stubs from reflection if required), and returns the response as JSON.
+Stub-based calls for performance-critical paths are documented in the per-language
+\texttt{README} that ships with every generated project.
 
 \subsubsection{Service Registration}
 
-Services register themselves via the registry exchange. The \texttt{ServiceBase}
-class handles this automatically using the \texttt{\_SERVICE\_INFO} dict:
+Registration is automatic.  In Python, \texttt{ServiceBase.register\_service()} is
+called from the generated \texttt{main.py} after the gRPC server has bound to its port;
+in C++, the equivalent call lives in \texttt{main.cpp} after \texttt{Server::BuildAndStart()}.
+Both speak directly to the local Consul agent over HTTP.  On clean shutdown the
+service deregisters itself; if the process dies abruptly, Consul's TCP health check
+fails it out of the catalog within a few seconds.
 
-\begin{verbatim}
-# ServiceBase auto-discovers svc_api_* methods and builds
-# the service info dict, then publishes it:
-service.register_service()
+\subsubsection{Robot Framework: \texttt{GrpcClient}}
 
-# On shutdown, unregister to notify the registry:
-service.unregister_service()
-\end{verbatim}
-
-\subsubsection{Multi-Broker Architecture}
-
-The GUI supports connecting to multiple RabbitMQ brokers simultaneously:
+The QConnectBase \texttt{GrpcClient} connection type ships with this release
+(\texttt{QConnectBase/grpc/grpc\_client.py}).  Robot tests drive gRPC services with the
+same \texttt{Connect} / \texttt{Send Command} / \texttt{Verify} / \texttt{Disconnect}
+keywords already in use for TCP, Serial, SSH, and the legacy RabbitMQ broker -- and
+support both modes:
 
 \begin{itemize}
-   \item \texttt{MM.connections} map tracks per-broker state
-   \item \texttt{serviceToBroker} reverse lookup for request routing
-   \item Session persistence via \texttt{sessionStorage}
-   \item Progressive disclosure: broker sections shown only when multiple brokers connected
+   \item \textbf{Direct} -- supply \texttt{host:port} explicitly
+   \item \textbf{Consul-resolved} -- supply \texttt{service\_name} + \texttt{consul\_addr}
+        and let the client resolve the endpoint at \texttt{Connect} time
 \end{itemize}
+
+\noindent
+The client uses gRPC reflection by default and falls back to \texttt{LocalProtoClient}
+(local \texttt{.proto} compilation) when reflection is unavailable.
 
 % ============================================================================
 \subsection{GUI Architecture}
@@ -350,250 +373,146 @@ The MicroserviceManagerGUI runs in two modes:
 \end{figure}
 
 \begin{description}
-   \item[Electron Mode] Desktop application with native process management.
-        Uses \texttt{contextBridge} preload for secure Node.js access.
-        Can spawn and manage the FastAPI bridge process directly.
-
-   \item[Browser Mode] Access via \texttt{http://localhost:1112} when the bridge is running.
-        Pure HTML/CSS/JS with no Node.js dependencies.
-        Uses the same \texttt{window.MicroserviceManager} namespace.
+   \item[Electron Mode] Desktop application with native process management.  Uses
+        \texttt{contextBridge} preload for secure Node.js access.  Can spawn and
+        manage the FastAPI bridge process (and, indirectly, the Consul / Nomad
+        agents) directly.
+   \item[Browser Mode] Access via \texttt{http://localhost:1112} when the bridge is
+        running.  Pure HTML / CSS / JS with no Node.js dependencies.  Uses the same
+        \texttt{window.MicroserviceManager} (alias \texttt{MM}) namespace as Electron
+        mode.
 \end{description}
 
 \subsubsection{Service Plugins}
 
-Each microservice can provide a custom GUI plugin:
+Each microservice can ship a custom GUI plugin (when \texttt{--with-gui} is passed to
+\texttt{mb-scaffold}, or the wizard's \emph{Generate GUI template} toggle is enabled):
 
 \begin{itemize}
-   \item HTML file for UI layout
-   \item JS file for logic (uses \texttt{const MM = window.MicroserviceManager;})
-   \item Plugins loaded dynamically into \texttt{web/services/}
-   \item In packaged mode, plugins extracted to writable \texttt{\%APPDATA\%} directory
+   \item One HTML file (Bootstrap 5 card layout)
+   \item One JS file (\texttt{const MM = window.MicroserviceManager;}); exposes
+         \texttt{load<ServiceName>()} and \texttt{unload<ServiceName>()}
+   \item Plugins are loaded dynamically into \texttt{web/services/} at runtime
+   \item In packaged mode (DevAtServGUI), plugins are extracted into the writable
+         \texttt{\%APPDATA\%/devatservgui/} directory on first run
 \end{itemize}
 
 \subsubsection{Standalone Installer}
 
-The GUI can be packaged as a standalone Windows application using Electron Builder:
+The GUI can be packaged as a standalone application:
 
 \begin{itemize}
-   \item NSIS installer for Windows (\texttt{build.bat}), Linux packages (\texttt{build.sh})
-   \item Read-only scripts in \texttt{resources/python/}
-   \item Writable user data in \texttt{\%APPDATA\%/devatservgui/}
-   \item First-run initialization copies templates and scripts
-   \item Bridge process managed via PID file with detached mode
+   \item \textbf{Windows} -- NSIS installer (\texttt{build.bat}).  The
+         \emph{Infrastructure} wizard page detects Consul / Nomad on \texttt{PATH}, in
+         \texttt{\%ProgramFiles\%\textbackslash HashiCorp\textbackslash}, in the
+         WinGet \texttt{Links} shim folder, and in
+         \texttt{WinGet\textbackslash Packages\textbackslash Hashicorp.*}; offers
+         \texttt{winget install} (pinned), \emph{Browse existing path}, or \emph{Skip}.
+   \item \textbf{Linux} -- \texttt{.deb} + AppImage (\texttt{build.sh}); ships
+         \texttt{bootstrap.sh} in \texttt{extraResources} that detects via
+         \texttt{command -v} and installs from HashiCorp's official apt / yum repos
+         with version pinning, falling back to release-tarball download.
+   \item Read-only scripts in \texttt{resources/python/}, writable user data in
+         \texttt{\%APPDATA\%/devatservgui/} (Windows) or \texttt{\$XDG\_CONFIG\_HOME/devatservgui/}
+         (Linux).
+   \item Bridge process is managed via PID file with detached mode so it survives
+         the GUI being closed.
 \end{itemize}
 
 % ============================================================================
 \subsection{GUI User Guide}
 % ============================================================================
 
-The Microservice Manager GUI provides three main tabs: \textbf{Services} for connecting
-to brokers and interacting with microservices, \textbf{Service Network} for managing
-the local process hub, and \textbf{Service Creator} for scaffolding new microservices.
-
-% ----------------------------------------------------------------------------
-\subsubsection{Connecting to a Broker}
-% ----------------------------------------------------------------------------
-
-To start using the GUI, click the \textbf{Connect} button in the top-right corner.
-The connection dialog requires two fields:
+The Manager GUI provides three top-level tabs: \textbf{Services} for browsing and
+calling registered microservices, \textbf{Service Network} for managing the underlying
+Consul and Nomad agents, and \textbf{Service Creator} for scaffolding new microservices.
+Two infrastructure pills in the top-right corner show whether the local Consul and
+Nomad agents are running; clicking either pill jumps straight to the matching tab.
 
 \vspace{0.5em}
 \begin{center}
-\includegraphics[width=0.85\textwidth]{pictures/Services/01_Connect_Broker.png}\\[0.3em]
-{\small\textit{Connect to Broker Dialog}}
+\includegraphics[width=0.95\textwidth]{pictures/Services/services_overview.png}\\[0.3em]
+{\small\textit{Manager GUI -- top tabs, infrastructure pills, and Consul connection chips}}
 \end{center}
 \vspace{0.5em}
+
+\subsubsection{Connecting to Consul}
+
+Click \textbf{Connect} in the top-right corner to attach the GUI to a Consul cluster.
+The Connect modal asks for a \textbf{Consul URL} (default
+\texttt{http://localhost:8500}); a \textbf{Detect} button scans local processes for a
+running \texttt{consul agent} and pre-fills the URL.  Multiple Consul URLs can be
+connected at once -- each appears as a chip in the top-right corner with an
+\texttt{x} button to disconnect.
+
+\subsubsection{Services Tab}
+
+Once at least one Consul URL is connected, the \textbf{Services} sidebar lists every
+registered service grouped by Consul (when more than one cluster is connected) and
+then by service \texttt{group} meta.  Each service row is an accordion; expanding it
+shows the methods discovered through gRPC reflection.  Selecting a service:
+
+\begin{itemize}
+   \item Loads its custom GUI plugin into the main panel (when \texttt{gui\_support} is
+         set), or shows a generic method-list view
+   \item Opens a per-method \emph{Helper} dialog with copy-paste-ready Python,
+         JavaScript, and Robot Framework snippets
+   \item Provides a generic \emph{Invoke} form populated from the message schema, for
+         quick smoke testing without writing code
+\end{itemize}
+
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.95\textwidth]{pictures/Services/api_explorer.png}\\[0.3em]
+{\small\textit{Services tab -- API explorer with reflection-driven method list and generic invoke form}}
+\end{center}
+\vspace{0.5em}
+
+\subsubsection{Service Network Tab}
+
+The \textbf{Service Network} tab has two sub-tabs: \textbf{Nomad} (default) and
+\textbf{Consul}.  Both follow the same pattern: a \emph{status} card at the top with
+\textbf{Start agent} / \textbf{Stop agent} buttons (configurable address, data dir,
+log file), and a \emph{dashboard} below that lists what the agent currently knows
+about.
 
 \begin{description}
-   \item[Broker URL] The RabbitMQ broker address in \texttt{host:port} format
-        (e.g., \texttt{localhost:5672}). The FastAPI bridge will connect to this
-        broker to discover and communicate with services.
-   \item[Routing Key] The routing key of the Service Registry
-        (default: \texttt{ServiceRegistry}). This tells the bridge where to find
-        the registry service that tracks all registered microservices.
-   \item[Advanced Settings] Click the \textbf{Advanced Settings} link to reveal
-        additional connection options such as exchange names and other
-        broker-specific parameters.
+   \item[Nomad sub-tab] Shows running jobs, allocations, and per-task status.  A
+        \textbf{Submit Job} dialog accepts a \texttt{.nomad.hcl} file picker (or
+        paste-text), parses it locally, and POSTs to \texttt{/v1/jobs}.  Job logs
+        stream into a side panel via the Nomad agent's \texttt{logs} endpoint.
+   \item[Consul sub-tab] Shows the service catalog as Consul sees it -- service names,
+        IDs, host:port pairs, tags, health-check status, and the
+        \texttt{grpc\_services} meta.  Useful for confirming a freshly-deployed
+        service really did register (and that its health check is passing).
 \end{description}
-
-After connecting, the GUI subscribes to real-time service updates via WebSocket.
-The connected broker address appears as a badge in the top-right corner (e.g.\
-\texttt{localhost:5672~x}). Multiple brokers can be connected simultaneously---each
-broker appears as a separate section in the sidebar when more than one is active.
-
-% ----------------------------------------------------------------------------
-\subsubsection{Service Dashboard}
-% ----------------------------------------------------------------------------
-
-Once connected, the \textbf{Services} tab displays all registered microservices
-in the left sidebar, grouped by their service group. Clicking a service loads
-its details and custom GUI plugin (if available) in the main content area.
 
 \vspace{0.5em}
 \begin{center}
-\includegraphics[width=0.95\textwidth]{pictures/Services/02_Service_Dashboard.png}\\[0.3em]
-{\small\textit{Service Dashboard with Sidebar and Service Plugin}}
+\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/Nomad/nomad_dashboard.png}\\[0.3em]
+{\small\textit{Service Network -- Nomad dashboard with jobs, allocations, and per-task status}}
 \end{center}
 \vspace{0.5em}
-
-The sidebar shows each service as an accordion item with the service name,
-version, and an expand arrow. Expanding a service item reveals its API methods
-as clickable list items. Services that provide a custom GUI plugin (indicated
-by \texttt{gui\_support: True} in their \texttt{\_SERVICE\_INFO}) display their
-plugin interface in the main panel when selected.
-
-% ----------------------------------------------------------------------------
-\subsubsection{Code Helper}
-% ----------------------------------------------------------------------------
-
-For each service, the GUI provides auto-generated code examples that demonstrate
-how to call the service's API methods via RPC. Click the \textbf{Helper} button
-(code icon) on any service to open the code example modal.
 
 \vspace{0.5em}
 \begin{center}
-\includegraphics[width=0.85\textwidth]{pictures/Services/03_Code_Example.png}\\[0.3em]
-{\small\textit{Code Helper Modal with Python, JavaScript, and Robot Tabs}}
+\includegraphics[width=0.85\textwidth]{pictures/ServiceNetwork/Nomad/nomad_submit_job.png}\\[0.3em]
+{\small\textit{Submit Job dialog -- file picker for \texttt{.nomad.hcl}}}
 \end{center}
 \vspace{0.5em}
-
-The modal header shows the service name, version badge, and description. Three
-language tabs are available:
-
-\begin{description}
-   \item[Python] Complete boilerplate for creating a transport connection,
-        building a request with \texttt{ServiceBase.create\_request\_data()},
-        and calling the service via \texttt{rpc\_call()} with the correct exchange
-        name and routing key. Copy directly into a Python script.
-   \item[JavaScript] Browser-side code using the \texttt{window.MicroserviceManager}
-        namespace and the FastAPI bridge REST endpoint to call service methods
-        from a web application.
-   \item[Robot] Robot Framework keyword examples for calling the service's API
-        methods, ready to integrate into test automation workflows.
-\end{description}
-
-\noindent
-Click \textbf{Copy Code} to copy the currently visible tab content to the clipboard.
-
-% ----------------------------------------------------------------------------
-\subsubsection{Settings}
-% ----------------------------------------------------------------------------
-
-Click the gear icon in the top-right corner to open the \textbf{Settings} dialog.
 
 \vspace{0.5em}
 \begin{center}
-\includegraphics[width=0.85\textwidth]{pictures/Services/04_Settings.png}\\[0.3em]
-{\small\textit{Application Settings}}
+\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/Consul/consul_dashboard.png}\\[0.3em]
+{\small\textit{Service Network -- Consul service catalog with health-check status}}
 \end{center}
 \vspace{0.5em}
 
-\begin{description}
-   \item[Python Path] The Python executable used by the Local Hub to spawn
-        service processes. Defaults to the system Python.
-   \item[Broker Host / Port] Default RabbitMQ broker connection parameters,
-        pre-filled in the Connect dialog.
-   \item[Bridge Port] The port on which the FastAPI bridge listens
-        (default: \texttt{1112}). In browser mode, access the GUI at
-        \texttt{http://localhost:<bridge-port>}.
-\end{description}
-
-Settings are persisted to \texttt{settings.json} and loaded on startup.
-In Electron mode, the file is stored alongside the application; in packaged
-mode, it is stored in \texttt{\%APPDATA\%/DevAtServGUI/}.
-
-% ----------------------------------------------------------------------------
-\subsubsection{Local Service Hub}
-% ----------------------------------------------------------------------------
-
-The \textbf{Service Network} tab provides access to the Local Hub, which manages
-service processes on the local machine. Switch to the \textbf{Local Hub} sub-tab
-to configure and start the hub.
-
-\vspace{0.5em}
-\begin{center}
-\includegraphics[width=0.85\textwidth]{pictures/ServiceNetwork/LocalHub/01_Start_Hub.png}\\[0.3em]
-{\small\textit{Local Hub Configuration and Bridge Status}}
-\end{center}
-\vspace{0.5em}
-
-The Local Hub configuration page provides the following options:
-
-\begin{description}
-   \item[Mode] Three radio buttons select the hub operating mode:
-        \begin{itemize}
-           \item \textbf{Standalone} --- runs an independent hub on this machine
-                 (default).
-           \item \textbf{Agent (join fleet)} --- connects to an existing fleet
-                 orchestrator as a managed node.
-           \item \textbf{Fleet Orchestrator} --- starts this hub as a fleet manager
-                 that other hubs can join for centralized orchestration.
-        \end{itemize}
-   \item[Advanced] Click the \textbf{Advanced} link to reveal additional options.
-   \item[Bridge URL] The address of the FastAPI bridge
-        (e.g., \texttt{http://localhost:1112}).
-        In Electron mode, the bridge can be started directly from this page.
-   \item[XPUB / XSUB Port] Ports used by the EventBus proxy
-        (defaults: \texttt{5555} / \texttt{5556}).
-        Only relevant when using EventBus transport.
-   \item[FastAPI Bridge] A status card shows whether the bridge is
-        \textit{Running} or \textit{Stopped}. Use the \textbf{Start Bridge} /
-        \textbf{Stop Bridge} buttons to control the bridge process directly
-        (Electron mode only).
-   \item[Start Hub] Click to start the Local Hub. The hub reads
-        \texttt{hub\_processes.json} and makes all configured services
-        available for management.
-\end{description}
-
-% ----------------------------------------------------------------------------
-\subsubsection{Local Hub Dashboard}
-% ----------------------------------------------------------------------------
-
-After starting the hub, the dashboard displays hub metadata, all configured
-services with their current status, and control buttons.
-
-\vspace{0.5em}
-\begin{center}
-\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/LocalHub/02_LocalHub_Dashboard.png}\\[0.3em]
-{\small\textit{Local Hub Dashboard with Service Process Management}}
-\end{center}
-\vspace{0.5em}
-
-The dashboard header shows \textbf{Hub ID}, \textbf{Mode} (standalone / agent / orchestrator),
-and the path to the loaded \textbf{Config} file. A toast notification confirms when the hub
-has started successfully. The dashboard provides:
-
-\begin{description}
-   \item[Hub Controls] \textbf{Start All} and \textbf{Stop All} buttons to
-        batch-control all services. \textbf{Reset} reloads the configuration.
-        \textbf{Stop Hub} shuts down the hub and all running processes.
-   \item[Service List] A panel labelled \textbf{Services (N/M running)} shows each
-        configured service with its name, status (\textit{Stopped} / \textit{Running}),
-        and action buttons:
-        start (\,\raisebox{-0.1em}{\small$\blacktriangleright$}\,),
-        save config, edit configuration, and delete.
-   \item[Import Service] Click to import a microservice package from a folder
-        or ZIP archive. The importer validates the package structure (checks
-        for \texttt{main.py} with a \texttt{ServiceBase} subclass) and adds
-        it to the hub configuration.
-   \item[Add Service] Manually add a new service entry to the hub configuration
-        by specifying the script path, arguments, and process name.
-   \item[Connections] A side panel shows active broker connections with the
-        connection count badge.
-\end{description}
-
-Services are started as subprocess with log file redirection. The hub uses
-a two-phase graceful shutdown: first an RPC \texttt{svc\_api\_shutdown} call,
-then \texttt{CTRL\_BREAK\_EVENT} (Windows) or \texttt{SIGTERM} (Linux),
-and finally a force terminate if needed.
-
-% ----------------------------------------------------------------------------
 \subsubsection{Service Creator Wizard}
-% ----------------------------------------------------------------------------
 
-The \textbf{Service Creator} tab provides a step-by-step wizard for scaffolding
-new microservice projects. The wizard generates a complete, ready-to-run
-service package with all required files.
+The \textbf{Service Creator} tab is a four-step wizard for generating a new service
+project.  Behind the scenes it POSTs to \texttt{/api/scaffold/generate-v2}; the same
+specification can be given to \texttt{mb-scaffold} on the command line.
 
 \paragraph{Step 1: Basic Information}
 
@@ -604,21 +523,13 @@ service package with all required files.
 \end{center}
 \vspace{0.5em}
 
-Define the core metadata for the new microservice:
-
-\begin{description}
-   \item[Service Name] PascalCase name for the service class (e.g., \texttt{Test}).
-   \item[Version] Semantic version string (default: \texttt{1.0.0}).
-   \item[Description / Short Description] Documentation strings included in
-        the generated \texttt{\_SERVICE\_INFO} dict.
-   \item[Group] Service group for sidebar organization in the GUI
-        (e.g., \texttt{examples}).
-   \item[Tag] Optional version tag for the service.
-   \item[Routing Key] Auto-generated from the service name in \texttt{service.<name>}
-        format. Can be customized.
-   \item[Transport Type] Choose between \texttt{RabbitMQ} or \texttt{EventBus}
-        transport adapter.
-\end{description}
+\noindent
+Define the core metadata for the new service: \textbf{Service Name} (PascalCase),
+\textbf{Version}, \textbf{Description / Short description}, \textbf{Group} (for
+sidebar organisation in the GUI), \textbf{Tag}, and \textbf{Language} (Python or C++).
+The \textbf{Layout} selector picks between \texttt{monorepo}, \texttt{multi\_proto},
+and \texttt{separate}.  In \texttt{multi\_proto} mode the wizard also lets you import
+multiple existing \texttt{.proto} files in one shot.
 
 \paragraph{Step 2: API Methods}
 
@@ -629,16 +540,11 @@ Define the core metadata for the new microservice:
 \end{center}
 \vspace{0.5em}
 
-Define the methods your service will expose. Each method name is automatically
-prefixed with \texttt{svc\_api\_} following the framework convention. For each method:
-
-\begin{itemize}
-   \item \textbf{Return Type}: The expected return type (e.g., \texttt{int}, \texttt{str}, \texttt{dict}).
-   \item \textbf{Description}: Docstring for the method, used in API documentation generation.
-   \item \textbf{Parameters}: Add parameters with name, type, and condition
-         (\texttt{required} or \texttt{optional}). Click \textbf{+ Add Parameter}
-         to add more. Click \textbf{+ Add Method} to define additional API methods.
-\end{itemize}
+\noindent
+Define the methods the service will expose.  Each method has a name (becomes a gRPC
+RPC), a return type, a description (becomes the docstring / Doxygen block), and a list
+of parameters with name + type + condition (\texttt{required} / \texttt{optional}).
+The wizard renders the equivalent \texttt{.proto} text live in a side panel.
 
 \paragraph{Step 3: GUI Support}
 
@@ -649,22 +555,17 @@ prefixed with \texttt{svc\_api\_} following the framework convention. For each m
 \end{center}
 \vspace{0.5em}
 
-Choose whether to include a custom GUI plugin for the service. When the
-\textbf{Generate GUI template} toggle is enabled:
+\noindent
+Choose whether to include a custom GUI plugin.  When the \emph{Generate GUI template}
+toggle is on, the wizard offers two complementary editors that you can mix and match:
 
 \begin{itemize}
-   \item An \textbf{HTML Editor} provides a Bootstrap card template with the service
-         name and description. Edit the HTML directly or click \textbf{Upload HTML}
-         to use a custom file.
-   \item A \textbf{Live Preview} panel shows the rendered HTML in real-time.
-   \item An optional \textbf{JavaScript File} can be uploaded via drag-and-drop for
-         service-specific logic (using the \texttt{window.MicroserviceManager} namespace).
-   \item Click \textbf{Reset to Template} to restore the default HTML template.
+   \item \textbf{Schema Builder} -- a visual form designer that emits a Bootstrap card
+         + JS pair driven by a JSON schema (best for parameter-form services)
+   \item \textbf{Custom HTML / JS editor} -- a Monaco-style live editor with a
+         \emph{Live preview} panel (best for non-form layouts; full access to
+         \texttt{window.MicroserviceManager} / \texttt{MM})
 \end{itemize}
-
-The generated GUI plugin will be placed in a \texttt{GUIs/} folder inside
-the service package and loaded automatically when the service is selected
-in the Manager GUI.
 
 \paragraph{Step 4: Review and Generate}
 
@@ -675,181 +576,97 @@ in the Manager GUI.
 \end{center}
 \vspace{0.5em}
 
-Review the complete service configuration before generating:
-
-\begin{itemize}
-   \item A summary card displays all metadata, routing key, transport type,
-         GUI support status, and API method signatures with parameter types.
-   \item The \textbf{Generated File Structure} preview shows the directory layout
-         that will be created (e.g., \texttt{Test/test.py}, \texttt{Test/main.py},
-         \texttt{Test/GUIs/service.html}).
-   \item Specify an \textbf{Output Path} to save directly to disk, or leave empty
-         to download as a ZIP file.
-   \item Click \textbf{Download ZIP} to get the package as a zip archive, or
-         \textbf{Save to Path} to write files to the specified directory.
-\end{itemize}
-
-The generated service package is ready to run. It can be imported into the
-Local Hub using the \textbf{Import Service} feature, or started manually
-via \texttt{python -m <ServiceName>} from the package directory.
-
-% ----------------------------------------------------------------------------
-\subsubsection{Fleet Orchestrator}
-% ----------------------------------------------------------------------------
-
-The \textbf{Fleet} sub-tab in the \textbf{Service Network} page provides
-centralized orchestration of multiple hubs across different machines.
-
-\paragraph{Connecting to a Fleet}
-
-\vspace{0.5em}
-\begin{center}
-\includegraphics[width=0.85\textwidth]{pictures/ServiceNetwork/Fleet/ConnectFleet.png}\\[0.3em]
-{\small\textit{Fleet Connection -- Enter the Fleet API URL}}
-\end{center}
-\vspace{0.5em}
-
-When no fleet connection is configured, the page displays a
-\textbf{Service Network Not Configured} prompt. Enter the Fleet API URL
-(e.g., \texttt{http://localhost:2510}) and click \textbf{Connect} to connect to
-an existing fleet orchestrator. The Fleet API is a WebAPI exposed by a hub
-running in \textit{Fleet Orchestrator} mode.
-
-\paragraph{Fleet Dashboard}
-
-\vspace{0.5em}
-\begin{center}
-\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/Fleet/FleetDashboard.png}\\[0.3em]
-{\small\textit{Fleet Dashboard -- Overview of All Connected Hubs}}
-\end{center}
-\vspace{0.5em}
-
-Once connected, the Fleet Dashboard shows:
-
-\begin{description}
-   \item[Summary Cards] Three metric cards at the top display \textbf{Total Hubs},
-        \textbf{Online} hubs, and total \textbf{Processes} count across all hubs.
-   \item[Hub Cards] Each connected hub appears as a card showing its name,
-        hostname, running process count, connection count, and the names of
-        configured services as badges. Click \textbf{Details} to drill into a
-        specific hub.
-   \item[Sidebar] The left sidebar lists all fleet hubs with their
-        online status indicator and process count badge.
-   \item[Disconnect] Click \textbf{Disconnect} in the top-right corner to
-        leave the fleet.
-\end{description}
-
-\paragraph{Fleet Hub Details}
-
-\vspace{0.5em}
-\begin{center}
-\includegraphics[width=0.95\textwidth]{pictures/ServiceNetwork/Fleet/FleetHub.png}\\[0.3em]
-{\small\textit{Fleet Hub Details -- Remote Process Management}}
-\end{center}
-\vspace{0.5em}
-
-Clicking \textbf{Details} on a hub card opens its detail view, which mirrors
-the Local Hub Dashboard but operates on the remote hub:
-
-\begin{itemize}
-   \item \textbf{Hub metadata}: Hub ID, hostname, version, and last-seen timestamp.
-   \item \textbf{Start All / Stop All / Reset}: Batch-control all processes on the
-         remote hub.
-   \item \textbf{Processes}: Lists each process with status, a lock icon for
-         fleet-protected processes (\texttt{fleet\_enabled: false}), an expand
-         button, and a start/stop button.
-   \item \textbf{Connections}: Shows broker connections active on the remote hub.
-   \item Click \textbf{Back to Dashboard} to return to the fleet overview.
-\end{itemize}
+\noindent
+The summary card shows every choice you made -- name, layout, language, methods, GUI
+toggle.  The \textbf{Generated File Structure} preview lists every file the wizard is
+about to write, with the same generic / specific colouring used elsewhere in the docs.
+Specify an \textbf{Output Path} to save directly to disk, or leave it blank to
+\textbf{Download ZIP}.  Once generated, the project can be built and submitted to
+Nomad with the commands printed in the project's own \texttt{README.md}.
 
 % ============================================================================
-\subsection{Process Configuration}
+\subsection{Nomad Job Configuration}
 % ============================================================================
 
-Processes are configured via \texttt{hub\_processes.json}:
+Each generated service gets a \texttt{deploy/<svc>.nomad.hcl} job -- a short HCL file
+that Nomad runs verbatim.  A typical multi-port service looks like:
 
 \begin{verbatim}
-{
-    "ServiceRegistry": {
-        "script": "${config_dir}/start_registry.py",
-        "args": ["--config", "${config_dir}/config.json"],
-        "process_name": "ServiceRegistry",
-        "wait_time": 2.0
-    },
-    "Calculator": {
-        "script": "${python}",
-        "args": ["path/to/calculator.py"],
-        "process_name": "Calculator",
-        "wait_time": 1.0,
-        "fleet_enabled": true
-    },
-    "ClewareService": {
-        "script": "${python}",
-        "args": ["-m", "ClewareService"],
-        "cwd": "${config_dir}/services",
-        "process_name": "ClewareService",
-        "wait_time": 1.0,
-        "service_name": "ServiceCleware"
+job "calculator_service" {
+  datacenters = ["dc1"]
+  type        = "service"
+
+  group "calc" {
+    count = 1
+
+    network {
+      port "grpc" {}                # dynamic port
     }
+
+    service {
+      name = "calculator_service"
+      port = "grpc"
+      tags = ["v1"]
+      meta {
+        grpc_services = "calc.Calculator"
+      }
+      check {
+        type     = "tcp"
+        port     = "grpc"
+        interval = "5s"
+        timeout  = "1s"
+      }
+    }
+
+    task "calc" {
+      driver = "raw_exec"
+      config {
+        command = "${NOMAD_TASK_DIR}/calculator_service.exe"
+        args    = []
+      }
+      env {
+        CONSUL_ADDR = "http://127.0.0.1:8500"
+        GRPC_PORT   = "${NOMAD_PORT_grpc}"
+      }
+      resources { cpu = 100 memory = 128 }
+    }
+  }
 }
 \end{verbatim}
 
-\subsubsection{Process Properties}
-
-Each entry in \texttt{hub\_processes.json} supports the following properties:
-
-\begin{description}
-   \item[script] Path to the executable or Python script.
-        Supports \texttt{\$\{python\}} and \texttt{\$\{config\_dir\}} placeholders.
-   \item[args] List of command-line arguments passed to the script.
-   \item[process\_name] Display name used in the dashboard and logs.
-   \item[wait\_time] Seconds to wait after spawning before checking if the process
-        is still alive (default: \texttt{2.0}).
-   \item[cwd] \textit{(optional)} Working directory for the process. Required when
-        using \texttt{-m} module execution (e.g., \texttt{python -m ClewareService}).
-   \item[env] \textit{(optional)} Dictionary of extra environment variables to set
-        for the subprocess.
-   \item[service\_name] \textit{(optional)} The RabbitMQ queue name the service
-        consumes on. Used by the executor to send \texttt{svc\_api\_shutdown} RPC.
-        Falls back to the entry key if omitted.
-   \item[fleet\_enabled] \textit{(optional, default \texttt{false})} When \texttt{true},
-        the process can be started and stopped remotely via Fleet orchestrator
-        commands. Processes without this flag are protected from remote control
-        (shown with a lock icon in the Fleet Hub detail view).
-\end{description}
-
-\subsubsection{Placeholders}
-
-\begin{description}
-   \item[\$\{python\}] Resolves to \texttt{sys.executable} at runtime
-   \item[\$\{config\_dir\}] Resolves to the directory containing \texttt{hub\_processes.json}
-\end{description}
-
-Placeholders are preserved in \texttt{\_raw\_config} during save operations,
-allowing the same configuration file to work across different environments.
+\noindent
+The Service Creator wizard generates this file for every service automatically.
+For multi-proto layouts, a single job hosts all the services on one port and
+registers each one separately under its own Consul name.
 
 % ============================================================================
-\subsection{Windows Process Lifecycle}
+\subsection{Process Lifecycle}
 % ============================================================================
 
-On Windows, process shutdown requires special handling:
+The lifecycle of a service process is the same on Windows and Linux:
 
 \begin{figure}[!htb]
 \centering
 \includegraphics[width=0.7\textwidth]{pictures/state_process_lifecycle.png}
-\caption{Local Hub Process Lifecycle States}
+\caption{Service Process Lifecycle States}
 \label{fig:state_process_lifecycle}
 \end{figure}
 
-\begin{itemize}
-   \item \texttt{proc.terminate()} calls \texttt{TerminateProcess} which allows no cleanup
-   \item Service Executor uses \texttt{CTRL\_BREAK\_EVENT} for graceful shutdown
-   \item \texttt{signal.SIGBREAK} handler converts to \texttt{KeyboardInterrupt} for Python cleanup
-   \item Pika's \texttt{start\_consuming()} replaced with \texttt{process\_data\_events(time\_limit=1)}
-         loop for interruptible consumption
-   \item \texttt{subprocess.PIPE} blocking prevented by using \texttt{FileHandler} instead of
-         \texttt{StreamHandler} for logging in subprocess mode
-\end{itemize}
+\begin{enumerate}
+   \item \textbf{Spawn} -- Nomad's \texttt{raw\_exec} driver launches the binary with
+         a dynamic \texttt{NOMAD\_PORT\_grpc} and the \texttt{CONSUL\_ADDR} env var
+   \item \textbf{Bind \& Register} -- the service binds the gRPC server, then calls
+         \texttt{register\_service()} against the local Consul agent
+   \item \textbf{Serve} -- Consul's TCP health check polls the gRPC port; the bridge
+         resolves the service via Consul and routes calls
+   \item \textbf{Shutdown} -- on \texttt{SIGBREAK} (Windows) or \texttt{SIGTERM}
+         (Linux), the service deregisters from Consul and lets the gRPC server
+         drain.  Critical Windows fix: the default \texttt{SIGBREAK} handler calls
+         \texttt{ExitProcess} (no Python \texttt{KeyboardInterrupt}, no
+         \texttt{finally} blocks) -- the framework explicitly installs
+         \texttt{signal.default\_int\_handler} so SIGBREAK becomes
+         \texttt{KeyboardInterrupt} and the deregister-then-exit path runs cleanly
+\end{enumerate}
 
 % ============================================================================
 \subsection{Installation}
@@ -866,85 +683,125 @@ pip install .
 pip install -e .
 \end{verbatim}
 
-\subsubsection{GUI Setup}
+\noindent
+The Consul and Nomad agent binaries must be installed separately.  On Windows:
+\texttt{winget install Hashicorp.Consul Hashicorp.Nomad}.  On Debian / Ubuntu:
+follow the official \texttt{apt} repo instructions at \href{https://developer.hashicorp.com/well-architected-framework/install}{HashiCorp's
+docs}.  The \texttt{bootstrap.sh} script in the Linux installer does this
+non-interactively for you.
+
+\subsubsection{Standalone Desktop Installer (DevAtServGUI)}
+
+\begin{itemize}
+   \item Run \texttt{build.bat} (Windows, NSIS) or \texttt{build.sh} (Linux) inside
+         \texttt{MicroserviceBase/MicroserviceManagerGUI/}
+   \item The Windows installer detects existing Consul / Nomad and offers
+         \texttt{winget install} when missing
+   \item The Linux installer ships \texttt{bootstrap.sh} for AppImage users; \texttt{.deb}
+         users get a \texttt{postinst} hook that runs it when stdin is a TTY
+\end{itemize}
+
+\subsubsection{GUI from Source}
 
 \begin{verbatim}
 cd MicroserviceBase/MicroserviceManagerGUI
 npm install
-npm start
+npm start            # Electron mode
+# or, for browser mode, just start the bridge and open http://localhost:1112
 \end{verbatim}
 
 % ============================================================================
 \subsection{Quick Start}
 % ============================================================================
 
-\subsubsection{Start Service Registry}
+\subsubsection{Start the Local Agents}
 
 \begin{verbatim}
-python MicroserviceBase/MicroserviceManagerGUI/python/start_registry.py \
-    --host localhost --port 5672
+consul agent -dev                                      # one terminal
+nomad agent -dev -bind=0.0.0.0 -network-interface=lo   # another terminal
 \end{verbatim}
 
-\subsubsection{Start FastAPI Bridge}
+\noindent
+(Or use the Manager GUI's \textbf{Service Network} tab to start both as managed
+subprocesses.)
+
+\subsubsection{Start the FastAPI Bridge}
 
 \begin{verbatim}
-python MicroserviceBase/MicroserviceManagerGUI/python/start_bridge.py \
-    --host localhost --port 5672 --bridge-port 1112
+python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge \
+    --bridge-port 1112 --consul-addr http://127.0.0.1:8500
 \end{verbatim}
 
-\subsubsection{Create a Service}
+\noindent
+Open \texttt{http://localhost:1112} for the Manager GUI in browser mode.
+
+\subsubsection{Generate and Run a Service}
 
 \begin{verbatim}
-import sys
-from MicroserviceBase.domain.service_base import ServiceBase
-from MicroserviceBase.factory import create_transport, create_registry
+# Python single-service:
+python -m MicroserviceBase.tools.scaffold_cli \
+    --name calculator_service --language python \
+    --layout monorepo --out out/calculator_service \
+    --method "Add(a:int,b:int)->int" \
+    --method "Multiply(a:int,b:int)->int"
 
-class CalculatorService(ServiceBase):
-    _SERVICE_INFO = {
-        'name': 'Calculator',
-        'description': 'A simple calculator service.',
-        'version': '1.0.0',
-        'routing_key': 'service.calculator',
-        'gui_support': False,
-        'methods': [], 'methods_info': {},
-    }
-
-    def svc_api_add(self, a, b):
-        """Add two numbers."""
-        return int(a) + int(b)
-
-transport = create_transport('rabbitmq',
-    cmd_args=sys.argv[1:], service_name='Calculator')
-registry = create_registry('rabbitmq',
-    cmd_args=sys.argv[1:], service_name='Calculator')
-
-service = CalculatorService(transport=transport, registry=registry)
-service.register_service()
-service.serve()
+cd out/calculator_service
+pip install -r requirements.txt
+python scripts/generate_protos.py            # builds *_pb2[_grpc].py
+nomad job run deploy/calculator_service.nomad.hcl
 \end{verbatim}
+
+\noindent
+The service registers itself in Consul on startup; the Manager GUI's Services tab
+picks it up automatically.
+
+\subsubsection{Call the Service from Robot Framework}
+
+\begin{verbatim}
+*** Settings ***
+Library    QConnectBase
+
+*** Test Cases ***
+Calculator Should Add
+    Connect       grpc://calculator_service@http://127.0.0.1:8500
+    ${result}=    Send Command    Calculator.Add    {"a": 1, "b": 2}
+    Verify        ${result}       {"result": 3}
+    Disconnect
+\end{verbatim}
+
+\noindent
+The \texttt{grpc://} URL form selects the QConnectBase \texttt{GrpcClient}
+connection type; the \texttt{<service\_name>@<consul\_addr>} suffix tells it
+to resolve via Consul before opening the channel.
 
 % ============================================================================
 \subsection{Diagrams Reference}
 % ============================================================================
 
-The following PlantUML diagrams are available in the \texttt{docs/diagrams/} folder:
+The following PlantUML diagrams ship in the \texttt{docs/diagrams/} folder.  Older
+diagrams from the RabbitMQ era are preserved under
+\texttt{docs/diagrams/\_archive/} for historical reference; the active set below
+reflects the current gRPC + Consul + Nomad architecture:
 
 \begin{description}
-   \item[overview.puml] System overview showing services, broker, registry, bridge, and GUI
-   \item[architecture.puml] Hexagonal architecture with domain, ports, and adapters
-   \item[component.puml] Component diagram with package dependencies
-   \item[class\_domain.puml] Class diagram for domain layer
-   \item[class\_ports.puml] Class diagram for port interfaces
-   \item[class\_adapters.puml] Class diagram for adapter implementations
+   \item[00\_canonical\_architecture.puml] Canonical end-to-end picture: services,
+        Consul, Nomad, FastAPI bridge, GUI, Robot Framework client
+   \item[component.puml] Component diagram with package dependencies (current layout)
+   \item[class\_domain.puml] Class diagram for the domain layer
+        (\texttt{ServiceBase}, value types, generated service classes)
+   \item[class\_ports.puml] Class diagram for port interfaces (Transport, Registry,
+        Process, Serialization, UIBridge)
+   \item[class\_adapters.puml] Class diagram for adapter implementations (gRPC,
+        Consul, Nomad, FastAPI bridge, scaffold)
    \item[gui\_architecture.puml] GUI dual-host architecture (Electron + browser)
-   \item[sequence\_rpc.puml] RPC call sequence from GUI to service
-   \item[sequence\_registration.puml] Service registration flow
-   \item[sequence\_alias.puml] Service alias resolution sequence
-   \item[sequence\_shutdown.puml] Two-phase graceful shutdown sequence
-   \item[sequence\_service\_import.puml] Service import flow (GUI to hub)
-   \item[state\_process\_lifecycle.puml] Process state machine
-   \item[component\_local\_hub.puml] Local Hub internal architecture
-        (LocalHubManager, ServiceExecutor, ProcessHub, config management)
-   \item[component\_fleet.puml] Fleet Orchestrator multi-hub architecture
-        (Orchestrator, Agents, FleetWebAPI, EventBus, permission guard)
+   \item[sequence\_communication.puml] End-to-end RPC: GUI -- bridge -- Consul -- service
+   \item[sequence\_rpc.puml] Single-RPC sequence (reflection-driven invocation)
+   \item[sequence\_registration.puml] Service registration flow (Consul HTTP)
+   \item[sequence\_shutdown.puml] Graceful deregister-then-shutdown sequence
+   \item[sequence\_gui\_plugin\_loading.puml] How service plugins are loaded into the
+        Manager GUI namespace
+   \item[state\_process\_lifecycle.puml] Service process state machine (spawn,
+        register, serve, deregister, exit)
+   \item[component\_qt\_*.puml / sequence\_qml\_*.puml] Qt-shell template family
+        (Widget, QML, WASM) used by the Service Plugin host
 \end{description}

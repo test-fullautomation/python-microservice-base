@@ -1,0 +1,36 @@
+# **************************************************************************************************************
+#  Copyright 2020-2026 Robert Bosch GmbH
+#  See MSB_0001.py for license header.
+# **************************************************************************************************************
+#
+# MSB_0012.py — L2 syntactic: C++ single-service .proto parses (protoc, no codegen).
+
+import os, sys, shutil
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from testutils.scaffold_helpers import make_method, make_spec, write_scaffold
+from testutils.build_helpers    import run_protoc_parse
+
+
+def test():
+    spec = make_spec(
+        service_name="Echo",
+        language="cpp",
+        layout="single",
+        methods=[make_method("Say", return_type="string", params=[("text", "string")])],
+        gui_type="none",
+        client_grpc_kind="google",
+        server_grpc_kind="msys2",
+    )
+
+    out_dir, _files = write_scaffold(spec)
+    try:
+        proto_dir = os.path.join(out_dir, "proto")
+        code = run_protoc_parse(proto_dir, [os.path.join(proto_dir, "echo.proto")])
+        if code == 127:
+            return "SKIPPED: grpcio-tools not installed"
+        if code != 0:
+            return f"FAIL: protoc parse returned {code} for echo.proto"
+        return "OK: C++ single-service echo.proto parses cleanly"
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)

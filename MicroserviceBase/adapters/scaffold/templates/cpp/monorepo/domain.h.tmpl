@@ -1,0 +1,20 @@
+#pragma once
+
+// Domain layer for @@{svc_name}.
+//
+// Pure C++ — no gRPC, no Consul.  Add one method per RPC:
+//   - signature matches your proto's request/response fields
+//   - the adapter in adapters/api/ marshals between proto and these
+//     method arguments / return values.
+
+#include <string>
+
+namespace @@{svc_snake} {
+
+class @@{svc_pascal} {
+public:
+    // TODO: add your methods here.  Expected API surface:
+@@{method_hints}
+};
+
+}  // namespace @@{svc_snake}

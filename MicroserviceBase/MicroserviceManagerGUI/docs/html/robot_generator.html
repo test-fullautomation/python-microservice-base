@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Generate Robot Framework resources from a .proto folder &mdash; Manager GUI Guide</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --green: #10b981; --amber: #fbbf24;
+    --red: #f87171; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+         margin: 0; background: var(--bg); color: var(--text); line-height: 1.65; }
+  header { background: linear-gradient(135deg, #10b981, #0ea5e9);
+           padding: 28px 30px 28px 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  header h1 { margin: 0; font-size: 1.8em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 0.95em; }
+  main { padding: 28px 38px; max-width: 1100px; margin: 0 auto; }
+  section { background: var(--panel); border-radius: 12px;
+            padding: 22px 26px; margin-bottom: 22px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border-left: 4px solid var(--accent); }
+  section h2 { color: var(--accent); margin-top: 0;
+               border-bottom: 1px solid var(--border);
+               padding-bottom: 10px; font-size: 1.3em; }
+  h3 { color: var(--amber); margin-top: 18px; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px;
+         color: #fcd34d; font-family: "Cascadia Code", Consolas, monospace; font-size: 0.9em; }
+  pre { background: #0b1220; padding: 14px; border-radius: 8px;
+        overflow-x: auto; border: 1px solid var(--border); font-size: 0.88em; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0;
+          background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left;
+           border-bottom: 1px solid var(--border); font-size: 0.92em;
+           vertical-align: top; }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+  .callout { background: rgba(56,189,248,0.08); border-left: 3px solid var(--accent);
+             padding: 10px 14px; border-radius: 6px; margin: 10px 0; }
+  .callout.warn { background: rgba(251,191,36,0.08); border-left-color: var(--amber); }
+  .callout.good { background: rgba(16,185,129,0.10); border-left-color: var(--green); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Generate Robot Framework resources from a <code>.proto</code> folder</h1>
+  <p>One <code>.resource</code> per service, one typed keyword per RPC &mdash;
+     wrapping QConnectBase&rsquo;s <code>GrpcClient</code></p>
+</header>
+
+<main>
+
+<section>
+<h2>Why this exists</h2>
+<p>
+  Without this feature, every gRPC call from Robot Framework had to be
+  written as a JSON-string <code>send_cmd</code>:
+</p>
+<pre><code>${res}=    conn_manager.verify    conn_name=device
+...                                 send_cmd={"method":"SetInterfaceType","args":{"type":0}}</code></pre>
+<p>With the generator:</p>
+<pre><code>${res}=    Com Setup Device Service Set Interface Type    conn=device    type=0</code></pre>
+<p>
+  The generated keywords are <strong>service-prefixed</strong> (so two
+  services with same-named methods can co-exist), use
+  <code>${conn_name}</code> as the <strong>first positional argument</strong>
+  (so one test suite can target multiple deployments), and ship
+  <strong>Open Connection / Close Connection helpers</strong> (named so
+  they can&rsquo;t collide with proto-defined <code>Connect()</code> /
+  <code>Disconnect()</code> RPCs).
+</p>
+</section>
+
+<section>
+<h2>What you get</h2>
+
+<p>For every <code>service</code> declared in any <code>.proto</code> under
+   your folder, the generator emits
+   <code>&lt;snake_service_name&gt;.resource</code> with:</p>
+
+<table>
+  <tr><th>Section</th><th>Contents</th></tr>
+  <tr>
+    <td><code>*** Settings ***</code></td>
+    <td><code>Library QConnectBase.ConnectionManager</code> (as
+    <code>conn_manager</code>) + <code>Library Collections</code>.</td>
+  </tr>
+  <tr>
+    <td><code>*** Variables ***</code></td>
+    <td>One per-service <code>${&lt;SERVICE&gt;_FQN}</code> constant
+    carrying the fully-qualified proto service name.</td>
+  </tr>
+  <tr>
+    <td><code>*** Keywords ***</code></td>
+    <td><code>&lt;Service&gt; Open Connection</code> /
+    <code>&lt;Service&gt; Close Connection</code> helpers + one typed
+    keyword per RPC.</td>
+  </tr>
+</table>
+
+<h3>Keyword conventions</h3>
+<table>
+  <tr><th>Convention</th><th>Why</th></tr>
+  <tr>
+    <td><strong>Prefixed names</strong> &mdash;
+        <code>&lt;Service&gt; &lt;Method&gt;</code></td>
+    <td>Two services with same-named methods co-exist in one suite.</td>
+  </tr>
+  <tr>
+    <td><strong><code>${conn_name}</code> first</strong> on every keyword</td>
+    <td>Lets one test open N connections to different deployments and
+    target each call.</td>
+  </tr>
+  <tr>
+    <td><strong>Open Connection / Close Connection helpers</strong></td>
+    <td>Proto services frequently declare <code>Connect()</code> /
+    <code>Disconnect()</code> RPCs.  Helper names that shadow those
+    would collide.  Unambiguous spelling avoids that.</td>
+  </tr>
+  <tr>
+    <td><strong>Single-space-only keyword names</strong></td>
+    <td>Robot&rsquo;s parser treats 2+ consecutive spaces as a
+    delimiter and truncates names.  The converter dedupes underscores
+    at camelCase boundaries so this can never happen.</td>
+  </tr>
+  <tr>
+    <td><strong>No-arg RPCs skip the args-dict scaffolding</strong></td>
+    <td>RPCs with <code>Empty</code> requests render as a single
+    <code>verify</code> with a constant <code>send_cmd</code> &mdash;
+    no <code>Create Dictionary</code>, no <code>Evaluate json.dumps</code>.</td>
+  </tr>
+</table>
+</section>
+
+<section>
+<h2>Triggering generation</h2>
+
+<h3>From the GUI</h3>
+<ol>
+  <li>Open a gRPC service in the Manager GUI (Service Network &rarr;
+      click a registered service).</li>
+  <li>Click the green <strong>Generate Robot resources</strong> button
+      in the top-right of the methods panel.  It&rsquo;s always
+      visible &mdash; works whether methods were discovered via
+      reflection or by compiling a local <code>.proto</code> folder.</li>
+  <li>If you haven&rsquo;t provided a proto folder yet, a native
+      folder picker asks for one.</li>
+  <li>A second native folder picker asks for the output folder
+      (defaults to a sibling <code>robot/</code> directory next to
+      your <code>proto/</code> folder).</li>
+  <li>Existing <code>.resource</code> files are skipped unless you
+      confirm the overwrite dialog.</li>
+  <li>Success toast: <em>&ldquo;Wrote N <code>.resource</code> file(s) to &hellip;&rdquo;</em>.</li>
+</ol>
+
+<h3>From the CLI (no bridge required)</h3>
+<pre><code>"C:\Program Files\RobotFramework\python3\python.exe" -m MicroserviceBase.tools.robot_gen ^
+    --proto-dir D:\projects\TestService\proto ^
+    --out       D:\projects\TestService\robot</code></pre>
+
+<table>
+  <tr><th>Flag</th><th>Meaning</th></tr>
+  <tr><td><code>--proto-dir DIR</code> <em>(req.)</em></td>
+      <td>Folder containing <code>*.proto</code> (non-recursive).</td></tr>
+  <tr><td><code>--out DIR</code></td>
+      <td>Folder to write <code>.resource</code> files into.  Required unless <code>--stdout</code>.</td></tr>
+  <tr><td><code>--service NAME</code></td>
+      <td>Repeatable.  Only emit resources for these services.</td></tr>
+  <tr><td><code>--force</code></td>
+      <td>Overwrite existing files.</td></tr>
+  <tr><td><code>--stdout</code></td>
+      <td>Print every generated resource to stdout (useful for diffing).</td></tr>
+</table>
+
+<h3>From the bridge HTTP API</h3>
+<pre><code>POST /api/scaffold/robot
+Content-Type: application/json
+
+{
+  "proto_dir": "D:/projects/TestService/proto",
+  "out_dir":   "D:/projects/TestService/robot",
+  "force":     false,
+  "services":  []
+}</code></pre>
+<ul>
+  <li><code>out_dir</code> empty &rarr; response carries
+      <code>{ files: { "&lt;rel&gt;": "&lt;content&gt;" } }</code>
+      (caller persists them &mdash; used by the GUI button).</li>
+  <li><code>out_dir</code> non-empty &rarr; response carries
+      <code>{ written: [...], skipped: [...] }</code>.</li>
+</ul>
+</section>
+
+<section>
+<h2>Using the generated resource in a test</h2>
+<pre><code>*** Settings ***
+Resource    com_setup_device_service.resource
+
+*** Test Cases ***
+SetInterfaceType Smoke
+    Com Setup Device Service Open Connection    conn=device
+    ...    service_name=multi_proto
+    ...    consul_addr=http://127.0.0.1:8500
+    ...    proto_dir=${CURDIR}/../proto
+
+    ${res}=    Com Setup Device Service Set Interface Type    conn=device    type=0
+    Should Be Equal As Integers    ${res}[errorcode]    0
+
+    [Teardown]    Com Setup Device Service Close Connection    device</code></pre>
+<p>
+  The <code>proto_dir</code> argument is forwarded to QConnectBase's
+  GrpcClient and only consulted when the server lacks gRPC reflection.
+  When reflection works, leave it empty.
+</p>
+
+<div class="callout">
+<strong>Proto3 default-value quirk &mdash; fixed bridge-side.</strong>
+A successful RPC returning <code>errorcode = 0</code> would normally
+surface as an empty <code>{}</code> dict (proto3 omits scalar fields
+holding their default value).  The bridge now opts into
+<code>always_print_fields_with_no_presence=True</code>, so
+<code>${res}[errorcode]</code> reliably resolves to <code>0</code>.
+No action needed in your tests &mdash; just restart the bridge after
+the fix landed.
+</div>
+</section>
+
+<section>
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Likely cause / fix</th></tr>
+  <tr>
+    <td><code>Failed: Failed to fetch</code></td>
+    <td>Bridge not reachable on the configured port.  Restart the
+    Manager GUI or check the Bridge LED in the navbar.</td>
+  </tr>
+  <tr>
+    <td><code>Reflection unavailable &hellip; no .proto files matched in search paths</code></td>
+    <td>Server has no reflection AND no proto folder is set.  Click
+    &ldquo;Provide a <code>.proto</code> folder&rdquo; and type the
+    folder, OR set <code>MB_PROTO_SEARCH_PATH</code> in the bridge env.</td>
+  </tr>
+  <tr>
+    <td><code>protoc returned exit code 1 for sources [&hellip;]</code></td>
+    <td>Auto-glob is picking up duplicate <code>google/protobuf/*.proto</code>
+    from build directories.  Set an <em>explicit</em> proto folder &mdash;
+    the generator then uses only that folder and prunes
+    <code>build/</code>, <code>vcpkg_installed/</code>,
+    <code>node_modules/</code>, <code>_legacy/</code>,
+    <code>.git/</code>, <code>__pycache__/</code> subdirs.</td>
+  </tr>
+  <tr>
+    <td>Robot: <code>Keyword with same name defined multiple times</code></td>
+    <td>Generated against an old build before the
+    Open Connection / Close Connection rename or the underscore-dedupe
+    fix.  Regenerate &mdash; current generator guarantees no internal
+    collisions for any well-formed proto.</td>
+  </tr>
+  <tr>
+    <td>Generated keyword&rsquo;s response is missing <code>errorcode</code></td>
+    <td>Bridge fix lives in
+    <code>reflect_client._msg_to_dict</code> &mdash; if you see stripped
+    fields, your bridge is stale.  Restart it.</td>
+  </tr>
+</table>
+</section>
+
+<section>
+<h2>Where it lives in the codebase</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>MicroserviceBase/adapters/scaffold/robot_tmpl.py</code></td>
+      <td>Parser + emitter.  Public entry
+      <code>generate_robot_resources(proto_dir)</code>.</td></tr>
+  <tr><td><code>MicroserviceBase/adapters/scaffold/templates/robot/*.tmpl</code></td>
+      <td>The 4 template files used by the emitter.</td></tr>
+  <tr><td><code>MicroserviceBase/tools/robot_gen.py</code></td>
+      <td>CLI wrapper (<code>python -m MicroserviceBase.tools.robot_gen</code>).</td></tr>
+  <tr><td><code>MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py</code><br>
+      (<code>POST /api/scaffold/robot</code>)</td>
+      <td>HTTP endpoint used by the GUI button.</td></tr>
+  <tr><td><code>MicroserviceBase/MicroserviceManagerGUI/web/js/app.js</code><br>
+      (<code>_runRobotGen</code>)</td>
+      <td>GUI button click handler.</td></tr>
+  <tr><td><code>test/testfiles/MSB_0021.py</code></td>
+      <td>Regression guard for emitter output shape.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>See also</h2>
+<ul>
+  <li><a href="../md/robot_generator.md">Markdown version of this page</a> (canonical source)</li>
+  <li><a href="service_creator.html">Service Creator wizard</a> &mdash; for generating the gRPC services themselves</li>
+  <li>ADR-029: Robot Framework as primary test client</li>
+  <li>ADR-028: gRPC reflection as primary RPC schema</li>
+</ul>
+</section>
+
+</main>
+</body>
+</html>

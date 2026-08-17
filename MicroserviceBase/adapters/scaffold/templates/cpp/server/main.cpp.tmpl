@@ -1,0 +1,33 @@
+@@{header}
+#include <iostream>
+#include "MicroserviceBase/ServiceRunner.h"
+
+#include "Settings.h"
+#include "domain/@@{grpc_name}.h"
+#include "adapters/api/@@{service_name}GrpcAdapter.h"
+
+/**
+ * Process entry point.
+ *
+ * Constructs the dependency-injection wiring (Settings -> domain ->
+ * gRPC adapter), registers the adapter with ServiceRunner under the
+ * fully-qualified service name "@@{proto_package}.@@{grpc_name}", and serves until
+ * a shutdown signal arrives (SIGINT / SIGTERM / Windows SIGBREAK).
+ *
+ * @return 0 on clean shutdown, 1 on fatal startup error.
+ */
+int main() {
+    try {
+        @@{snake_name}::Settings settings;
+        @@{snake_name}::@@{grpc_name} domain;
+        @@{snake_name}::@@{service_name}GrpcAdapter adapter(domain);
+
+        microservice_base::ServiceRunner runner(settings, {"v1"});
+        runner.addService(&adapter, "@@{proto_package}.@@{grpc_name}");
+        runner.serveForever();
+    } catch (const std::exception& e) {
+        std::cerr << "FATAL: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}

@@ -1,0 +1,59 @@
+@@{header}"""
+Dependency injection for @@{svc_name}.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from @@{proj_snake}.@@{svc_snake}.adapters.api.grpc_adapter import @@{cls}GrpcAdapter
+from @@{proj_snake}.@@{svc_snake}.config import Settings
+from @@{proj_snake}.@@{svc_snake}.domain.@@{svc_snake} import @@{cls}
+
+
+@dataclass
+class Context:
+    """
+Per-service DI bag.
+
+**Attributes:**
+
+* ``settings``
+
+  / *Type*: Settings /
+
+  Service-specific settings.
+
+* ``domain``
+
+  / *Type*: @@{cls} /
+
+  Pure-business-logic instance.
+
+* ``grpc_adapter``
+
+  / *Type*: @@{cls}GrpcAdapter /
+
+  gRPC inbound adapter.
+    """
+    settings: Settings
+    domain: @@{cls}
+    grpc_adapter: @@{cls}GrpcAdapter
+
+
+def create_context() -> Context:
+    """
+Build the per-service :class:`Context`.
+
+**Returns:**
+
+* ``ctx``
+
+  / *Type*: Context /
+
+  Fully-wired context ready for ``ServiceRunner``.
+    """
+    settings = Settings()
+    domain = @@{cls}()
+    grpc_adapter = @@{cls}GrpcAdapter(domain)
+    return Context(settings=settings, domain=domain, grpc_adapter=grpc_adapter)

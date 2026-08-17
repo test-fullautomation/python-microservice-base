@@ -1,8 +1,15 @@
 # ADR-018: Alias Routing via Service Registry
 
+> **⚠ Superseded** — 2026-05-07.  Pre-migration decision; no longer
+> applies to the gRPC + Consul + Nomad architecture.  See the existing
+> Status note below for the immediate successor, and
+> [`docs/changelog.md`](../reference/changelog.md) +
+> [`docs/adr/AUDIT.md`](AUDIT.md) for the full triage.  Kept here for
+> git archaeology.
+
 ## Status
 
-Accepted
+Superseded — alias routing was a workaround for RabbitMQ's lack of structured method names. With gRPC, every method has a fully-qualified name (`<package>.<service>/<method>`); no aliasing layer required. Generated services do not include an `alias.json`.
 
 ## Date
 

@@ -1,0 +1,50 @@
+# Nomad job for @@{service_name}.
+# Hosts @@{services_count} gRPC service(s) in one process: @@{services_list}.
+# Single port, single Consul registration (done by ServiceRunner at startup).
+
+job "@@{snake_name}" {
+  datacenters = ["@@{datacenter}"]
+  type        = "service"
+
+  group "@@{snake_name}" {
+    count = 1
+
+    network {
+      port "grpc" {}   # dynamic port — Nomad picks a free one
+    }
+
+    task "server" {
+      driver = "@@{driver}"
+
+      # Windows: launch via run_@@{snake_name}.bat (emitted by deploy_qt_vcpkg.bat
+      # into dist-qt-vcpkg/).  The .bat sets PATH so vcpkg/MinGW DLLs
+      # resolve regardless of which agent inherits which environment.
+      # The `dist-msys2` segment is a placeholder -- deploy_qt_vcpkg.bat
+      # rewrites the project path AND swaps dist-msys2 -> dist-qt-vcpkg
+      # when copying this HCL into dist-qt-vcpkg/deploy/.
+      # Path placeholder uses ONE segment after `C:/path/to/` so
+      # prep_nomad_paths.bat's regex `C:/path/to/[^/]+` matches it.
+      config {
+        command = "cmd.exe"
+        args    = ["/c", "C:/path/to/@@{service_name}/dist-msys2/run_@@{snake_name}.bat"]
+      }
+
+      # On Linux drop the cmd.exe wrapper and run the binary directly:
+      # config {
+      #   command = "/path/to/@@{snake_name}"
+      # }
+
+      env {
+        @@{env_prefix}GRPC_PORT      = "${NOMAD_PORT_grpc}"
+        @@{env_prefix}ADVERTISE_ADDR = "127.0.0.1"
+        @@{env_prefix}CONSUL_ADDR    = "@@{consul_addr}"
+        @@{env_prefix}LOG_LEVEL      = "INFO"
+      }
+
+      resources {
+        cpu    = @@{cpu}
+        memory = @@{mem}
+      }
+    }
+  }
+}

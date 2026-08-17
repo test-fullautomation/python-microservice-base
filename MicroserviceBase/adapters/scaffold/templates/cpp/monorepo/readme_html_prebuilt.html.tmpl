@@ -1,0 +1,131 @@
+
+        <p>
+          To skip the 30&ndash;60 min vcpkg compile, download a teammate&rsquo;s
+          prebuilt artifacts and import them.  Same triplet + same deps =
+          binary-compatible across machines that have the same Qt MinGW.
+        </p>
+        <p>
+          <strong>Download</strong>:
+          <a href="https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x"
+             target="_blank">
+            https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY
+          </a>
+        </p>
+        <p>
+          Pick <code>vcpkg_installed_x64-mingw-qt.zip</code> (the installed
+          tree, ~50&ndash;80&nbsp;MB after compression).  Save it anywhere.
+        </p>
+
+        <h3>Import via CLI</h3>
+        <ol>
+          <li>From the project root, run:
+            <pre><code>import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+            (or run <code>import_prebuilt.bat</code> with no arg for an
+             interactive prompt).  The script extracts the zip into every
+             build dir present in this project (server <code>build-qt-vcpkg/</code>,
+             <code>qt_client_grpcpp/build/</code>, and any <code>build/Desktop_Qt_*/</code>
+             from a previous Qt Creator run).</li>
+          <li>Build with the prebuilt:
+            <pre><code>set USE_PREBUILT_VCPKG=1
+build_qt_vcpkg.bat</code></pre>
+            <code>USE_PREBUILT_VCPKG=1</code> tells <code>build_qt_vcpkg.bat</code>
+            to skip the <code>vcpkg install</code> step entirely AND pass
+            <code>-DVCPKG_MANIFEST_INSTALL=OFF</code> to cmake (so the vcpkg
+            toolchain doesn&rsquo;t try to re-install).  Build proceeds in
+            ~30&nbsp;sec instead of 30&ndash;60 min.</li>
+        </ol>
+
+        <h3>Import via Qt Creator (preset flow &mdash; recommended)</h3>
+        <ol>
+          <li>If a full vcpkg compile is currently running, stop it:
+              <em>Build &rarr; Cancel Build</em> (or the red Stop button on the
+              bottom bar).</li>
+          <li>Use the bundled <strong>vcpkg-x64-mingw-qt-prebuilt</strong>
+              preset.  It already has <code>VCPKG_MANIFEST_INSTALL=OFF</code>
+              and the right toolchain + overlays.
+              <ul>
+                <li>If the project was opened with the kit instead of the
+                    preset: <em>File &rarr; Close Project</em>, delete
+                    <code>CMakeLists.txt.user</code>, reopen
+                    <code>CMakeLists.txt</code>, tick the
+                    <strong>vcpkg-x64-mingw-qt-prebuilt</strong> preset on the
+                    import dialog.</li>
+              </ul>
+          </li>
+          <li>Click <em>Configure Project</em>.  It will fail at
+              <code>find_package(gRPC)</code> &mdash; <strong>expected</strong>:
+              <code>vcpkg_installed/</code> isn&rsquo;t populated yet, but the
+              build dir is now created.</li>
+          <li>From a terminal at project root, populate it:
+              <pre><code>import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+              The script auto-detects every build dir in the project &mdash;
+              <code>build-qt-vcpkg/</code> (preset),
+              <code>build/Desktop_Qt_*/</code> (any kit), and the client
+              variants &mdash; and extracts to all of them.</li>
+          <li>Back in Qt Creator: <em>Build &rarr; Run CMake</em>.  Should
+              complete in ~1&ndash;3 sec.  Then <em>Build &rarr; Build All</em>.</li>
+        </ol>
+
+        <h3>Import via Qt Creator (kit flow)</h3>
+        <p>
+          If you tied debugger or run config to the
+          <code>Desktop Qt 6.x MinGW 64-bit</code> kit and don&rsquo;t want
+          to switch to the preset, do this instead:
+        </p>
+        <ol>
+          <li>If a full vcpkg compile is currently running, stop it
+              (<em>Build &rarr; Cancel Build</em>).</li>
+          <li><em>Build &rarr; Clear CMake Configuration</em> (don&rsquo;t use
+              <em>Clean</em> &mdash; it leaves <code>CMakeCache.txt</code>).</li>
+          <li><em>Projects (Ctrl+5) &rarr; Build &rarr; Initial Configuration
+              &rarr; Add &rarr; Boolean</em>:
+              <pre><code>VCPKG_MANIFEST_INSTALL = OFF</code></pre>
+              (or <em>Add &rarr; String</em> with value <code>OFF</code>; vcpkg
+              parses both).  This tells the vcpkg toolchain &ldquo;don&rsquo;t
+              run install &mdash; <code>vcpkg_installed/</code> is already
+              populated.&rdquo;  Without this, vcpkg will overwrite your
+              imported tree.</li>
+          <li>Click <em>Run CMake</em>.  It will fail at
+              <code>find_package(gRPC)</code> &mdash; expected; the build dir
+              is now created.</li>
+          <li>From a terminal at project root, populate
+              <code>vcpkg_installed/</code>:
+              <pre><code>import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+              Verify extract worked:
+              <pre><code>dir build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\</code></pre>
+              should list <code>gRPCConfig.cmake</code>.</li>
+          <li>Back in Qt Creator: <em>Build &rarr; Run CMake</em> &rarr;
+              completes in ~1&ndash;3 sec.  Then <em>Build &rarr; Build All</em>.</li>
+        </ol>
+
+        <h3>Verify it really used the prebuilt</h3>
+        <p>In <em>General Messages</em> after configure succeeds, you should
+           see:</p>
+        <pre><code>-- The CXX compiler identification is GNU 13.1.0
+-- Found gRPC: &lt;build-dir&gt;/vcpkg_installed/x64-mingw-qt/share/grpc
+-- Found Protobuf: ...
+-- Configuring done (X.Xs)</code></pre>
+        <p>You should <strong>not</strong> see lines like:</p>
+        <pre><code>-- Building boringssl[core]:x64-mingw-qt...
+-- Building abseil[core]:x64-mingw-qt...</code></pre>
+        <p>If you do, <code>VCPKG_MANIFEST_INSTALL=OFF</code> didn&rsquo;t reach
+           the toolchain &mdash; check <em>Initial Configuration</em> still has
+           the entry, then <em>Clear CMake Configuration</em> + <em>Run CMake</em>
+           again.</p>
+
+        <p>
+          <strong>Where the zip lands</strong>: <code>import_prebuilt.bat</code>
+          extracts into every detected build dir&rsquo;s <code>vcpkg_installed/</code>
+          subfolder.  Each gets its own copy (~184&nbsp;MB unpacked) so the
+          server, console+widget client, and qt_client_grpcpp can all build
+          independently against the same artifacts.
+        </p>
+
+        <p>
+          <strong>Sharing your own prebuilt back</strong>: after a successful
+          local build, run <code>export_prebuilt.bat</code> to pack
+          <code>build-qt-vcpkg/vcpkg_installed/x64-mingw-qt/</code> +
+          <code>x64-windows/tools/grpc/</code> into
+          <code>prebuilt/vcpkg_installed_x64-mingw-qt.zip</code>.  Upload to
+          the shared SharePoint folder so other devs save the rebuild cost.
+        </p>

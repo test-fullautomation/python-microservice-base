@@ -1,0 +1,134 @@
+name: Docs
+
+# Builds the ProperDocs site and publishes it to GitHub Pages.
+#
+# Why this builds on the runner rather than locally: the corporate proxy
+# blocks plantuml.com and GitHub releases, but the runner has plain
+# internet, so it can fetch the PlantUML jar directly. The jar is
+# gitignored, hence the curl step below -- properdocs.yml expects it at
+# tools/plantuml.jar.
+#
+# PREREQUISITE (one-time, on github.com):
+#   Settings -> Pages -> Source: "GitHub Actions"
+# NOTE: Pages on a PRIVATE repo requires a paid plan. On Free, the repo
+# must be Public for Pages to serve.
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'docs/**'
+      - 'docs_hooks/**'
+      - 'properdocs.yml'
+      - 'tools/verify_diagrams.py'
+      - 'MicroserviceBase/MicroserviceManagerGUI/docs/md/**'
+      - 'MicroserviceBase/MicroserviceManagerGUI/docs/img/**'
+      - 'examples/docs/md/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'docs_hooks/**'
+      - 'properdocs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two Pages deploys race each other.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  PLANTUML_VERSION: '1.2024.3'   # matches the jar verified locally
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # default-jre runs the PlantUML jar; graphviz provides `dot`, which
+      # the class/component/state diagrams need. (Sequence diagrams do
+      # not, but the graph ones do -- without it they render as error
+      # images that the verify step below would catch.)
+      - name: Install Java and Graphviz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends default-jre graphviz
+          dot -V
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-docs-${{ hashFiles('.github/workflows/docs.yml') }}
+
+      # urllib3 and requests are listed explicitly because
+      # plantuml-markdown 3.11.2 imports urllib3 at module load but
+      # declares NO dependencies at all (`Requires:` is empty). On a dev
+      # machine something else has usually pulled urllib3 in already, so
+      # the gap only shows up on a clean runner as:
+      #   ModuleNotFoundError: No module named 'urllib3'
+      - name: Install ProperDocs toolchain
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            properdocs \
+            properdocs-theme-readthedocs \
+            plantuml-markdown \
+            mkdocs-glightbox \
+            urllib3 \
+            requests
+
+      - name: Show installed versions
+        run: python -m pip list | grep -Ei 'properdocs|plantuml|glightbox|urllib3|requests|markdown'
+
+      # The jar is gitignored (11 MB binary), so fetch it here. The path
+      # must match `plantuml_cmd` in properdocs.yml: tools/plantuml.jar
+      - name: Fetch PlantUML jar
+        run: |
+          mkdir -p tools
+          curl -fsSL -o tools/plantuml.jar \
+            "https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar"
+          java -jar tools/plantuml.jar -version
+          java -jar tools/plantuml.jar -testdot
+
+      - name: Build site
+        run: python -m properdocs build --clean --strict -f properdocs.yml
+
+      # Counting <svg> tags would pass on error images; this decodes them.
+      - name: Verify diagrams rendered without errors
+        run: python tools/verify_diagrams.py site
+
+      - name: Configure Pages
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    # Pull requests build and verify but do not publish.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

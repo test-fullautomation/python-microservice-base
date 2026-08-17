@@ -1,5 +1,4 @@
 @startuml sequence_qml_string_marshaling
-!theme plain
 title QML Shell — String Marshaling (JS ↔ C++)
 
 participant "QtShellMgr\n(JS)" as js

@@ -1,0 +1,49 @@
+#pragma once
+
+// Shared JSON-based dispatch registry used by every UI client variant.
+//
+// Each (service, method) pair parses the request as JSON via
+// google::protobuf::util::JsonStringToMessage, invokes the RPC, then
+// serialises the response back to JSON.  Works for arbitrary imported
+// protos without per-field code.
+
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace client_registry {
+
+/// Set the direct host:port for every subsequent invoke().  Pass an empty
+/// string to use Consul (default).  Changing it resets all cached clients.
+void set_direct_host(const std::string& hostPort);
+
+/// Set the Consul HTTP API URL used by every subsequent invoke() in
+/// Consul-discovery mode.  Pass an empty string to fall back to the
+/// CONSUL_ADDR env var, or http://127.0.0.1:8500 if env unset.
+/// Changing it resets all cached clients.
+void set_consul_addr(const std::string& consulAddr);
+
+/// Probe the Consul HTTP API at consulAddr (GET /v1/agent/self) with a
+/// 3-second timeout.  Returns {ok, message} for the GUI's Connect button.
+std::pair<bool, std::string> ping_consul(const std::string& consulAddr);
+
+/// Open a gRPC channel to hostPort and block up to 3 seconds for the
+/// HTTP/2 handshake.  Used by the GUI's Connect button in direct mode.
+std::pair<bool, std::string> ping_direct(const std::string& hostPort);
+
+/// List the services available in this monorepo.
+std::vector<std::string> services();
+
+/// List the RPC methods defined by the given service.  Returns an empty
+/// vector if the service name is unknown.
+std::vector<std::string> methods(const std::string& serviceName);
+
+/// Invoke an RPC with a JSON-encoded request.  Returns {ok, jsonOrError}.
+///  - On success: .first = true, .second = response as JSON.
+///  - On failure: .first = false, .second = human-readable error message.
+std::pair<bool, std::string>
+invoke(const std::string& serviceName,
+       const std::string& methodName,
+       const std::string& requestJson);
+
+}  // namespace client_registry

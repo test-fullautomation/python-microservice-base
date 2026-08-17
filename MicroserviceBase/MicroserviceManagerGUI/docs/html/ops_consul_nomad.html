@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Manager GUI — easy start &amp; ops for Consul + Nomad</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #10b981, #0ea5e9);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  .sidebar-nav {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav a.active { color: var(--green); border-left-color: var(--green);
+                          background: rgba(16,185,129,0.08); }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  main { margin-left: 250px; padding: 30px 40px; max-width: 1100px; }
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--green);
+  }
+  section h2 {
+    color: var(--green);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 14px; margin-bottom: 6px; font-size: 1em; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: var(--green); }
+  tr:last-child td { border-bottom: none; }
+
+  .led { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         vertical-align: middle; margin-right: 4px; box-shadow: 0 0 4px currentColor; }
+  .led-green { background: var(--green); color: var(--green); }
+  .led-amber { background: var(--amber); color: var(--amber); }
+  .led-red   { background: var(--red);   color: var(--red); }
+  .led-gray  { background: var(--muted); color: var(--muted); box-shadow: none; }
+
+  figure { margin: 18px 0; padding: 0; }
+  figure img { display: block; max-width: 100%; height: auto;
+               border: 1px solid var(--border); border-radius: 8px;
+               box-shadow: 0 4px 12px rgba(0,0,0,0.4); background: #0b1220; }
+  figure figcaption { color: var(--muted); font-size: 0.85em; margin-top: 8px;
+                      text-align: center; font-style: italic; }
+  figure.crop img { max-width: 480px; margin: 0 auto; }
+
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+
+  a { color: var(--accent); }
+  footer { text-align: center; padding: 30px; margin-left: 250px; color: var(--muted); font-size: 0.85em; }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Manager GUI — Consul + Nomad ops</h1>
+  <p>The easiest on-ramp to start, stop, and inspect the runtime infrastructure</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">Manager GUI</div>
+  <a href="#what">What it is</a>
+  <a href="#launch">Launching the GUI</a>
+  <a href="#modes">The three top-level modes</a>
+
+  <div class="nav-group">Service Network</div>
+  <a href="#consul-tab">Consul tab</a>
+  <a href="#nomad-tab">Nomad tab</a>
+  <a href="#infra-pills">Navbar infra pills</a>
+
+  <div class="nav-group">End-to-end</div>
+  <a href="#workflow">Typical workflow</a>
+  <a href="#cli">CLI equivalents</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Troubleshooting</a>
+
+  <div class="nav-group">Companion docs</div>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/index.html">&larr; Docs index</a>
+  <a href="service_creator.html">Service Creator wizard</a>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/service_creation.html">Service creation tutorial</a>
+</nav>
+
+<main>
+
+<!-- ============================ Intro ============================ -->
+<section id="what">
+<h2>What it is</h2>
+<p>
+  The <strong>Microservice Manager GUI</strong> is a Bootstrap-based
+  web app that wraps the FastAPI bridge with a desktop UX.  Use it as
+  the easiest on-ramp to:
+</p>
+<ul>
+  <li><strong>Start, stop, and inspect</strong> the Consul service
+      registry and the Nomad orchestrator without remembering CLI flags.</li>
+  <li>See live infrastructure status at a glance (LEDs in the navbar).</li>
+  <li>Browse registered services, running jobs, and per-job logs in
+      one place.</li>
+  <li>Generate new service scaffolds — the
+      <a href="service_creator.html">Service Creator wizard</a> lives here too.</li>
+</ul>
+<p>
+  If you've been running <code>consul agent -dev</code> and
+  <code>nomad agent -dev</code> by hand in two terminals, this guide
+  replaces those steps.
+</p>
+</section>
+
+<!-- ============================ Launching ============================ -->
+<section id="launch">
+<h2>Launching the GUI</h2>
+<p>Two equivalent ways:</p>
+<table>
+  <tr><th>Mode</th><th>Command</th><th>Use when</th></tr>
+  <tr>
+    <td><strong>Electron (desktop)</strong></td>
+    <td><code>cd MicroserviceBase\MicroserviceManagerGUI &amp;&amp; npm start</code></td>
+    <td>Native window, system tray, auto-start of the bridge.</td>
+  </tr>
+  <tr>
+    <td><strong>Web (browser + bridge)</strong></td>
+    <td><code>python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</code> &rarr; open <code>http://127.0.0.1:1112</code></td>
+    <td>Headless machines, shared sessions, existing Python env.</td>
+  </tr>
+</table>
+<p>
+  Both modes are fed by the same FastAPI bridge — what you do in one
+  is visible in the other.
+</p>
+
+<figure>
+  <img src="../img/gui_overview.png" alt="Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar">
+  <figcaption>Manager GUI on first launch — mode toggle (Services / Service Network / Service Creator) on the left of the navbar; Bridge LED + Start/Stop, Consul + Nomad infra pills, and the connected-cluster chip on the right.</figcaption>
+</figure>
+
+<h3>Bridge LED</h3>
+<p>The first thing the GUI shows in the navbar is the Bridge status:</p>
+<figure class="crop">
+  <img src="../img/bridge_led_states.png" alt="Three Bridge chip states: green Bridge up, amber Starting bridge..., red Bridge down">
+  <figcaption>The three Bridge LED states — green &ldquo;Bridge up&rdquo;, amber &ldquo;Starting bridge…&rdquo;, red &ldquo;Bridge down&rdquo;.  Use the ▶ / ■ buttons to start or stop the bridge process.</figcaption>
+</figure>
+<table>
+  <tr><th>LED</th><th>Label</th><th>Meaning</th><th>Action</th></tr>
+  <tr><td><span class="led led-green"></span></td><td>Bridge up</td><td>Bridge running and healthy</td><td>Nothing — proceed</td></tr>
+  <tr><td><span class="led led-amber"></span></td><td>Starting bridge…</td><td>Spawning / reconnecting</td><td>Wait a few seconds</td></tr>
+  <tr><td><span class="led led-red"></span></td><td>Bridge down</td><td>Bridge process stopped</td><td>Click ▶ to start it (Electron mode).  In web mode the bridge <em>is</em> the page server, so a red LED means you've lost the page.</td></tr>
+</table>
+</section>
+
+<!-- ============================ Modes ============================ -->
+<section id="modes">
+<h2>The three top-level modes</h2>
+<p>The mode toggle in the navbar switches between:</p>
+<table>
+  <tr><th>Mode</th><th>What it's for</th></tr>
+  <tr><td><strong>Services</strong></td><td>Runtime management — view registered services, send test gRPC calls, watch real-time updates.</td></tr>
+  <tr><td><strong>Service Network</strong></td><td>Operate the infrastructure — start/stop Consul + Nomad, view jobs, view nodes.  <strong>This guide focuses here.</strong></td></tr>
+  <tr><td><strong>Service Creator</strong></td><td>Generate a new service scaffold via the 4-step wizard.  See <a href="service_creator.html">service_creator.html</a>.</td></tr>
+</table>
+</section>
+
+<!-- ============================ Consul tab ============================ -->
+<section id="consul-tab">
+<h2>Service Network: Consul tab</h2>
+<p>The Consul sub-tab has two render states.</p>
+
+<h3>State 1 — Setup form (agent stopped)</h3>
+<p>When no agent is detected, you get a form with three start modes:</p>
+<figure>
+  <img src="../img/consul_setup_form.png" alt="Consul Setup form with Dev Mode tab selected, showing Node name and Datacenter inputs and a Start Agent button">
+  <figcaption>Consul Setup — three tabs (Dev Mode / Config Directory / Connect to Existing).  Dev Mode just needs Node name and Datacenter; click <strong>Start Agent</strong>.</figcaption>
+</figure>
+<table>
+  <tr><th>Start mode</th><th>What it does</th><th>Use when</th></tr>
+  <tr><td><strong>Dev Mode</strong></td><td>Equivalent to <code>consul agent -dev -client=0.0.0.0 -ui</code> &mdash; single-node in-memory agent, no persistence.</td><td>Local dev — fastest path</td></tr>
+  <tr><td><strong>Config Directory</strong></td><td>Loads a <code>.hcl</code> / <code>.json</code> config directory (<code>-config-dir &lt;path&gt;</code>)</td><td>You have a real cluster config</td></tr>
+  <tr><td><strong>Connect to Existing</strong></td><td>Skip start, just point at an already-running Consul HTTP URL</td><td>Shared / managed Consul</td></tr>
+</table>
+<p>Defaults that match the rest of the framework:</p>
+<ul>
+  <li><strong>HTTP port</strong>: <code>8500</code> (matches the default <code>CONSUL_ADDR</code>)</li>
+  <li><strong>Bind addr</strong>: <code>0.0.0.0</code> (so other dev machines can reach it)</li>
+  <li><strong>Datacenter</strong>: <code>dc1</code> (matches the default Nomad datacenter)</li>
+  <li><strong>Consul binary</strong>: <code>consul</code> (resolved on <code>%PATH%</code>; override under <strong>Advanced</strong>)</li>
+</ul>
+<p>
+  Click <strong>Start Agent</strong> — the Consul pill in the navbar
+  turns green within a few seconds and the panel switches to the
+  Connected dashboard.
+</p>
+
+<h3>State 2 — Connected dashboard</h3>
+<figure>
+  <img src="../img/consul_dashboard.png" alt="Consul Connected dashboard showing 1 service / 1 node / leader address, registered services table with analog_input_service, and Open Consul UI / Disconnect / Stop Agent buttons">
+  <figcaption>Consul connected — leader, node count, services count up top; live <strong>Registered Services</strong> table below; <strong>Open Consul UI</strong> / <strong>Disconnect</strong> / <strong>Stop Agent</strong> buttons in the top right.</figcaption>
+</figure>
+<p>Shown once the agent is running.  Lists:</p>
+<ul>
+  <li><strong>Leader</strong> + node count + service count cards</li>
+  <li><strong>Registered Services</strong> table — name, tags (e.g.
+      <code>v1</code>), healthy instance address:port, health-check
+      status badge.  This is the live source of truth used by gRPC
+      clients with <code>useConsul=true</code>.</li>
+  <li><strong>Open Consul UI</strong> — opens the bundled Consul UI
+      (<code>:8500/ui</code>) in a new browser window for deeper
+      inspection.</li>
+  <li><strong>Disconnect</strong> / <strong>Stop Agent</strong> —
+      Disconnect just detaches the GUI's pointer; Stop Agent sends a
+      graceful shutdown to the process the GUI started.</li>
+</ul>
+</section>
+
+<!-- ============================ Nomad tab ============================ -->
+<section id="nomad-tab">
+<h2>Service Network: Nomad tab</h2>
+<p>Same two-state pattern as Consul.</p>
+
+<h3>State 1 — Setup form</h3>
+<figure>
+  <img src="../img/nomad_setup_form.png" alt="Nomad Orchestrator setup form with Dev Mode radio selected, Node Name and Datacenter inputs, and a Start Agent button">
+  <figcaption>Nomad Setup — three radios (Dev Mode / Config File / Connect to Existing Cluster).  Dev Mode just needs Node Name and Datacenter; click <strong>Start Agent</strong>.</figcaption>
+</figure>
+<table>
+  <tr><th>Start mode</th><th>What it does</th></tr>
+  <tr><td><strong>Dev Mode</strong></td><td>Single-node, in-memory.  Equivalent to <code>nomad agent -dev</code> with <code>raw_exec</code> enabled.</td></tr>
+  <tr><td><strong>Config File</strong></td><td>Loads an <code>.hcl</code> config (<code>-config &lt;file&gt;</code>)</td></tr>
+  <tr><td><strong>Connect to Existing Cluster</strong></td><td>Just point at a running Nomad HTTP URL</td></tr>
+</table>
+<p>Defaults:</p>
+<ul>
+  <li><strong>HTTP port</strong>: <code>4646</code></li>
+  <li><strong>Datacenter</strong>: <code>dc1</code></li>
+  <li><strong>Nomad binary</strong>: <code>nomad</code> (resolved on <code>%PATH%</code>; override under <strong>Advanced</strong>)</li>
+</ul>
+<div class="highlight-box">
+  <strong>Heads-up for Windows dev</strong>: the Dev Mode start
+  automatically writes a <code>raw_exec</code>-enabled config so service
+  <code>.hcl</code> files using <code>driver = "raw_exec"</code> (the
+  default for generated scaffolds) work.
+</div>
+
+<h3>State 2 — Connected dashboard</h3>
+<figure>
+  <img src="../img/nomad_dashboard.png" alt="Nomad Cluster connected dashboard showing 1 total job, 1 running, 1/1 nodes ready, navigation tiles for Jobs/Clients/Servers/Topology, and a Jobs table with analog_input_service running">
+  <figcaption>Nomad Cluster connected — counters across the top (Total / Running / Pending / Dead / Nodes Ready), navigation tiles below (Jobs / Clients / Servers / Topology), live jobs table at the bottom.  Top-right buttons: <strong>Submit Job</strong>, <strong>Open Nomad UI</strong>, <strong>Disconnect</strong>, <strong>Stop Agent</strong>.</figcaption>
+</figure>
+<ul>
+  <li><strong>Counters</strong> — Total Jobs, Running, Pending, Dead,
+      Nodes Ready</li>
+  <li><strong>Navigation tiles</strong> — Jobs / Clients / Servers /
+      Topology, each opens the matching Nomad UI panel</li>
+  <li><strong>Jobs table</strong> — every submitted job with type,
+      status, task groups, and a per-row link to detail view</li>
+  <li><strong>Submit Job</strong> — paste an <code>.hcl</code> or pick
+      a file (same as <code>nomad job run</code>); see screenshot below</li>
+  <li><strong>Open Nomad UI</strong> — opens the bundled Nomad UI
+      (<code>:4646/ui</code>) in a new browser window</li>
+</ul>
+<figure>
+  <img src="../img/nomad_submit_job.png" alt="Submit Nomad Job dialog with HCL/JSON format toggle, Load from file button, and a textarea showing the analog_input_service.nomad.hcl content">
+  <figcaption>Submit Job dialog — HCL or JSON toggle, <strong>Load from file…</strong> picks a generated <code>deploy/&lt;service&gt;.nomad.hcl</code>, or paste content into the textarea directly.  <strong>Submit</strong> kicks off the job; the GUI then tracks it in the Jobs table.</figcaption>
+</figure>
+<p>
+  For each generated service, the matching Nomad <code>.hcl</code>
+  file lives in <code>deploy/&lt;service&gt;.nomad.hcl</code>.  Submit
+  it once via the GUI and the job stays registered across bridge
+  restarts.
+</p>
+</section>
+
+<!-- ============================ Infra pills ============================ -->
+<section id="infra-pills">
+<h2>Navbar infra status pills</h2>
+<p>To the right of the Bridge chip there are two infrastructure pills
+   plus the connected-cluster chip:</p>
+<figure class="crop">
+  <img src="../img/infra_pills.png" alt="Navbar chips: Bridge up (green), Consul (green), Nomad (green), connected cluster 127.0.0.1:8501">
+  <figcaption>Navbar chips, all healthy — Bridge up + Consul + Nomad + the active Consul cluster URL on the right.</figcaption>
+</figure>
+<ul>
+  <li>LED color reflects the same health state as the dashboards:
+      <span class="led led-green"></span> green = healthy,
+      <span class="led led-amber"></span> amber = starting,
+      <span class="led led-gray"></span> gray/red = down.</li>
+  <li><strong>Click a pill</strong> to jump straight to its sub-tab —
+      useful when you need to start an agent that another panel is
+      waiting for.</li>
+  <li>Polled every 5 seconds via <code>GET /api/consul/health</code>
+      and <code>GET /api/nomad/health</code>.  Both go gray whenever
+      the bridge itself is down.</li>
+</ul>
+</section>
+
+<!-- ============================ Workflow ============================ -->
+<section id="workflow">
+<h2>Typical workflow</h2>
+<p>The fastest "open Manager GUI &rarr; run a generated service" path:</p>
+<ol>
+  <li>Launch the GUI (<code>npm start</code> or open
+      <code>http://127.0.0.1:1112</code>).</li>
+  <li><strong>Service Network &rarr; Consul &rarr; Start (Dev mode)</strong>.
+      Wait for the LED to turn green.</li>
+  <li><strong>Service Network &rarr; Nomad &rarr; Start (Dev mode)</strong>.
+      Same.</li>
+  <li>In a terminal, generate a service (or use <strong>Service Creator</strong>):
+    <pre><code>python -m MicroserviceBase.tools.scaffold_cli ^
+    --name DemoService --language cpp --gui widget --output .\out</code></pre>
+  </li>
+  <li>Build it (<code>build_deploy_msys2.bat</code> or
+      <code>build_qt_vcpkg.bat</code>).</li>
+  <li><strong>Nomad tab &rarr; Submit new job &rarr;</strong> pick
+      <code>deploy\demo_service.nomad.hcl</code>.</li>
+  <li><strong>Services tab</strong> &rarr; DemoService appears, click
+      to inspect / send test calls.</li>
+</ol>
+<p>No CLI for Consul or Nomad needed.</p>
+</section>
+
+<!-- ============================ CLI equivalents ============================ -->
+<section id="cli">
+<h2>CLI equivalents (bridge HTTP API)</h2>
+<p>
+  If you want to script the same operations (CI, batch scripts), every
+  GUI action maps to a bridge HTTP endpoint:
+</p>
+<table>
+  <tr><th>GUI action</th><th>HTTP endpoint</th></tr>
+  <tr><td>Start Consul (Dev)</td><td><code>POST /api/consul/agent/start</code> (body: <code>{mode: "dev", ...}</code>)</td></tr>
+  <tr><td>Stop Consul</td><td><code>POST /api/consul/agent/stop</code></td></tr>
+  <tr><td>Consul health</td><td><code>GET /api/consul/health</code></td></tr>
+  <tr><td>Discover services</td><td><code>GET /api/consul/services</code></td></tr>
+  <tr><td>Start Nomad (Dev)</td><td><code>POST /api/nomad/agent/start</code> (body: <code>{mode: "dev", ...}</code>)</td></tr>
+  <tr><td>Stop Nomad</td><td><code>POST /api/nomad/agent/stop</code></td></tr>
+  <tr><td>Nomad health</td><td><code>GET /api/nomad/health</code></td></tr>
+  <tr><td>Submit job</td><td><code>POST /api/nomad/jobs/submit</code></td></tr>
+  <tr><td>Stop job</td><td><code>POST /api/nomad/jobs/{id}/stop</code></td></tr>
+  <tr><td>Job logs</td><td><code>GET /api/nomad/jobs/{id}/logs</code></td></tr>
+</table>
+<p>
+  The bridge lives at <code>http://127.0.0.1:1112</code> by default.
+  Full schema lives in
+  <code>MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py</code>.
+</p>
+<p>
+  The GUI also persists agent PIDs in
+  <code>%TEMP%\msbase_*_agent.pid</code>, so agents survive bridge
+  restarts and a fresh GUI session can re-attach.
+</p>
+</section>
+
+<!-- ============================ Troubleshooting ============================ -->
+<section id="troubleshooting">
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Bridge LED stays red after <code>npm start</code></td>
+      <td>Bridge port (1112) already in use.  Run
+          <code>netstat -ano | findstr :1112</code> and kill the holder,
+          or set <code>MB_BRIDGE_URL</code> to a different port.</td></tr>
+  <tr><td>"Port 8500 is already in use" when starting Consul</td>
+      <td>Another Consul instance is running.  Stop it
+          (<code>tasklist | findstr consul</code>) or use
+          <strong>Connect to existing</strong> with the running URL.</td></tr>
+  <tr><td>Same for port 4646 (Nomad)</td>
+      <td>Same fix pattern — stop the existing one or connect to it.</td></tr>
+  <tr><td>Consul LED green but no services listed</td>
+      <td>The service registered with a different Consul (check its
+          <code>CONSUL_ADDR</code> env).  The GUI shows the cluster the
+          bridge is currently pointed at — switch via <strong>Connect</strong>
+          in the navbar.</td></tr>
+  <tr><td>Nomad job stays "pending"</td>
+      <td>Driver mismatch (Windows can't run <code>exec</code>/<code>docker</code>
+          jobs without setup).  Generated scaffolds use <code>raw_exec</code>
+          which dev mode enables automatically; if you bring your own
+          config, add the <code>raw_exec</code> plugin block.</td></tr>
+  <tr><td>GUI shows "Agent already running (PID …)" but the LED is gray</td>
+      <td>Stale PID file at <code>%TEMP%\msbase_consul_agent.pid</code>
+          or <code>msbase_nomad_agent.pid</code>.  Delete it and click
+          Start again.</td></tr>
+</table>
+</section>
+
+</main>
+
+<footer>
+  Source: <code>MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md</code> &middot;
+  GUI doc index: <a href="index.html">index.html</a> &middot;
+  Repo docs: <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/index.html">examples/docs/html/index.html</a>
+</footer>
+
+</body>
+</html>

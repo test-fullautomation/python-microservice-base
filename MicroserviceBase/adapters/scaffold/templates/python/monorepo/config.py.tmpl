@@ -1,0 +1,32 @@
+@@{header}"""
+Settings for @@{svc_name}.
+"""
+
+from __future__ import annotations
+
+from pydantic_settings import SettingsConfigDict
+
+from MicroserviceBase.runtime import BaseServiceSettings
+
+
+class Settings(BaseServiceSettings):
+    """
+Per-service settings inside the monorepo.  Inherits standard fields
+from :class:`BaseServiceSettings`; add service-specific fields below
+as plain class attributes.
+
+**Attributes:**
+
+* ``service_name``
+
+  / *Type*: str / *Default*: "@@{svc_snake}" /
+
+  Logical name registered with Consul.
+    """
+    model_config = SettingsConfigDict(
+        env_prefix="@@{prefix}",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    service_name: str = "@@{svc_snake}"

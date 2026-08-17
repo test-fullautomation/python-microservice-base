@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DevAtServGUI — Installed README</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --green: #10b981; --amber: #fbbf24; --border: #334155;
+    --sidebar-w: 260px;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0;
+         background: var(--bg); color: var(--text); line-height: 1.65; }
+
+  .sidebar { position: fixed; left: 0; top: 0; width: var(--sidebar-w);
+             height: 100vh; overflow-y: auto; background: #0b1220;
+             border-right: 1px solid var(--border);
+             padding: 18px 0; z-index: 10; }
+  .sidebar .toc-title { font-size: 0.95em; color: var(--green); font-weight: 600;
+                        padding: 0 18px 10px; margin: 0;
+                        border-bottom: 1px solid var(--border); }
+  .sidebar a { color: var(--muted); display: block; padding: 5px 18px;
+               text-decoration: none; font-size: 0.86em;
+               border-left: 3px solid transparent; }
+  .sidebar a:hover { color: var(--text); background: rgba(16,185,129,0.06);
+                     border-left-color: var(--green); }
+
+  main { max-width: 920px; margin-left: var(--sidebar-w); padding: 36px 56px 80px; }
+  header { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+           padding: 28px 56px; margin-left: var(--sidebar-w);
+           border-bottom: 1px solid var(--border); }
+  header h1 { color: var(--accent); margin: 0; font-size: 1.9em; }
+  header .sub { color: var(--muted); margin-top: 4px; }
+
+  h2 { color: var(--accent); border-bottom: 1px solid var(--border);
+       padding-bottom: 5px; margin-top: 32px; }
+  h3 { color: #a78bfa; margin-top: 22px; }
+  a { color: var(--accent); }
+  code { background: #233045; padding: 1px 6px; border-radius: 3px;
+         color: var(--accent); font-family: "Cascadia Code", Consolas, monospace;
+         font-size: 0.92em; }
+  pre { background: #0b1220; border: 1px solid var(--border); border-radius: 6px;
+        padding: 12px 16px; overflow-x: auto; line-height: 1.45; }
+  pre code { background: none; color: var(--text); padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0;
+          background: var(--panel); border-radius: 6px; overflow: hidden; }
+  th { background: #233045; color: var(--accent); text-align: left;
+       padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border);
+       vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .callout { border-left: 4px solid var(--accent);
+             background: rgba(56,189,248,0.08);
+             padding: 12px 16px; border-radius: 4px; margin: 14px 0; }
+  .callout strong:first-child { color: var(--accent); }
+  ul li { margin-bottom: 4px; }
+  footer { margin-left: var(--sidebar-w); padding: 18px 56px;
+           color: var(--muted); font-size: 0.85em; text-align: center;
+           border-top: 1px solid var(--border); }
+  @media (max-width: 800px) {
+    .sidebar { display: none; }
+    header, main, footer { margin-left: 0; padding-left: 24px; padding-right: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="toc-title">DevAtServGUI</div>
+  <a href="#welcome">Welcome</a>
+  <a href="#launch">Launching the app</a>
+  <a href="#where-things-live">Where things live</a>
+  <a href="#first-steps">First steps in the GUI</a>
+  <a href="#docs">Full documentation</a>
+  <a href="#support">Support &amp; issues</a>
+  <a href="#uninstall">Uninstalling</a>
+</nav>
+
+<header>
+  <h1>DevAtServGUI</h1>
+  <div class="sub">
+    Microservice Manager GUI for the gRPC + Consul + Nomad platform.
+    This README ships with the installer; for the full developer
+    documentation see the
+    <a href="https://github.com/test-fullautomation/python-microservice-base"
+       target="_blank">project repository on GitHub</a>.
+  </div>
+</header>
+
+<main>
+
+<h2 id="welcome">Welcome</h2>
+
+<p>You've installed <strong>DevAtServGUI</strong> — the desktop application
+that drives the Microservice Manager: connect to Consul clusters, manage
+Nomad jobs, browse and call gRPC services, and scaffold new service
+projects from the built-in wizard.</p>
+
+<p>The GUI is the front-end to the
+<a href="https://github.com/test-fullautomation/python-microservice-base"
+   target="_blank">MicroserviceBase</a> framework. Services you call from
+this GUI register themselves in Consul on startup; this app discovers
+them via Consul's catalog and invokes their gRPC methods either through
+a built-in FastAPI bridge (browser mode) or directly (Electron mode).</p>
+
+<h2 id="launch">Launching the app</h2>
+
+<p>Two ways to run the installed application:</p>
+
+<table>
+  <tr><th>Mode</th><th>How to start</th><th>When to use</th></tr>
+  <tr>
+    <td><strong>Desktop (Electron)</strong></td>
+    <td>Start menu &rarr; <em>DevAtServGUI</em>, or the desktop shortcut.</td>
+    <td>Default. Native window, system tray, file pickers, etc.</td>
+  </tr>
+  <tr>
+    <td><strong>Browser</strong></td>
+    <td>The installed app exposes a FastAPI bridge on
+        <code>http://localhost:1112</code>. Open that URL in any browser.</td>
+    <td>When you want the GUI on a different machine, or for sharing /
+        screen-sharing.</td>
+  </tr>
+</table>
+
+<p>Both modes share the same UI; the difference is the host process.
+Settings and connection state are persisted independently per mode.</p>
+
+<h2 id="where-things-live">Where things live</h2>
+
+<p>The installer placed files in two locations:</p>
+
+<table>
+  <tr><th>What</th><th>Where</th></tr>
+  <tr>
+    <td>Application binaries (this README, the <code>.exe</code>, bundled Python helpers)</td>
+    <td>The install directory you picked during setup
+        (default: <code>%LOCALAPPDATA%\Programs\DevAtServGUI\</code>;
+        <code>C:\Program Files\DevAtServGUI\</code> if installed per-machine)</td>
+  </tr>
+  <tr>
+    <td>Settings, plug-ins, logs, downloaded service GUIs</td>
+    <td><code>%APPDATA%\devatservgui\</code></td>
+  </tr>
+  <tr>
+    <td>Bridge / service runtime logs</td>
+    <td><code>%APPDATA%\devatservgui\logs\</code></td>
+  </tr>
+  <tr>
+    <td>Service plug-in cache (auto-downloaded GUI plug-ins per service)</td>
+    <td><code>%APPDATA%\devatservgui\web\services\</code></td>
+  </tr>
+</table>
+
+<div class="callout">
+<strong>Read-only vs writable:</strong> the install directory is
+read-only (especially for a per-machine install). All user data,
+settings, and downloaded plug-ins live under
+<code>%APPDATA%\devatservgui\</code> so the app can update its own
+state without administrator rights.
+</div>
+
+<h2 id="first-steps">First steps in the GUI</h2>
+
+<ol>
+  <li><strong>Make sure Consul + Nomad are running.</strong> The app
+  needs a Consul agent (typically <code>consul agent -dev</code> on
+  port 8500) to discover services. The
+  <em>Service Network</em> tab in the GUI can start and stop both
+  agents for you if they're installed.</li>
+
+  <li><strong>Click <em>Connect</em></strong> in the top-right corner
+  and enter your Consul URL (default <code>http://127.0.0.1:8500</code>).
+  Use the <em>Detect</em> button to auto-find a local agent.</li>
+
+  <li><strong>Browse services in the sidebar.</strong> Each registered
+  service shows its host:port and tags. Click a service to load its
+  method list (discovered via gRPC reflection).</li>
+
+  <li><strong>Try a method.</strong> Each method has a JSON-form
+  <em>Invoke</em> panel. Click a per-service <code>&lt;/&gt;</code>
+  icon to open the multi-language client-snippet modal (Python / C++ /
+  Robot Framework code you can copy-paste into your own scripts).</li>
+
+  <li><strong>Generate your own service.</strong> The
+  <em>Service Creator</em> tab walks you through a 5-step wizard that
+  emits a complete, ready-to-build service project for Python or C++.</li>
+</ol>
+
+<h2 id="docs">Full documentation</h2>
+
+<p>This README is intentionally short. The complete documentation lives
+in the project repository on GitHub:</p>
+
+<ul>
+  <li><a
+    href="https://github.com/test-fullautomation/python-microservice-base"
+    target="_blank">Project repository</a> &mdash; main README with
+    installation, build, and contribution guides</li>
+  <li><a
+    href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/architecture.html"
+    target="_blank">Architecture</a> &mdash; system overview, hexagonal
+    layers, runtime model</li>
+  <li><a
+    href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html"
+    target="_blank">Manager GUI doc index</a> &mdash; landing page for
+    every GUI guide</li>
+  <li><a
+    href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"
+    target="_blank">Operating Consul + Nomad</a> &mdash; Service Network
+    tab walkthrough, agent lifecycle, jobs / nodes / services dashboards</li>
+  <li><a
+    href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html"
+    target="_blank">Service Creator wizard</a> &mdash; 5-step
+    scaffold-generation walkthrough with screenshots</li>
+  <li><a
+    href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/troubleshooting.html"
+    target="_blank">Troubleshooting</a> &mdash; symptom-indexed reference</li>
+  <li><a
+    href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/changelog.html"
+    target="_blank">Changelog</a> &mdash; what's new per release</li>
+</ul>
+
+<h2 id="support">Support &amp; issues</h2>
+
+<p>Found a bug, have a suggestion, or stuck on something? Two paths:</p>
+
+<ul>
+  <li><strong>Inside the GUI:</strong> the
+  <em>Report Issue</em> button (📝 icon) in the top-right opens a
+  pre-filled GitHub issue form with your environment details.</li>
+  <li><strong>From here:</strong>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/issues"
+     target="_blank">github.com/.../issues</a></li>
+</ul>
+
+<p>Maintainer:
+<a href="mailto:Cuong.NguyenHuynhTri@vn.bosch.com">Cuong Nguyen Huynh Tri</a>
+(<a href="mailto:nhtcuong@gmail.com">nhtcuong@gmail.com</a>).</p>
+
+<h2 id="uninstall">Uninstalling</h2>
+
+<p>Use Windows <em>Settings &rarr; Apps &rarr; Installed apps</em>,
+search for <em>DevAtServGUI</em>, and uninstall. The installer removes
+the application files but does <em>not</em> remove your settings
+and logs at <code>%APPDATA%\devatservgui\</code> &mdash; delete that
+folder manually if you want a fully clean removal.</p>
+
+</main>
+
+<footer>
+  DevAtServGUI &mdash; bundled README for installed users.
+  Full docs: <a
+  href="https://github.com/test-fullautomation/python-microservice-base"
+  target="_blank">github.com/test-fullautomation/python-microservice-base</a>.
+</footer>
+
+</body>
+</html>

@@ -1,6 +1,5 @@
 @startuml gui_architecture
-!theme plain
-title MicroserviceManagerGUI - Dual-Host Architecture
+title MicroserviceManagerGUI - Dual-Host Architecture (post-migration: Consul + Nomad + gRPC)
 
 skinparam rectangle {
     BackgroundColor<<electron>> #E1BEE7
@@ -36,15 +35,15 @@ rectangle "web/ (Shared Codebase)" <<web>> {
     rectangle "window.MicroserviceManager\n(MM namespace)" as NS
 
     rectangle "Core JS Modules" <<shared>> {
-        rectangle "ServiceClient.js\n(RPC via FastAPI)" as SC
+        rectangle "ServiceClient.js\n(RPC via /api/grpc)" as SC
         rectangle "MessageProtocol.js\n(Request/Response)" as MP
-        rectangle "LocalHubClient.js\n(Hub REST Client)" as LHC
-        rectangle "LocalHubDashboard.js\n(Process Manager)" as LHD
+        rectangle "NomadClient.js\n(/api/nomad jobs + nodes)" as LHC
+        rectangle "ServiceNetwork.js\n(Consul + Nomad tabs)" as LHD
     }
 
-    rectangle "Multi-Broker State" <<shared>> {
-        rectangle "MM.connections\n{ host:port → { brokerUrl,\nroutingKey, services } }" as Conn
-        rectangle "MM.serviceToBroker\n{ serviceName → host:port }" as STB
+    rectangle "Multi-cluster State" <<shared>> {
+        rectangle "MM.connections\n{ host:port → { consulAddr,\n services, healthy } }" as Conn
+        rectangle "MM.serviceToCluster\n{ serviceName → host:port }" as STB
         rectangle "sessionStorage\n(mm_connections)" as Session
     }
 
@@ -73,13 +72,13 @@ rectangle "Browser Host" <<web>> {
 
 rectangle "FastAPI Bridge" <<bridge>> {
     rectangle "REST Endpoints" as REST {
-        rectangle "POST /api/request\n(Service RPC)" as ReqAPI
-        rectangle "POST /api/connect\n(Broker Connection)" as ConnAPI
-        rectangle "POST /api/local-hub/*\n(Hub Management)" as HubAPI
-        rectangle "POST /api/local-hub/import-service\n(Service Import)" as ImportAPI
+        rectangle "POST /api/grpc/<svc>/<method>\n(via GrpcReflectClient)" as ReqAPI
+        rectangle "GET /api/consul/health/<svc>\n(Consul HTTP API)" as ConnAPI
+        rectangle "GET|POST /api/nomad/jobs\n(NomadHubAdapter)" as HubAPI
+        rectangle "POST /api/scaffold/*\n(Service Creator)" as ImportAPI
     }
     rectangle "WebSocket" as WS {
-        rectangle "WS /ws/updates\n(Realtime Push)" as WSAPI
+        rectangle "WS /ws (services + logs)\n(Realtime Push)" as WSAPI
     }
     rectangle "Static Files" as Static {
         rectangle "/gui/* → web/\n(Serves HTML/JS/CSS)" as StaticFiles
@@ -87,12 +86,17 @@ rectangle "FastAPI Bridge" <<bridge>> {
 }
 
 ' ============================================================================
-' RabbitMQ Broker(s)
+' Backend planes (one or more clusters can be added side-by-side)
 ' ============================================================================
 
-rectangle "RabbitMQ Broker(s)" <<broker>> {
-    rectangle "Broker A\n(host_a:5672)" as BrokerA
-    rectangle "Broker B\n(host_b:5672)" as BrokerB
+rectangle "Cluster A" <<broker>> {
+    rectangle "Consul agents\n(host_a:8500)" as BrokerA
+    rectangle "Nomad server\n(host_a:4646)" as NomadA
+    rectangle "gRPC services\n(NOMAD_PORT_grpc)" as GrpcA
+}
+
+rectangle "Cluster B" <<broker>> {
+    rectangle "Consul agents\n(host_b:8500)" as BrokerB
 }
 
 ' ============================================================================
@@ -112,16 +116,18 @@ Browser --> WSAPI : WebSocket
 
 ' App internal
 AppJS --> SC : RPC calls
-AppJS --> LHC : Hub management
+AppJS --> LHC : Nomad jobs / nodes
 LHD --> LHC : uses
-SC --> ReqAPI : POST /api/request\n(includes broker_url)
-LHC --> HubAPI : POST /api/local-hub/*
+SC --> ReqAPI : POST /api/grpc/<svc>/<method>\n(includes consul_addr)
+LHC --> HubAPI : GET|POST /api/nomad/*
 
-' Multi-broker
+' Multi-cluster
 Conn --> STB : reverse lookup
 Conn --> Session : persist/restore
-ConnAPI --> BrokerA : AMQP connect
-ConnAPI --> BrokerB : AMQP connect
+ConnAPI --> BrokerA : Consul HTTP
+ConnAPI --> BrokerB : Consul HTTP
+HubAPI --> NomadA : Nomad HTTP API
+ReqAPI --> GrpcA : reflection + invoke
 
 ' WebSocket
 WSAPI --> AppJS : push service updates
@@ -151,12 +157,14 @@ note bottom of BridgeLC
 end note
 
 note bottom of Conn
-  **Multi-Broker (ADR-005):**
-  Each broker connection tracked
-  independently. ServiceClient
-  includes broker_url in POST body.
-  Progressive disclosure: broker
-  headers shown when >1 connection.
+  **Multi-cluster (ADR-007 refreshed):**
+  Each Consul cluster tracked independently.
+  ServiceClient includes consul_addr in
+  POST body so the bridge knows which
+  catalog to resolve against.  Progressive
+  disclosure: cluster headers shown when
+  >1 connection (multi-broker UI pattern
+  reused for multi-cluster).
 end note
 
 @enduml

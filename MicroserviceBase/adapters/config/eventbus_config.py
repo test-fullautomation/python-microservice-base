@@ -36,7 +36,15 @@ class EventBusConfig:
    """
 Configuration for EventBusClient-based adapters.
 
-Wraps a JSONP config file path used by EventBusClient.from_config_sync().
+Wraps a JSONP config file path used by ``EventBusClient.from_config_sync()``.
+
+**Attributes:**
+
+* ``config_path``
+
+  / *Type*: str / *Default*: None /
+
+  Path to the JSONP file consumed by ``EventBusClient.PluginLoader``.
    """
    config_path: str = None
 

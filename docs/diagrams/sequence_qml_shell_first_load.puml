@@ -1,5 +1,4 @@
 @startuml sequence_qml_shell_first_load
-!theme plain
 title QML Shell — First Load Sequence
 
 participant "User" as user

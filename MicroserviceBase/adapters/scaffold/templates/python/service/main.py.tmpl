@@ -1,0 +1,58 @@
+@@{header}"""
+Entry point for @@{svc}.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import sys
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from context import create_context
+from proto import @@{sn}_pb2, @@{sn}_pb2_grpc  # type: ignore[import-not-found]
+
+from MicroserviceBase.runtime import ServiceRunner, ServicerEntry
+
+
+async def amain() -> None:
+    """
+Async entry point.  Builds the service context, configures logging,
+wires the gRPC servicer into a ServiceRunner, and serves until a
+shutdown signal arrives.
+
+**Returns:**
+
+(*no returns*)
+    """
+    ctx = create_context()
+
+    logging.basicConfig(
+        level=ctx.settings.log_level,
+        format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+    )
+
+    full_service_name = @@{sn}_pb2.DESCRIPTOR.services_by_name[
+        "@@{svc}Service"
+    ].full_name
+
+    runner = ServiceRunner(
+        servicers=[
+            ServicerEntry(
+                register_fn=@@{sn}_pb2_grpc.add_@@{svc}ServiceServicer_to_server,
+                full_service_name=full_service_name,
+                servicer=ctx.grpc_adapter,
+            )
+        ],
+        settings=ctx.settings,
+        tags=["v1"],
+    )
+    await runner.serve_forever()
+
+
+if __name__ == "__main__":
+    asyncio.run(amain())

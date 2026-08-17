@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+@@{header}"""
+Generate Python gRPC stubs from @@{sn}.proto.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+SERVICE_ROOT = HERE.parent
+PROTO_DIR = SERVICE_ROOT / "proto"
+
+
+def main() -> int:
+    """
+Run grpc_tools.protoc on the service's .proto file.
+
+Patches the generated ``_pb2_grpc.py`` so its import of the matching
+``_pb2`` module uses a package-relative path — needed because the
+service runs the ``proto/`` directory as a package, not as a top-level
+import root.
+
+**Returns:**
+
+* ``exit_code``
+
+  / *Type*: int /
+
+  ``0`` on success.  Forwards protoc's non-zero exit code on failure;
+  ``1`` when the .proto file is missing.
+    """
+    proto_file = PROTO_DIR / "@@{sn}.proto"
+    if not proto_file.exists():
+        print(f"ERROR: {proto_file} not found", file=sys.stderr)
+        return 1
+
+    cmd = [
+        sys.executable, "-m", "grpc_tools.protoc",
+        f"-I{PROTO_DIR}",
+        f"--python_out={PROTO_DIR}",
+        f"--grpc_python_out={PROTO_DIR}",
+        str(proto_file),
+    ]
+    print("Running:", " ".join(cmd))
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        return result.returncode
+
+    grpc_stub = PROTO_DIR / "@@{sn}_pb2_grpc.py"
+    if grpc_stub.exists():
+        text = grpc_stub.read_text(encoding="utf-8")
+        patched = text.replace(
+            "import @@{sn}_pb2 as @@{sn_dunder}__pb2",
+            "from . import @@{sn}_pb2 as @@{sn_dunder}__pb2",
+        )
+        if patched != text:
+            grpc_stub.write_text(patched, encoding="utf-8")
+            print("Patched grpc stub import to use package-relative path")
+
+    print("Done.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

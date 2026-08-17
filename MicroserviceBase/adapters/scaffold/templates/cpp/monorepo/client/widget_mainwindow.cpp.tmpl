@@ -1,0 +1,156 @@
+#include "MainWindow.h"
+#include "ClientRegistry.h"
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QTextEdit>
+#include <QApplication>
+#include <QVBoxLayout>
+#include <cstdlib>
+
+MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
+    setWindowTitle("@@{title}");
+    resize(820, 640);
+
+    auto* v = new QVBoxLayout(this);
+
+    // ---- Consul address row ----
+    auto* consulRow = new QHBoxLayout;
+    consulRow->addWidget(new QLabel("Consul:", this));
+    m_consulAddr = new QLineEdit(this);
+    m_consulAddr->setPlaceholderText("http://127.0.0.1:8500");
+    {
+        const char* env = std::getenv("CONSUL_ADDR");
+        m_consulAddr->setText(env && *env ? QString::fromUtf8(env)
+                                          : "http://127.0.0.1:8500");
+    }
+    consulRow->addWidget(m_consulAddr, 1);
+    v->addLayout(consulRow);
+
+    // ---- Host row (Consul on/off + direct host:port override) ----
+    auto* hostRow = new QHBoxLayout;
+    m_useConsul  = new QCheckBox("Use Consul", this);
+    m_useConsul->setChecked(true);
+    m_directHost = new QLineEdit(this);
+    m_directHost->setPlaceholderText("host:port (when Consul disabled)");
+    m_directHost->setEnabled(false);
+    hostRow->addWidget(m_useConsul);
+    hostRow->addWidget(m_directHost, 1);
+    v->addLayout(hostRow);
+
+    // ---- Service + method row ----
+    auto* pickRow = new QHBoxLayout;
+    pickRow->addWidget(new QLabel("Service:", this));
+    m_serviceCombo = new QComboBox(this);
+    pickRow->addWidget(m_serviceCombo, 1);
+    pickRow->addWidget(new QLabel("Method:", this));
+    m_methodCombo = new QComboBox(this);
+    pickRow->addWidget(m_methodCombo, 1);
+    v->addLayout(pickRow);
+
+    // ---- Request JSON ----
+    v->addWidget(new QLabel("Request (JSON):", this));
+    m_requestEdit = new QTextEdit(this);
+    m_requestEdit->setPlainText("{}");
+    v->addWidget(m_requestEdit, 1);
+
+    // ---- Connect + Send + status ----
+    auto* sendRow = new QHBoxLayout;
+    m_connectButton = new QPushButton("Connect", this);
+    m_sendButton = new QPushButton("Send", this);
+    m_statusLabel = new QLabel("(not connected)", this);
+    sendRow->addWidget(m_connectButton);
+    sendRow->addWidget(m_sendButton);
+    sendRow->addWidget(m_statusLabel, 1);
+    v->addLayout(sendRow);
+
+    // ---- Response JSON ----
+    v->addWidget(new QLabel("Response:", this));
+    m_responseEdit = new QTextEdit(this);
+    m_responseEdit->setReadOnly(true);
+    v->addWidget(m_responseEdit, 2);
+
+    // ---- Populate services ----
+    for (const auto& s : client_registry::services())
+        m_serviceCombo->addItem(QString::fromStdString(s));
+    onServiceChanged(0);
+
+    connect(m_serviceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onServiceChanged);
+    connect(m_sendButton, &QPushButton::clicked, this, &MainWindow::onSend);
+    connect(m_useConsul, &QCheckBox::toggled, this, &MainWindow::onConsulToggled);
+    connect(m_directHost, &QLineEdit::editingFinished, this,
+            [this]() {
+                m_statusLabel->setText("(not connected)");
+                applyHostMode();
+            });
+    connect(m_consulAddr, &QLineEdit::editingFinished, this,
+            [this]() {
+                m_statusLabel->setText("(not connected)");
+                client_registry::set_consul_addr(m_consulAddr->text().toStdString());
+                applyHostMode();
+            });
+    connect(m_connectButton, &QPushButton::clicked, this, &MainWindow::onConnect);
+
+    // Push initial consul addr down so the first invoke uses it.
+    client_registry::set_consul_addr(m_consulAddr->text().toStdString());
+    applyHostMode();
+}
+
+void MainWindow::onConsulToggled(bool consul) {
+    m_directHost->setEnabled(!consul);
+    applyHostMode();
+}
+
+void MainWindow::onConnect() {
+    m_connectButton->setEnabled(false);
+    m_statusLabel->setText("Connecting...");
+    QApplication::processEvents();   // flush UI before the blocking probe
+
+    std::pair<bool, std::string> result;
+    if (m_useConsul->isChecked()) {
+        const auto addr = m_consulAddr->text().trimmed().toStdString();
+        client_registry::set_consul_addr(addr);
+        result = client_registry::ping_consul(addr);
+    } else {
+        const auto host = m_directHost->text().trimmed().toStdString();
+        applyHostMode();
+        result = client_registry::ping_direct(host);
+    }
+    m_statusLabel->setText(QString::fromStdString(
+        std::string(result.first ? "OK: " : "FAIL: ") + result.second));
+    m_connectButton->setEnabled(true);
+}
+
+void MainWindow::applyHostMode() {
+    if (m_useConsul->isChecked())
+        client_registry::set_direct_host("");
+    else
+        client_registry::set_direct_host(m_directHost->text().toStdString());
+}
+
+void MainWindow::onServiceChanged(int) {
+    m_methodCombo->clear();
+    auto svc = m_serviceCombo->currentText().toStdString();
+    for (const auto& m : client_registry::methods(svc))
+        m_methodCombo->addItem(QString::fromStdString(m));
+}
+
+void MainWindow::onSend() {
+    auto svc = m_serviceCombo->currentText().toStdString();
+    auto mth = m_methodCombo->currentText().toStdString();
+    if (svc.empty() || mth.empty()) {
+        m_statusLabel->setText("Pick a service and method first.");
+        return;
+    }
+    auto req = m_requestEdit->toPlainText().toStdString();
+    m_statusLabel->setText(QString("Calling %1.%2 ...")
+        .arg(QString::fromStdString(svc), QString::fromStdString(mth)));
+    auto [ok, body] = client_registry::invoke(svc, mth, req);
+    m_responseEdit->setPlainText(QString::fromStdString(body));
+    m_statusLabel->setText(ok ? "OK" : "FAILED");
+}

@@ -1,8 +1,15 @@
 # ADR-012: Registry Shutdown Notification to GUI
 
+> **🗄 Archived** — 2026-05-07.  Pre-migration mechanism; no specific
+> successor decision.  Consul handles this transparently via TTL-based
+> deregistration on graceful shutdown — there's nothing left to design.
+> Kept here for git archaeology.  See
+> [`docs/changelog.md`](../reference/changelog.md) +
+> [`docs/adr/AUDIT.md`](AUDIT.md).
+
 ## Status
 
-Accepted
+Superseded — Consul deregistration on graceful shutdown handles this case. `ServiceRunner` calls `DELETE /v1/agent/service/deregister/<id>` in its shutdown handler; Consul propagates removal to subscribed clients within ~1s.
 
 ## Date
 

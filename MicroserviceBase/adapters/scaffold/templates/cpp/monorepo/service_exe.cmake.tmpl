@@ -1,0 +1,18 @@
+
+# ---- @@{svc_pascal} ----
+add_executable(@@{svc_snake}
+    src/@@{svc_snake}/main.cpp
+    src/@@{svc_snake}/domain/@@{svc_pascal}.cpp
+    src/@@{svc_snake}/adapters/api/@@{svc_pascal}GrpcAdapter.cpp
+    ${@@{proto_srcs_var}}
+)
+target_include_directories(@@{svc_snake} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/@@{svc_snake}"
+    "${@@{proto_inc_var}}"
+)
+target_link_libraries(@@{svc_snake} PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++ ${GRPC_REFL_LIB}
+    protobuf::libprotobuf
+)
+mb_deploy_runtime(@@{svc_snake})

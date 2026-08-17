@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Build the Qt Widgets monorepo client (@@{project_snake}_gui) as WebAssembly.
+#
+# Requires Qt for WebAssembly (QT_WASM_DIR) + Emscripten (source emsdk_env.sh).
+
+set -euo pipefail
+
+: "${QT_WASM_DIR:?Set QT_WASM_DIR to your Qt-for-WebAssembly install}"
+: "${EMSDK:?Run emsdk_env.sh before this script}"
+
+BUILD="$(dirname "$(readlink -f "$0")")/build-wasm"
+mkdir -p "$BUILD"
+cd "$BUILD"
+
+"$QT_WASM_DIR/bin/qt-cmake" -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . --target @@{project_snake}_gui
+
+echo "WASM client built: $BUILD/@@{project_snake}_gui.html"

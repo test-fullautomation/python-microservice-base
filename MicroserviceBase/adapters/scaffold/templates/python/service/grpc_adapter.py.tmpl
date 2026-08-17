@@ -1,0 +1,30 @@
+@@{header}"""
+gRPC inbound adapter for @@{cls}.
+"""
+
+from __future__ import annotations
+
+import grpc
+
+@@{imports}
+
+class @@{svc}GrpcAdapter(@@{sn}_pb2_grpc.@@{svc}ServiceServicer):
+    """
+gRPC servicer that bridges proto messages and the domain class.
+    """
+
+    def __init__(self, domain: @@{cls}) -> None:
+        """
+Wire the adapter to the domain service.
+
+**Arguments:**
+
+* ``domain``
+
+  / *Condition*: required / *Type*: @@{cls} /
+
+  Pure-business-logic instance.  Held by reference; method calls go
+  straight through.
+        """
+        self._domain = domain
+@@{methods}

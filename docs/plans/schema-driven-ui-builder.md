@@ -1,5 +1,16 @@
 # Schema-Driven UI Builder for MicroserviceBase Services
 
+> **Status: ✅ Active.** Foundational plan for [ADR-021 Schema-Driven UI Builder](../adr/021-schema-driven-ui-builder.md).
+> The schema-driven tier is implemented in `MicroserviceManagerGUI/web/js/SchemaRenderer.js`
+> and is the first match in the [GUI loading waterfall](gui-loading-flow.md).
+> Service providers can drop a `gui_schema.json` next to their service
+> plugin to get a generated Bootstrap UI without writing HTML/JS.
+>
+> Note: the original "method discovery" flow described below referred to
+> the RabbitMQ-era `methods_info` payload. With gRPC, the equivalent is
+> server reflection — the same schema-driven UI generation works against
+> the descriptor pool instead. See [`../runtime_model.md`](../architecture/runtime-model.md).
+
 ## Context
 
 Service providers currently must hand-write HTML + JS files to create custom GUIs for their microservices. This requires Bootstrap/DOM knowledge and duplicates boilerplate (card layout, form inputs, request handling, result display). Most service GUIs follow the same pattern: form fields mapped to method arguments, call buttons, and result areas.

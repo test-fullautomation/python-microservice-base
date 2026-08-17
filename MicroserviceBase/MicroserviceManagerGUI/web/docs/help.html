@@ -10,17 +10,45 @@
     </div>
     <a href="#about">About</a>
     <a href="#getting-started">Getting Started</a>
-    <a href="#connecting">Connecting to Broker</a>
+    <a href="#service-network">Service Network (Consul + Nomad)</a>
     <a href="#services-mode">Services Mode</a>
-    <a href="#alias-routing">Alias Routing</a>
-    <a href="#service-network">Service Network</a>
     <a href="#service-creator">Service Creator</a>
     <a href="#settings">Settings</a>
     <a href="#troubleshooting">Troubleshooting</a>
+    <a href="#more">More</a>
   </nav>
 
   <!-- ===== Scrollable Content ===== -->
   <div class="docs-body" id="docsBody">
+
+    <!-- Modernisation banner kept as a top-of-page pointer to long-form docs -->
+    <div class="docs-callout" style="background: rgba(56,189,248,0.08);
+         border-left: 4px solid #38bdf8; padding: 14px 18px;
+         border-radius: 6px; margin: 0 0 18px 0;">
+      <div style="font-weight: 600; color: #38bdf8; margin-bottom: 6px;">
+        <i class="bi bi-info-circle me-1"></i>For the long-form guides, see <code>docs/</code>
+      </div>
+      <p style="margin: 0;">
+        This in-app help is a quick reference.  For deeper coverage
+        (architecture, REST API, full troubleshooting), see the
+        long-form docs:
+      </p>
+      <ul style="margin: 8px 0 0 18px;">
+        <li>
+          <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/MicroserviceBase/MicroserviceManagerGUI/build-resources/README-install.html"
+             target="_blank"
+             onclick="if (window.electronAPI && window.electronAPI.openInstallReadme) { event.preventDefault(); window.electronAPI.openInstallReadme(); }">
+            <i class="bi bi-file-earmark-text me-1"></i>Installed README
+          </a>
+          &mdash; the offline guide that ships with this installer
+          (lives at <code>&lt;install dir&gt;\README.html</code>; opens
+          locally in Electron mode, GitHub copy in browser mode)
+        </li>
+        <li><a href="../docs/html/index.html" target="_blank">Manager GUI doc index</a></li>
+        <li><a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; full Service Network walkthrough with screenshots</li>
+        <li><a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; per-step screenshots + YAML config schema</li>
+      </ul>
+    </div>
 
     <!-- About -->
     <section class="docs-section" id="about">
@@ -42,8 +70,12 @@
         </div>
       </div>
       <p>
-        A microservice base framework with pluggable transport, registry adapters,
-        and a Manager GUI for monitoring, interacting with, and creating microservices.
+        A Python + C++ framework for building gRPC microservices with
+        Consul-based service discovery and Nomad-based orchestration.
+        The Manager GUI gives you a desktop UX over the FastAPI bridge:
+        start/stop infrastructure agents, browse registered services,
+        invoke methods via gRPC reflection, and scaffold new services
+        from a 4-step wizard.
       </p>
       <div class="docs-project-info">
         <h3>Project</h3>
@@ -59,7 +91,7 @@
           </tr>
           <tr>
             <td><i class="bi bi-code-slash me-1"></i>Languages</td>
-            <td>Python, JavaScript, HTML</td>
+            <td>Python, C++, JavaScript, HTML</td>
           </tr>
           <tr>
             <td><i class="bi bi-person me-1"></i>Author</td>
@@ -78,10 +110,10 @@
             <td><i class="bi bi-tags me-1"></i>Keywords</td>
             <td>
               <span class="docs-tag">microservice</span>
-              <span class="docs-tag">rabbitmq</span>
-              <span class="docs-tag">eventbus</span>
-              <span class="docs-tag">registry</span>
-              <span class="docs-tag">rpc</span>
+              <span class="docs-tag">grpc</span>
+              <span class="docs-tag">consul</span>
+              <span class="docs-tag">nomad</span>
+              <span class="docs-tag">scaffold</span>
             </td>
           </tr>
         </table>
@@ -92,380 +124,253 @@
     <section class="docs-section" id="getting-started">
       <h2><i class="bi bi-rocket-takeoff"></i>Getting Started</h2>
       <p>
-        Microservice Manager is a graphical interface for managing, monitoring, and
-        interacting with microservices running on a RabbitMQ message broker. It provides
-        real-time service status, an API explorer, code helpers, fleet management, and
-        a service creation wizard.
+        Microservice Manager is a graphical interface for operating and
+        building MicroserviceBase services.  It runs in two modes
+        (Electron desktop or browser), connects to the same FastAPI
+        bridge, and gives you three top-level workspaces.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/navbar-overview.png" alt="Application overview showing navbar, sidebar, and content area">
-        <figcaption>The main application layout &mdash; navbar with mode toggles, sidebar with service list, and content area.</figcaption>
+        <img src="docs/img/gui_overview.png" alt="Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar">
+        <figcaption>Main layout &mdash; navbar with mode toggle and Bridge / Consul / Nomad LEDs, services sidebar on the left, content area on the right.</figcaption>
       </figure>
 
       <h3>Dual Hosting</h3>
       <p>The GUI runs in two modes:</p>
       <ul>
-        <li><strong>Electron</strong> &mdash; standalone desktop app with native features
-          (settings file, Python bridge auto-launch)</li>
+        <li><strong>Electron</strong> &mdash; standalone desktop app with native window, system tray, and auto-launch of the FastAPI bridge.</li>
         <li><strong>Browser</strong> &mdash; served by the FastAPI bridge at
-          <span class="docs-inline-code">http://localhost:1112/gui</span>; no installation
-          required</li>
+          <span class="docs-inline-code">http://localhost:1112</span>; no installation
+          required (just <span class="docs-inline-code">python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</span> and open the URL).</li>
       </ul>
       <p>Both modes share the same web front-end and connect to the same FastAPI bridge.</p>
 
       <h3>Three Modes</h3>
-      <p>
-        Use the mode toggle buttons in the top navigation bar to switch between:
-      </p>
+      <p>Use the mode toggle buttons in the top navigation bar:</p>
       <ul>
-        <li><strong>Services</strong> &mdash; browse connected services, call APIs, view
-          code helpers</li>
-        <li><strong>Service Network</strong> &mdash; fleet dashboard and local hub
-          management</li>
-        <li><strong>Service Creator</strong> &mdash; step-by-step wizard to scaffold a
-          new microservice</li>
+        <li><strong>Services</strong> &mdash; browse Consul-registered services, invoke gRPC methods via reflection.</li>
+        <li><strong>Service Network</strong> &mdash; start / stop / inspect Consul and Nomad agents; browse jobs; submit new <code>.nomad.hcl</code> files.</li>
+        <li><strong>Service Creator</strong> &mdash; 4-step wizard to scaffold a new service project (proto + domain + adapter + clients + Nomad HCL).</li>
       </ul>
+
+      <h3>Status pills in the navbar</h3>
+      <p>To the right of the mode toggle, three small pills show live infrastructure health:</p>
+      <ul>
+        <li><strong>Bridge</strong> &mdash; the FastAPI bridge process. ▶/■ buttons start/stop it (Electron mode).</li>
+        <li><strong>Consul</strong> &mdash; service-discovery agent. Click to jump to the Consul tab in <em>Service Network</em>.</li>
+        <li><strong>Nomad</strong> &mdash; orchestrator agent. Click to jump to the Nomad tab.</li>
+      </ul>
+      <p>LEDs are polled every 5 seconds and reflect the bridge's <code>/api/{consul,nomad}/health</code> endpoints.</p>
     </section>
 
-    <!-- Connecting to Broker -->
-    <section class="docs-section" id="connecting">
-      <h2><i class="bi bi-plug"></i>Connecting to Broker</h2>
+    <!-- Service Network -->
+    <section class="docs-section" id="service-network">
+      <h2><i class="bi bi-hdd-network"></i>Service Network <small>(Consul + Nomad)</small></h2>
       <p>
-        Click the <strong>Connect</strong> button in the top-right corner to open the
-        login dialog.
+        The <strong>Service Network</strong> mode replaces the
+        per-terminal <code>consul agent -dev</code> /
+        <code>nomad agent -dev</code> workflow.  Two sub-tabs:
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/login-dialog.png" alt="Connect to Broker dialog with Broker URL, Routing Key, and Advanced Settings">
-        <figcaption>The connection dialog &mdash; enter the broker address and routing key, expand Advanced Settings for the Fleet API URL.</figcaption>
+        <img src="docs/img/nomad_dashboard.png" alt="Nomad Cluster connected dashboard showing job count, nodes ready, and a Jobs table with a running service">
+        <figcaption>Nomad sub-tab &mdash; connected dashboard with job/node counts and the Jobs table.  The Consul sub-tab has the same shape (registered services + leader address).</figcaption>
       </figure>
 
-      <h3>Connection Fields</h3>
+      <h3>Consul tab</h3>
+      <p>Two render states:</p>
       <ul>
-        <li><strong>Broker URL</strong> &mdash; the RabbitMQ host and port
-          (e.g. <span class="docs-inline-code">localhost:5672</span>)</li>
-        <li><strong>Routing Key</strong> &mdash; the routing key used by the
-          Registry Service (e.g. <span class="docs-inline-code">ServiceRegistry</span>)</li>
-        <li><strong>Fleet API URL</strong> (Advanced) &mdash; optional URL for the
-          Fleet Web API, used by the Service Network tab</li>
+        <li><strong>Setup form</strong> (agent stopped) &mdash; three start modes:
+          <strong>Dev Mode</strong> (single-node in-memory), <strong>Config Directory</strong>
+          (load <code>.hcl</code> / <code>.json</code>), or <strong>Connect to Existing</strong>
+          (point at a running agent's URL).</li>
+        <li><strong>Connected dashboard</strong> (agent running) &mdash; cluster
+          leader, node count, registered services list (this is the live
+          source of truth used by gRPC clients with <code>useConsul=true</code>),
+          plus <strong>Open Consul UI</strong> / <strong>Disconnect</strong> /
+          <strong>Stop Agent</strong> buttons.</li>
       </ul>
+      <p>Defaults match the framework: HTTP port <code>8500</code>, datacenter <code>dc1</code>, bind <code>0.0.0.0</code>.</p>
 
-      <h3>Multi-Broker</h3>
-      <p>
-        You can connect to multiple brokers simultaneously. Each connection appears as a
-        <strong>chip</strong> in the navbar. Services from all brokers are merged into
-        the sidebar, grouped under collapsible broker headers.
-      </p>
-      <div class="docs-callout tip">
-        <div class="docs-callout-title"><i class="bi bi-lightbulb me-1"></i>Tip</div>
-        Click a broker chip to focus on its services. Click the
-        <i class="bi bi-x"></i> button on a chip to disconnect from that broker.
-      </div>
+      <h3>Nomad tab</h3>
+      <p>Same two-state pattern.  Once running:</p>
+      <ul>
+        <li><strong>Counters</strong> &mdash; Total Jobs / Running / Pending / Dead / Nodes Ready.</li>
+        <li><strong>Jobs table</strong> &mdash; every submitted job with type, status, task groups; per-row link to detail view.</li>
+        <li><strong>Submit Job</strong> dialog &mdash; HCL/JSON toggle, "Load from file…" picks a generated <code>deploy/&lt;svc&gt;.nomad.hcl</code>, or paste content directly.</li>
+        <li><strong>Open Nomad UI</strong> &mdash; opens the bundled Nomad UI (<code>:4646/ui</code>) in a new browser window.</li>
+      </ul>
+      <p>Dev Mode start automatically writes a <code>raw_exec</code>-enabled config so generated services using <code>driver = "raw_exec"</code> work on Windows.</p>
 
-      <h3>Disconnect</h3>
-      <p>
-        Click the <strong>Disconnect</strong> button (the Connect button changes label
-        once connected) to close all broker connections and clear the service list.
-      </p>
+      <p>For the full walkthrough with per-state screenshots, see <a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a>.</p>
     </section>
 
     <!-- Services Mode -->
     <section class="docs-section" id="services-mode">
       <h2><i class="bi bi-box-seam"></i>Services Mode</h2>
       <p>
-        The default mode. The sidebar lists all registered services. Click a service
-        to view its GUI panel in the content area.
+        The default mode.  Sidebar lists every Consul-registered service.
+        Click a service to load its panel in the content area.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/services-sidebar.png" alt="Services sidebar with connected broker, service list, and Calculator GUI">
-        <figcaption>Services mode &mdash; connected to a broker with services listed in the sidebar. Clicking a service loads its GUI panel.</figcaption>
+        <img src="docs/img/gui_overview.png" alt="Manager GUI overview with the services sidebar visible on the left">
+        <figcaption>Services mode &mdash; sidebar (left) shows services from one or more connected Consul clusters; clicking a service loads its panel in the content area.</figcaption>
       </figure>
 
       <h3>Sidebar Navigation</h3>
       <ul>
-        <li>Use the <strong>search bar</strong> at the top to filter services by name</li>
-        <li>Services show a status icon &mdash; green for ready, red for not ready</li>
-        <li>When connected to multiple brokers, services are grouped under collapsible
-          broker headers</li>
+        <li>The <strong>search bar</strong> at the top filters services by name.</li>
+        <li>Services show a status icon &mdash; green for healthy (passing Consul health check), red for failing.</li>
+        <li>When connected to multiple Consul clusters, services are grouped under collapsible cluster headers.</li>
       </ul>
+
+      <h3>Method Invocation (via gRPC reflection)</h3>
+      <p>
+        Click a service to open its panel.  The Manager GUI uses the
+        server's gRPC reflection to enumerate the available methods,
+        then renders one accordion item per method &mdash; a JSON textarea
+        pre-filled from the request schema, a Call button, and a
+        response area.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/api-explorer.png" alt="Service detail panel showing methods discovered via reflection with JSON request textareas">
+        <figcaption>Service detail panel &mdash; methods discovered via reflection; pre-filled JSON skeleton + Call button per method.  <em>(Screenshot pending refresh &mdash; UI is current; image is from an earlier theme.)</em></figcaption>
+      </figure>
+
+      <h3>Reflection-not-available fallback</h3>
+      <p>
+        Some servers (e.g. older builds, custom toolchains) don't ship
+        <code>grpc++_reflection</code>.  When that happens the bridge
+        falls back to compiling local <code>.proto</code> files via
+        <code>grpc_tools.protoc</code>.  If the bridge can't find any
+        local protos, the panel shows a folder-path input so you can
+        point it at the right directory.  The path is remembered for
+        the rest of the browser session.
+      </p>
 
       <h3>Service GUI Plugins</h3>
       <p>
-        Each service can provide a custom GUI plugin (HTML + JS) loaded from
-        <span class="docs-inline-code">web/services/&lt;ServiceName&gt;/</span>. The
-        plugin is loaded once and cached for fast switching between services.
+        Each service can ship a custom GUI plugin (HTML + JS) loaded
+        from <code>web/services/&lt;ServiceName&gt;/</code>.  When
+        present, the plugin replaces the default reflection-based
+        invoker with a service-tailored UI &mdash; e.g. a Cleware switch
+        service can render a board with toggles instead of a generic
+        method list.  Plugins use the same
+        <code>MM.serviceClient</code> API to talk to the bridge.
       </p>
 
-      <h3>API Explorer</h3>
+      <h3>Generate Robot Framework resources</h3>
       <p>
-        Click the <i class="bi bi-send"></i> icon next to a service name in the sidebar
-        to open the <strong>API Explorer</strong>. This lets you:
+        The methods panel has a green <strong>Generate Robot
+        resources</strong> button in its top-right corner.  Clicking it
+        turns a <code>.proto</code> folder into one
+        <code>.resource</code> file per service &mdash; each containing
+        typed Robot keywords (one per RPC) on top of
+        <code>QConnectBase.ConnectionManager</code>.  Native folder
+        pickers prompt for the input and output dirs; existing
+        <code>.resource</code> files are skipped unless you confirm
+        the overwrite.  Same generator is available from the CLI for
+        CI use:
       </p>
-      <ul>
-        <li>Browse the service's registered API endpoints</li>
-        <li>Send test requests with custom JSON payloads</li>
-        <li>View responses in real time</li>
-      </ul>
-      <figure class="docs-figure">
-        <img src="docs/img/api-explorer.png" alt="API Explorer showing available methods for the Calculator service">
-        <figcaption>API Explorer &mdash; select a method from the dropdown and execute it with custom parameters.</figcaption>
-      </figure>
-
-      <h3>Code Helper</h3>
+      <pre><code>python -m MicroserviceBase.tools.robot_gen --proto-dir &lt;path&gt; --out &lt;path&gt;</code></pre>
       <p>
-        Click the <i class="bi bi-code-slash"></i> icon to open the <strong>Code Helper</strong>
-        modal. It generates ready-to-use code snippets for calling the service from
-        Python, JavaScript, or Robot Framework.
+        Long-form doc (output conventions, all CLI flags,
+        troubleshooting):
+        <a href="../docs/html/robot_generator.html" target="_blank">Generate Robot Framework resources</a>.
       </p>
-      <figure class="docs-figure">
-        <img src="docs/img/code-helper.png" alt="Code Helper modal showing Python code snippet with language tabs">
-        <figcaption>Code Helper &mdash; auto-generated Python snippet with language tabs (Python, JavaScript, Robot). Use "Copy Code" to grab it.</figcaption>
-      </figure>
-    </section>
-
-    <!-- Alias Routing -->
-    <section class="docs-section" id="alias-routing">
-      <h2><i class="bi bi-signpost-2"></i>Alias Routing</h2>
-      <p>
-        Aliases let you create <strong>user-friendly shortcuts</strong> that map to
-        service methods with pre-configured arguments. Instead of calling a complex
-        API with multiple parameters, you define an alias with fixed values and only
-        pass the variable parts at call time.
-      </p>
-
-      <h3>How It Works</h3>
-      <p>
-        An alias definition consists of three parts:
-      </p>
-      <ul>
-        <li><strong>Alias name</strong> &mdash; the shortcut name callers will use
-          (e.g. <span class="docs-inline-code">turn_on_led</span>)</li>
-        <li><strong>Target service &amp; method</strong> &mdash; the actual service
-          method to call
-          (e.g. <span class="docs-inline-code">ServiceCleware.svc_api_set_switch</span>)</li>
-        <li><strong>Arguments template</strong> &mdash; a comma-separated list of
-          values where <span class="docs-inline-code">${input}</span> placeholders
-          are replaced by the caller's arguments</li>
-      </ul>
-
-      <div class="docs-callout info">
-        <div class="docs-callout-title"><i class="bi bi-info-circle me-1"></i>Example</div>
-        <p style="margin-bottom:0.5rem;">
-          Alias <span class="docs-inline-code">turn_on_led</span> with arguments
-          <span class="docs-inline-code">710925,17,${input}</span> maps to
-          <span class="docs-inline-code">svc_api_set_switch</span>.
-        </p>
-        <p style="margin-bottom:0;">
-          Calling <span class="docs-inline-code">turn_on_led</span> with argument
-          <span class="docs-inline-code">[1]</span> becomes
-          <span class="docs-inline-code">svc_api_set_switch(710925, 17, 1)</span>
-          &mdash; the device ID and port are fixed, only the state is variable.
-        </p>
-      </div>
-
-      <h3>Managing Aliases</h3>
-      <p>
-        The <strong>Alias</strong> entry appears in the sidebar under
-        <strong>Alias Manager</strong> when connected to a broker. Click it to open
-        the alias configuration panel.
-      </p>
-      <figure class="docs-figure">
-        <img src="docs/img/alias.png" alt="Alias Configuration panel showing alias table with service and method dropdowns">
-        <figcaption>Alias Configuration &mdash; define aliases by selecting a target service and method, with an arguments template using <code>${input}</code> placeholders.</figcaption>
-      </figure>
-      <ul>
-        <li>Click <strong>+</strong> to add a new alias row</li>
-        <li>Select the target <strong>Service</strong> and <strong>Method</strong>
-          from the dropdowns</li>
-        <li>Enter the arguments template &mdash; use
-          <span class="docs-inline-code">${input}</span> for values the caller
-          provides</li>
-        <li>Click <strong>Apply</strong> to save the configuration</li>
-        <li>Click <strong>&minus;</strong> to remove an alias</li>
-      </ul>
-
-      <h3>Calling Aliases</h3>
-      <p>
-        Aliases are resolved by the <strong>Service Registry</strong>. Send alias
-        requests to the Registry's routing key, just like a normal service call, but
-        use the alias name as the method:
-      </p>
-      <pre class="docs-code">request = ServiceBase.create_request_data('turn_on_led', [1])
-response = transport.rpc_call(request, 'services_request', 'service.registry')</pre>
-      <p>
-        The Registry looks up the alias, substitutes
-        <span class="docs-inline-code">${input}</span> placeholders with your
-        arguments, and forwards the request to the target service.
-      </p>
-
-      <div class="docs-callout tip">
-        <div class="docs-callout-title"><i class="bi bi-lightbulb me-1"></i>Tip</div>
-        Click the <i class="bi bi-code-slash"></i> icon in the alias panel to open
-        the <strong>Code Helper</strong> with ready-to-use code snippets for calling
-        each configured alias from Python, JavaScript, or Robot Framework.
-      </div>
-
-      <h3>Multiple Inputs</h3>
-      <p>
-        You can use multiple <span class="docs-inline-code">${input}</span>
-        placeholders. Each one is replaced in order by the caller's arguments:
-      </p>
-      <pre class="docs-code"># Alias "quick_add" with arguments: ${input},${input}
-# Calling quick_add([3, 5]) → svc_api_add(3, 5)</pre>
-    </section>
-
-    <!-- Service Network -->
-    <section class="docs-section" id="service-network">
-      <h2><i class="bi bi-hdd-network"></i>Service Network</h2>
-      <p>
-        Switch to <strong>Service Network</strong> mode to manage distributed service
-        infrastructure. This mode has two sub-tabs:
-      </p>
-
-      <h3>Fleet Dashboard</h3>
-      <p>
-        Provides an overview of all hub nodes in your fleet:
-      </p>
-      <ul>
-        <li>View online/offline status of each hub</li>
-        <li>Monitor service counts and health across the fleet</li>
-        <li>Requires a Fleet API URL (configured in the login dialog or Settings)</li>
-      </ul>
-      <figure class="docs-figure">
-        <img src="docs/img/fleet-dashboard.png" alt="Fleet dashboard showing hub cards with online status and service counts">
-        <figcaption>Fleet dashboard &mdash; summary cards for total hubs, online count, and processes. Each hub card shows its services and a Details button.</figcaption>
-      </figure>
-      <div class="docs-callout info">
-        <div class="docs-callout-title"><i class="bi bi-info-circle me-1"></i>Note</div>
-        The Fleet dashboard polls the Fleet Web API periodically. If no Fleet API URL
-        is configured, the dashboard will show a setup prompt.
-      </div>
-
-      <h3>Local Hub</h3>
-      <p>
-        Manage processes on the local machine:
-      </p>
-      <ul>
-        <li>Start, stop, and restart service processes</li>
-        <li>View process logs and status</li>
-        <li>Import or add new service entries</li>
-        <li>Configure process entries in
-          <span class="docs-inline-code">hub_processes.json</span></li>
-      </ul>
-      <figure class="docs-figure">
-        <img src="docs/img/local-hub.png" alt="Local Hub tab with service process list and control buttons">
-        <figcaption>Local Hub &mdash; manage service processes with Start/Stop/Reset controls. Each row shows status and action buttons (start, logs, edit, delete).</figcaption>
-      </figure>
     </section>
 
     <!-- Service Creator -->
     <section class="docs-section" id="service-creator">
       <h2><i class="bi bi-plus-circle"></i>Service Creator</h2>
       <p>
-        The <strong>Service Creator</strong> wizard guides you through scaffolding a
-        new microservice. Switch to Creator mode using the top navigation bar.
+        Switch to <strong>Service Creator</strong> mode for a 4-step
+        wizard that scaffolds a new service project (proto + domain +
+        adapter + clients + Nomad HCL) without writing boilerplate.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/service-creator.png" alt="Service Creator wizard showing Basic Information step with form fields">
-        <figcaption>Service Creator &mdash; step 1 (Basic Info) with fields for name, version, description, group, routing key, and transport type.</figcaption>
+        <img src="docs/img/gui_wizard_03.png" alt="Service Creator wizard — Step 1 Basic Information filled in">
+        <figcaption>Service Creator wizard &mdash; Step 1 Basic Info shown.  Wizard has 4 steps: Basic Info, Technology, Methods (with .proto import), Review &amp; Generate.</figcaption>
       </figure>
 
-      <h3>Wizard Steps</h3>
+      <h3>The four steps</h3>
       <ol>
-        <li><strong>Basic Info</strong> &mdash; service name, version, description, group,
-          routing key, transport type</li>
-        <li><strong>API Methods</strong> &mdash; define request/response endpoints</li>
-        <li><strong>GUI Support</strong> &mdash; optional GUI plugin configuration</li>
-        <li><strong>Review &amp; Generate</strong> &mdash; preview and download the
-          scaffolded project</li>
+        <li><strong>Basic Info</strong> &mdash; name, language (C++ / Python),
+          GUI variant (none / widget / qml / wasm / html).</li>
+        <li><strong>Technology</strong> &mdash; toolchain matrix.  For C++:
+          server uses MSYS2 grpc or vcpkg+QtMinGW grpc; client picks a
+          matching gRPC stack (Google grpc++ via MSYS2, Qt6::Grpc, or
+          Google grpc++ via vcpkg).</li>
+        <li><strong>Methods</strong> &mdash; define RPC methods manually,
+          or click <strong>Import .proto…</strong> to parse an existing
+          file (handles multi-service protos with a picker; offers
+          single-project vs monorepo output layout).</li>
+        <li><strong>Review &amp; Generate</strong> &mdash; preview the file
+          tree before writing.  Output goes to the path you pick.</li>
       </ol>
-      <div class="docs-callout tip">
-        <div class="docs-callout-title"><i class="bi bi-lightbulb me-1"></i>Tip</div>
-        The left sidebar shows your progress through the wizard steps. You can click
-        any completed step to go back and modify it.
-      </div>
+
+      <h3>Same backend as <code>mb-scaffold</code> CLI</h3>
+      <p>
+        The wizard is a thin frontend over the same generator that
+        <code>mb-scaffold</code> calls.  For CI / scripted use, drive
+        the same generator from a YAML file:
+        <code>python -m MicroserviceBase.tools.scaffold_cli -c spec.yaml</code>.
+      </p>
+      <p>
+        For the full walkthrough with per-step screenshots and the YAML
+        config schema, see
+        <a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a>.
+      </p>
     </section>
 
     <!-- Settings -->
     <section class="docs-section" id="settings">
       <h2><i class="bi bi-gear"></i>Settings</h2>
-      <p>
-        Click the <i class="bi bi-gear"></i> gear icon in the navbar to open the
-        Settings dialog.
-      </p>
       <figure class="docs-figure">
-        <img src="docs/img/settings-dialog.png" alt="Settings dialog with Python Path, Infrastructure, and Bridge Port fields">
-        <figcaption>Settings dialog &mdash; configure the Python interpreter path, broker defaults, and bridge port.</figcaption>
+        <img src="docs/img/settings-dialog.png" alt="Settings dialog with Bridge URL, Consul URL, theme toggle">
+        <figcaption>Settings dialog &mdash; bridge URL, default Consul URL, theme.  <em>(Screenshot pending refresh.)</em></figcaption>
       </figure>
-
-      <h3>Available Settings</h3>
       <ul>
-        <li><strong>Python Path</strong> &mdash; path to the Python interpreter
-          (used by Electron to spawn the FastAPI bridge)</li>
-        <li><strong>Broker Host / Port</strong> &mdash; default broker connection
-          values</li>
-        <li><strong>Bridge Port</strong> &mdash; port for the FastAPI bridge
-          (default: <span class="docs-inline-code">1112</span>)</li>
-      </ul>
-
-      <h3>Storage</h3>
-      <ul>
-        <li><strong>Electron mode</strong> &mdash; settings saved to a JSON file on
-          disk</li>
-        <li><strong>Browser mode</strong> &mdash; settings saved to
-          <span class="docs-inline-code">sessionStorage</span> (cleared when tab
-          closes)</li>
+        <li><strong>Bridge URL</strong> &mdash; where the FastAPI bridge runs (default <code>http://127.0.0.1:1112</code>).  Override via the <code>MB_BRIDGE_URL</code> env var.</li>
+        <li><strong>Default Consul URL</strong> &mdash; pre-fills the Consul tab and the Connect dialog (default <code>http://127.0.0.1:8500</code>).</li>
+        <li><strong>Theme</strong> &mdash; light / dark / auto.</li>
       </ul>
     </section>
 
     <!-- Troubleshooting -->
     <section class="docs-section" id="troubleshooting">
       <h2><i class="bi bi-wrench"></i>Troubleshooting</h2>
+      <p>Quick lookups.  For the full symptom-indexed reference see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/troubleshooting.html" target="_blank">repo: docs/troubleshooting.html</a>.</p>
 
-      <h3>Cannot connect to broker</h3>
-      <div class="docs-callout warning">
-        <div class="docs-callout-title"><i class="bi bi-exclamation-triangle me-1"></i>Check these first</div>
-        <ul style="margin-bottom:0;">
-          <li>Verify the RabbitMQ server is running on the specified host and port</li>
-          <li>Ensure the FastAPI bridge is running
-            (<span class="docs-inline-code">http://localhost:1112/docs</span> should
-            show the Swagger UI)</li>
-          <li>Check that no firewall is blocking the connection</li>
-        </ul>
-      </div>
+      <h3>Bridge LED stays red</h3>
+      <p>Bridge process didn't start.  In Electron mode click ▶ next to the LED.  If port 1112 is taken, free it (<code>netstat -ano | findstr :1112</code>) or set <code>MB_BRIDGE_URL</code> to a different port.</p>
 
-      <h3>Services not appearing</h3>
+      <h3>"Reflection RPC … failed: UNIMPLEMENTED" when clicking a service</h3>
+      <p>The server doesn't ship <code>grpc++_reflection</code>.  The panel offers a proto-path input field &mdash; type the folder containing the service's <code>.proto</code> and click <strong>Use this path</strong>.  Permanent fix: rebuild the server with reflection enabled (the latest vcpkg overlay-port forces this; re-run <code>init_vcpkg_overlay.bat --upgrade</code>).</p>
+
+      <h3>Service registers, then disappears from Consul ~30 seconds later</h3>
+      <p>Consul TCP health check is failing.  Check <code>nomad alloc logs &lt;alloc-id&gt;</code> &mdash; service likely crashed or never started gRPC.  Confirm <code>&lt;PREFIX&gt;_GRPC_PORT</code> was set in the env (Nomad sets it via <code>${NOMAD_PORT_grpc}</code>).</p>
+
+      <h3>Nomad job stays "pending" forever</h3>
+      <p>Driver mismatch most often.  Generated jobs use <code>raw_exec</code>; dev mode auto-enables it.  Custom config? Add the <code>raw_exec</code> plugin block.  Or check <code>nomad node status</code> for any healthy clients.</p>
+
+      <h3>"Port 8500 in use" when starting Consul (or 4646 for Nomad)</h3>
+      <p>Another agent is running.  Either stop it (<code>tasklist | findstr consul</code> &rarr; <code>taskkill /pid &lt;pid&gt;</code>) or use the tab's <strong>Connect to Existing</strong> form to point at it.</p>
+    </section>
+
+    <!-- More -->
+    <section class="docs-section" id="more">
+      <h2><i class="bi bi-three-dots"></i>More</h2>
+      <!-- NOTE: help.html is fetch'd and innerHTML'd into web/index.html,
+           so relative paths resolve from web/index.html (NOT this file).
+           Use one fewer "../" than the on-disk depth would suggest. -->
       <ul>
-        <li>Confirm the <strong>Routing Key</strong> matches your Registry Service
-          configuration</li>
-        <li>Check the browser console (<kbd class="docs-kbd">F12</kbd>) for error
-          messages</li>
-        <li>Try disconnecting and reconnecting</li>
-      </ul>
-
-      <h3>Service GUI not loading</h3>
-      <ul>
-        <li>The GUI plugin must exist at
-          <span class="docs-inline-code">web/services/&lt;ServiceName&gt;/</span></li>
-        <li>Check the browser console for JavaScript errors in the plugin</li>
-        <li>Ensure the plugin's JS file uses the
-          <span class="docs-inline-code">window.MicroserviceManager</span> namespace</li>
-      </ul>
-
-      <h3>Fleet dashboard shows "No Fleet API configured"</h3>
-      <ul>
-        <li>Set the Fleet API URL in the login dialog (Advanced Settings) or in
-          Settings</li>
-        <li>Ensure the Fleet Web API service is running and reachable</li>
-      </ul>
-
-      <h3>Bridge not starting (Electron)</h3>
-      <ul>
-        <li>Verify the <strong>Python Path</strong> in Settings points to a valid
-          Python interpreter</li>
-        <li>Ensure <span class="docs-inline-code">MicroserviceBase</span> is installed
-          in that Python environment
-          (<span class="docs-inline-code">pip install MicroserviceBase</span>)</li>
-        <li>Check the Electron dev tools console for bridge startup errors</li>
+        <li><a href="../docs/html/index.html" target="_blank">Manager GUI doc index</a> &mdash; canonical reference, broken into focused guides</li>
+        <li><a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; the long-form Service Network walkthrough</li>
+        <li><a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; step-by-step with screenshots</li>
+        <li><a href="../docs/html/robot_generator.html" target="_blank">Generate Robot Framework resources</a> &mdash; typed keywords on top of QConnectBase, one <code>.resource</code> per service</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/architecture.html" target="_blank">Architecture</a> &mdash; hexagonal layers, Consul, Nomad, gRPC reflection</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/runtime_model.html" target="_blank">Runtime model</a> &mdash; <code>ServiceRunner</code> lifecycle and dynamic invocation flow</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/changelog.html" target="_blank">Changelog</a> &mdash; what changed (RabbitMQ → gRPC, ProcessHub → Nomad, etc.)</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/PowerDeviceService/README.html" target="_blank">PowerDeviceService example</a> &mdash; canonical multi-service C++ monorepo with Qt client</li>
       </ul>
     </section>
 

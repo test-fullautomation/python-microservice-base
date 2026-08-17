@@ -2,5 +2,7 @@
   "pythonPath": "C:\\Program Files\\RobotFramework\\python3\\python.exe",
   "brokerHost": "",
   "brokerPort": "",
-  "bridgePort": ""
+  "bridgePort": "",
+  "consulPath": "D:\\Project\\TA\\Tools\\Consul\\v1_22_5\\consul.exe",
+  "nomadPath": "D:\\Project\\TA\\Tools\\Nomad\\1_11_2\\nomad.exe"
 }

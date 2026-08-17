@@ -1,0 +1,22 @@
+#include <iostream>
+#include "MicroserviceBase/ServiceRunner.h"
+
+#include "Settings.h"
+#include "domain/@@{svc_pascal}.h"
+#include "adapters/api/@@{svc_pascal}GrpcAdapter.h"
+
+int main() {
+    try {
+        @@{svc_snake}::Settings settings;
+        @@{svc_snake}::@@{svc_pascal} domain;
+        @@{svc_snake}::@@{svc_pascal}GrpcAdapter adapter(domain);
+
+        microservice_base::ServiceRunner runner(settings, {"v1"});
+        runner.addService(&adapter, "@@{proto_package}.@@{svc_pascal}");
+        runner.serveForever();
+    } catch (const std::exception& e) {
+        std::cerr << "FATAL: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}

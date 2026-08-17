@@ -1,0 +1,14 @@
+            case @@{idx}: {
+                grpc::ClientContext ctx;
+                @@{inT} req;
+@@{setters}
+                auto reader = stub.@@{method}(&ctx, req);
+                @@{outT} resp;
+                int n = 0;
+                while (reader->Read(&resp)) {
+                    std::cout << "  @@{method} [" << n++ << "] = " << @@{print_expr} << "\n";
+                }
+                auto st = reader->Finish();
+                std::cout << "  @@{method}: " << (st.ok() ? "done" : st.error_message()) << "\n";
+                break;
+            }

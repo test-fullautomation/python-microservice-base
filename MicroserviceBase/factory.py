@@ -28,12 +28,31 @@
 #
 # *******************************************************************************
 
+# Legacy transports (RabbitMQ / EventBus) are optional dependencies.  The new
+# gRPC/Consul runtime does not need them.  Try-import so a missing `pika` or
+# `eventbusclient` does not break every user of MicroserviceBase.
 from .adapters.config.rabbitmq_config import RabbitMQConfig
 from .adapters.config.eventbus_config import EventBusConfig
-from .adapters.transport.rabbitmq_adapter import RabbitMQTransportAdapter
-from .adapters.transport.eventbus_adapter import EventBusTransportAdapter
-from .adapters.registry.amqp_registry_adapter import AMQPRegistryAdapter
-from .adapters.registry.eventbus_registry_adapter import EventBusRegistryAdapter
+
+try:
+    from .adapters.transport.rabbitmq_adapter import RabbitMQTransportAdapter
+except ImportError:
+    RabbitMQTransportAdapter = None  # type: ignore[assignment]
+
+try:
+    from .adapters.transport.eventbus_adapter import EventBusTransportAdapter
+except ImportError:
+    EventBusTransportAdapter = None  # type: ignore[assignment]
+
+try:
+    from .adapters.registry.amqp_registry_adapter import AMQPRegistryAdapter
+except ImportError:
+    AMQPRegistryAdapter = None  # type: ignore[assignment]
+
+try:
+    from .adapters.registry.eventbus_registry_adapter import EventBusRegistryAdapter
+except ImportError:
+    EventBusRegistryAdapter = None  # type: ignore[assignment]
 
 
 def create_transport(transport_type='rabbitmq', cmd_args=None, service_name='Service',
@@ -74,11 +93,20 @@ Create a TransportPort implementation.
   A connected TransportPort instance.
    """
    if transport_type == 'rabbitmq':
+      if RabbitMQTransportAdapter is None:
+         raise ImportError(
+             "RabbitMQ transport requires 'pika'. Install it with: pip install pika"
+         )
       config = RabbitMQConfig.from_cmd_args(cmd_args, service_name=service_name)
       adapter = RabbitMQTransportAdapter(config)
       adapter.connect()
       return adapter
    elif transport_type == 'eventbus':
+      if EventBusTransportAdapter is None:
+         raise ImportError(
+             "EventBus transport requires 'eventbusclient'. "
+             "Install it with: pip install eventbusclient"
+         )
       config = EventBusConfig(config_path=config_path)
       adapter = EventBusTransportAdapter(config)
       adapter.connect()
@@ -131,9 +159,18 @@ Create a ServiceRegistryPort implementation.
   A ServiceRegistryPort instance.
    """
    if transport_type == 'rabbitmq':
+      if AMQPRegistryAdapter is None:
+         raise ImportError(
+             "RabbitMQ registry requires 'pika'. Install it with: pip install pika"
+         )
       config = RabbitMQConfig.from_cmd_args(cmd_args, service_name=service_name)
       return AMQPRegistryAdapter(config, update_exchange_name=update_exchange_name)
    elif transport_type == 'eventbus':
+      if EventBusRegistryAdapter is None:
+         raise ImportError(
+             "EventBus registry requires 'eventbusclient'. "
+             "Install it with: pip install eventbusclient"
+         )
       config = EventBusConfig(config_path=config_path)
       return EventBusRegistryAdapter(config, update_exchange_name=update_exchange_name)
    else:

@@ -43,6 +43,118 @@ from ...ports.ui_bridge import UIBridgePort
 logger = logging.getLogger(__name__)
 
 
+def _open_agent_log_file(agent_name):
+   """Open a size-rotated on-disk log file for a managed agent.
+
+   The bridge's existing in-memory log buffer (``bridge._<name>_agent_log``)
+   is bounded at 500 lines and lost on bridge restart.  This helper tees
+   the same output into a persistent rotating log file under the user's
+   per-app data directory so users can:
+
+     - go back to long-past output (the in-memory ring buffer wraps fast),
+     - attach the log to a bug report after a crash,
+     - inspect history after the bridge itself is restarted.
+
+   **Bounded disk usage** — uses :class:`logging.handlers.RotatingFileHandler`:
+
+     - 5 MB per file × 5 backups = **25 MB max per agent** on disk
+     - Total across both agents: ~50 MB worst-case
+     - Old runs survive bridge / agent restart (file is appended, not
+       truncated, with size-based rotation)
+     - Each new agent start writes a clear ``--- started ... ---`` marker
+       so you can find where each run begins inside the file
+
+   Files on disk:
+
+     - ``<name>_agent.log``       – current
+     - ``<name>_agent.log.1`` … ``.5`` – older rotated copies (newer = lower number)
+
+   Cross-platform location:
+
+     - Windows: ``%APPDATA%\\devatservgui\\logs\\``
+     - macOS:   ``~/Library/Logs/devatservgui/``
+     - Linux:   ``$XDG_STATE_HOME/devatservgui/logs/`` (default
+                ``~/.local/state/devatservgui/logs/``)
+
+   Returns ``(write_fn, close_fn, path_str)``:
+
+     - ``write_fn(line)`` – call once per captured line
+     - ``close_fn()``     – call when the agent's stdout closes; releases the file handle
+     - ``path_str``       – absolute path to the current log file (for the GUI)
+
+   On failure (disk full, permission denied, etc.) returns
+   ``(None, None, None)`` — the agent still starts, the in-memory ring
+   buffer is the fallback, and the start endpoint does not fail just
+   because logging to disk did not work.
+   """
+   import sys
+   import logging.handlers
+   from pathlib import Path
+   from datetime import datetime
+
+   try:
+      if sys.platform.startswith("win"):
+         base = Path(os.environ.get("APPDATA",
+                                    str(Path.home() / "AppData" / "Roaming")))
+         log_dir = base / "devatservgui" / "logs"
+      elif sys.platform == "darwin":
+         log_dir = Path.home() / "Library" / "Logs" / "devatservgui"
+      else:
+         base = Path(os.environ.get("XDG_STATE_HOME",
+                                    str(Path.home() / ".local" / "state")))
+         log_dir = base / "devatservgui" / "logs"
+
+      log_dir.mkdir(parents=True, exist_ok=True)
+      log_path = log_dir / f"{agent_name}_agent.log"
+
+      handler = logging.handlers.RotatingFileHandler(
+         str(log_path),
+         maxBytes=5 * 1024 * 1024,   # 5 MB per file
+         backupCount=5,              # 5 rotated copies → 25 MB total per agent
+         encoding="utf-8",
+      )
+      handler.setFormatter(logging.Formatter("%(message)s"))
+
+      agent_logger = logging.getLogger(f"msb.agent.{agent_name}")
+      agent_logger.setLevel(logging.INFO)
+      agent_logger.propagate = False
+      # Strip any handler from a previous run before adding the new one,
+      # otherwise restarting the agent leaks file handles.
+      for h in list(agent_logger.handlers):
+         agent_logger.removeHandler(h)
+         try:
+            h.close()
+         except Exception:
+            pass
+      agent_logger.addHandler(handler)
+
+      # Run marker — makes individual agent runs distinguishable inside
+      # a rotating file that spans many runs.
+      agent_logger.info(
+         "--- %s agent run started %s ---",
+         agent_name,
+         datetime.now().isoformat(timespec="seconds"),
+      )
+
+      def _write(line):
+         try:
+            agent_logger.info(line)
+         except Exception:
+            pass
+
+      def _close():
+         try:
+            agent_logger.removeHandler(handler)
+            handler.close()
+         except Exception:
+            pass
+
+      return _write, _close, str(log_path)
+   except Exception as exc:
+      logger.warning("Could not open %s log file: %s", agent_name, exc)
+      return None, None, None
+
+
 def _validate_safe_name(name: str) -> None:
    """
 Reject names that could escape the intended directory.
@@ -121,10 +233,24 @@ Build the FastAPI application with all routes.
 
       app = FastAPI(title="MicroserviceBase UI Bridge")
 
+      # NOTE on allow_credentials: it is deliberately False (the default).
+      #
+      # `allow_origins=["*"]` together with `allow_credentials=True` is
+      # invalid per the CORS spec -- a browser refuses to honour
+      # `Access-Control-Allow-Origin: *` on a credentialed request -- so
+      # the credentialed path never actually worked. It also made every
+      # origin on the machine able to drive an API that starts/stops
+      # Consul and Nomad agents and writes files via the scaffold
+      # generator (CodeQL: overly permissive CORS, CWE-942).
+      #
+      # The bridge has no cookie/session/bearer auth and the GUI never
+      # sends `credentials:` on fetch(), so dropping the flag changes no
+      # working behaviour. The wildcard origin is kept because the GUI
+      # legitimately calls in from `file://` (Electron, which sends
+      # `Origin: null`) as well as from the bridge's own HTTP origin.
       app.add_middleware(
          CORSMiddleware,
          allow_origins=["*"],
-         allow_credentials=True,
          allow_methods=["*"],
          allow_headers=["*"],
       )
@@ -186,6 +312,78 @@ Return the installed MicroserviceBase package version.
          except importlib.metadata.PackageNotFoundError:
             version = "unknown"
          return {"version": version}
+
+      @app.get("/api/system/network-interfaces")
+      def get_network_interfaces():
+         """
+List local IPv4 interfaces with friendly labels.
+
+Powers the Consul/Nomad agent setup forms in the GUI: instead of
+asking the user to type a bind IP, the form populates a dropdown
+from this endpoint.  Returns loopback first, then private NICs,
+then the catch-all 0.0.0.0; each entry has a human-readable
+``name`` (e.g. "Ethernet", "Wi-Fi", "vEthernet (WSL)") and the
+``ip`` to pass as ``-bind``.
+
+Returns:
+   {
+     "interfaces": [
+       {"name": "Loopback",         "ip": "127.0.0.1", "kind": "loopback"},
+       {"name": "Ethernet",         "ip": "10.4.5.6",  "kind": "private"},
+       {"name": "Wi-Fi",            "ip": "192.168.1.42", "kind": "private"},
+       {"name": "vEthernet (WSL)",  "ip": "172.23.16.1",  "kind": "private"},
+       {"name": "All interfaces",   "ip": "0.0.0.0",   "kind": "any"}
+     ]
+   }
+
+On systems without ``psutil`` available the endpoint returns only
+the loopback + all-interfaces entries (safe fallback).
+         """
+         import socket
+         loopback_entry  = {"name": "Loopback", "ip": "127.0.0.1", "kind": "loopback"}
+         any_entry       = {"name": "All interfaces", "ip": "0.0.0.0", "kind": "any"}
+         nic_entries     = []
+
+         try:
+            import psutil
+            addrs = psutil.net_if_addrs()
+            for if_name, snic_list in addrs.items():
+               for snic in snic_list:
+                  if snic.family != socket.AF_INET:
+                     continue
+                  ip = snic.address
+                  if not ip or ip == "127.0.0.1":
+                     continue
+                  # Mark which interfaces look private vs link-local vs other.
+                  # 172.16.0.0/12 = 172.16.0.0 .. 172.31.255.255
+                  parts = ip.split(".")
+                  is_172_private = (
+                     len(parts) == 4
+                     and parts[0] == "172"
+                     and parts[1].isdigit()
+                     and 16 <= int(parts[1]) <= 31
+                  )
+                  if ip.startswith(("10.", "192.168.")) or is_172_private:
+                     kind = "private"
+                  elif ip.startswith("169.254."):
+                     kind = "link-local"
+                  else:
+                     kind = "public"
+                  nic_entries.append({
+                     "name": if_name,
+                     "ip": ip,
+                     "kind": kind,
+                  })
+            # Stable ordering: private first, then link-local, then public.
+            order = {"private": 0, "link-local": 1, "public": 2}
+            nic_entries.sort(key=lambda e: (order.get(e["kind"], 9), e["name"]))
+         except ImportError:
+            # psutil missing — return just the safe defaults.
+            pass
+         except Exception as exc:
+            logger.warning("Failed to enumerate NICs: %s", exc)
+
+         return {"interfaces": [loopback_entry] + nic_entries + [any_entry]}
 
       @app.get("/api/services")
       def get_services():
@@ -682,6 +880,79 @@ Forward a request to the FleetWebAPI.
          nomad_path: str = "nomad"      # path to nomad binary
          extra_args: list = []
 
+      # ---- Agent PID file management (survives bridge restarts) ----
+      #
+      # Same pattern as Electron's bridge PID file: write a PID when we
+      # spawn an agent, read it back to detect still-running agents
+      # after a bridge restart, kill by PID when stopping.
+
+      def _agent_pid_path(name: str) -> str:
+         """Return the path to the PID file for a managed agent."""
+         import tempfile
+         return os.path.join(tempfile.gettempdir(), f'msbase_{name}_agent.pid')
+
+      def _save_agent_pid(name: str, pid: int, url: str = ''):
+         """Write PID + URL to a file so we can find the agent after restart."""
+         try:
+            with open(_agent_pid_path(name), 'w') as f:
+               f.write(f'{pid}\n{url}\n')
+         except Exception:
+            pass
+
+      def _load_agent_pid(name: str):
+         """Read saved PID + URL.  Returns (pid, url) or (None, None)."""
+         try:
+            with open(_agent_pid_path(name), 'r') as f:
+               lines = f.read().strip().split('\n')
+               pid = int(lines[0]) if lines else None
+               url = lines[1].strip() if len(lines) > 1 else ''
+               return pid, url
+         except Exception:
+            return None, None
+
+      def _remove_agent_pid(name: str):
+         try:
+            os.remove(_agent_pid_path(name))
+         except Exception:
+            pass
+
+      def _is_pid_alive(pid: int) -> bool:
+         """Check if a process with the given PID is still running."""
+         if pid is None:
+            return False
+         try:
+            import psutil
+            return psutil.pid_exists(pid)
+         except ImportError:
+            # Fallback without psutil
+            try:
+               os.kill(pid, 0)
+               return True
+            except (OSError, ProcessLookupError):
+               return False
+
+      def _kill_pid(pid: int) -> bool:
+         """Kill a process by PID.  Returns True if successfully killed."""
+         if pid is None:
+            return False
+         try:
+            import psutil
+            proc = psutil.Process(pid)
+            proc.terminate()
+            try:
+               proc.wait(timeout=10)
+            except psutil.TimeoutExpired:
+               proc.kill()
+            return True
+         except Exception:
+            # Fallback
+            try:
+               import signal
+               os.kill(pid, signal.SIGTERM)
+               return True
+            except Exception:
+               return False
+
       def _get_nomad_agent():
          """Get the managed Nomad agent subprocess info."""
          if not hasattr(bridge, '_nomad_agent_proc'):
@@ -691,7 +962,7 @@ Forward a request to the FleetWebAPI.
 
       @app.post("/api/nomad/agent/start")
       def nomad_agent_start(body: NomadAgentStartBody):
-         import subprocess, shutil, threading
+         import subprocess, shutil, threading, socket
 
          # Check if already running
          proc = _get_nomad_agent()
@@ -699,6 +970,26 @@ Forward a request to the FleetWebAPI.
             return {"success": False,
                     "message": "Nomad agent already running (PID %d)" % proc.pid,
                     "pid": proc.pid}
+
+         # Pre-check: is the HTTP port already taken?
+         def _probe(host: str, port: int) -> bool:
+            probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.3)
+            try:
+               return s.connect_ex((probe_host, port)) == 0
+            except Exception:
+               return False
+            finally:
+               s.close()
+
+         if _probe("127.0.0.1", body.http_port):
+            return {"success": False,
+                    "message": (
+                        "Port %d is already in use. "
+                        "Either stop the process currently using it, or "
+                        "choose a different HTTP port in the Advanced section."
+                    ) % body.http_port}
 
          # Find nomad binary
          nomad_bin = body.nomad_path or 'nomad'
@@ -737,20 +1028,36 @@ Forward a request to the FleetWebAPI.
          logger.info('Starting Nomad agent: %s', ' '.join(args))
          bridge._nomad_agent_log = []
 
+         # Suppress the console window on Windows so the agent runs as a
+         # background process.  Output still flows through the pipe so the
+         # GUI's "Show log" feature keeps working.  POSIX has no equivalent
+         # — agents don't get a window there anyway.
+         spawn_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "bufsize": 1,
+         }
+         if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
          try:
-            proc = subprocess.Popen(
-               args,
-               stdout=subprocess.PIPE,
-               stderr=subprocess.STDOUT,
-               text=True,
-               bufsize=1,
-            )
+            proc = subprocess.Popen(args, **spawn_kwargs)
          except Exception as e:
             return {"success": False, "message": "Failed to start: %s" % e}
 
          bridge._nomad_agent_proc = proc
+         nomad_url = 'http://127.0.0.1:%d' % body.http_port
+         _save_agent_pid('nomad', proc.pid, nomad_url)
 
-         # Background thread to capture log output
+         # Open the rotated persistent log file for this run.  Returns
+         # (None, None, None) on failure — in-memory ring buffer is the
+         # fallback.  Disk usage capped at 25 MB total (5 MB × 5 backups).
+         nomad_log_write, nomad_log_close, nomad_log_path = \
+            _open_agent_log_file('nomad')
+         bridge._nomad_agent_log_path = nomad_log_path
+
+         # Background thread to capture log output (in-memory ring buffer
+         # + rotated persistent log file if open).
          def _read_output():
             max_lines = 500
             try:
@@ -759,8 +1066,13 @@ Forward a request to the FleetWebAPI.
                   bridge._nomad_agent_log.append(line)
                   if len(bridge._nomad_agent_log) > max_lines:
                      bridge._nomad_agent_log = bridge._nomad_agent_log[-max_lines:]
+                  if nomad_log_write is not None:
+                     nomad_log_write(line)
             except Exception:
                pass
+            finally:
+               if nomad_log_close is not None:
+                  nomad_log_close()
 
          t = threading.Thread(target=_read_output, daemon=True,
                               name='nomad-agent-log')
@@ -778,39 +1090,73 @@ Forward a request to the FleetWebAPI.
 
          return {"success": True, "pid": proc.pid,
                  "message": "Nomad agent started (PID %d)" % proc.pid,
-                 "nomad_url": nomad_url}
+                 "nomad_url": nomad_url,
+                 "log_file": nomad_log_path}
 
       @app.post("/api/nomad/agent/stop")
       def nomad_agent_stop():
          proc = _get_nomad_agent()
-         if not proc or proc.poll() is not None:
-            bridge._nomad_agent_proc = None
-            return {"success": True, "message": "Nomad agent not running"}
 
-         pid = proc.pid
-         logger.info('Stopping Nomad agent (PID %d)', pid)
-         try:
-            proc.terminate()
+         # Try subprocess handle first (same-session agent).
+         if proc and proc.poll() is None:
+            pid = proc.pid
+            logger.info('Stopping Nomad agent via handle (PID %d)', pid)
             try:
-               proc.wait(timeout=10)
-            except Exception:
-               proc.kill()
-         except Exception as e:
-            return {"success": False,
-                    "message": "Failed to stop PID %d: %s" % (pid, e)}
+               proc.terminate()
+               try:
+                  proc.wait(timeout=10)
+               except Exception:
+                  proc.kill()
+            except Exception as e:
+               return {"success": False,
+                       "message": "Failed to stop PID %d: %s" % (pid, e)}
+            bridge._nomad_agent_proc = None
+            _remove_agent_pid('nomad')
+            return {"success": True,
+                    "message": "Nomad agent stopped (PID %d)" % pid}
 
          bridge._nomad_agent_proc = None
-         return {"success": True,
-                 "message": "Nomad agent stopped (PID %d)" % pid}
+
+         # Handle lost (bridge restarted) — try saved PID file.
+         saved_pid, _ = _load_agent_pid('nomad')
+         if saved_pid and _is_pid_alive(saved_pid):
+            logger.info('Stopping Nomad agent via saved PID %d', saved_pid)
+            if _kill_pid(saved_pid):
+               _remove_agent_pid('nomad')
+               return {"success": True,
+                       "message": "Nomad agent stopped (PID %d)" % saved_pid}
+            else:
+               return {"success": False,
+                       "message": "Failed to kill PID %d" % saved_pid}
+
+         _remove_agent_pid('nomad')
+         return {"success": True, "message": "Nomad agent not running"}
 
       @app.get("/api/nomad/agent/status")
       def nomad_agent_status():
          proc = _get_nomad_agent()
          running = proc is not None and proc.poll() is None
+         pid = proc.pid if running else None
+         nomad_url = getattr(bridge, '_nomad_url', None)
+
+         # After a bridge restart the subprocess handle is lost.
+         # Check the saved PID file to find the still-running agent.
+         if not running:
+            saved_pid, saved_url = _load_agent_pid('nomad')
+            if saved_pid and _is_pid_alive(saved_pid):
+               running = True
+               pid = saved_pid
+               if saved_url:
+                  nomad_url = saved_url
+                  bridge._nomad_url = saved_url
+            else:
+               # PID file is stale — clean it up.
+               _remove_agent_pid('nomad')
+
          return {
             "running": running,
-            "pid": proc.pid if running else None,
-            "nomad_url": getattr(bridge, '_nomad_url', None),
+            "pid": pid,
+            "nomad_url": nomad_url,
          }
 
       @app.get("/api/nomad/agent/log")
@@ -850,20 +1196,129 @@ Forward a request to the FleetWebAPI.
 
       @app.get("/api/nomad/health")
       def nomad_health():
+         """Return ``{ok, ...}`` to match the shape of /api/consul/health.
+
+         The infra status pills in the GUI check ``data.ok``; returning
+         ``status`` alone (as an older version did) caused the LED to
+         always show red even when Nomad was healthy.
+         """
          nc = _get_nomad_client()
          if not nc:
-            # Auto-configure from env or default
+            # Auto-configure from env or default so the first GUI load
+            # after a fresh bridge start can still detect a running agent.
             url = os.environ.get('NOMAD_ADDR', 'http://127.0.0.1:4646')
             nc = _ensure_nomad(url)
          if not nc:
-            return {"status": "not configured"}
+            return {"ok": False, "error": "not configured",
+                    "nomad_url": getattr(bridge, '_nomad_url', None)}
          try:
             info = nc.agent_self()
-            member = info.get('member', {})
-            return {"status": "ok", "server": member.get('Name', ''),
-                    "address": bridge._nomad_url}
+            member = info.get('member', {}) or {}
+            config = info.get('config', {}) or {}
+            return {
+               "ok": True,
+               "server": member.get('Name', ''),
+               "version": config.get('Version', '') or
+                          (info.get('stats', {}) or {}).get('client', {}).get('node_id', ''),
+               "nomad_url": getattr(bridge, '_nomad_url', None),
+            }
          except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {"ok": False, "error": str(e),
+                    "nomad_url": getattr(bridge, '_nomad_url', None)}
+
+      @app.get("/api/nomad/discover")
+      def nomad_discover():
+         """Find running Nomad agents by enumerating local processes.
+
+         Uses :mod:`psutil` to list processes whose name starts with
+         ``nomad`` and their listening TCP sockets.  A Nomad agent opens
+         three ports (HTTP 4646, RPC 4647, Serf 4648 by default), but only
+         the HTTP one responds to ``/v1/agent/self`` — we probe each
+         candidate listening port and report the ones that do.
+
+         Returns:
+            {"instances": [
+                {"url": "...", "host": "...", "port": N, "pid": N,
+                 "name": "...", "version": "...", "datacenter": "...",
+                 "server": bool, "exe": "..."}, ...
+             ]}
+         """
+         import urllib.request, urllib.error
+         try:
+            import psutil
+         except ImportError:
+            return {"instances": [],
+                    "error": "psutil not installed on the bridge Python"}
+
+         found: list = []
+         seen: set = set()
+
+         for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
+            try:
+               pname = (proc.info.get('name') or '').lower()
+               # Match ``nomad`` or ``nomad.exe`` but not ``nomad-client``
+               # that's some unrelated binary.  Nomad's own binary is
+               # always exactly ``nomad`` / ``nomad.exe``.
+               base = pname.rsplit('.', 1)[0]
+               if base != 'nomad':
+                  continue
+
+               try:
+                  conns = proc.net_connections(kind='tcp')
+               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  continue
+
+               for c in conns:
+                  if c.status != psutil.CONN_LISTEN:
+                     continue
+                  if not c.laddr:
+                     continue
+                  ip = c.laddr.ip or '127.0.0.1'
+                  port = c.laddr.port
+                  # Reach ``0.0.0.0``/``::`` via 127.0.0.1 locally.
+                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+                  key = (probe_host, port)
+                  if key in seen:
+                     continue
+                  seen.add(key)
+
+                  # Only the HTTP port answers /v1/agent/self; RPC and
+                  # Serf will fast-reject.  Use a short timeout.
+                  url = "http://%s:%d" % (probe_host, port)
+                  try:
+                     req = urllib.request.Request(url + '/v1/agent/self')
+                     with urllib.request.urlopen(req, timeout=1.5) as resp:
+                        info = json.loads(resp.read().decode('utf-8'))
+                  except Exception:
+                     continue
+
+                  member = info.get('member', {}) or {}
+                  config = info.get('config', {}) or {}
+                  stats  = info.get('stats',  {}) or {}
+                  is_server = bool((config.get('Server') or {}).get('Enabled')) \
+                              or ('runtime' in stats and 'nomad' in stats)
+
+                  found.append({
+                     "url":        url,
+                     "host":       probe_host,
+                     "port":       port,
+                     "pid":        proc.pid,
+                     "exe":        proc.info.get('exe') or '',
+                     "name":       member.get('Name', ''),
+                     "version":    config.get('Version', '') or
+                                   member.get('Tags', {}).get('build', ''),
+                     "datacenter": (config.get('Datacenter') or
+                                    member.get('Tags', {}).get('dc') or ''),
+                     "server":     is_server,
+                  })
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+               continue
+            except Exception:
+               # Don't let one bad process break the whole scan.
+               continue
+
+         return {"instances": found}
 
       @app.get("/api/nomad/jobs")
       def nomad_list_jobs():
@@ -918,6 +1373,66 @@ Forward a request to the FleetWebAPI.
          except Exception as e:
             return {"success": False, "message": str(e)}
 
+      class NomadSubmitJobBody(BaseModel):
+         """Payload for POST /api/nomad/jobs/submit.
+
+         The user pastes either raw HCL or a full job JSON (what Nomad's
+         /v1/jobs expects, with the top-level ``{"Job": {...}}`` wrapper OR
+         just the inner job dict).  Format is selected by ``content_type``.
+         """
+         content: str = ""
+         content_type: str = "hcl"   # "hcl" or "json"
+         canonicalize: bool = True
+
+      @app.post("/api/nomad/jobs/submit")
+      def nomad_submit_job(body: NomadSubmitJobBody):
+         """Parse + register a Nomad job from HCL or JSON.
+
+         On success returns the EvalID (same as ``nomad job run``).  On
+         failure returns ``{success: false, stage: "parse"|"register",
+         message: "..."}``.
+         """
+         nc = _get_nomad_client()
+         if not nc:
+            return {"success": False, "stage": "client",
+                    "message": "Nomad not configured. Start an agent first."}
+
+         if not body.content.strip():
+            return {"success": False, "stage": "input",
+                    "message": "Empty job content."}
+
+         # -- Step 1: obtain a job dict -------------------------------------
+         job_spec = None
+         try:
+            if body.content_type.lower() == "hcl":
+               job_spec = nc.parse_hcl(body.content,
+                                       canonicalize=body.canonicalize)
+            else:
+               parsed = json.loads(body.content)
+               # Accept both {"Job": {...}} and the bare job dict.
+               if isinstance(parsed, dict) and "Job" in parsed:
+                  job_spec = parsed["Job"]
+               else:
+                  job_spec = parsed
+         except Exception as e:
+            return {"success": False, "stage": "parse",
+                    "message": f"Failed to parse job: {e}"}
+
+         if not isinstance(job_spec, dict):
+            return {"success": False, "stage": "parse",
+                    "message": "Parsed job is not an object."}
+
+         # -- Step 2: register ----------------------------------------------
+         try:
+            result = nc.register_job(job_spec)
+            return {"success": True,
+                    "job_id": job_spec.get("ID") or job_spec.get("Name") or "",
+                    "eval_id": result.get("EvalID", ""),
+                    "warnings": result.get("Warnings", "")}
+         except Exception as e:
+            return {"success": False, "stage": "register",
+                    "message": f"Failed to register job: {e}"}
+
       @app.get("/api/nomad/jobs/{job_id}/logs")
       def nomad_get_logs(job_id: str, type: str = "stdout"):
          nc = _get_nomad_client()
@@ -940,6 +1455,680 @@ Forward a request to the FleetWebAPI.
                     "alloc_id": alloc_id, "task": task_name}
          except Exception as e:
             return {"name": job_id, "log": f"(error: {e})"}
+
+      # =====================================================================
+      # Consul agent management & service discovery
+      # =====================================================================
+      #
+      # Mirror of the Nomad agent endpoints above.  Consul is the service
+      # registry used by the new gRPC-based runtime; services register
+      # themselves on startup and the GUI discovers them via these endpoints.
+
+      class ConsulAgentStartBody(BaseModel):
+         mode: str = "dev"               # "dev" or "config"
+         # Default is 127.0.0.1 (single safe interface) so dev-mode startup
+         # never trips the "Multiple private IPv4 addresses found" error
+         # on machines with VPN / Docker / WSL / VirtualBox interfaces.
+         # Override to 0.0.0.0 for cluster mode — advertise is auto-added.
+         bind_addr: str = "127.0.0.1"
+         http_port: int = 8500
+         datacenter: str = "dc1"
+         node_name: str = ""
+         config_dir: str = ""            # path to config directory (.hcl/.json)
+         data_dir: str = ""              # data directory
+         consul_path: str = "consul"     # path to consul binary
+         extra_args: list = []
+
+      def _get_consul_agent():
+         """Get the managed Consul agent subprocess info."""
+         if not hasattr(bridge, '_consul_agent_proc'):
+            bridge._consul_agent_proc = None
+            bridge._consul_agent_log = []
+         return bridge._consul_agent_proc
+
+      def _port_in_use(host: str, port: int) -> bool:
+         """Return True if TCP ``port`` on ``host`` is already listening.
+
+         Used to pre-check Consul/Nomad HTTP ports so we can return a clear
+         error message instead of spawning an agent that dies immediately.
+         """
+         import socket
+         probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+         s.settimeout(0.3)
+         try:
+            result = s.connect_ex((probe_host, port))
+            return result == 0  # 0 => port accepted the connection
+         except Exception:
+            return False
+         finally:
+            s.close()
+
+      @app.post("/api/consul/agent/start")
+      def consul_agent_start(body: ConsulAgentStartBody):
+         import subprocess, shutil, threading, time
+
+         proc = _get_consul_agent()
+         if proc and proc.poll() is None:
+            return {"success": False,
+                    "message": "Consul agent already running (PID %d)" % proc.pid,
+                    "pid": proc.pid}
+
+         # Pre-check: is the HTTP port already taken by *something*?
+         if _port_in_use("127.0.0.1", body.http_port):
+            return {"success": False,
+                    "message": (
+                        "Port %d is already in use. "
+                        "Either stop the process currently using it, or "
+                        "choose a different HTTP port in the Advanced section."
+                    ) % body.http_port}
+
+         consul_bin = body.consul_path or 'consul'
+         resolved = shutil.which(consul_bin)
+         if not resolved:
+            return {"success": False,
+                    "message": "Consul binary not found: '%s'. "
+                               "Install from https://developer.hashicorp.com/consul/install" % consul_bin}
+
+         args = [resolved, 'agent']
+         if body.mode == 'dev':
+            args.append('-dev')
+            if body.bind_addr:
+               args.extend(['-bind', body.bind_addr])
+               # Consul on a multi-NIC host (VPN, Docker, etc.) refuses to
+               # start with -bind 0.0.0.0 and no -advertise: it can't pick
+               # which IP to gossip to peers.  For dev mode we don't peer,
+               # so 127.0.0.1 is always a safe advertise default.
+               if body.bind_addr == '0.0.0.0':
+                  args.extend(['-advertise', '127.0.0.1'])
+            if body.node_name:
+               args.extend(['-node', body.node_name])
+            if body.datacenter != 'dc1':
+               args.extend(['-datacenter', body.datacenter])
+            if body.http_port != 8500:
+               args.extend(['-http-port', str(body.http_port)])
+         else:
+            # Config mode — expects a directory containing .hcl/.json files.
+            if body.config_dir:
+               args.extend(['-config-dir', body.config_dir])
+            if body.data_dir:
+               args.extend(['-data-dir', body.data_dir])
+            if body.bind_addr:
+               args.extend(['-bind', body.bind_addr])
+               if body.bind_addr == '0.0.0.0':
+                  # Same disambiguation as dev mode.  In real cluster
+                  # configs the operator should set -advertise (or the
+                  # equivalent in HCL) explicitly to a routable IP.
+                  args.extend(['-advertise', '127.0.0.1'])
+            if body.node_name:
+               args.extend(['-node', body.node_name])
+            if body.datacenter != 'dc1':
+               args.extend(['-datacenter', body.datacenter])
+            if body.http_port != 8500:
+               args.extend(['-http-port', str(body.http_port)])
+
+         for arg in (body.extra_args or []):
+            args.append(str(arg))
+
+         logger.info('Starting Consul agent: %s', ' '.join(args))
+         bridge._consul_agent_log = []
+
+         # Suppress the console window on Windows so the agent runs as a
+         # background process.  Output still flows through the pipe so the
+         # GUI's "Show log" feature keeps working.  POSIX has no equivalent
+         # — agents don't get a window there anyway.
+         spawn_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "bufsize": 1,
+         }
+         if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+         try:
+            proc = subprocess.Popen(args, **spawn_kwargs)
+         except Exception as e:
+            return {"success": False, "message": "Failed to start: %s" % e}
+
+         bridge._consul_agent_proc = proc
+         consul_url_val = 'http://127.0.0.1:%d' % body.http_port
+         _save_agent_pid('consul', proc.pid, consul_url_val)
+
+         # Open the rotated persistent log file for this run.  Returns
+         # (None, None, None) on failure — in-memory ring buffer is the
+         # fallback.  Disk usage capped at 25 MB total (5 MB × 5 backups).
+         consul_log_write, consul_log_close, consul_log_path = \
+            _open_agent_log_file('consul')
+         bridge._consul_agent_log_path = consul_log_path
+
+         def _read_output():
+            max_lines = 500
+            try:
+               for line in proc.stdout:
+                  line = line.rstrip('\n')
+                  bridge._consul_agent_log.append(line)
+                  if len(bridge._consul_agent_log) > max_lines:
+                     bridge._consul_agent_log = bridge._consul_agent_log[-max_lines:]
+                  if consul_log_write is not None:
+                     consul_log_write(line)
+            except Exception:
+               pass
+            finally:
+               if consul_log_close is not None:
+                  consul_log_close()
+
+         threading.Thread(target=_read_output, daemon=True,
+                          name='consul-agent-log').start()
+
+         # Give the agent a moment to either bind the port or fail.  If it
+         # already exited, surface the captured log tail as the error — much
+         # friendlier than letting the GUI retry for 12 seconds.
+         time.sleep(1.0)
+         if proc.poll() is not None:
+            bridge._consul_agent_proc = None
+            log_tail = '\n'.join(bridge._consul_agent_log[-15:])
+            return {"success": False,
+                    "message": (
+                        "Consul agent exited immediately (code %d). "
+                        "Last log lines:\n%s"
+                    ) % (proc.returncode, log_tail or "(no output)"),
+                    "log": log_tail,
+                    "log_file": consul_log_path}
+
+         consul_url = 'http://127.0.0.1:%d' % body.http_port
+         bridge._consul_url = consul_url
+
+         return {"success": True, "pid": proc.pid,
+                 "message": "Consul agent started (PID %d)" % proc.pid,
+                 "consul_url": consul_url,
+                 "log_file": consul_log_path}
+
+      @app.post("/api/consul/agent/stop")
+      def consul_agent_stop():
+         proc = _get_consul_agent()
+
+         if proc and proc.poll() is None:
+            pid = proc.pid
+            logger.info('Stopping Consul agent via handle (PID %d)', pid)
+            try:
+               proc.terminate()
+               try:
+                  proc.wait(timeout=10)
+               except Exception:
+                  proc.kill()
+            except Exception as e:
+               return {"success": False,
+                       "message": "Failed to stop PID %d: %s" % (pid, e)}
+            bridge._consul_agent_proc = None
+            _remove_agent_pid('consul')
+            return {"success": True,
+                    "message": "Consul agent stopped (PID %d)" % pid}
+
+         bridge._consul_agent_proc = None
+
+         saved_pid, _ = _load_agent_pid('consul')
+         if saved_pid and _is_pid_alive(saved_pid):
+            logger.info('Stopping Consul agent via saved PID %d', saved_pid)
+            if _kill_pid(saved_pid):
+               _remove_agent_pid('consul')
+               return {"success": True,
+                       "message": "Consul agent stopped (PID %d)" % saved_pid}
+            else:
+               return {"success": False,
+                       "message": "Failed to kill PID %d" % saved_pid}
+
+         _remove_agent_pid('consul')
+         return {"success": True, "message": "Consul agent not running"}
+
+      @app.get("/api/consul/agent/status")
+      def consul_agent_status():
+         proc = _get_consul_agent()
+         running = proc is not None and proc.poll() is None
+         pid = proc.pid if running else None
+         consul_url = getattr(bridge, '_consul_url', None)
+
+         if not running:
+            saved_pid, saved_url = _load_agent_pid('consul')
+            if saved_pid and _is_pid_alive(saved_pid):
+               running = True
+               pid = saved_pid
+               if saved_url:
+                  consul_url = saved_url
+                  bridge._consul_url = saved_url
+            else:
+               _remove_agent_pid('consul')
+
+         return {
+            "running": running,
+            "pid": pid,
+            "consul_url": consul_url,
+         }
+
+      @app.get("/api/consul/agent/log")
+      def consul_agent_log(tail: int = 100):
+         logs = getattr(bridge, '_consul_agent_log', [])
+         lines = logs[-tail:] if len(logs) > tail else logs
+         return {"log": '\n'.join(lines)}
+
+      # ---- Consul HTTP API proxy ----
+      #
+      # Simple pass-through so the browser does not need CORS handling.
+      # Uses urllib (stdlib) to avoid a new dependency.
+
+      def _consul_url():
+         return getattr(bridge, '_consul_url', None) or 'http://127.0.0.1:8500'
+
+      class ConsulConfigBody(BaseModel):
+         consul_url: str = ""
+
+      @app.post("/api/consul/config")
+      def consul_config(body: ConsulConfigBody):
+         """Set the bridge-side Consul HTTP URL.
+
+         Used by the GUI to restore its configured Consul endpoint after a
+         bridge restart (the URL is kept in memory only, so it's lost on
+         kill).  Passing an empty string resets to the default.
+         """
+         if body.consul_url:
+            bridge._consul_url = body.consul_url.rstrip('/')
+         else:
+            if hasattr(bridge, '_consul_url'):
+               delattr(bridge, '_consul_url')
+         return {"ok": True, "consul_url": _consul_url()}
+
+      def _resolve_consul_url(override: str = "") -> str:
+         """Return the Consul base URL to use.
+
+         If *override* is provided (from a ``?consul=...`` query param) it
+         wins.  Otherwise fall back to the bridge's in-memory default.
+         """
+         if override:
+            return override.rstrip('/')
+         return _consul_url().rstrip('/')
+
+      def _consul_get(path: str, consul: str = ""):
+         """Proxy GET to a Consul HTTP API path.
+
+         Every /api/consul/* endpoint accepts an optional ``consul`` query
+         param so the GUI can talk to multiple Consul clusters at once
+         without the bridge holding state for each one.
+         """
+         import urllib.request, urllib.error
+         url = _resolve_consul_url(consul) + path
+         try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+               body = resp.read().decode('utf-8')
+               return json.loads(body) if body else None
+         except urllib.error.URLError as e:
+            return {"_error": str(e)}
+         except Exception as e:
+            return {"_error": str(e)}
+
+      @app.get("/api/consul/health")
+      def consul_health(consul: str = ""):
+         """Probe Consul by calling /v1/status/leader."""
+         import urllib.request, urllib.error
+         base = _resolve_consul_url(consul)
+         url = base + '/v1/status/leader'
+         try:
+            with urllib.request.urlopen(url, timeout=3) as resp:
+               leader = resp.read().decode('utf-8').strip('"')
+               return {"ok": True, "leader": leader, "consul_url": base}
+         except Exception as e:
+            return {"ok": False, "error": str(e), "consul_url": base}
+
+      @app.get("/api/consul/services")
+      def consul_services(consul: str = ""):
+         """List all services registered in Consul.  Returns the raw
+         {service_name: [tags...]} map from /v1/catalog/services."""
+         data = _consul_get('/v1/catalog/services', consul=consul)
+         return data or {}
+
+      @app.get("/api/consul/services/{name}")
+      def consul_service_detail(name: str, consul: str = "", passing: bool = False):
+         """Return instances of a service.
+
+         When ``passing=true`` is passed, Consul filters to only healthy
+         instances.  Default is now ``false`` so the GUI can read the
+         Checks array and compute a per-service status (green/yellow/red)
+         for the sidebar indicator.
+         """
+         path = '/v1/health/service/%s' % name
+         if passing:
+            path += '?passing=true'
+         data = _consul_get(path, consul=consul)
+         return data or []
+
+      @app.get("/api/consul/nodes")
+      def consul_nodes(consul: str = ""):
+         data = _consul_get('/v1/catalog/nodes', consul=consul)
+         return data or []
+
+      @app.get("/api/consul/discover")
+      def consul_discover():
+         """Find running Consul agents by enumerating local processes.
+
+         Uses :mod:`psutil` to find processes whose name is exactly
+         ``consul`` and probes each of their listening TCP ports with
+         ``GET /v1/status/leader`` — only the HTTP API port answers,
+         the Serf/RPC/DNS ports fast-reject.
+
+         Returns:
+            {"instances": [
+                {"url": "...", "host": "...", "port": N, "pid": N,
+                 "leader": "...", "datacenter": "...", "server": bool,
+                 "version": "...", "node_name": "..."}, ...
+             ]}
+         """
+         import urllib.request, urllib.error
+         try:
+            import psutil
+         except ImportError:
+            return {"instances": [],
+                    "error": "psutil not installed on the bridge Python"}
+
+         found: list = []
+         seen: set = set()
+
+         for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
+            try:
+               pname = (proc.info.get('name') or '').lower()
+               base = pname.rsplit('.', 1)[0]
+               if base != 'consul':
+                  continue
+
+               try:
+                  conns = proc.net_connections(kind='tcp')
+               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  continue
+
+               for c in conns:
+                  if c.status != psutil.CONN_LISTEN:
+                     continue
+                  if not c.laddr:
+                     continue
+                  ip = c.laddr.ip or '127.0.0.1'
+                  port = c.laddr.port
+                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+                  key = (probe_host, port)
+                  if key in seen:
+                     continue
+                  seen.add(key)
+
+                  url = "http://%s:%d" % (probe_host, port)
+                  leader = None
+                  try:
+                     req = urllib.request.Request(url + '/v1/status/leader')
+                     with urllib.request.urlopen(req, timeout=1.0) as resp:
+                        leader = resp.read().decode('utf-8').strip('"')
+                  except Exception:
+                     continue
+
+                  # Supplementary agent info (version, datacenter, node,
+                  # server mode) — if /v1/agent/self fails we still keep
+                  # the instance because /v1/status/leader already proved
+                  # it's Consul HTTP.
+                  meta = {}
+                  try:
+                     req2 = urllib.request.Request(url + '/v1/agent/self')
+                     with urllib.request.urlopen(req2, timeout=1.5) as resp2:
+                        info = json.loads(resp2.read().decode('utf-8'))
+                     cfg = info.get('Config') or info.get('config') or {}
+                     meta = {
+                        "version":    cfg.get('Version') or cfg.get('version') or '',
+                        "datacenter": cfg.get('Datacenter') or cfg.get('datacenter') or '',
+                        "node_name":  cfg.get('NodeName') or cfg.get('nodeName') or '',
+                        "server":     bool(cfg.get('Server') or cfg.get('server') or False),
+                     }
+                  except Exception:
+                     meta = {"version": "", "datacenter": "",
+                             "node_name": "", "server": False}
+
+                  found.append({
+                     "url":        url,
+                     "host":       probe_host,
+                     "port":       port,
+                     "pid":        proc.pid,
+                     "exe":        proc.info.get('exe') or '',
+                     "leader":     leader or '',
+                     **meta,
+                  })
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+               continue
+            except Exception:
+               continue
+
+         return {"instances": found}
+
+      # =====================================================================
+      # Dynamic gRPC method discovery and invocation
+      # =====================================================================
+      #
+      # The GUI needs to list the methods of any gRPC service registered in
+      # Consul and call them, without knowing the proto ahead of time.  We
+      # do this via the gRPC server-reflection protocol, which
+      # ServiceRunner enables automatically for every MicroserviceBase
+      # service.
+
+      def _find_service_target(consul_name: str, consul: str = ""):
+         """Look up a service in Consul and return its (host, port, meta) or None."""
+         data = _consul_get('/v1/health/service/%s?passing=true' % consul_name,
+                            consul=consul)
+         if not data or not isinstance(data, list) or len(data) == 0:
+            return None
+         svc = (data[0] or {}).get('Service', {}) or {}
+         host = svc.get('Address') or '127.0.0.1'
+         port = svc.get('Port') or 0
+         meta = svc.get('Meta') or {}
+         return host, port, meta
+
+      def _proto_search_paths(extra: list = None) -> list:
+         """Resolve the search paths used to find .proto files when the
+         server doesn't ship reflection.
+
+         When *extra* contains any non-empty path (typically a user-typed
+         override from the GUI), those paths are returned **exclusively** —
+         the env var ``MB_PROTO_SEARCH_PATH`` and the built-in
+         ``examples/`` / ``SampleServices/`` fallbacks are skipped.
+         Reason: when the user has explicitly picked a folder, mixing in
+         broad fallbacks invites protoc to slurp in build artefacts
+         (``build/vcpkg_installed/.../google/protobuf/any.proto`` and
+         friends) where the same well-known type is declared in multiple
+         dirs, which protoc rejects with exit code 1.
+
+         When *extra* is empty, we fall back to env var + defaults — the
+         unconfigured discovery path for users who haven't picked a
+         folder yet.
+         """
+         import os
+         explicit = []
+         for p in (extra or []):
+            p = (p or "").strip()
+            if p and p not in explicit:
+               explicit.append(p)
+         if explicit:
+            return explicit
+
+         paths = []
+         raw = os.environ.get("MB_PROTO_SEARCH_PATH", "")
+         for p in raw.split(os.pathsep):
+            p = (p or "").strip()
+            if p and p not in paths:
+               paths.append(p)
+         # Sensible defaults — common locations for generated scaffolds.
+         here = os.path.dirname(os.path.abspath(__file__))
+         repo_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+         for default in [
+            os.path.join(repo_root, "examples"),
+            os.path.join(repo_root, "SampleServices"),
+         ]:
+            if os.path.isdir(default) and default not in paths:
+               paths.append(default)
+         return paths
+
+      def _open_grpc_client(target: str, consul_name: str = "",
+                             proto_path: str = ""):
+         """Try server reflection first; on UNIMPLEMENTED, fall back to
+         compiling local .proto files.
+
+         *proto_path*: optional caller-supplied search dir (e.g. typed
+         into the GUI).  Joined with ``MB_PROTO_SEARCH_PATH`` + defaults.
+
+         Returns ``(client, source)`` where ``source`` is one of:
+            * ``"reflection"``           — server-side reflection worked
+            * ``"local_proto:<paths>"``  — compiled from disk
+         Raises :class:`GrpcReflectError` if both paths fail.
+         """
+         from ..grpc_bridge import (
+            GrpcReflectClient, GrpcReflectError, LocalProtoClient,
+         )
+         import logging as _lg
+
+         # Probe reflection with a cheap list_services() so we detect
+         # UNIMPLEMENTED before the caller commits to a specific service.
+         client = GrpcReflectClient(target)
+         try:
+            client.list_services()
+            return client, "reflection"
+         except GrpcReflectError as exc:
+            if not exc.is_unimplemented:
+               client.close()
+               raise
+            client.close()
+            _lg.getLogger(__name__).info(
+               "Reflection UNIMPLEMENTED on %s; falling back to local proto files",
+               target,
+            )
+
+         # Fallback — compile local .protos.  GUI-supplied path wins.
+         extra = [proto_path] if proto_path else []
+         search_paths = _proto_search_paths(extra=extra)
+         try:
+            local = LocalProtoClient.from_search_paths(target, search_paths)
+            return local, "local_proto:" + os.pathsep.join(search_paths)
+         except GrpcReflectError as exc:
+            hint = ("Set MB_PROTO_SEARCH_PATH or use the in-GUI proto-path "
+                    "field to point at a folder containing your service's "
+                    ".proto file, or rebuild the server with "
+                    "grpc++_reflection enabled.")
+            raise GrpcReflectError(
+               "Reflection unavailable on %s and no .proto files matched "
+               "in search paths (%s).  %s  Underlying: %s"
+               % (target, search_paths or "<empty>", hint, exc)
+            ) from exc
+
+      @app.get("/api/grpc/services/{consul_name}")
+      def grpc_list_methods(consul_name: str, consul: str = "",
+                             proto_path: str = ""):
+         """Enumerate gRPC services/methods for a Consul-registered service.
+
+         Returns:
+            {
+              "target": "host:port",
+              "discovery_source": "reflection" | "local_proto:...",
+              "grpc_services": [
+                {
+                  "name": "hello.v1.HelloService",
+                  "methods": [
+                    {"name": "Greet", "input_type": "...", "output_type": "...",
+                     "input_fields": [...], "input_skeleton": {...},
+                     "client_streaming": false, "server_streaming": false},
+                    ...
+                  ]
+                }
+              ]
+            }
+         """
+         from ..grpc_bridge import GrpcReflectError
+         import os
+
+         target_info = _find_service_target(consul_name, consul=consul)
+         if target_info is None:
+            return {"error": "Service '%s' not found in Consul" % consul_name}
+
+         host, port, meta = target_info
+         target = "%s:%d" % (host, port)
+
+         advertised = [s.strip() for s in
+                        (meta.get('grpc_services') or '').split(',')
+                        if s.strip()]
+
+         try:
+            client, source = _open_grpc_client(target, consul_name,
+                                                proto_path=proto_path)
+         except GrpcReflectError as e:
+            return {"target": target, "error": str(e)}
+
+         with client:
+            try:
+               # If reflection worked, prefer Consul-advertised names.
+               # If we fell back to local protos, the local pool is the
+               # source of truth — its list_services() is authoritative.
+               if source == "reflection" and advertised:
+                  service_names = advertised
+               else:
+                  service_names = client.list_services()
+            except GrpcReflectError as e:
+               return {"target": target, "discovery_source": source,
+                       "error": str(e)}
+
+            out = []
+            for name in service_names:
+               try:
+                  methods = client.list_methods(name)
+                  out.append({"name": name, "methods": methods})
+               except GrpcReflectError as e:
+                  out.append({"name": name, "error": str(e)})
+
+         return {"target": target, "discovery_source": source,
+                 "grpc_services": out}
+
+      class GrpcCallBody(BaseModel):
+         consul_name: str
+         grpc_service: str
+         method: str
+         args_json: str = "{}"
+         consul: str = ""
+         proto_path: str = ""   # GUI-supplied proto search dir; used as
+                                # an additional search path for the
+                                # LocalProtoClient fallback.
+
+      @app.post("/api/grpc/call")
+      def grpc_call(body: GrpcCallBody):
+         """Invoke a unary gRPC method and return the JSON response."""
+         from ..grpc_bridge import GrpcReflectError
+
+         target_info = _find_service_target(body.consul_name, consul=body.consul)
+         if target_info is None:
+            return {"ok": False,
+                    "error": "Service '%s' not found in Consul" % body.consul_name}
+         host, port, _ = target_info
+         target = "%s:%d" % (host, port)
+
+         try:
+            client, source = _open_grpc_client(target, body.consul_name,
+                                                proto_path=body.proto_path)
+         except GrpcReflectError as e:
+            return {"ok": False, "target": target, "error": str(e)}
+
+         try:
+            with client:
+               envelope = client.call_method(
+                   body.grpc_service, body.method, body.args_json or "{}"
+               )
+            # call_method returns either:
+            #   {"streaming": False, "result": <dict>}
+            #   {"streaming": True,  "events": [...], "truncated": bool, "error"?: str}
+            return {"ok": True, "target": target,
+                    "discovery_source": source, **envelope}
+         except GrpcReflectError as e:
+            return {"ok": False, "target": target,
+                    "discovery_source": source, "error": str(e)}
+         except Exception as e:
+            return {"ok": False, "target": target,
+                    "discovery_source": source,
+                    "error": "%s: %s" % (type(e).__name__, e)}
 
       # ---- Service Scaffolding endpoint ----
 
@@ -1327,6 +2516,401 @@ Generate scaffolding for a new microservice project.
                "filename": folder_name + ".zip"
             }
 
+      # ---- New scaffold generator (v2 — multi-language, multi-GUI) ----
+
+      class ScaffoldV2MethodParam(BaseModel):
+         name: str = ""
+         type: str = "string"
+         required: bool = True
+         description: str = ""
+
+      class ScaffoldV2Method(BaseModel):
+         name: str = ""
+         params: List[ScaffoldV2MethodParam] = []
+         return_type: str = "string"
+         description: str = ""
+         server_streaming: bool = False
+         input_type: str = ""    # fully-qualified proto type (imported protos)
+         output_type: str = ""   # fully-qualified proto type (imported protos)
+
+      class ScaffoldV2Service(BaseModel):
+         """One service block inside a multi-service scaffold (monorepo or
+         multi_proto layout)."""
+         name: str = ""
+         methods: List[ScaffoldV2Method] = []
+         # multi_proto-only: per-service .proto filename and verbatim text.
+         # When set, the generator writes proto/<proto_file> with this
+         # exact content (preserves comments / imports / packages).
+         # Empty in monorepo mode.
+         proto_file: str = ""
+         proto_content: str = ""
+
+      class ScaffoldV2Request(BaseModel):
+         service_name: str
+         version: str = "1.0.0"
+         description: str = ""
+         short_desc: str = ""
+         group: str = ""
+         tag: str = ""
+         language: str = "python"       # "python" | "cpp"
+         gui_type: str = "none"         # "none" | "html" | "qml" | "wasm" | "widget"
+         client_grpc_kind: str = "google"  # "google" | "qt" | "google_vcpkg" — only used when gui_type != "none".
+         server_grpc_kind: str = "msys2"   # "msys2" | "vcpkg" — toolchain the server is built with. Independent of client.
+         gen_nomad: bool = True
+         gen_build_scripts: bool = True
+         gen_readme: bool = True
+         gen_stubs: bool = True
+         vcpkg_root: str = ""
+         protoc_path: str = ""
+         grpc_plugin_path: str = ""
+         nomad_dc: str = "dc1"
+         nomad_driver: str = "raw_exec"
+         nomad_command: str = ""
+         nomad_cpu: int = 100
+         nomad_mem: int = 128
+         nomad_consul_addr: str = "http://127.0.0.1:8500"
+         methods: List[ScaffoldV2Method] = []
+         output_path: str = ""
+         proto_content_override: str = ""   # if non-empty, written verbatim to proto/<sn>.proto
+         monorepo: bool = False             # when true, emit one project with N executables
+         layout: str = ""                   # ""|"monorepo"|"multi_proto" - explicit layout
+                                            # selector.  Takes precedence over `monorepo`
+                                            # (kept for back-compat).  multi_proto = N
+                                            # services in 1 binary; needs per-service
+                                            # proto_file + proto_content.
+         services: List[ScaffoldV2Service] = []  # for monorepo / multi_proto
+         proto_package: str = ""            # real .proto `package X;` when importing
+
+      class ParseProtoRequest(BaseModel):
+         proto_content: str
+
+      @app.post("/api/scaffold/parse-proto")
+      def scaffold_parse_proto(body: ParseProtoRequest):
+         """Parse a .proto file via protoc and return services/methods/params.
+
+         Used by the Service Creator wizard's "Import .proto..." button.
+         Returns a list of services (user picks one in the UI if > 1).
+         """
+         import os
+         import tempfile
+         try:
+            from grpc_tools import protoc as grpc_protoc
+            from google.protobuf import descriptor_pb2
+         except ImportError:
+            return {"status": "error",
+                    "error": "grpc_tools / protobuf not installed on the bridge."}
+
+         if not body.proto_content.strip():
+            return {"status": "error", "error": "Empty .proto content."}
+
+         # Scalar types the wizard + generated GUI know how to handle.
+         _SCALAR = {
+            1:  "double",   2:  "float",    3:  "int64",    4:  "uint64",
+            5:  "int32",    6:  "fixed64",  7:  "fixed32",  8:  "bool",
+            9:  "string",   12: "bytes",    13: "uint32",
+            15: "sfixed32", 16: "sfixed64", 17: "sint32",   18: "sint64",
+         }
+         TYPE_MESSAGE = 11
+         TYPE_ENUM = 14
+
+         warnings = []
+         with tempfile.TemporaryDirectory() as tmpdir:
+            proto_path = os.path.join(tmpdir, "_import.proto")
+            desc_path = os.path.join(tmpdir, "_import.pb")
+            with open(proto_path, "w", encoding="utf-8") as f:
+               f.write(body.proto_content)
+
+            rc = grpc_protoc.main([
+               "grpc_tools.protoc",
+               f"--proto_path={tmpdir}",
+               f"--descriptor_set_out={desc_path}",
+               proto_path,
+            ])
+            if rc != 0:
+               return {"status": "error",
+                       "error": "protoc rejected the .proto (see bridge logs)."}
+
+            with open(desc_path, "rb") as f:
+               fds = descriptor_pb2.FileDescriptorSet()
+               fds.ParseFromString(f.read())
+
+         if not fds.file:
+            return {"status": "error", "error": "Empty descriptor — no file parsed."}
+
+         file_desc = fds.file[0]
+         # Index all messages in the file by short name (no leading dot) so
+         # we can resolve method input/output types.
+         msgs = {m.name: m for m in file_desc.message_type}
+
+         def _extract_fields(msg_name: str):
+            """Return list of {name, type} dicts for all fields in msg_name."""
+            msg = msgs.get(msg_name)
+            if msg is None:
+               warnings.append(f"Message '{msg_name}' not found in this file "
+                               f"(imports are not resolved).")
+               return []
+            out = []
+            for fld in msg.field:
+               if fld.label == 3:   # LABEL_REPEATED
+                  warnings.append(
+                     f"Field '{msg_name}.{fld.name}' is repeated — "
+                     f"generated GUI won't support lists.")
+               if fld.type == TYPE_MESSAGE or fld.type == TYPE_ENUM:
+                  warnings.append(
+                     f"Field '{msg_name}.{fld.name}' is a "
+                     f"{'nested message' if fld.type == TYPE_MESSAGE else 'enum'} — "
+                     f"not supported in generated GUI.")
+                  out.append({"name": fld.name, "type": "string"})
+               else:
+                  out.append({"name": fld.name, "type": _SCALAR.get(fld.type, "string")})
+            return out
+
+         def _first_field_type(msg_name: str) -> str:
+            msg = msgs.get(msg_name)
+            if not msg or not msg.field:
+               return "string"
+            f0 = msg.field[0]
+            return _SCALAR.get(f0.type, "string")
+
+         def _strip_pkg(qualified: str) -> str:
+            # protoc emits ".pkg.sub.MsgName"; strip package prefix.
+            return qualified.rsplit(".", 1)[-1]
+
+         services = []
+         for svc in file_desc.service:
+            methods = []
+            for m in svc.method:
+               input_short  = _strip_pkg(m.input_type)
+               output_short = _strip_pkg(m.output_type)
+               # Fully-qualified types (descriptor names begin with a dot).
+               input_fqn  = m.input_type.lstrip(".")
+               output_fqn = m.output_type.lstrip(".")
+               if m.client_streaming:
+                  warnings.append(
+                     f"Method '{svc.name}.{m.name}' uses client streaming — "
+                     f"generated GUI only supports unary and server-streaming.")
+               methods.append({
+                  "name": m.name,
+                  "input_type": input_fqn,            # e.g. "device.ChannelRequest"
+                  "output_type": output_fqn,          # e.g. "device.ChannelCountResponse"
+                  "params": _extract_fields(input_short),
+                  "return_type": _first_field_type(output_short),
+                  "server_streaming": bool(m.server_streaming),
+                  "description": "",
+               })
+            services.append({
+               "name": svc.name,
+               "methods": methods,
+            })
+
+         if not services:
+            return {"status": "error",
+                    "error": "No 'service' block found in the .proto."}
+
+         return {
+            "status": "ok",
+            "proto_package": file_desc.package,
+            "services": services,
+            "warnings": warnings,
+         }
+
+      class GenerateRobotResourcesRequest(BaseModel):
+         proto_dir: str
+         out_dir: str = ""              # empty = caller writes the files
+         services: list = []            # empty = all
+         force: bool = False            # overwrite existing files in out_dir
+
+      @app.post("/api/scaffold/robot")
+      def scaffold_generate_robot(body: GenerateRobotResourcesRequest):
+         """Generate Robot Framework resource files from a .proto folder.
+
+         When ``out_dir`` is non-empty, writes the resources to disk and
+         returns ``{written, skipped}`` lists.  When empty, returns
+         ``{files: {relpath: content}}`` so the caller can persist them.
+
+         See :mod:`MicroserviceBase.adapters.scaffold.robot_tmpl`.
+         """
+         from ..scaffold.robot_tmpl import (
+            RobotGenError, generate_robot_resources,
+         )
+         logger.info("[robot-gen] request proto_dir=%r out_dir=%r services=%r force=%s",
+                     body.proto_dir, body.out_dir, body.services, body.force)
+         try:
+            files = generate_robot_resources(
+               body.proto_dir,
+               service_filter=body.services or None,
+            )
+         except RobotGenError as exc:
+            # Expected failure path (bad input, protoc rejected the proto,
+            # etc.).  Logged at WARNING so it shows up in launcher.log
+            # without the noise of a traceback.
+            logger.warning("[robot-gen] %s", exc)
+            return {"status": "error", "error": str(exc)}
+         except Exception as exc:    # noqa: BLE001
+            # Unexpected failure — log with full traceback so post-mortem
+            # via launcher.log has everything.  The HTTP response still
+            # carries just the type+message.
+            logger.exception("[robot-gen] unexpected failure: %s", exc)
+            return {"status": "error",
+                    "error": f"Unexpected failure: {type(exc).__name__}: {exc}\n"
+                             f"(Full traceback in the bridge log — "
+                             f"Bridge -> Show log in the navbar.)"}
+
+         if not body.out_dir:
+            return {"status": "ok", "files": files}
+
+         import os
+         out_abs = os.path.abspath(body.out_dir)
+         os.makedirs(out_abs, exist_ok=True)
+         written, skipped = [], []
+         for relpath, content in files.items():
+            target = os.path.join(out_abs, relpath)
+            if os.path.exists(target) and not body.force:
+               skipped.append(target)
+               continue
+            with open(target, "w", encoding="utf-8", newline="\n") as fh:
+               fh.write(content)
+            written.append(target)
+         return {"status": "ok", "written": written, "skipped": skipped,
+                 "out_dir": out_abs}
+
+      @app.post("/api/scaffold/generate-v2")
+      def scaffold_generate_v2(body: ScaffoldV2Request):
+         """Generate scaffolding for a new microservice (v2 — Python/C++, multi-GUI)."""
+         from ..scaffold import generate_scaffold, ScaffoldSpec
+         from ..scaffold.generator import MethodSpec, MethodParam, ServiceBlock
+
+         try:
+            _validate_safe_name(body.service_name)
+         except ValueError as exc:
+            return {"status": "error", "error": str(exc)}
+
+         # Resolve effective layout.  Explicit `layout` takes precedence;
+         # `monorepo: true` is the legacy form.  Multi_proto requires per-
+         # service proto_file + proto_content, so the JS wizard sets it
+         # explicitly when the user picked >1 .proto files.
+         effective_layout = body.layout
+         if not effective_layout:
+            effective_layout = "monorepo" if body.monorepo else ""
+
+         # Convert services list (used by both monorepo and multi_proto) into
+         # ServiceBlock dataclasses.  multi_proto entries also carry
+         # proto_file + proto_content.
+         mono_services = []
+         if effective_layout in ("monorepo", "multi_proto") and body.services:
+            for svc in body.services:
+               try:
+                  _validate_safe_name(svc.name)
+               except ValueError as exc:
+                  return {"status": "error",
+                          "error": f"Invalid service name '{svc.name}': {exc}"}
+               mono_services.append(ServiceBlock(
+                  name=svc.name,
+                  methods=[
+                     MethodSpec(
+                        name=m.name,
+                        params=[MethodParam(name=p.name, type=p.type,
+                                            required=p.required, description=p.description)
+                                for p in m.params],
+                        return_type=m.return_type,
+                        description=m.description,
+                        server_streaming=m.server_streaming,
+                        input_type=m.input_type,
+                        output_type=m.output_type,
+                     )
+                     for m in svc.methods
+                  ],
+                  proto_file=svc.proto_file,
+                  proto_content=svc.proto_content,
+               ))
+
+         spec = ScaffoldSpec(
+            service_name=body.service_name,
+            version=body.version,
+            description=body.description,
+            short_desc=body.short_desc,
+            group=body.group,
+            tag=body.tag,
+            language=body.language,
+            gui_type=body.gui_type,
+            client_grpc_kind=body.client_grpc_kind,
+            server_grpc_kind=body.server_grpc_kind,
+            gen_nomad=body.gen_nomad,
+            gen_build_scripts=body.gen_build_scripts,
+            gen_readme=body.gen_readme,
+            gen_stubs=body.gen_stubs,
+            vcpkg_root=body.vcpkg_root,
+            protoc_path=body.protoc_path,
+            grpc_plugin_path=body.grpc_plugin_path,
+            nomad_dc=body.nomad_dc,
+            nomad_driver=body.nomad_driver,
+            nomad_command=body.nomad_command,
+            nomad_cpu=body.nomad_cpu,
+            nomad_mem=body.nomad_mem,
+            nomad_consul_addr=body.nomad_consul_addr,
+            methods=[
+               MethodSpec(
+                  name=m.name,
+                  params=[MethodParam(name=p.name, type=p.type,
+                                      required=p.required, description=p.description)
+                          for p in m.params],
+                  return_type=m.return_type,
+                  description=m.description,
+                  server_streaming=m.server_streaming,
+                  input_type=m.input_type,
+                  output_type=m.output_type,
+               )
+               for m in body.methods
+            ],
+            proto_content_override=body.proto_content_override,
+            proto_package_override=body.proto_package,
+            services=mono_services,
+            layout=effective_layout or "monorepo",
+         )
+
+         try:
+            file_map = generate_scaffold(spec)
+         except Exception as exc:
+            logger.error("Scaffold generation error: %s", exc, exc_info=True)
+            return {"status": "error", "error": str(exc)}
+
+         folder_name = body.service_name
+
+         if body.output_path:
+            target_dir = os.path.join(body.output_path, folder_name)
+            real_target = os.path.realpath(target_dir)
+            try:
+               for rel_path, content in file_map.items():
+                  full_path = os.path.join(target_dir, rel_path)
+                  real_full = os.path.realpath(full_path)
+                  if not real_full.startswith(real_target + os.sep) and real_full != real_target:
+                     return {"status": "error", "error": f"Unsafe path: {rel_path!r}"}
+                  os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                  with open(full_path, 'w', encoding='utf-8') as f:
+                     f.write(content)
+               logger.info("Scaffold v2 written to %s (%d files)",
+                           target_dir, len(file_map))
+               return {"status": "ok", "path": target_dir,
+                       "file_count": len(file_map),
+                       "files": sorted(file_map.keys())}
+            except Exception as exc:
+               logger.error("Scaffold v2 write error: %s", exc, exc_info=True)
+               return {"status": "error", "error": str(exc)}
+         else:
+            import io
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+               for rel_path, content in file_map.items():
+                  zf.writestr(folder_name + '/' + rel_path, content)
+            zip_data = base64.b64encode(buf.getvalue()).decode('ascii')
+            return {
+               "status": "ok",
+               "zip_data": zip_data,
+               "filename": folder_name + ".zip",
+               "file_count": len(file_map),
+               "files": sorted(file_map.keys()),
+            }
+
       # Mount static files for the GUI web application
       gui_path = os.path.join(
          os.path.dirname(__file__), '..', '..',
@@ -1381,10 +2965,26 @@ Start the FastAPI server in a background thread.
 Run uvicorn in its own thread with a dedicated event loop.
       """
       import uvicorn
+      import logging
 
       loop = asyncio.new_event_loop()
       asyncio.set_event_loop(loop)
       self._server_loop = loop
+
+      # Silence the uvicorn access log for the high-frequency background
+      # polls from the GUI (BridgeControl every 3s, InfraStatus every 5s).
+      # They're all 200 OK and would otherwise flood launcher.log.
+      class _NoisyPollFilter(logging.Filter):
+         _QUIET = (
+            'GET /api/version',
+            'GET /api/consul/health',
+            'GET /api/nomad/health',
+         )
+         def filter(self, record):
+            msg = record.getMessage()
+            return not any(p in msg for p in self._QUIET)
+
+      logging.getLogger('uvicorn.access').addFilter(_NoisyPollFilter())
 
       config = uvicorn.Config(
          self._app,

@@ -1,0 +1,52 @@
+// client.cpp — gRPC client for @@{service_name} using ServiceClient<T>.
+//
+// Usage:
+//   @@{snake_name}_client @@{snake_name}                  # all RPCs via Consul
+//   @@{snake_name}_client @@{snake_name} <Method> <args>  # specific RPC
+//   @@{snake_name}_client --direct host:port    # no Consul
+
+#include <iostream>
+#include <string>
+#include <grpcpp/grpcpp.h>
+#include "@@{snake_name}.grpc.pb.h"
+#include "MicroserviceBase/ServiceClient.h"
+
+using @@{proto_namespace}::@@{grpc_name};
+
+int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        std::cerr << "Usage: @@{snake_name}_client <service_name|--direct host:port> [method] [args...]" << std::endl;
+        return 1;
+    }
+
+    std::string arg1 = argv[1];
+    std::unique_ptr<microservice_base::ServiceClient<@@{grpc_name}>> client;
+
+    try {
+        if (arg1 == "--direct") {
+            if (argc < 3) { std::cerr << "Missing host:port" << std::endl; return 1; }
+            client = std::make_unique<microservice_base::ServiceClient<@@{grpc_name}>>(
+                "@@{snake_name}", argv[2], true);
+            std::cout << "Connected directly to " << client->target() << std::endl;
+        } else {
+            client = std::make_unique<microservice_base::ServiceClient<@@{grpc_name}>>(arg1);
+            std::cout << "Resolved " << arg1 << " via Consul -> "
+                      << client->target() << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Connection failed: " << e.what() << std::endl;
+        return 1;
+    }
+
+    auto& stub = client->stub();
+
+    // TODO: Add RPC calls here. Example:
+    // grpc::ClientContext ctx;
+    // @@{proto_namespace}::DoSomethingRequest req;
+    // req.set_input("test");
+    // @@{proto_namespace}::DoSomethingResponse resp;
+    // auto status = stub.DoSomething(&ctx, req, &resp);
+
+    std::cout << "Client ready. Add RPC calls to src/client.cpp." << std::endl;
+    return 0;
+}

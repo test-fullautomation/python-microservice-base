@@ -302,22 +302,35 @@ Start a local ProcessHub server.
         if sys.platform == "win32":
             import subprocess
             try:
+                # Run netstat directly and filter in Python rather than
+                # piping through findstr with shell=True. `port` is an int
+                # from internal state so it was not practically injectable,
+                # but a shell-interpolated command string is flagged as
+                # command injection (CodeQL, CWE-78) and the shell buys us
+                # nothing here.
                 out = subprocess.check_output(
-                    f'netstat -ano -p TCP | findstr "LISTENING" | findstr ":{port} "',
-                    shell=True, text=True,
+                    ["netstat", "-ano", "-p", "TCP"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
                 )
                 my_pid = os.getpid()
+                needle = f":{port}"
                 for line in out.strip().splitlines():
+                    if "LISTENING" not in line:
+                        continue
                     parts = line.split()
-                    if len(parts) >= 5:
-                        pid = int(parts[-1])
-                        if pid != my_pid and pid != 0:
-                            logger.info("Force-killing PID %d holding port %d", pid, port)
-                            subprocess.call(
-                                ["taskkill", "/F", "/PID", str(pid)],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL,
-                            )
+                    # Local address is parts[1]; match the port exactly so
+                    # :1112 does not also match :11120.
+                    if len(parts) < 5 or not parts[1].endswith(needle):
+                        continue
+                    pid = int(parts[-1])
+                    if pid != my_pid and pid != 0:
+                        logger.info("Force-killing PID %d holding port %d", pid, port)
+                        subprocess.call(
+                            ["taskkill", "/F", "/PID", str(pid)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
             except Exception:
                 logger.debug("_wait_for_port_free: kill failed for port %d", port, exc_info=True)
 

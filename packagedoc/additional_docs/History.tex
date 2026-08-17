@@ -18,6 +18,244 @@
 
 \section{History}
 
+\subsection{Version 2.1.0 - 11.05.2026}
+
+First minor release after the gRPC + Consul + Nomad migration shipped
+in 2.0.0.  Covers the Manager-GUI parity work, the Service Creator
+wizard upgrades, the installer modernisation, and the new Robot
+Framework test path.
+
+\subsubsection{Architecture migration to gRPC + Consul + Nomad}
+
+\begin{itemize}
+   \item \textbf{Transport}: RabbitMQ (custom request/response framing) replaced by
+         gRPC over HTTP/2 with protobuf payloads.
+   \item \textbf{Discovery}: in-process \texttt{ServiceRegistry} replaced by the
+         Consul service catalog (\texttt{/v1/health/service/...}).
+   \item \textbf{Orchestration}: custom Local Process Hub replaced by Nomad jobs
+         (\texttt{raw\_exec} driver) supervised by a Nomad agent.
+   \item \textbf{Routing}: routing keys + alias routing replaced by
+         fully-qualified gRPC service + method names.
+   \item \textbf{Topology}: per-service \texttt{deploy/<svc>.nomad.hcl} replaces the
+         single \texttt{hub\_processes.json} config.
+   \item Hexagonal architecture itself is unchanged --- the migration swapped
+         adapters, not domain code.
+\end{itemize}
+
+\subsubsection{New Architecture Decision Records (ADRs 023--029)}
+
+\begin{itemize}
+   \item \textbf{ADR-023}: Multi-node Consul cluster with serf gossip.
+   \item \textbf{ADR-024}: Multi-node Nomad cluster (server + N clients).
+   \item \textbf{ADR-025}: Wrapper layer for Nomad \texttt{raw\_exec} workloads
+         (PATH setup, env-var derivation, pre-flight checks).
+   \item \textbf{ADR-026}: \texttt{uv}-based Python service environments
+         (per-service venv, lockfile).
+   \item \textbf{ADR-027}: Kafka event bus alongside gRPC (sync = gRPC,
+         fan-out = Kafka).
+   \item \textbf{ADR-028}: gRPC + reflection as the canonical RPC layer
+         (consolidates the rationale scattered across the ADR-016/017/018
+         supersession callouts).
+   \item \textbf{ADR-029}: Robot Framework as the primary test client, via the
+         new \texttt{GrpcClient} connection type for QConnectBase.
+   \item Older ADRs (003, 010--012, 015--018, 020) carry visible
+         \emph{Superseded} or \emph{Archived} callout banners pointing at the
+         new ones.
+\end{itemize}
+
+\subsubsection{Service Creator wizard}
+
+\begin{itemize}
+   \item \textbf{Multi-proto layout}: one process hosting N gRPC services on
+         the same \texttt{ServerBuilder} / \texttt{grpc.aio.Server}, one Consul
+         registration, one port.  Best for one logical device with multiple
+         capability surfaces.
+   \item \textbf{Multi-file \texttt{.proto} import}: select N \texttt{.proto}
+         files at once; every service from every file gets loaded; layout
+         auto-defaults to \texttt{multi\_proto}.
+   \item \textbf{Three layout options} on the picker modal: \texttt{multi\_proto},
+         \texttt{monorepo} (one project, N entry points), \texttt{separate}
+         (N independent project folders).  Inline layout selector also added on
+         Step 3 so users can flip without re-importing.
+   \item \textbf{New ``GUI Support'' wizard step} (Python + HTML/JS only) with
+         two tabs: a Schema Builder that emits \texttt{gui\_schema.json} (4
+         component types: Method Form, Result Table, Static Text, Live Status)
+         and a Custom HTML/JS editor with live preview and JS file upload.
+   \item \textbf{Server toolchain selector} on Step 2 (MSYS2 prebuilt vs.
+         vcpkg + Qt MinGW) independent of the client gRPC stack choice; mixed
+         configurations get inline warnings.
+   \item \textbf{Pre-generate proto stubs} on the bridge runs in-process via
+         \texttt{grpc\_tools.protoc}; failures now log clearly and the GUI
+         surfaces a yellow toast when stubs were requested but missing.
+   \item \textbf{Language-aware copy}: \texttt{.exe} references replaced by
+         language-appropriate wording (``Python entry point'' for Python,
+         \texttt{.exe} for C++).
+\end{itemize}
+
+\subsubsection{Generated services: full documentation}
+
+\begin{itemize}
+   \item Generated Python and C++ services now ship with QConnect-style
+         file headers (Apache copyright, File / Author / Date / Description
+         / History sections).  Author is the OS user's full display name
+         (\texttt{GetUserNameExW} on Windows, \texttt{pwd.pw\_gecos} on Linux);
+         date and history are stamped at generation time.
+   \item Per-method docstrings (Python: QConnect format with
+         \textbf{Arguments:} / \textbf{Returns:} blocks; C++: Doxygen
+         \texttt{@param} / \texttt{@return} blocks).
+   \item Class docstrings on Settings, Context, Domain, GrpcAdapter.
+   \item TODO-stub bodies in domain methods describe what the user should
+         document and that the default returns the literal string
+         \texttt{"not implemented"}.
+\end{itemize}
+
+\subsubsection{Manager GUI}
+
+\begin{itemize}
+   \item \textbf{Settings dialog}: new \emph{Service infrastructure} section
+         with Consul / Nomad executable path fields and OS file-picker
+         Browse buttons (Electron only).  Lookup priority documented inline:
+         this setting $\rightarrow$ \texttt{PATH} $\rightarrow$ default install location.
+   \item \textbf{Service Network mode}: Consul + Nomad dashboards (replaces
+         the legacy Fleet view).  Consul tab can start / stop / view-log a
+         managed dev-mode agent; same for Nomad.
+   \item \textbf{Bridge endpoints} added: \texttt{/api/consul/agent/start} +
+         \texttt{stop} + \texttt{status} + \texttt{log}; same for
+         \texttt{/api/nomad/agent/*}.  Each persists the spawned agent's PID
+         to a writable data dir for cross-restart reconnection.
+   \item \textbf{InfraStatus pills} in the navbar (Consul / Nomad / Bridge)
+         poll every 5 seconds; click jumps to the matching Service Network
+         tab.
+   \item \textbf{README + sidebar nav refresh}: documentation map moved from
+         the top of the README to the bottom (less intrusive for first-time
+         readers); per-page sidebar TOCs added.
+\end{itemize}
+
+\subsubsection{Installer modernisation (Windows + Linux)}
+
+\begin{itemize}
+   \item \textbf{NSIS}: new \emph{Infrastructure} wizard page detects Consul /
+         Nomad on \texttt{PATH}, in \texttt{\%ProgramFiles64\%\textbackslash HashiCorp\textbackslash},
+         in \texttt{\%LOCALAPPDATA\%\textbackslash Microsoft\textbackslash WinGet\textbackslash Links\textbackslash},
+         and in \texttt{WinGet\textbackslash Packages\textbackslash Hashicorp.*\textbackslash}
+         (\texttt{FindFirst} glob with named labels --- \texttt{+N} relative jumps
+         and \texttt{\$PROGRAMDATA} / \texttt{\$LOCALAPPDATA} replaced with
+         \texttt{ReadEnvStr} for portability across NSIS versions).
+   \item \textbf{Three install options} per tool: install via winget (pinned
+         versions \texttt{Consul 1.20.6} / \texttt{Nomad 1.9.6}), provide an
+         existing path, or skip.  Winget calls use \texttt{--source winget} +
+         \texttt{--silent --accept-*-agreements --disable-interactivity};
+         re-detect-on-failure handles ``already installed'' as success.
+   \item \textbf{Settings-JSON integration}: chosen Consul / Nomad paths
+         written to \texttt{settings.json} so the GUI's Service Network tab
+         can launch the agents without further configuration.
+   \item \textbf{Legacy install steps deactivated}: Erlang/OTP, RabbitMQ
+         Server, and ProcessHub install flows wrapped in
+         \texttt{ENABLE\_LEGACY\_BROKER} / \texttt{ENABLE\_LEGACY\_PROCESSHUB}
+         conditional-compile guards (default off; flip to 1 to re-enable).
+   \item \textbf{Linux}: new \texttt{bootstrap.sh} interactive script shipped
+         in \texttt{extraResources} for AppImage users, plus a \texttt{.deb}
+         postinst hook that launches it when stdin is a TTY.  Detects distro,
+         installs from HashiCorp's official apt / yum repos with version
+         pinning, falls back to release-tarball download.
+   \item \textbf{Installer size}: cut from \texttildelow 259 MB to \texttildelow 30--40 MB
+         compressed by excluding \texttt{examples/\_legacy/} (\texttildelow 393 MB
+         unpacked of pre-migration RabbitMQ-era templates), trimming
+         \texttt{dist-msys2/} and \texttt{deploy/} build artefacts, and
+         restricting Chromium locales to \texttt{en-US}.
+\end{itemize}
+
+\subsubsection{Robot Framework test path: QConnectBase \texttt{GrpcClient}}
+
+\begin{itemize}
+   \item New \texttt{QConnectBase/grpc/grpc\_client.py} contributed upstream
+         to QConnectBase.  Subclasses \texttt{ConnectionBase} and integrates
+         with the standard \texttt{Connect} / \texttt{Send Command} /
+         \texttt{Verify} / \texttt{Disconnect} keyword library.
+   \item Two addressing modes: direct (\texttt{target: host:port}) and
+         Consul-resolved (\texttt{service\_name + consul\_addr}, lazy import
+         of \texttt{MicroserviceBase.runtime.consul.resolve\_via\_consul}).
+   \item \texttt{wait\_4\_trace} overridden to ignore the regex
+         \texttt{search\_obj} (gRPC returns structured objects, not text
+         streams) and to return the response as a Python \texttt{dict}.
+         Tests assert content with Robot's built-in
+         \texttt{Should Be Equal} / \texttt{Dictionary Should Contain}.
+   \item Reflection client (\texttt{GrpcReflectClient}) with automatic
+         fallback to \texttt{LocalProtoClient} when the server lacks
+         \texttt{grpc++\_reflection} (e.g. C++ services built against the
+         vcpkg grpc port).
+\end{itemize}
+
+\subsubsection{C++ runtime as standalone CMake / vcpkg package}
+
+\begin{itemize}
+   \item \texttt{runtime\_cpp/CMakeLists.txt} now exports
+         \texttt{MicroserviceBaseConfig.cmake} +
+         \texttt{MicroserviceBaseTargets.cmake} via
+         \texttt{install(TARGETS ... EXPORT)}.  After
+         \texttt{cmake -{}-install}, generated services can
+         \texttt{find\_package(MicroserviceBase CONFIG REQUIRED)} from anywhere.
+   \item New vcpkg overlay-port at \texttt{ports/microservice-base/}.
+   \item Generator emits a hybrid CMake block: tries
+         \texttt{find\_package} first, falls back to
+         \texttt{add\_subdirectory(.../runtime\_cpp)} when the path resolves
+         (i.e.\ the service lives inside \texttt{<framework>/examples/}).
+   \item Three target names exported for back-compat:
+         \texttt{microservice\_base::runtime} (modern alias),
+         \texttt{microservice\_base::microservice\_base\_runtime} (vcpkg style),
+         \texttt{microservice\_base\_runtime} (legacy bare name).
+\end{itemize}
+
+\subsubsection{Python monorepo and multi-proto generators}
+
+\begin{itemize}
+   \item \texttt{python\_tmpl.generate\_monorepo()} mirrors the C++ monorepo
+         emitter: one project, N service modules sharing a single \texttt{.proto},
+         one \texttt{pyproject.toml} registering each service as a
+         \texttt{[project.scripts]} entry point.
+   \item Service Creator wizard's monorepo radio is now valid for both
+         Python and C++.
+\end{itemize}
+
+\subsubsection{Documentation refresh}
+
+\begin{itemize}
+   \item New canonical
+         \texttt{docs/diagrams/00\_canonical\_architecture.puml} (cluster
+         topology) and \texttt{component.puml} (per-workload component layout),
+         both adapted from the TA reference architecture.
+   \item Class diagrams (\texttt{class\_domain}, \texttt{class\_ports},
+         \texttt{class\_adapters}) rewritten to reflect the post-migration
+         framework boundary.
+   \item Sequence diagrams \texttt{sequence\_communication},
+         \texttt{sequence\_rpc}, \texttt{sequence\_registration},
+         \texttt{sequence\_shutdown} redrawn for the gRPC + Consul + Nomad path.
+   \item 14 pre-migration diagrams archived under
+         \texttt{docs/diagrams/\_archive/} with a mapping README pointing to
+         their successors.
+   \item Service Creator wizard documentation rewritten end-to-end (Markdown
+         + HTML mirror) to match the current 5-step wizard, with new
+         screenshots for Step 2 (server toolchain), the picker modal (3 layout
+         options), Step 5 review (layout badge), and the new GUI Support tab.
+   \item Full audit pass on framework + scaffold + Tier-A source files
+         brought docstrings into the QConnect house style (column-0 content,
+         \textbf{Arguments:} / \textbf{Returns:} blocks).
+   \item All 24 live PUML diagrams re-rendered with PlantUML 1.2021.01;
+         16 stale PNGs archived under \texttt{docs/imgs/\_archive/}.
+\end{itemize}
+
+\subsubsection{Dependency change}
+
+\begin{itemize}
+   \item \texttt{grpcio-tools} promoted from the \texttt{[proto-tools]}
+         optional extra into the base \texttt{dependencies} list.  The
+         Service Creator wizard's \emph{Pre-generate proto stubs} feature
+         needs it at runtime --- it was previously a silent no-op when the
+         bridge's Python lacked it.  Cost: \texttildelow 30 MB on every install.
+   \item \texttt{[project.optional-dependencies]} \texttt{proto-tools}
+         block removed; \texttt{all} extra updated accordingly.
+\end{itemize}
+
 \subsection{Version 2.0.0 - 09.02.2026}
 
 Major restructure: hexagonal architecture, dual-host GUI, multi-broker support,

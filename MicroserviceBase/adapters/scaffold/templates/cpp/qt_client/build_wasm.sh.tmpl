@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Build the qt_client/ project as a multi-threaded WebAssembly module
+# against the Qt 6 WebAssembly kit.
+#
+# Required env vars:
+#   QT_WASM_DIR     Qt for WebAssembly install
+#                   e.g. ~/Qt/6.11.0/wasm_multithread
+#   QT_HOST_DIR     Matching desktop Qt install (same Qt version)
+#                   e.g. ~/Qt/6.11.0/gcc_64 — needed for moc/rcc
+#   EMSDK_DIR       emsdk root (e.g. ~/emsdk)
+#
+# Optional:
+#   EMSDK_PYTHON    emsdk-bundled python (auto-detected under $EMSDK_DIR/python)
+#
+# Usage:
+#   ./build_wasm.sh          Build Release
+#   ./build_wasm.sh clean    Delete WASM build folder
+
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "${1:-}" = "clean" ]; then
+    rm -rf "${SCRIPT_DIR}/build-wasm"
+    echo "Cleaned."
+    exit 0
+fi
+
+: "${QT_WASM_DIR:?Set QT_WASM_DIR (e.g. ~/Qt/6.11.0/wasm_multithread)}"
+: "${QT_HOST_DIR:?Set QT_HOST_DIR (e.g. ~/Qt/6.11.0/gcc_64) — needed for moc/rcc}"
+: "${EMSDK_DIR:?Set EMSDK_DIR to your emsdk checkout}"
+
+[ -f "${QT_WASM_DIR}/lib/cmake/Qt6/Qt6Config.cmake" ] \
+    || { echo "ERROR: Qt6 not at ${QT_WASM_DIR}"; exit 1; }
+[ -f "${QT_WASM_DIR}/lib/cmake/Qt6Grpc/Qt6GrpcConfig.cmake" ] \
+    || { echo "ERROR: Qt GRPC module not installed in the WASM kit at ${QT_WASM_DIR}."; \
+         echo "       Install via Qt Maintenance Tool: Qt 6.x -> Qt GRPC + Qt Protobuf"; \
+         echo "       (under the WebAssembly target)."; exit 1; }
+[ -d "${EMSDK_DIR}/upstream/emscripten" ] \
+    || { echo "ERROR: emsdk not at ${EMSDK_DIR}/upstream/emscripten"; exit 1; }
+
+# Auto-detect EMSDK_PYTHON if user didn't set one.
+if [ -z "${EMSDK_PYTHON:-}" ]; then
+    EMSDK_PYTHON="$(find "${EMSDK_DIR}/python" -maxdepth 2 -name 'python3*' -type f 2>/dev/null \
+                    | sort -V | tail -n 1)"
+    if [ -z "${EMSDK_PYTHON}" ]; then
+        EMSDK_PYTHON="$(find "${EMSDK_DIR}/python" -maxdepth 2 -name 'python' -type f 2>/dev/null \
+                        | sort -V | tail -n 1)"
+    fi
+fi
+export EMSDK_PYTHON
+
+EMSCRIPTEN_DIR="${EMSDK_DIR}/upstream/emscripten"
+export PATH="${EMSCRIPTEN_DIR}:${EMSDK_DIR}:${PATH}"
+export EMSDK="${EMSDK_DIR}"
+
+QT_TOOLCHAIN="${QT_WASM_DIR}/lib/cmake/Qt6/qt.toolchain.cmake"
+EM_TOOLCHAIN="${EMSCRIPTEN_DIR}/cmake/Modules/Platform/Emscripten.cmake"
+BUILD_DIR="${SCRIPT_DIR}/build-wasm"
+
+mkdir -p "${BUILD_DIR}"
+
+echo "Using:"
+echo "  QT_WASM_DIR  = ${QT_WASM_DIR}"
+echo "  QT_HOST_DIR  = ${QT_HOST_DIR}"
+echo "  EMSDK_DIR    = ${EMSDK_DIR}"
+echo "  EMSDK_PYTHON = ${EMSDK_PYTHON}"
+echo "  BUILD_DIR    = ${BUILD_DIR}"
+echo
+
+# Locate a host protoc install root so CMake can see its include/ tree
+# alongside the Emscripten sysroot.  Qt6::ProtobufWellKnownTypes does
+# find_file() for google/protobuf/any.proto et al, and Emscripten's
+# default CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY filters host paths.
+#
+# Override priority:
+#   1. PROTOC_HOST_ROOT env var
+#   2. /usr (apt's protobuf-compiler/libprotobuf-dev)
+#   3. /opt/homebrew or /usr/local (macOS brew)
+PROTOC_HOST_ROOT_FOUND=""
+if [ -n "${PROTOC_HOST_ROOT:-}" ] && [ -f "${PROTOC_HOST_ROOT}/include/google/protobuf/any.proto" ]; then
+    PROTOC_HOST_ROOT_FOUND="${PROTOC_HOST_ROOT}"
+fi
+if [ -z "${PROTOC_HOST_ROOT_FOUND}" ]; then
+    for candidate in /usr /opt/homebrew /usr/local; do
+        if [ -f "${candidate}/include/google/protobuf/any.proto" ]; then
+            PROTOC_HOST_ROOT_FOUND="${candidate}"
+            break
+        fi
+    done
+fi
+
+EXTRA_FIND_FLAGS=()
+if [ -n "${PROTOC_HOST_ROOT_FOUND}" ]; then
+    echo "  PROTOC_HOST_ROOT = ${PROTOC_HOST_ROOT_FOUND}"
+    EXTRA_FIND_FLAGS+=(
+        -DCMAKE_FIND_ROOT_PATH="${PROTOC_HOST_ROOT_FOUND}"
+        -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
+    )
+else
+    echo "WARNING: host protoc include root not found."
+    echo "  Qt6::ProtobufWellKnownTypes will likely fail to find google/protobuf/*.proto."
+    echo "  Install protobuf-compiler / libprotobuf-dev (or equivalent) or set"
+    echo "  PROTOC_HOST_ROOT to a folder containing include/google/protobuf/any.proto."
+fi
+
+cmake -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="${QT_TOOLCHAIN}" \
+    -DQT_CHAINLOAD_TOOLCHAIN_FILE="${EM_TOOLCHAIN}" \
+    -DQT_HOST_PATH="${QT_HOST_DIR}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    "${EXTRA_FIND_FLAGS[@]}" \
+    -B "${BUILD_DIR}" -S "${SCRIPT_DIR}"
+
+cmake --build "${BUILD_DIR}" --parallel
+
+echo
+echo "WASM build complete.  Output in: ${BUILD_DIR}"
+echo "Serve with:    ./serve_wasm.sh"
+echo "Then open:     http://127.0.0.1:8000/@@{snake_name}_qt_gui.html"

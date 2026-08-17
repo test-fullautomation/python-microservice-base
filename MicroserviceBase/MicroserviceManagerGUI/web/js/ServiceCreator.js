@@ -13,10 +13,35 @@
 
   var STEPS = [
     { label: 'Basic Info' },
+    { label: 'Technology' },
     { label: 'API Methods' },
-    { label: 'GUI Support' },
+    { label: 'GUI Support' },      // skipped for C++ or guiType=='none'
     { label: 'Review & Generate' }
   ];
+
+  // Step 3 (GUI Support) is only relevant for Python + HTML/JS GUI.
+  // For C++ (QML/WASM/Widget), the GUI is defined by Technology choice.
+  function _isStepSkipped(n) {
+    if (n === 3) {
+      // Skip GUI Support for C++ or no-GUI
+      return _formData.language === 'cpp' || _formData.guiType === 'none';
+    }
+    return false;
+  }
+
+  function _nextVisibleStep(from) {
+    for (var i = from + 1; i < STEPS.length; i++) {
+      if (!_isStepSkipped(i)) return i;
+    }
+    return from;
+  }
+
+  function _prevVisibleStep(from) {
+    for (var i = from - 1; i >= 0; i--) {
+      if (!_isStepSkipped(i)) return i;
+    }
+    return from;
+  }
 
   var _currentStep = 0;
   var _formData = _defaultFormData();
@@ -33,10 +58,29 @@
       tag: '',
       routingKey: '',
       transport: 'rabbitmq',
+      // Technology (step 2 — new)
+      language: 'python',        // 'python' | 'cpp'
+      guiType: 'none',           // 'none' | 'html' | 'qml' | 'wasm' | 'widget'
+      clientGrpcKind: 'google',  // 'google' | 'qt' | 'google_vcpkg' — only relevant when guiType != 'none' on C++
+      serverGrpcKind: 'msys2',   // 'msys2' | 'vcpkg' — toolchain the server is built with (independent of client)
+      genNomad: true,
+      genBuildScripts: true,
+      genReadme: true,
+      genStubs: true,
+      vcpkgRoot: '',
+      protocPath: '',
+      grpcPluginPath: '',
+      nomadConsulAddr: 'http://127.0.0.1:8500',
+      // Legacy (kept for old v1 flow)
       guiSupport: false,
-      guiMode: 'schema',       // 'schema' | 'custom'
-      guiSchema: null,         // gui_schema.json object (when mode is 'schema')
+      guiMode: 'schema',        // 'schema' | 'custom'
+      guiSchema: null,
       methods: [],
+      importedProtoContent: '',     // non-empty when user imported a .proto file
+      importedProtoFileName: '',
+      importedServices: [],         // [{name, methods}] when user imported 2+ services
+      monorepoLayout: false,        // false = separate folders, true = single project
+      layout: '',                   // '' | 'monorepo' | 'multi_proto' — set by import handlers
       outputPath: '',
       customGuiHtml: null,
       customGuiJs: null
@@ -79,6 +123,8 @@
 
     var html = '<div class="creator-sidebar-title">Service Creator</div>';
     STEPS.forEach(function (step, i) {
+      if (_isStepSkipped(i)) return;  // hide skipped steps from sidebar
+
       var cls = 'creator-step';
       if (i === _currentStep) cls += ' active';
       else if (i < _currentStep) cls += ' completed';
@@ -124,9 +170,10 @@
 
     switch (n) {
       case 0: _renderStep1(content); break;
-      case 1: _renderStep2(content); break;
-      case 2: _renderStep3(content); break;
-      case 3: _renderStep4(content); break;
+      case 1: _renderStepTechnology(content); break;
+      case 2: _renderStep2(content); break;
+      case 3: _renderStep3(content); break;
+      case 4: _renderStep4(content); break;
     }
   }
 
@@ -209,35 +256,976 @@
     _wireNavButtons();
   }
 
-  // Step 2: API Methods
+  // Step 2: Technology
+  function _renderStepTechnology(container) {
+    var f = _formData;
+
+    // Determine which GUI options are valid for the selected language
+    var pythonGuis = [
+      { value: 'none', label: 'None', desc: 'Service only, no GUI' },
+      { value: 'html', label: 'HTML / JS', desc: 'Browser-based UI loaded by MicroserviceManagerGUI' },
+    ];
+    var cppGuis = [
+      { value: 'none', label: 'None', desc: 'Service only, no GUI' },
+      { value: 'qml', label: 'QML (Qt Quick)', desc: 'Qt Quick UI with preview app + WASM-ready' },
+      { value: 'wasm', label: 'WASM (Qt Widgets)', desc: 'Qt Widgets compiled to WebAssembly for in-browser rendering' },
+      { value: 'widget', label: 'Widget (Qt Widgets)', desc: 'Native Qt Widgets desktop window' },
+    ];
+
+    var guiOptions = (f.language === 'cpp') ? cppGuis : pythonGuis;
+    var validTypes = guiOptions.map(function (o) { return o.value; });
+    if (validTypes.indexOf(f.guiType) < 0) f.guiType = 'none';
+
+    var guiRadios = guiOptions.map(function (o) {
+      var checked = (f.guiType === o.value) ? ' checked' : '';
+      return (
+        '<div class="form-check mb-2">' +
+        '  <input class="form-check-input" type="radio" name="scGuiType" ' +
+        '         id="scGui_' + o.value + '" value="' + o.value + '"' + checked + '>' +
+        '  <label class="form-check-label" for="scGui_' + o.value + '">' +
+        '    <strong>' + _escapeHtml(o.label) + '</strong>' +
+        '    <span class="text-muted ms-1">&mdash; ' + _escapeHtml(o.desc) + '</span>' +
+        '  </label>' +
+        '</div>'
+      );
+    }).join('');
+
+    container.innerHTML =
+      '<h4><i class="bi bi-cpu me-2"></i>Technology</h4>' +
+      '<p class="text-muted small">Choose the implementation language, GUI type, and infrastructure files.</p>' +
+
+      '<div class="row">' +
+      '<div class="col-md-6">' +
+
+      // Language
+      '<div class="mb-4">' +
+      '  <label class="form-label fw-bold">Language</label>' +
+      '  <div class="btn-group w-100" role="group">' +
+      '    <input type="radio" class="btn-check" name="scLanguage" id="scLangPython" value="python"' +
+             (f.language === 'python' ? ' checked' : '') + '>' +
+      '    <label class="btn btn-outline-primary" for="scLangPython">' +
+      '      <i class="bi bi-filetype-py me-1"></i>Python</label>' +
+      '    <input type="radio" class="btn-check" name="scLanguage" id="scLangCpp" value="cpp"' +
+             (f.language === 'cpp' ? ' checked' : '') + '>' +
+      '    <label class="btn btn-outline-primary" for="scLangCpp">' +
+      '      <i class="bi bi-filetype-cpp me-1"></i>C++</label>' +
+      '  </div>' +
+      '</div>' +
+
+      // GUI type
+      '<div class="mb-4">' +
+      '  <label class="form-label fw-bold">GUI Type</label>' +
+      '  <div id="scGuiTypeRadios">' + guiRadios + '</div>' +
+      '</div>' +
+
+      // Client gRPC stack — only relevant for C++ projects with a Qt GUI.
+      // Server is always Google grpc++ (Qt has no server module); this
+      // controls which stack the *client* uses.
+      ((f.language === 'cpp' && ['widget', 'wasm', 'qml'].indexOf(f.guiType) >= 0) ?
+        '<div class="mb-4" id="scClientGrpcBlock">' +
+        '  <label class="form-label fw-bold">Client gRPC Stack</label>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scClientGrpc" ' +
+        '           id="scClientGrpcGoogle" value="google"' +
+                 (f.clientGrpcKind === 'google' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scClientGrpcGoogle">' +
+        '      <strong>Google grpc++</strong>' +
+        '      <span class="text-muted ms-1">&mdash; client lives in <code>client/</code> alongside the server, MSYS2 toolchain</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scClientGrpc" ' +
+        '           id="scClientGrpcQt" value="qt"' +
+                 (f.clientGrpcKind === 'qt' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scClientGrpcQt">' +
+        '      <strong>Qt6::Grpc + Qt6::Protobuf</strong>' +
+        '      <span class="text-muted ms-1">&mdash; emits a separate <code>qt_client/</code> project that builds with the Qt-installer MinGW kit (no MSYS2 / Google grpc dependency)</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scClientGrpc" ' +
+        '           id="scClientGrpcVcpkg" value="google_vcpkg"' +
+                 (f.clientGrpcKind === 'google_vcpkg' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scClientGrpcVcpkg">' +
+        '      <strong>Google grpc++ via vcpkg + Qt MinGW</strong>' +
+        '      <span class="text-muted ms-1">&mdash; emits <code>qt_client_grpcpp/</code> + <code>triplets/</code> + <code>ports/</code>; vcpkg builds grpc/protobuf/abseil with the Qt-installer MinGW so client AND server share one toolchain. First build ~30&ndash;60&nbsp;min (vcpkg cache); subsequent builds instant.</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-text">Server side: with <em>google</em> or <em>qt</em> the server uses MSYS2-prebuilt grpc; with <em>google_vcpkg</em> the server CMakeLists is also re-targeted to vcpkg.</div>' +
+
+        // Version-support alert — shown only when "qt" is currently selected.
+        (f.clientGrpcKind === 'qt' ?
+          '<div class="alert alert-warning small mt-2 mb-0 py-2 px-3">' +
+          '  <div><i class="bi bi-info-circle me-1"></i>' +
+          '    <strong>Qt version requirement for the generated <code>qt_client/</code></strong>' +
+          '  </div>' +
+          '  <ul class="mb-2 mt-2" style="padding-left: 1.2rem;">' +
+          '    <li><strong>Qt 6.8 or later</strong> &mdash; recommended. ' +
+                 '<code>Qt6::Grpc</code> and <code>Qt6::Protobuf</code> are stable ' +
+                 'and installed by default with the MinGW kit.</li>' +
+          '    <li><strong>Qt 6.7</strong> &mdash; works, but Qt GRPC/Protobuf are ' +
+                 '<em>Technology Preview</em> and not installed by default. ' +
+                 'Open the Qt Maintenance Tool, select 6.7.x &rarr; MinGW 64-bit, ' +
+                 'and tick <em>Qt GRPC</em> and <em>Qt Protobuf</em>.</li>' +
+          '    <li><strong>Qt 6.6 or earlier</strong> &mdash; not supported (no Qt GRPC module).</li>' +
+          '  </ul>' +
+          '  <div class="text-muted">' +
+          '    Verify with: <code>dir C:\\Qt\\&lt;version&gt;\\mingw_64\\lib\\cmake\\Qt6Grpc</code> ' +
+          '    &mdash; the folder must exist or CMake fails with ' +
+          '    <em>Failed to find required Qt component "Grpc"</em>.' +
+          '  </div>' +
+          '</div>'
+          : '') +
+
+        // Vcpkg/Qt-MinGW prerequisites alert — shown only when "google_vcpkg" is selected.
+        (f.clientGrpcKind === 'google_vcpkg' ?
+          '<div class="alert alert-info small mt-2 mb-0 py-2 px-3">' +
+          '  <div><i class="bi bi-info-circle me-1"></i>' +
+          '    <strong>Prerequisites for <code>google_vcpkg</code></strong>' +
+          '  </div>' +
+          '  <ul class="mb-2 mt-2" style="padding-left: 1.2rem;">' +
+          '    <li><strong>Qt 6.x MinGW 64-bit kit</strong> at <code>C:\\Qt\\Tools\\mingw1310_64\\</code> ' +
+                 '(or override via <code>QT_MINGW_BIN</code> env var).</li>' +
+          '    <li><strong>vcpkg</strong> cloned + bootstrapped, with <code>VCPKG_ROOT</code> env var set ' +
+                 '(<code>git clone https://github.com/microsoft/vcpkg.git C:\\vcpkg</code> &rarr; ' +
+                 '<code>C:\\vcpkg\\bootstrap-vcpkg.bat</code> &rarr; <code>setx VCPKG_ROOT C:\\vcpkg</code>).</li>' +
+          '    <li><strong>Windows 10 1803+</strong> (for built-in <code>tar.exe</code> used by deploy/export scripts).</li>' +
+          '  </ul>' +
+          '  <div class="text-muted">' +
+          '    First <code>build_qt.bat</code> run takes 30&ndash;60&nbsp;min while vcpkg compiles ' +
+          '    boringssl + abseil + protobuf + grpc with Qt&rsquo;s MinGW. Subsequent runs hit the ' +
+          '    binary cache (~5&nbsp;sec). Use <code>export_prebuilt.bat</code> to share built ' +
+          '    artifacts with other developers so they skip this cost.' +
+          '  </div>' +
+          '</div>'
+          : '') +
+        '</div>'
+        : '') +
+
+      // Server toolchain — applies to ALL C++ services (regardless of GUI).
+      // Independent of client gRPC stack; user can pick any combination.
+      ((f.language === 'cpp') ?
+        '<div class="mb-4" id="scServerGrpcBlock">' +
+        '  <label class="form-label fw-bold">Server Toolchain</label>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scServerGrpc" ' +
+        '           id="scServerGrpcMsys2" value="msys2"' +
+                 (f.serverGrpcKind === 'msys2' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scServerGrpcMsys2">' +
+        '      <strong>MSYS2 prebuilt</strong>' +
+        '      <span class="text-muted ms-1">&mdash; Google grpc++ from MSYS2 (default). Build via <code>build_deploy_msys2.bat</code>. No vcpkg required.</span>' +
+        '    </label>' +
+        '  </div>' +
+        '  <div class="form-check mb-2">' +
+        '    <input class="form-check-input" type="radio" name="scServerGrpc" ' +
+        '           id="scServerGrpcVcpkg" value="vcpkg"' +
+                 (f.serverGrpcKind === 'vcpkg' ? ' checked' : '') + '>' +
+        '    <label class="form-check-label" for="scServerGrpcVcpkg">' +
+        '      <strong>vcpkg + Qt MinGW</strong>' +
+        '      <span class="text-muted ms-1">&mdash; Google grpc++ via vcpkg, built with the Qt-installer MinGW 13.1.0. Emits <code>build_qt_vcpkg.bat</code> + shared <code>triplets/</code> + <code>ports/</code>. Pick this for both client AND server to share one toolchain end-to-end.</span>' +
+        '    </label>' +
+        '  </div>' +
+        ((f.clientGrpcKind === 'google_vcpkg' && f.serverGrpcKind === 'msys2') ?
+          '<div class="alert alert-warning small mt-2 mb-0 py-2 px-3">' +
+          '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+          '  <strong>Mixed toolchains:</strong> client is <code>google_vcpkg</code> but server is <code>msys2</code>. ' +
+          '  Wire-protocol still works, but client + server use different libstdc++ ABIs. ' +
+          '  Pick <em>vcpkg + Qt MinGW</em> for the server too if you want a unified toolchain.' +
+          '</div>'
+          : '') +
+        ((f.clientGrpcKind !== 'google_vcpkg' && f.serverGrpcKind === 'vcpkg') ?
+          '<div class="alert alert-info small mt-2 mb-0 py-2 px-3">' +
+          '  <i class="bi bi-info-circle me-1"></i>' +
+          '  Server uses vcpkg, client does not. The vcpkg cache populated by ' +
+          '  <code>build_qt_vcpkg.bat</code> is reusable later if you switch the client to ' +
+          '  <code>google_vcpkg</code> &mdash; same triplet, same overlay-port.' +
+          '</div>'
+          : '') +
+        '</div>'
+        : '') +
+
+      '</div>' +  // end col-md-6
+
+      '<div class="col-md-6">' +
+
+      // Infrastructure checkboxes
+      '<div class="mb-4">' +
+      '  <label class="form-label fw-bold">Infrastructure Files</label>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="scGenNomad"' +
+             (f.genNomad ? ' checked' : '') + '>' +
+      '    <label class="form-check-label" for="scGenNomad">' +
+      '      <strong>Nomad job file</strong> <span class="text-muted">(.nomad.hcl)</span>' +
+      '      <div class="form-text">Job spec for deploying with HashiCorp Nomad. ' +
+      '      Includes dynamic port allocation and Consul registration env vars.</div>' +
+      '    </label>' +
+      '  </div>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="scGenBuild"' +
+             (f.genBuildScripts ? ' checked' : '') + '>' +
+      '    <label class="form-check-label" for="scGenBuild">' +
+      '      <strong>Build scripts</strong> <span class="text-muted">(build.bat / build.sh)</span>' +
+      '      <div class="form-text">Cross-platform build scripts that configure CMake with vcpkg ' +
+      '      and compile the service.</div>' +
+      '    </label>' +
+      '  </div>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="scGenReadme"' +
+             (f.genReadme ? ' checked' : '') + '>' +
+      '    <label class="form-check-label" for="scGenReadme">' +
+      '      <strong>README.md</strong>' +
+      '      <div class="form-text">Auto-generated documentation with build instructions, ' +
+      '      method list, and verify commands.</div>' +
+      '    </label>' +
+      '  </div>' +
+      '</div>' +
+
+      '</div>' +  // end col-md-6
+      '</div>' +  // end row
+
+      _navButtons(1);
+
+    // Wire language toggle → re-render GUI options
+    container.querySelectorAll('input[name="scLanguage"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.language = this.value;
+        _renderStepTechnology(container);
+      });
+    });
+
+    // Wire GUI type — re-render so the Client-grpc block appears/disappears
+    // based on whether a GUI is selected.
+    container.querySelectorAll('input[name="scGuiType"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.guiType = this.value;
+        f.guiSupport = (this.value !== 'none');
+        if (this.value === 'none') f.clientGrpcKind = 'google';
+        _renderStepTechnology(container);
+      });
+    });
+
+    // Wire Client gRPC stack (only present when a C++ GUI is selected).
+    // Re-render so the version-support alert shows/hides immediately.
+    container.querySelectorAll('input[name="scClientGrpc"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.clientGrpcKind = this.value;
+        // Convenience: when user picks google_vcpkg for client, suggest
+        // vcpkg for server too (one toolchain).  User can still flip
+        // back manually.
+        if (this.value === 'google_vcpkg' && f.serverGrpcKind === 'msys2') {
+          f.serverGrpcKind = 'vcpkg';
+        }
+        _renderStepTechnology(container);
+      });
+    });
+
+    // Wire Server toolchain (present whenever language === 'cpp').
+    // Re-render so the mixed-toolchain alerts show/hide immediately.
+    container.querySelectorAll('input[name="scServerGrpc"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        f.serverGrpcKind = this.value;
+        _renderStepTechnology(container);
+      });
+    });
+
+    // Wire infrastructure
+    var nomadCb = document.getElementById('scGenNomad');
+    var buildCb = document.getElementById('scGenBuild');
+    var readmeCb = document.getElementById('scGenReadme');
+    if (nomadCb) nomadCb.addEventListener('change', function () { f.genNomad = this.checked; });
+    if (buildCb) buildCb.addEventListener('change', function () { f.genBuildScripts = this.checked; });
+    if (readmeCb) readmeCb.addEventListener('change', function () { f.genReadme = this.checked; });
+
+    _wireNavButtons();
+  }
+
+  // Step 3: API Methods (gRPC-style — defines the .proto service)
   function _renderStep2(container) {
     container.innerHTML =
       '<div class="creator-content">' +
         '<div class="creator-header">' +
-          '<h4><i class="bi bi-2-circle me-2"></i>API Methods</h4>' +
-          '<p>Define the methods your service will expose. Each method name will be prefixed with <code>svc_api_</code>.</p>' +
+          '<h4><i class="bi bi-diagram-3 me-2"></i>gRPC Methods</h4>' +
+          '<p class="text-muted">Define the RPC methods your service exposes. ' +
+          'These become the <code>service</code> block in the generated <code>.proto</code> file. ' +
+          'Use <strong>PascalCase</strong> for method names (e.g. <code>GetStatus</code>, not <code>get_status</code>).</p>' +
         '</div>' +
-        '<div id="creatorMethodList"></div>' +
-        '<button class="btn btn-outline-primary btn-sm" id="btnAddMethod">' +
-          '<i class="bi bi-plus-lg me-1"></i>Add Method' +
-        '</button>' +
-        _navButtons(1) +
+        // Multi-service imported: show summary card in place of editable methods.
+        (_formData.importedServices && _formData.importedServices.length > 1 ?
+          '<div class="card mb-3 border-success">' +
+            '<div class="card-body">' +
+              '<h6 class="card-title text-success mb-3">' +
+                '<i class="bi bi-collection me-2"></i>' +
+                _formData.importedServices.length + ' services will be generated' +
+              '</h6>' +
+              // Layout selector — three options:
+              //   multi_proto: one process hosting all services
+              //   monorepo:    one project, N processes (shared codebase)
+              //   separate:    N independent projects, one per service
+              // Wording is language-aware: C++ uses ".exe", Python uses
+              // "Python entry point" so we don't suggest Python services
+              // produce native binaries.  Reflects whatever was set
+              // during import (picker modal / multi-file auto-default).
+              (function () {
+                var isCpp = (_formData.language === 'cpp');
+                var procWord    = isCpp ? '<code>.exe</code>'  : 'Python entry point';
+                var procWordPl  = isCpp ? '<code>.exe</code>s' : 'Python entry points';
+                var monorepoBuild = isCpp ? 'CMakeLists' : 'pyproject.toml';
+                return (
+                '<div class="mb-3 p-2 rounded" style="background:rgba(255,255,255,0.04);">' +
+                  '<div class="small text-muted mb-1">Output layout:</div>' +
+                  '<div class="form-check">' +
+                    '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                      'id="creatorLayoutMultiProto" value="multi_proto"' +
+                      (_formData.layout === 'multi_proto' ? ' checked' : '') + '>' +
+                    '<label class="form-check-label small" for="creatorLayoutMultiProto">' +
+                      '<strong>multi-proto</strong> &mdash; one ' + procWord + ' hosting ' +
+                      'all services on one port (one Consul registration). ' +
+                      '<span class="text-muted">Best for one logical device.</span>' +
+                    '</label>' +
+                  '</div>' +
+                  '<div class="form-check">' +
+                    '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                      'id="creatorLayoutMonorepo" value="monorepo"' +
+                      (_formData.layout === 'monorepo' ||
+                       (_formData.monorepoLayout && _formData.layout !== 'multi_proto'
+                                                && _formData.layout !== 'separate')
+                         ? ' checked' : '') + '>' +
+                    '<label class="form-check-label small" for="creatorLayoutMonorepo">' +
+                      '<strong>monorepo</strong> &mdash; one project, ' +
+                      '<em>N</em> ' + procWordPl + ', each with its own port and ' +
+                      'Consul registration. ' +
+                      '<span class="text-muted">Scale services independently.</span>' +
+                    '</label>' +
+                  '</div>' +
+                  '<div class="form-check">' +
+                    '<input class="form-check-input" type="radio" name="creatorStep3Layout" ' +
+                      'id="creatorLayoutSeparate" value="separate"' +
+                      (_formData.layout === 'separate' ? ' checked' : '') + '>' +
+                    '<label class="form-check-label small" for="creatorLayoutSeparate">' +
+                      '<strong>separate projects</strong> &mdash; ' +
+                      '<em>N</em> independent project folders, one per service. ' +
+                      '<span class="text-muted">Each ships separately ' +
+                      '(own ' + monorepoBuild + ', build script, Nomad job).</span>' +
+                    '</label>' +
+                  '</div>' +
+                '</div>'
+                );
+              })() +
+              // Per-service grouped method list -- shows which RPC belongs
+              // to which service so it's clear how the .proto is structured.
+              '<div class="mb-2">' +
+                _formData.importedServices.map(function (s) {
+                  var methodsHtml = (s.methods && s.methods.length > 0)
+                    ? '<ul class="ms-4 mb-2 mt-1" style="font-family: Consolas, monospace; font-size: 0.85em;">' +
+                        s.methods.map(function (m) {
+                          var paramStr = (m.params || []).map(function (p) {
+                            return p.name + ':' + (p.type || 'string');
+                          }).join(', ');
+                          var stream = m.serverStreaming
+                            ? ' <span class="badge bg-warning text-dark" style="font-size: 0.75em;">stream</span>'
+                            : '';
+                          return '<li>' +
+                            'rpc <strong>' + _escapeHtml(m.name) + '</strong>' +
+                            '(' + _escapeHtml(paramStr) + ')' +
+                            (m.returnType ? ' &rarr; ' + _escapeHtml(m.returnType) : '') +
+                            stream +
+                          '</li>';
+                        }).join('') +
+                      '</ul>'
+                    : '<div class="ms-4 text-muted small fst-italic">no methods</div>';
+                  return '<div class="mb-2">' +
+                    '<div class="fw-semibold">' +
+                      '<i class="bi bi-box me-1"></i>' + _escapeHtml(s.name) +
+                      ' <span class="text-muted small">(' + s.methods.length + ' method' +
+                      (s.methods.length === 1 ? '' : 's') + ')</span>' +
+                    '</div>' +
+                    methodsHtml +
+                  '</div>';
+                }).join('') +
+              '</div>' +
+              '<p class="text-muted small mb-2">' +
+                'To edit methods, modify the <code>.proto</code>(s) and re-import.' +
+              '</p>' +
+              '<button class="btn btn-sm btn-outline-secondary" id="btnClearImport">' +
+                '<i class="bi bi-x-circle me-1"></i>Clear import &amp; enter manually' +
+              '</button>' +
+            '</div>' +
+          '</div>'
+        :
+          '<div id="creatorMethodList"></div>' +
+          '<div class="d-flex gap-2 mb-3 flex-wrap">' +
+            '<button class="btn btn-outline-primary btn-sm" id="btnAddMethod">' +
+              '<i class="bi bi-plus-lg me-1"></i>Add Method' +
+            '</button>' +
+            '<button class="btn btn-outline-secondary btn-sm" id="btnImportProto" ' +
+              'title="Load methods from an existing .proto file">' +
+              '<i class="bi bi-upload me-1"></i>Import .proto…' +
+            '</button>' +
+            '<input type="file" id="importProtoFile" accept=".proto,text/plain" ' +
+              'multiple style="display:none">' +
+            (_formData.importedProtoContent ?
+              '<span class="badge bg-success align-self-center">' +
+                '<i class="bi bi-check-circle me-1"></i>Imported .proto loaded' +
+              '</span>' : '') +
+          '</div>'
+        ) +
+
+        '<div class="card mb-3">' +
+          '<div class="card-body py-2">' +
+            '<div class="form-check mb-2">' +
+              '<input class="form-check-input" type="checkbox" id="scGenStubs"' +
+                (_formData.genStubs ? ' checked' : '') + '>' +
+              '<label class="form-check-label" for="scGenStubs">' +
+                '<strong>Pre-generate proto stubs</strong>' +
+              '</label>' +
+            '</div>' +
+            '<div id="scStubsPanel"></div>' +
+          '</div>' +
+        '</div>' +
+
+        _navButtons(2) +
       '</div>';
+
+    // Render the stubs configuration panel based on language
+    var stubsPanel = document.getElementById('scStubsPanel');
+    var stubsCb = document.getElementById('scGenStubs');
+
+    function _updateStubsPanel() {
+      if (!stubsPanel) return;
+      var checked = stubsCb && stubsCb.checked;
+
+      if (!checked) {
+        stubsPanel.innerHTML =
+          '<div class="form-text text-muted">' +
+          '  Stubs will not be pre-generated. You\'ll need to run the generation ' +
+          '  script manually before building.' +
+          '</div>';
+        return;
+      }
+
+      if (_formData.language === 'python') {
+        stubsPanel.innerHTML =
+          '<div class="alert alert-success py-2 small mb-0">' +
+          '  <i class="bi bi-check-circle me-1"></i>' +
+          '  <strong>Python stubs will be generated automatically</strong> by the bridge server ' +
+          '  using <code>grpc_tools.protoc</code>. No additional tools required.' +
+          '  <div class="mt-1 text-muted">Output: <code>proto/*_pb2.py</code> + <code>proto/*_pb2_grpc.py</code></div>' +
+          '</div>';
+      } else {
+        stubsPanel.innerHTML =
+          '<div class="alert alert-warning py-2 small mb-2">' +
+          '  <i class="bi bi-exclamation-triangle me-1"></i>' +
+          '  <strong>C++ stubs require <code>protoc</code> and <code>grpc_cpp_plugin</code>.</strong>' +
+          '  <div class="mt-1">CMake generates stubs at build time, but for pre-generation or ' +
+          '  client projects you need the tools installed.</div>' +
+          '</div>' +
+          '<div class="mb-2">' +
+          '  <label class="form-label form-label-sm">' +
+          '    <code>VCPKG_ROOT</code>' +
+          '    <span class="text-muted ms-1">— vcpkg installation path (tools are auto-detected from here)</span>' +
+          '  </label>' +
+          '  <input class="form-control form-control-sm" id="scVcpkgRoot" ' +
+          '    placeholder="e.g. ~/vcpkg or C:\\vcpkg" ' +
+          '    value="' + _escapeHtml(_formData.vcpkgRoot || '') + '">' +
+          '</div>' +
+          '<div class="mb-2">' +
+          '  <label class="form-label form-label-sm">' +
+          '    <code>protoc</code> path' +
+          '    <span class="text-muted ms-1">— leave empty to auto-detect from VCPKG_ROOT or PATH</span>' +
+          '  </label>' +
+          '  <input class="form-control form-control-sm" id="scProtocPath" ' +
+          '    placeholder="(auto-detect)" ' +
+          '    value="' + _escapeHtml(_formData.protocPath || '') + '">' +
+          '</div>' +
+          '<div class="mb-2">' +
+          '  <label class="form-label form-label-sm">' +
+          '    <code>grpc_cpp_plugin</code> path' +
+          '    <span class="text-muted ms-1">— leave empty to auto-detect</span>' +
+          '  </label>' +
+          '  <input class="form-control form-control-sm" id="scGrpcPlugin" ' +
+          '    placeholder="(auto-detect)" ' +
+          '    value="' + _escapeHtml(_formData.grpcPluginPath || '') + '">' +
+          '</div>' +
+          '<div class="form-text small">' +
+          '  <strong>Install tools:</strong> <code>vcpkg install grpc:x64-windows protobuf:x64-windows</code> (Windows) ' +
+          '  or <code>vcpkg install grpc:x64-linux protobuf:x64-linux</code> (Linux)' +
+          '</div>';
+
+        // Wire C++ tool path inputs
+        var vcpkgInput = document.getElementById('scVcpkgRoot');
+        var protocInput = document.getElementById('scProtocPath');
+        var pluginInput = document.getElementById('scGrpcPlugin');
+        if (vcpkgInput) vcpkgInput.addEventListener('change', function () {
+          _formData.vcpkgRoot = this.value.trim();
+        });
+        if (protocInput) protocInput.addEventListener('change', function () {
+          _formData.protocPath = this.value.trim();
+        });
+        if (pluginInput) pluginInput.addEventListener('change', function () {
+          _formData.grpcPluginPath = this.value.trim();
+        });
+      }
+    }
+
+    if (stubsCb) {
+      stubsCb.addEventListener('change', function () {
+        _formData.genStubs = this.checked;
+        _updateStubsPanel();
+      });
+    }
+    _updateStubsPanel();
 
     var methodList = document.getElementById('creatorMethodList');
 
-    // Render existing methods
+    // Multi-service mode: only the summary card is rendered, skip method list wiring.
+    if (_formData.importedServices && _formData.importedServices.length > 1) {
+      var clearBtn = document.getElementById('btnClearImport');
+      if (clearBtn) clearBtn.addEventListener('click', function () {
+        _formData.importedServices = [];
+        _formData.importedProtoContent = '';
+        _formData.importedProtoFileName = '';
+        _formData.monorepoLayout = false;
+        _formData.layout = '';
+        _formData.methods = [];
+        _renderStep(_currentStep);
+      });
+
+      // Inline layout toggle — flips _formData.layout / monorepoLayout
+      // so the user can switch between multi_proto (1 .exe), monorepo
+      // (N .exe in 1 project), or separate (N independent projects)
+      // without re-importing.
+      var layoutRadios = document.querySelectorAll(
+        'input[name="creatorStep3Layout"]'
+      );
+      layoutRadios.forEach(function (radio) {
+        radio.addEventListener('change', function () {
+          _formData.layout = this.value;
+          // monorepoLayout is the legacy boolean; keep it consistent.
+          _formData.monorepoLayout = (this.value === 'monorepo');
+        });
+      });
+      _wireNavButtons();
+      return;
+    }
+
     _formData.methods.forEach(function (method) {
       _appendMethodCard(methodList, method);
     });
 
     document.getElementById('btnAddMethod').addEventListener('click', function () {
-      var method = { id: ++_methodIdCounter, name: '', params: [], returnType: '', description: '' };
+      var method = {
+        id: ++_methodIdCounter,
+        name: '',
+        params: [],
+        returnType: 'string',
+        description: '',
+        serverStreaming: false
+      };
       _formData.methods.push(method);
       _appendMethodCard(methodList, method);
     });
 
+    // ---- Import .proto... ----
+    var importBtn = document.getElementById('btnImportProto');
+    var importFileInput = document.getElementById('importProtoFile');
+    importBtn.addEventListener('click', function () { importFileInput.click(); });
+    importFileInput.addEventListener('change', function (ev) {
+      var files = ev.target.files ? Array.from(ev.target.files) : [];
+      if (files.length === 0) return;
+      if (files.length === 1) {
+        // Single .proto: original flow (may itself contain multiple
+        // service blocks → triggers picker modal).
+        var f = files[0];
+        var reader = new FileReader();
+        reader.onload = function (e) { _handleImportedProto(e.target.result, f.name); };
+        reader.readAsText(f);
+      } else {
+        // Multiple .proto files: each file becomes one ServiceBlock with
+        // its own proto_file + proto_content.  Forces multi_proto layout
+        // (one binary, N gRPC services on one ServerBuilder).
+        _handleMultipleProtoImports(files);
+      }
+      // Clear so the same file(s) can be re-picked.
+      importFileInput.value = '';
+    });
+
     _wireNavButtons();
+  }
+
+  // ---- Import .proto handling -----------------------------------------
+
+  function _handleImportedProto(protoText, fileName) {
+    var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
+      var settings = MM.getSettings ? MM.getSettings() : {};
+      var bridgePort = settings.bridgePort || 1112;
+      apiUrl = 'http://localhost:' + bridgePort;
+    }
+
+    fetch(apiUrl + '/api/scaffold/parse-proto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proto_content: protoText })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.status !== 'ok') {
+          MM.showToast('Import failed', data.error || 'Unknown error', 'danger');
+          return;
+        }
+        if (!data.services || data.services.length === 0) {
+          MM.showToast('Import failed', 'No services found in the .proto', 'warning');
+          return;
+        }
+        // Warnings are non-fatal hints.
+        (data.warnings || []).slice(0, 3).forEach(function (w) {
+          MM.showToast('Heads up', w, 'warning');
+        });
+
+        if (data.services.length === 1) {
+          _formData.monorepoLayout = false;
+          _applyImportedServices([data.services[0]], data.proto_package, protoText, fileName);
+        } else {
+          _showServicePickerModal(data.services, function (pick) {
+            if (!pick || !pick.indices || pick.indices.length === 0) return;
+            var picked = pick.indices.map(function (i) { return data.services[i]; });
+            _formData.monorepoLayout = !!pick.monorepo;
+            _formData.layout = pick.layout || (pick.monorepo ? 'monorepo' : '');
+            // For multi_proto from a single .proto, all services share the
+            // same proto file + content.  _applyImportedServices stamps the
+            // shared values onto each ServiceBlock so the generator's
+            // multi_proto path can dedup by proto_file.
+            _applyImportedServices(picked, data.proto_package, protoText, fileName);
+          });
+        }
+      })
+      .catch(function (err) {
+        MM.showToast('Import failed', 'Bridge unreachable: ' + err.message, 'danger');
+      });
+  }
+
+  // Multi-file import: parses N .proto files in parallel, collects every
+  // service from every file into _formData.importedServices (each entry
+  // carrying its own proto_file + proto_content), and forces
+  // layout=multi_proto so the bridge's multi-proto generator emits one
+  // binary hosting all services on one ServerBuilder.
+  function _handleMultipleProtoImports(files) {
+    var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
+    if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
+      var settings = MM.getSettings ? MM.getSettings() : {};
+      var bridgePort = settings.bridgePort || 1112;
+      apiUrl = 'http://localhost:' + bridgePort;
+    }
+
+    // Read each File into text first (FileReader is async per-file).
+    var readPromises = files.map(function (f) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          resolve({ name: f.name, content: e.target.result });
+        };
+        reader.onerror = function () { reject(new Error('Read failed: ' + f.name)); };
+        reader.readAsText(f);
+      });
+    });
+
+    Promise.all(readPromises)
+      .then(function (filePayloads) {
+        // Parse each file via the bridge.  The bridge endpoint accepts one
+        // .proto at a time; we fan out and wait for all results.
+        var parsePromises = filePayloads.map(function (fp) {
+          return fetch(apiUrl + '/api/scaffold/parse-proto', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ proto_content: fp.content })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              return { file: fp, parsed: data };
+            });
+        });
+        return Promise.all(parsePromises);
+      })
+      .then(function (results) {
+        var allServices = [];
+        var failed = [];
+        results.forEach(function (r) {
+          if (r.parsed.status !== 'ok') {
+            failed.push(r.file.name + ': ' + (r.parsed.error || 'parse failed'));
+            return;
+          }
+          if (!r.parsed.services || r.parsed.services.length === 0) {
+            failed.push(r.file.name + ': no services found');
+            return;
+          }
+          // Take ALL services from this file (most files have 1; if a file
+          // has multiple, each becomes its own ServiceBlock anyway).
+          r.parsed.services.forEach(function (svc) {
+            allServices.push({
+              name: svc.name,
+              methods: (svc.methods || []).map(function (m) {
+                return {
+                  name: m.name,
+                  params: (m.params || []).map(function (p) {
+                    return { name: p.name, type: p.type || 'string', required: true };
+                  }),
+                  returnType: m.return_type || 'string',
+                  description: m.description || '',
+                  serverStreaming: !!m.server_streaming,
+                  inputType: m.input_type || '',
+                  outputType: m.output_type || ''
+                };
+              }),
+              // multi_proto-only fields: which file this service came from
+              // (also drives the proto/<file> path on the backend).
+              protoFile: r.file.name,
+              protoContent: r.file.content
+            });
+          });
+        });
+
+        if (failed.length > 0) {
+          MM.showToast('Some files failed to import',
+                       failed.join('  |  '), 'warning');
+        }
+        if (allServices.length === 0) {
+          MM.showToast('Import failed', 'No services parsed from selected files.', 'danger');
+          return;
+        }
+
+        // Populate _formData for multi_proto layout.
+        _formData.importedServices = allServices;
+        _formData.layout = 'multi_proto';
+        _formData.monorepoLayout = false; // mutually exclusive with multi_proto
+        // Drive the wizard's single-service fields from the first service
+        // (same convention as single-file multi-service path).
+        _formData.methods = allServices[0].methods.slice();
+        if (!_formData.serviceName) {
+          _formData.serviceName = allServices[0].name;
+        }
+        // Track aggregated source for the "imported badge" text.
+        _formData.importedProtoFileName = files.length + ' files';
+        _formData.importedProtoContent = ''; // not used in multi_proto mode
+
+        MM.showToast('Imported',
+          allServices.length + ' service(s) from ' + files.length + ' file(s) ' +
+          '(layout: multi_proto — one binary on one port).',
+          'success');
+        _renderStep(_currentStep);
+      })
+      .catch(function (err) {
+        MM.showToast('Import failed', 'Bridge unreachable: ' + err.message, 'danger');
+      });
+  }
+
+  function _applyImportedServices(services, protoPackage, protoText, fileName) {
+    // services is an array of {name, methods[...]}; length >= 1.
+    _formData.importedProtoContent = protoText;
+    _formData.importedProtoFileName = fileName || '';
+    if (protoPackage) _formData.protoPackage = protoPackage;
+
+    // The first service drives the wizard's single-service fields.
+    // If > 1, the wizard shows a summary card and disables method editing.
+    var primary = services[0];
+    // Service name rule:
+    //  - Single service  → always use the proto's service name.
+    //  - Multi-service   → keep whatever the user already typed in Basic Info
+    //                      (that becomes the project/folder name for monorepo
+    //                      OR the parent folder for separate-folders mode).
+    //                      Fall back to the first service's name only if the
+    //                      Basic Info field is empty.
+    if (services.length === 1 || !_formData.serviceName) {
+      _formData.serviceName = primary.name;
+    }
+    _formData.methods = (primary.methods || []).map(function (m) {
+      return {
+        id: ++_methodIdCounter,
+        name: m.name,
+        params: (m.params || []).map(function (p) {
+          return { name: p.name, type: p.type || 'string', required: true };
+        }),
+        returnType: m.return_type || 'string',
+        description: m.description || '',
+        serverStreaming: !!m.server_streaming,
+        inputType: m.input_type || '',
+        outputType: m.output_type || ''
+      };
+    });
+
+    // Keep the full list so submit can loop generate-v2 per service.
+    // For single-file multi-service in multi_proto layout, every service
+    // shares the same proto file + content (the generator dedups codegen
+    // blocks by proto_file).  protoFile defaults to the imported file's
+    // name so the generator writes proto/<fileName> verbatim.
+    _formData.importedServices = (services.length > 1) ? services.map(function (s) {
+      return {
+        name: s.name,
+        methods: (s.methods || []).map(function (m) {
+          return {
+            name: m.name,
+            params: (m.params || []).map(function (p) {
+              return { name: p.name, type: p.type || 'string', required: true };
+            }),
+            returnType: m.return_type || 'string',
+            description: m.description || '',
+            serverStreaming: !!m.server_streaming,
+            inputType: m.input_type || '',
+            outputType: m.output_type || ''
+          };
+        }),
+        protoFile: fileName || '',
+        protoContent: protoText || ''
+      };
+    }) : [];
+
+    if (services.length === 1) {
+      MM.showToast('Import complete',
+        primary.name + ' — ' + _formData.methods.length + ' method(s) loaded',
+        'success');
+    } else {
+      var total = services.reduce(function (n, s) { return n + (s.methods ? s.methods.length : 0); }, 0);
+      MM.showToast('Import complete',
+        services.length + ' services / ' + total + ' methods — each will get its own folder',
+        'success');
+    }
+    // Re-render so the summary badge + any UI changes appear.
+    _renderStep(_currentStep);
+  }
+
+  function _showServicePickerModal(services, onPick) {
+    // Multi-select modal + layout choice.  onPick receives:
+    //   { indices: [int], monorepo: bool }
+    var rows = services.map(function (s, i) {
+      return '<div class="form-check">' +
+        '<input class="form-check-input svc-pick" type="checkbox" id="svcPick' + i +
+          '" data-idx="' + i + '" checked>' +
+        '<label class="form-check-label" for="svcPick' + i + '">' +
+          '<strong>' + _escapeHtml(s.name) + '</strong>' +
+          '<span class="text-muted ms-2">' +
+            (s.methods ? s.methods.length : 0) + ' method(s)</span>' +
+        '</label>' +
+      '</div>';
+    }).join('');
+
+    var html =
+      '<div class="modal fade" id="svcPickerModal" tabindex="-1">' +
+        '<div class="modal-dialog modal-lg">' +
+          '<div class="modal-content">' +
+            '<div class="modal-header">' +
+              '<h5 class="modal-title">Services found in .proto</h5>' +
+              '<button type="button" class="btn-close" data-bs-dismiss="modal"></button>' +
+            '</div>' +
+            '<div class="modal-body">' +
+              '<p class="text-muted">Select the services you want to scaffold:</p>' +
+              '<div class="mb-2">' +
+                '<button type="button" class="btn btn-link btn-sm p-0 me-3" id="svcPickAll">' +
+                  'Select all</button>' +
+                '<button type="button" class="btn btn-link btn-sm p-0" id="svcPickNone">' +
+                  'Select none</button>' +
+              '</div>' +
+              '<div id="svcPickerList" class="mb-3">' + rows + '</div>' +
+
+              '<hr>' +
+              '<h6 class="mb-2">Output layout</h6>' +
+              // Wording is language-aware so we don't tell Python users
+              // their service produces a ".exe" or has a "ServerBuilder".
+              (function () {
+                var isCpp = (_formData.language === 'cpp');
+                var procWord     = isCpp ? '.exe'                  : 'Python process';
+                var procWordPl   = isCpp ? 'executables'           : 'Python entry points';
+                var serverWord   = isCpp ? 'grpc::ServerBuilder'   : 'gRPC server';
+                var buildArtifact = isCpp ? 'CMakeLists' : 'pyproject.toml';
+                return (
+                '<div class="form-check">' +
+                  '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                    'id="svcLayoutMultiProto" value="multi_proto" checked>' +
+                  '<label class="form-check-label" for="svcLayoutMultiProto">' +
+                    '<strong>Single ' + (isCpp ? 'binary' : 'process') + ', multiple services</strong> ' +
+                    '(<code>multi_proto</code>)<br>' +
+                    '<span class="text-muted small">' +
+                      'One <code>' + procWord + '</code> hosts every selected service on the ' +
+                      '<strong>same</strong> <code>' + serverWord + '</code> &mdash; ' +
+                      'one Consul registration, one port, atomic lifecycle.  ' +
+                      'Best for one logical device with multiple capability ' +
+                      'surfaces (e.g. Power Supply: config + control).' +
+                    '</span>' +
+                  '</label>' +
+                '</div>' +
+                '<div class="form-check mt-2">' +
+                  '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                    'id="svcLayoutMonorepo" value="monorepo">' +
+                  '<label class="form-check-label" for="svcLayoutMonorepo">' +
+                    '<strong>Single project (monorepo)</strong> &mdash; N ' + procWordPl + '<br>' +
+                    '<span class="text-muted small">' +
+                      'One project (one <code>' + buildArtifact + '</code>) ' +
+                      'that produces N entry points sharing the same <code>.proto</code>.  ' +
+                      'Each service has its own port and Consul registration.  ' +
+                      'Good for services that may scale independently.' +
+                    '</span>' +
+                  '</label>' +
+                '</div>' +
+                '<div class="form-check mt-2">' +
+                  '<input class="form-check-input" type="radio" name="svcLayout" ' +
+                    'id="svcLayoutSeparate" value="separate">' +
+                  '<label class="form-check-label" for="svcLayoutSeparate">' +
+                    '<strong>One folder per service</strong> (independent projects)<br>' +
+                    '<span class="text-muted small">' +
+                      'Each service becomes a self-contained scaffold &mdash; its own ' +
+                      '<code>.proto</code>, <code>' + buildArtifact + '</code>, build script, ' +
+                      'and Nomad job.  Good for services that ship separately or are owned ' +
+                      'by different teams.' +
+                    '</span>' +
+                  '</label>' +
+                '</div>'
+                );
+              })() +
+            '</div>' +
+            '<div class="modal-footer">' +
+              '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>' +
+              '<button type="button" class="btn btn-primary" id="svcPickerConfirm">' +
+                'Import selected</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    var existing = document.getElementById('svcPickerModal');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    var modalEl = document.getElementById('svcPickerModal');
+    var modal = new bootstrap.Modal(modalEl);
+
+    function _gatherPicked() {
+      return Array.prototype.slice.call(
+        modalEl.querySelectorAll('.svc-pick:checked')
+      ).map(function (cb) { return parseInt(cb.getAttribute('data-idx'), 10); });
+    }
+
+    modalEl.querySelector('#svcPickAll').addEventListener('click', function () {
+      modalEl.querySelectorAll('.svc-pick').forEach(function (cb) { cb.checked = true; });
+    });
+    modalEl.querySelector('#svcPickNone').addEventListener('click', function () {
+      modalEl.querySelectorAll('.svc-pick').forEach(function (cb) { cb.checked = false; });
+    });
+    modalEl.querySelector('#svcPickerConfirm').addEventListener('click', function () {
+      var picked = _gatherPicked();
+      if (picked.length === 0) {
+        MM.showToast('Pick at least one service', '', 'warning');
+        return;
+      }
+      var layoutRadio = modalEl.querySelector('input[name="svcLayout"]:checked');
+      var layoutValue = layoutRadio ? layoutRadio.value : 'multi_proto';
+      modal.hide();
+      // Keep `monorepo: bool` for back-compat with older callbacks.
+      // `layout` is the new authoritative value.
+      onPick({
+        indices: picked,
+        layout: layoutValue,
+        monorepo: layoutValue === 'monorepo',
+      });
+    });
+    modalEl.addEventListener('hidden.bs.modal', function () { modalEl.remove(); });
+    modal.show();
   }
 
   function _appendMethodCard(container, method) {
@@ -247,27 +1235,62 @@
 
     card.innerHTML =
       '<div class="method-header">' +
-        '<h6><code>svc_api_</code><input type="text" class="form-control form-control-sm d-inline-block" ' +
-          'style="width:200px" placeholder="method_name" value="' + _escapeHtml(method.name) + '" data-field="name"></h6>' +
+        '<h6>' +
+          '<code>rpc </code>' +
+          '<input type="text" class="form-control form-control-sm d-inline-block" ' +
+            'style="width:200px" placeholder="MethodName (PascalCase)" ' +
+            'value="' + _escapeHtml(method.name) + '" data-field="name">' +
+        '</h6>' +
         '<button class="btn-remove-method" title="Remove method"><i class="bi bi-trash"></i></button>' +
       '</div>' +
       '<div class="row mb-2">' +
-        '<div class="col-md-4">' +
-          '<label class="form-label form-label-sm">Return Type</label>' +
-          '<input type="text" class="form-control form-control-sm" placeholder="e.g. str, int, dict" ' +
-            'value="' + _escapeHtml(method.returnType) + '" data-field="returnType">' +
+        '<div class="col-md-3">' +
+          '<label class="form-label form-label-sm">Response type</label>' +
+          '<select class="form-select form-select-sm" data-field="returnType">' +
+            _protoTypeOptions(method.returnType) +
+          '</select>' +
         '</div>' +
-        '<div class="col-md-8">' +
+        '<div class="col-md-5">' +
           '<label class="form-label form-label-sm">Description</label>' +
           '<input type="text" class="form-control form-control-sm" placeholder="What does this method do?" ' +
             'value="' + _escapeHtml(method.description) + '" data-field="description">' +
         '</div>' +
+        '<div class="col-md-4">' +
+          '<label class="form-label form-label-sm">Streaming</label>' +
+          '<div class="form-check form-switch mt-1">' +
+            '<input class="form-check-input" type="checkbox" data-field="serverStreaming"' +
+              (method.serverStreaming ? ' checked' : '') + '>' +
+            '<label class="form-check-label small">Server streaming</label>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<label class="form-label form-label-sm fw-semibold">Parameters</label>' +
+      '<label class="form-label form-label-sm fw-semibold">Request fields</label>' +
+      '<div class="form-text mb-1">Each field becomes a field in the <code>' +
+        _escapeHtml(method.name || 'Method') + 'Request</code> proto message.</div>' +
       '<div class="method-params"></div>' +
       '<button class="btn btn-outline-secondary btn-sm mt-1 btn-add-param">' +
-        '<i class="bi bi-plus me-1"></i>Add Parameter' +
+        '<i class="bi bi-plus me-1"></i>Add Field' +
       '</button>';
+
+    // Live-bind method fields to the backing object so state stays
+    // in sync even if the user navigates away via the stepper (which
+    // would otherwise skip _collectFormData on this card's DOM).
+    var nameInput = card.querySelector('[data-field="name"]');
+    if (nameInput) nameInput.addEventListener('input', function () {
+      method.name = this.value;
+    });
+    var retSel = card.querySelector('[data-field="returnType"]');
+    if (retSel) retSel.addEventListener('change', function () {
+      method.returnType = this.value;
+    });
+    var descIn = card.querySelector('[data-field="description"]');
+    if (descIn) descIn.addEventListener('input', function () {
+      method.description = this.value;
+    });
+    var streamIn = card.querySelector('[data-field="serverStreaming"]');
+    if (streamIn) streamIn.addEventListener('change', function () {
+      method.serverStreaming = this.checked;
+    });
 
     // Wire remove method
     card.querySelector('.btn-remove-method').addEventListener('click', function () {
@@ -275,38 +1298,53 @@
       card.remove();
     });
 
-    // Render existing params
+    // Ensure params array exists, then render existing rows.
+    if (!method.params) method.params = [];
     var paramsContainer = card.querySelector('.method-params');
-    (method.params || []).forEach(function (param) {
-      _appendParamRow(paramsContainer, param);
+    method.params.forEach(function (param) {
+      _appendParamRow(paramsContainer, param, method.params);
     });
 
-    // Wire add param
+    // Wire add param — IMPORTANT: push into method.params so state
+    // reflects reality even before _collectFormData runs.
     card.querySelector('.btn-add-param').addEventListener('click', function () {
-      var param = { name: '', type: 'str', required: true };
-      _appendParamRow(paramsContainer, param);
+      var param = { name: '', type: 'string', required: true };
+      method.params.push(param);
+      _appendParamRow(paramsContainer, param, method.params);
     });
 
     container.appendChild(card);
   }
 
-  function _appendParamRow(container, param) {
+  var _PROTO_TYPES = [
+    { value: 'string',  label: 'string' },
+    { value: 'int32',   label: 'int32' },
+    { value: 'int64',   label: 'int64' },
+    { value: 'float',   label: 'float' },
+    { value: 'double',  label: 'double' },
+    { value: 'bool',    label: 'bool' },
+    { value: 'bytes',   label: 'bytes' },
+  ];
+
+  function _protoTypeOptions(selected) {
+    return _PROTO_TYPES.map(function (t) {
+      var sel = (t.value === selected || (!selected && t.value === 'string')) ? ' selected' : '';
+      return '<option value="' + t.value + '"' + sel + '>' + t.label + '</option>';
+    }).join('');
+  }
+
+  function _appendParamRow(container, param, paramsArray) {
     var row = document.createElement('div');
     row.className = 'creator-param-row';
 
     row.innerHTML =
       '<div style="flex:2">' +
-        '<input type="text" class="form-control form-control-sm" placeholder="param_name" ' +
+        '<input type="text" class="form-control form-control-sm" placeholder="field_name (snake_case)" ' +
           'value="' + _escapeHtml(param.name) + '" data-pfield="name">' +
       '</div>' +
       '<div style="flex:1">' +
         '<select class="form-select form-select-sm" data-pfield="type">' +
-          '<option value="str"' + (param.type === 'str' ? ' selected' : '') + '>str</option>' +
-          '<option value="int"' + (param.type === 'int' ? ' selected' : '') + '>int</option>' +
-          '<option value="float"' + (param.type === 'float' ? ' selected' : '') + '>float</option>' +
-          '<option value="bool"' + (param.type === 'bool' ? ' selected' : '') + '>bool</option>' +
-          '<option value="list"' + (param.type === 'list' ? ' selected' : '') + '>list</option>' +
-          '<option value="dict"' + (param.type === 'dict' ? ' selected' : '') + '>dict</option>' +
+          _protoTypeOptions(param.type) +
         '</select>' +
       '</div>' +
       '<div style="flex:1">' +
@@ -315,9 +1353,27 @@
           '<option value="false"' + (param.required === false ? ' selected' : '') + '>optional</option>' +
         '</select>' +
       '</div>' +
-      '<button class="btn-remove-param" title="Remove parameter"><i class="bi bi-x-lg"></i></button>';
+      '<button class="btn-remove-param" title="Remove field"><i class="bi bi-x-lg"></i></button>';
+
+    // Live-bind row fields to the backing param object.
+    var pName = row.querySelector('[data-pfield="name"]');
+    if (pName) pName.addEventListener('input', function () {
+      param.name = this.value;
+    });
+    var pType = row.querySelector('[data-pfield="type"]');
+    if (pType) pType.addEventListener('change', function () {
+      param.type = this.value;
+    });
+    var pReq = row.querySelector('[data-pfield="required"]');
+    if (pReq) pReq.addEventListener('change', function () {
+      param.required = this.value !== 'false';
+    });
 
     row.querySelector('.btn-remove-param').addEventListener('click', function () {
+      if (paramsArray) {
+        var idx = paramsArray.indexOf(param);
+        if (idx >= 0) paramsArray.splice(idx, 1);
+      }
       row.remove();
     });
 
@@ -422,7 +1478,7 @@
             '</div>' +
           '</div>' +
         '</div>' +
-        _navButtons(2) +
+        _navButtons(3) +
       '</div>';
 
     // ---- Wire events ----
@@ -1069,94 +2125,239 @@
   function _renderStep4(container) {
     _collectFormData();
     var d = _formData;
-    var snakeName = _toSnakeCase(d.serviceName);
+    var sn = _toSnakeCase(d.serviceName);
+    var langLabel = d.language === 'cpp' ? 'C++' : 'Python';
+    var guiLabels = { none: 'None', html: 'HTML/JS', qml: 'QML', wasm: 'WASM', widget: 'Widget' };
+    var guiLabel = guiLabels[d.guiType] || d.guiType;
 
-    // Build file tree
-    var tree = d.serviceName + '/\n';
-    tree += '\u251c\u2500\u2500 ' + snakeName + '.py\n';
-    tree += '\u251c\u2500\u2500 main.py\n';
-    if (d.transport === 'eventbus') {
-      tree += '\u251c\u2500\u2500 config.jsonp\n';
-    }
-    if (d.guiSupport) {
-      tree += '\u2514\u2500\u2500 GUIs/\n';
-      if (d.guiMode === 'schema') {
-        tree += '    \u2514\u2500\u2500 gui_schema.json\n';
-      } else {
-        tree += '    \u251c\u2500\u2500 service.html' + (d.customGuiHtml ? ' (custom)' : '') + '\n';
-        tree += '    \u2514\u2500\u2500 service.js' + (d.customGuiJs ? ' (custom)' : '') + '\n';
+    // Is this a multi-service import? Drives title + methods rendering.
+    var isMulti = d.importedServices && d.importedServices.length > 1;
+
+    function _renderMethodList(methods) {
+      if (!methods || methods.length === 0) {
+        return '<div class="text-muted fst-italic">No methods defined</div>';
       }
+      return methods.map(function (m) {
+        var paramStr = (m.params || []).map(function (p) {
+          return p.name + ':' + (p.type || 'string');
+        }).join(', ');
+        var streaming = m.serverStreaming ? ' <span class="badge bg-warning text-dark">stream</span>' : '';
+        return '<div class="creator-summary-method">' +
+            '<code>rpc ' + _escapeHtml(m.name) + '(' + _escapeHtml(paramStr) + ')</code>' +
+            (m.returnType ? ' &rarr; <code>' + _escapeHtml(m.returnType) + '</code>' : '') +
+            streaming +
+            (m.description ? '<div class="text-muted small">' + _escapeHtml(m.description) + '</div>' : '') +
+          '</div>';
+      }).join('');
     }
 
-    // Build methods summary
+    // Methods summary — per-service blocks in multi-import mode, flat list otherwise.
     var methodsHtml = '';
-    if (d.methods.length === 0) {
-      methodsHtml = '<div class="text-muted fst-italic">No methods defined</div>';
-    } else {
-      d.methods.forEach(function (m) {
-        var paramStr = (m.params || []).map(function (p) { return p.name; }).join(', ');
-        methodsHtml +=
-          '<div class="creator-summary-method">' +
-            '<code>svc_api_' + _escapeHtml(m.name) + '(' + _escapeHtml(paramStr) + ')</code>' +
-            (m.returnType ? ' &rarr; <code>' + _escapeHtml(m.returnType) + '</code>' : '') +
-            (m.description ? '<div class="text-muted">' + _escapeHtml(m.description) + '</div>' : '') +
+    if (isMulti) {
+      var totalMethods = d.importedServices.reduce(
+        function (n, s) { return n + (s.methods ? s.methods.length : 0); }, 0);
+      methodsHtml =
+        '<div class="text-muted small mb-2">' +
+          totalMethods + ' total across ' + d.importedServices.length + ' services' +
+        '</div>' +
+        d.importedServices.map(function (svc) {
+          return '<div class="mb-3 p-2" style="background:rgba(56,189,248,0.06); border-left:3px solid var(--bs-info,#0dcaf0); border-radius:4px">' +
+            '<div class="fw-semibold mb-1">' +
+              '<i class="bi bi-box me-1"></i>' + _escapeHtml(svc.name) +
+              '<span class="text-muted small ms-2">' +
+                svc.methods.length + ' method(s)</span>' +
+            '</div>' +
+            _renderMethodList(svc.methods) +
           '</div>';
-      });
+        }).join('');
+    } else {
+      methodsHtml = _renderMethodList(d.methods);
     }
+
+    // Infra badges
+    var infraHtml =
+      (d.genNomad ? '<span class="badge bg-success me-1">Nomad HCL</span>' : '') +
+      (d.genBuildScripts ? '<span class="badge bg-success me-1">Build scripts</span>' : '') +
+      (d.genReadme ? '<span class="badge bg-success me-1">README</span>' : '') +
+      (d.genStubs ? '<span class="badge bg-success me-1">Proto stubs</span>' : '');
 
     container.innerHTML =
       '<div class="creator-content">' +
         '<div class="creator-header">' +
-          '<h4><i class="bi bi-4-circle me-2"></i>Review & Generate</h4>' +
+          '<h4><i class="bi bi-check-circle me-2"></i>Review & Generate</h4>' +
           '<p>Verify your service configuration and generate the project files.</p>' +
         '</div>' +
+
+        '<div class="row">' +
+        '<div class="col-md-6">' +
 
         // Summary card
         '<div class="creator-summary">' +
           '<div class="creator-summary-header">' +
-            '<i class="bi bi-box-seam me-2"></i>' + _escapeHtml(d.serviceName) + ' v' + _escapeHtml(d.version) +
+            (isMulti
+              ? (function () {
+                  // Resolve effective layout label.  d.layout is the
+                  // authoritative value (multi_proto / monorepo /
+                  // separate); fall back to legacy monorepoLayout for
+                  // older imports that didn't set d.layout.
+                  var effectiveLayout = d.layout
+                    || (d.monorepoLayout ? 'monorepo' : 'separate');
+                  // Badge wording is language-aware — Python doesn't
+                  // produce ".exe" files even though it's still one
+                  // process per service.
+                  var _isCpp = (d.language === 'cpp');
+                  var _procWord = _isCpp ? '.exe' : 'process';
+                  var layoutLabelMap = {
+                    'multi_proto': { text: 'multi-proto (1 ' + _procWord + ')', cls: 'bg-success' },
+                    'monorepo':    { text: 'monorepo (N ' + _procWord + ')',    cls: 'bg-info' },
+                    'separate':    { text: 'separate projects',                  cls: 'bg-secondary' },
+                  };
+                  var meta = layoutLabelMap[effectiveLayout]
+                    || layoutLabelMap['separate'];
+                  return '<i class="bi bi-collection me-2"></i>' +
+                    _escapeHtml(d.serviceName) +
+                    ' <span class="badge bg-primary ms-2">' +
+                      d.importedServices.length + ' services' +
+                    '</span>' +
+                    ' <span class="badge ' + meta.cls + ' ms-1">' +
+                      meta.text +
+                    '</span>';
+                })()
+              : '<i class="bi bi-box-seam me-2"></i>' +
+                _escapeHtml(d.serviceName) + ' v' + _escapeHtml(d.version)) +
           '</div>' +
           '<div class="creator-summary-body">' +
+            _summaryRow('Language', '<span class="badge bg-primary">' + langLabel + '</span>') +
+            _summaryRow('GUI', '<span class="badge ' +
+              (d.guiType !== 'none' ? 'bg-info' : 'bg-secondary') + '">' + guiLabel + '</span>') +
+            (d.language === 'cpp' && d.guiType !== 'none'
+              ? _summaryRow('Client gRPC',
+                  (function () {
+                    var k = d.clientGrpcKind || 'google';
+                    var cls, label;
+                    if (k === 'qt') {
+                      cls = 'bg-warning text-dark';
+                      label = 'Qt6::Grpc (qt_client/)';
+                    } else if (k === 'google_vcpkg') {
+                      cls = 'bg-info text-dark';
+                      label = 'Google grpc++ via vcpkg + Qt MinGW (qt_client_grpcpp/)';
+                    } else {
+                      cls = 'bg-success';
+                      label = 'Google grpc++ MSYS2 (client/)';
+                    }
+                    return '<span class="badge ' + cls + '">' + label + '</span>';
+                  })())
+              : '') +
+            (d.language === 'cpp'
+              ? _summaryRow('Server toolchain',
+                  (function () {
+                    var k = d.serverGrpcKind || 'msys2';
+                    if (k === 'vcpkg')
+                      return '<span class="badge bg-info text-dark">vcpkg + Qt MinGW (build_qt_vcpkg.bat)</span>';
+                    return '<span class="badge bg-success">MSYS2 prebuilt (build_deploy_msys2.bat)</span>';
+                  })())
+              : '') +
             _summaryRow('Description', d.description ? _escapeHtml(d.description) : '<em class="text-muted">none</em>') +
-            _summaryRow('Short Desc', d.shortDescription ? _escapeHtml(d.shortDescription) : '<em class="text-muted">none</em>') +
             _summaryRow('Group', d.group ? _escapeHtml(d.group) : '<em class="text-muted">none</em>') +
-            _summaryRow('Tag', d.tag ? _escapeHtml(d.tag) : '<em class="text-muted">none</em>') +
-            _summaryRow('Routing Key', '<code>' + _escapeHtml(d.routingKey) + '</code>') +
-            _summaryRow('Transport', d.transport) +
-            _summaryRow('GUI Support', d.guiSupport
-              ? '<span class="badge bg-success">Yes</span>' +
-                (d.guiMode === 'schema' ? ' <span class="badge bg-primary">Schema-driven</span>' : '') +
-                (d.guiMode === 'custom' && d.customGuiHtml ? ' <span class="badge bg-info">custom HTML</span>' : '') +
-                (d.guiMode === 'custom' && d.customGuiJs ? ' <span class="badge bg-info">custom JS</span>' : '')
-              : '<span class="badge bg-secondary">No</span>') +
+            _summaryRow('Infrastructure', infraHtml || '<em class="text-muted">none</em>') +
+            (isMulti && d.importedProtoFileName
+              ? _summaryRow('Imported proto',
+                  '<code>' + _escapeHtml(d.importedProtoFileName) + '</code>')
+              : '') +
             '<div class="creator-summary-methods">' +
-              '<div class="fw-semibold mb-2" style="font-size:0.85rem">API Methods (' + d.methods.length + ')</div>' +
+              '<div class="fw-semibold mb-2" style="font-size:0.85rem">' +
+                (isMulti ? 'Services &amp; Methods' : 'gRPC Methods (' + d.methods.length + ')') +
+              '</div>' +
               methodsHtml +
             '</div>' +
           '</div>' +
         '</div>' +
 
-        // File tree preview
-        '<label class="form-label fw-semibold">Generated File Structure</label>' +
-        '<div class="creator-preview">' + _escapeHtml(tree) + '</div>' +
+        '</div>' +  // end col-md-6
+        '<div class="col-md-6">' +
+
+        // Nomad HCL configuration (only if genNomad is checked)
+        (d.genNomad
+          ? '<div class="card mb-3">' +
+              '<div class="card-header py-2"><i class="bi bi-hdd-rack me-1"></i>Nomad Job Configuration</div>' +
+              '<div class="card-body">' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Datacenter' +
+                    '<span class="text-muted ms-1">— Nomad datacenter name</span></label>' +
+                  '<input class="form-control form-control-sm" id="scNomadDc" value="dc1">' +
+                '</div>' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Driver' +
+                    '<span class="text-muted ms-1">— Nomad task driver</span></label>' +
+                  '<select class="form-select form-select-sm" id="scNomadDriver">' +
+                    '<option value="raw_exec" selected>raw_exec (direct process, no isolation)</option>' +
+                    '<option value="exec">exec (chroot isolation, Linux only)</option>' +
+                    '<option value="docker">docker (container)</option>' +
+                  '</select>' +
+                '</div>' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Command path' +
+                    '<span class="text-muted ms-1">— absolute path to the service executable/script</span></label>' +
+                  '<input class="form-control form-control-sm" id="scNomadCommand" ' +
+                    'placeholder="/path/to/' + _escapeHtml(sn) + (d.language === 'cpp' ? '' : '/main.py') + '">' +
+                '</div>' +
+                '<div class="mb-2">' +
+                  '<label class="form-label form-label-sm">Consul address' +
+                    '<span class="text-muted ms-1">— where the service registers itself</span></label>' +
+                  '<input class="form-control form-control-sm" id="scNomadConsulAddr" ' +
+                    'value="http://127.0.0.1:8500" placeholder="http://127.0.0.1:8500">' +
+                '</div>' +
+                '<div class="row">' +
+                  '<div class="col-6 mb-2">' +
+                    '<label class="form-label form-label-sm">CPU (MHz)' +
+                      '<span class="text-muted ms-1">— resource limit</span></label>' +
+                    '<input class="form-control form-control-sm" type="number" id="scNomadCpu" value="100">' +
+                  '</div>' +
+                  '<div class="col-6 mb-2">' +
+                    '<label class="form-label form-label-sm">Memory (MB)' +
+                      '<span class="text-muted ms-1">— resource limit</span></label>' +
+                    '<input class="form-control form-control-sm" type="number" id="scNomadMem" value="128">' +
+                  '</div>' +
+                '</div>' +
+                '<div class="form-text small mt-0">' +
+                  '<code>' + _escapeHtml(sn.toUpperCase() + '_') +
+                  'GRPC_PORT</code> and <code>ADVERTISE_ADDR</code> are populated automatically ' +
+                  'from Nomad\'s dynamic port allocation. ' +
+                  '<code>CONSUL_ADDR</code> uses the address configured above.' +
+                '</div>' +
+              '</div>' +
+            '</div>'
+          : '') +
+
+        '</div>' +  // end col-md-6
+        '</div>' +  // end row
 
         // Output actions
         '<div class="creator-output-actions">' +
           '<div class="output-path-group">' +
-            '<label class="form-label fw-semibold">Output Path (optional)</label>' +
-            '<input type="text" class="form-control" id="cfOutputPath" ' +
-              'placeholder="C:\\Projects\\MyService or leave empty for ZIP download" ' +
-              'value="' + _escapeHtml(d.outputPath) + '">' +
+            '<label class="form-label fw-semibold">Output Path</label>' +
+            '<div class="input-group">' +
+              '<input type="text" class="form-control" id="cfOutputPath" ' +
+                'placeholder="Leave empty for ZIP download" ' +
+                'value="' + _escapeHtml(d.outputPath) + '">' +
+              (typeof window.electronAPI === 'object'
+                ? '<button class="btn btn-outline-secondary" type="button" id="btnBrowsePath">' +
+                    '<i class="bi bi-folder2 me-1"></i>Browse...' +
+                  '</button>'
+                : '') +
+            '</div>' +
           '</div>' +
-          '<button class="btn btn-primary" id="btnDownloadZip">' +
-            '<i class="bi bi-file-earmark-zip me-1"></i>Download ZIP' +
-          '</button>' +
-          '<button class="btn btn-outline-primary" id="btnSavePath" disabled>' +
-            '<i class="bi bi-folder2-open me-1"></i>Save to Path' +
-          '</button>' +
+          '<div class="d-flex gap-2 mt-2">' +
+            '<button class="btn btn-primary" id="btnDownloadZip">' +
+              '<i class="bi bi-file-earmark-zip me-1"></i>Download ZIP' +
+            '</button>' +
+            '<button class="btn btn-outline-primary" id="btnSavePath" disabled>' +
+              '<i class="bi bi-folder2-open me-1"></i>Save to Path' +
+            '</button>' +
+          '</div>' +
         '</div>' +
 
-        _navButtons(3) +
+        _navButtons(4) +
       '</div>';
 
     // Wire output path → enable Save to Path
@@ -1167,16 +2368,52 @@
     });
     if (pathInput.value.trim()) saveBtn.disabled = false;
 
+    // Wire Browse button (Electron only)
+    var browseBtn = document.getElementById('btnBrowsePath');
+    if (browseBtn && window.electronAPI && window.electronAPI.showOpenDialog) {
+      browseBtn.addEventListener('click', function () {
+        window.electronAPI.showOpenDialog({
+          properties: ['openDirectory', 'createDirectory'],
+          title: 'Select output folder for ' + d.serviceName
+        }).then(function (result) {
+          if (result && result.filePaths && result.filePaths.length > 0) {
+            pathInput.value = result.filePaths[0];
+            saveBtn.disabled = false;
+          }
+        });
+      });
+    }
+
     // Wire generate buttons
     document.getElementById('btnDownloadZip').addEventListener('click', function () {
       _submitGenerate('zip');
     });
     saveBtn.addEventListener('click', function () {
       _formData.outputPath = pathInput.value.trim();
+      // Collect Nomad config overrides if present
+      _collectNomadConfig();
       _submitGenerate('path');
     });
 
     _wireNavButtons();
+  }
+
+  function _collectNomadConfig() {
+    // Read Nomad HCL fields into formData so the backend can use them.
+    // If these fields don't exist in the DOM (genNomad is false), skip.
+    var el;
+    el = document.getElementById('scNomadDc');
+    if (el) _formData.nomadDc = el.value.trim() || 'dc1';
+    el = document.getElementById('scNomadDriver');
+    if (el) _formData.nomadDriver = el.value || 'raw_exec';
+    el = document.getElementById('scNomadCommand');
+    if (el) _formData.nomadCommand = el.value.trim();
+    el = document.getElementById('scNomadCpu');
+    if (el) _formData.nomadCpu = parseInt(el.value, 10) || 100;
+    el = document.getElementById('scNomadMem');
+    if (el) _formData.nomadMem = parseInt(el.value, 10) || 128;
+    el = document.getElementById('scNomadConsulAddr');
+    if (el) _formData.nomadConsulAddr = el.value.trim() || 'http://127.0.0.1:8500';
   }
 
   function _summaryRow(label, valueHtml) {
@@ -1213,7 +2450,7 @@
     if (prevBtn) {
       prevBtn.addEventListener('click', function () {
         _collectFormData();
-        _currentStep--;
+        _currentStep = _prevVisibleStep(_currentStep);
         _renderStepList();
         _renderStep(_currentStep);
       });
@@ -1222,7 +2459,7 @@
       nextBtn.addEventListener('click', function () {
         if (_validateStep(_currentStep)) {
           _collectFormData();
-          _currentStep++;
+          _currentStep = _nextVisibleStep(_currentStep);
           _renderStepList();
           _renderStep(_currentStep);
         }
@@ -1252,24 +2489,26 @@
     el = document.getElementById('cfTransport');
     if (el) _formData.transport = el.value;
 
-    // Step 2: collect methods from DOM
+    // Step 3 (was 2): collect methods from DOM
     var methodCards = document.querySelectorAll('.creator-method-card');
     if (methodCards.length > 0) {
       _formData.methods = [];
       methodCards.forEach(function (card) {
         var methodId = parseInt(card.getAttribute('data-method-id'), 10);
+        var streamingEl = card.querySelector('[data-field="serverStreaming"]');
         var method = {
           id: methodId,
           name: (card.querySelector('[data-field="name"]') || {}).value || '',
-          returnType: (card.querySelector('[data-field="returnType"]') || {}).value || '',
+          returnType: (card.querySelector('[data-field="returnType"]') || {}).value || 'string',
           description: (card.querySelector('[data-field="description"]') || {}).value || '',
+          serverStreaming: streamingEl ? streamingEl.checked : false,
           params: []
         };
 
         card.querySelectorAll('.creator-param-row').forEach(function (row) {
           method.params.push({
             name: (row.querySelector('[data-pfield="name"]') || {}).value || '',
-            type: (row.querySelector('[data-pfield="type"]') || {}).value || 'str',
+            type: (row.querySelector('[data-pfield="type"]') || {}).value || 'string',
             required: (row.querySelector('[data-pfield="required"]') || {}).value !== 'false'
           });
         });
@@ -1311,8 +2550,14 @@
         return false;
       }
     }
-    if (n === 1) {
+    // Step 1 (Technology) — no required fields, always valid.
+
+    if (n === 2) {
       _collectFormData();
+      // Multi-service import: proto-driven, no in-wizard method editing.
+      if (_formData.importedServices && _formData.importedServices.length > 1) {
+        return true;
+      }
       for (var i = 0; i < _formData.methods.length; i++) {
         var m = _formData.methods[i];
         if (!m.name) {
@@ -1673,43 +2918,161 @@
       return;
     }
 
-    // "Save to Path" mode — requires FastAPI backend
-    var payload = {
-      service_name: d.serviceName,
-      version: d.version,
-      description: d.description,
-      short_description: d.shortDescription,
-      group: d.group,
-      tag: d.tag,
-      routing_key: d.routingKey || 'service.' + _toSnakeCase(d.serviceName),
-      transport: d.transport,
-      gui_support: d.guiSupport,
-      methods: d.methods.map(function (m) {
-        return {
-          name: m.name,
-          params: (m.params || []).map(function (p) {
-            return { name: p.name, type: p.type, required: p.required };
-          }),
-          return_type: m.returnType,
-          description: m.description
-        };
-      }),
-      output_path: d.outputPath,
-      gui_mode: d.guiMode || 'schema',
-      gui_schema: d.guiSchema || null,
-      custom_gui_html: d.customGuiHtml || '',
-      custom_gui_js: d.customGuiJs || ''
-    };
-
+    // Resolve bridge URL once.
     var apiUrl = MM.serviceClient ? MM.serviceClient.apiUrl : '';
     if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('file:') === 0) {
-      // Electron mode: derive bridge URL from settings
       var settings = MM.getSettings ? MM.getSettings() : {};
       var bridgePort = settings.bridgePort || 1112;
       apiUrl = 'http://localhost:' + bridgePort;
     }
 
-    fetch(apiUrl + '/api/scaffold/generate', {
+    // ---- Multi-proto import: single POST, backend generates ONE binary
+    //                          hosting N gRPC services on one ServerBuilder.
+    if (d.importedServices && d.importedServices.length > 1
+        && d.layout === 'multi_proto') {
+      var mpPayload = _buildGeneratePayload(d, d.serviceName, d.methods);
+      mpPayload.monorepo = false;
+      mpPayload.layout = 'multi_proto';
+      mpPayload.services = d.importedServices.map(function (svc) {
+        return {
+          name: svc.name,
+          // Per-service .proto location + verbatim content (multi_proto only).
+          // The generator writes proto/<proto_file> with this exact text so
+          // imported messages, comments, and packages are preserved.
+          proto_file: svc.protoFile || '',
+          proto_content: svc.protoContent || '',
+          methods: (svc.methods || []).map(function (m) {
+            return {
+              name: m.name,
+              params: (m.params || []).map(function (p) {
+                return { name: p.name, type: p.type || 'string',
+                         required: p.required !== false, description: p.description || '' };
+              }),
+              return_type: m.returnType || 'string',
+              description: m.description || '',
+              server_streaming: !!m.serverStreaming,
+              input_type: m.inputType || '',
+              output_type: m.outputType || ''
+            };
+          })
+        };
+      });
+      fetch(apiUrl + '/api/scaffold/generate-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mpPayload)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status === 'ok') {
+            MM.showToast('Success',
+              'Multi-proto binary with ' + d.importedServices.length +
+              ' services saved to ' + data.path, 'success');
+          } else {
+            MM.showToast('Error', data.error || 'Generation failed.', 'danger');
+          }
+        })
+        .catch(function (err) {
+          MM.showToast('Error', 'Failed to save: ' + err.message, 'danger');
+        });
+      return;
+    }
+
+    // ---- Monorepo import: single POST, backend generates one project folder
+    //                       with N executables.
+    if (d.importedServices && d.importedServices.length > 1 && d.monorepoLayout) {
+      var payload = _buildGeneratePayload(d, d.serviceName, d.methods);
+      payload.monorepo = true;
+      payload.services = d.importedServices.map(function (svc) {
+        return {
+          name: svc.name,
+          methods: (svc.methods || []).map(function (m) {
+            return {
+              name: m.name,
+              params: (m.params || []).map(function (p) {
+                return { name: p.name, type: p.type || 'string',
+                         required: p.required !== false, description: p.description || '' };
+              }),
+              return_type: m.returnType || 'string',
+              description: m.description || '',
+              server_streaming: !!m.serverStreaming,
+              input_type: m.inputType || '',
+              output_type: m.outputType || ''
+            };
+          })
+        };
+      });
+      fetch(apiUrl + '/api/scaffold/generate-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status === 'ok') {
+            MM.showToast('Success',
+              'Monorepo with ' + d.importedServices.length + ' services saved to ' + data.path,
+              'success');
+          } else {
+            MM.showToast('Error', data.error || 'Generation failed.', 'danger');
+          }
+        })
+        .catch(function (err) {
+          MM.showToast('Error', 'Failed to save: ' + err.message, 'danger');
+        });
+      return;
+    }
+
+    // ---- Separate-folders multi-service import: loop N POSTs.
+    // Each service becomes its own independent project.  In multi-file
+    // mode, every service carries its own protoContent (set by the
+    // multi-file import handler), so each generated project preserves
+    // exactly the .proto file it was imported from.  In single-file
+    // mode, all services share the imported proto (handled implicitly
+    // by _buildGeneratePayload reading d.importedProtoContent).
+    if (d.importedServices && d.importedServices.length > 1) {
+      var results = { ok: 0, fail: 0, errors: [] };
+      var chain = Promise.resolve();
+      d.importedServices.forEach(function (svc) {
+        chain = chain.then(function () {
+          var p = _buildGeneratePayload(d, svc.name, svc.methods);
+          // Multi-file import: per-service .proto content overrides the
+          // shared d.importedProtoContent (which is empty in multi-file mode).
+          if (svc.protoContent) {
+            p.proto_content_override = svc.protoContent;
+          }
+          return fetch(apiUrl + '/api/scaffold/generate-v2', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(p)
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.status === 'ok') results.ok++;
+              else { results.fail++; results.errors.push(svc.name + ': ' + (data.error || '')); }
+            })
+            .catch(function (err) {
+              results.fail++;
+              results.errors.push(svc.name + ': ' + err.message);
+            });
+        });
+      });
+      chain.then(function () {
+        if (results.fail === 0) {
+          MM.showToast('Success',
+            results.ok + ' services generated in ' + d.outputPath, 'success');
+        } else {
+          MM.showToast('Partial: ' + results.ok + ' ok / ' + results.fail + ' failed',
+            results.errors.join('; '), 'warning');
+        }
+      });
+      return;
+    }
+
+    // Single-service path (manual wizard or single imported service).
+    var payload = _buildGeneratePayload(d, d.serviceName, d.methods);
+
+    fetch(apiUrl + '/api/scaffold/generate-v2', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1720,7 +3083,11 @@
       })
       .then(function (data) {
         if (data.status === 'ok') {
-          MM.showToast('Success', 'Files saved to ' + data.path, 'success');
+          var msg = data.file_count
+            ? data.file_count + ' files saved to ' + data.path
+            : 'Files saved to ' + data.path;
+          MM.showToast('Success', msg, 'success');
+          _warnIfStubsRequestedButMissing(d, data);
         } else {
           MM.showToast('Error', data.error || 'Generation failed.', 'danger');
         }
@@ -1728,6 +3095,85 @@
       .catch(function (err) {
         MM.showToast('Error', 'Failed to save: ' + err.message, 'danger');
       });
+  }
+
+  // Build a generate-v2 POST payload. Factored out so multi-service
+  // imports can loop and pass a per-service name + methods while reusing
+  // every other wizard field (language, GUI, Nomad, paths, …).
+  function _buildGeneratePayload(d, serviceName, methods) {
+    return {
+      service_name: serviceName,
+      version: d.version,
+      description: d.description,
+      short_desc: d.shortDescription,
+      group: d.group,
+      tag: d.tag,
+      language: d.language || 'python',
+      gui_type: d.guiType || 'none',
+      server_grpc_kind: (d.language === 'cpp') ? (d.serverGrpcKind || 'msys2') : 'msys2',
+      client_grpc_kind: (d.guiType && d.guiType !== 'none' && d.language === 'cpp')
+        ? (d.clientGrpcKind || 'google') : 'google',
+      gen_nomad: d.genNomad !== false,
+      gen_build_scripts: d.genBuildScripts !== false,
+      gen_readme: d.genReadme !== false,
+      gen_stubs: d.genStubs !== false,
+      vcpkg_root: d.vcpkgRoot || '',
+      protoc_path: d.protocPath || '',
+      grpc_plugin_path: d.grpcPluginPath || '',
+      nomad_dc: d.nomadDc || 'dc1',
+      nomad_driver: d.nomadDriver || 'raw_exec',
+      nomad_command: d.nomadCommand || '',
+      nomad_cpu: d.nomadCpu || 100,
+      nomad_mem: d.nomadMem || 128,
+      nomad_consul_addr: d.nomadConsulAddr || 'http://127.0.0.1:8500',
+      methods: (methods || []).map(function (m) {
+        return {
+          name: m.name,
+          params: (m.params || []).map(function (p) {
+            return { name: p.name, type: p.type || 'string',
+                     required: p.required !== false, description: p.description || '' };
+          }),
+          return_type: m.returnType || 'string',
+          description: m.description || '',
+          server_streaming: !!m.serverStreaming,
+          input_type: m.inputType || '',
+          output_type: m.outputType || ''
+        };
+      }),
+      output_path: d.outputPath,
+      proto_content_override: d.importedProtoContent || '',
+      proto_package: d.protoPackage || ''
+    };
+  }
+
+  // ---- Post-save sanity check ----
+
+  /**
+   * If the user ticked "Pre-generate proto stubs" and language=python,
+   * verify the bridge actually wrote *_pb2.py / *_pb2_grpc.py.  If not,
+   * surface a yellow toast pointing them at the diagnostic command.
+   * The bridge logs the real reason (grpcio-tools missing, protoc
+   * non-zero, etc.) at WARNING level — the toast just tells the user
+   * where to look.
+   */
+  function _warnIfStubsRequestedButMissing(d, data) {
+    if (!d || d.genStubs === false) return;
+    if ((d.language || 'python') !== 'python') return;
+    var files = (data && data.files) || [];
+    var hasPb2     = files.some(function (p) { return /\/.+_pb2\.py$/.test(p); });
+    var hasPb2Grpc = files.some(function (p) { return /\/.+_pb2_grpc\.py$/.test(p); });
+    if (hasPb2 && hasPb2Grpc) return;
+    MM.showToast(
+      'Proto stubs not generated',
+      'You ticked "Pre-generate proto stubs" but the bridge did not ' +
+      'produce *_pb2.py / *_pb2_grpc.py.  Most common cause: ' +
+      'grpcio-tools is not installed in the bridge\'s Python — fix with ' +
+      '`pip install grpcio-tools` in that environment.  Check the ' +
+      'bridge log (launcher.log) for the exact reason, or run ' +
+      '`python scripts/generate_protos.py` from inside the generated ' +
+      'service folder.',
+      'warning'
+    );
   }
 
   // ---- Public API ----

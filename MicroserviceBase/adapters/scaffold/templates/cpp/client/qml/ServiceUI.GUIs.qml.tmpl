@@ -1,0 +1,15 @@
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import MicroserviceBase 1.0
+
+Rectangle {
+    id: root
+    width: 600; height: 400
+    color: "#f5f5f5"
+
+    Label {
+        anchors.centerIn: parent
+        text: "@@{service_name} QML UI"
+        font.pixelSize: 24
+    }
+}

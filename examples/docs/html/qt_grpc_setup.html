@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Qt6::Grpc Client Setup — qt_client/ Build Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  .sidebar-nav {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  main {
+    margin-left: 250px;
+    padding: 30px 40px;
+    max-width: 1100px;
+  }
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--accent);
+  }
+  section h2 {
+    color: var(--accent);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 14px; margin-bottom: 6px; font-size: 1em; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+
+  .step-num {
+    display: inline-block;
+    width: 32px; height: 32px;
+    line-height: 32px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 0.9em;
+    margin-right: 10px;
+  }
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .danger-box {
+    background: rgba(248,113,113,0.08);
+    border-left: 4px solid var(--red);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .tldr {
+    font-size: 1.02em;
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 16px 0;
+  }
+  .tldr strong { color: var(--accent); }
+
+  footer {
+    text-align: center;
+    padding: 30px;
+    margin-left: 250px;
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Qt6::Grpc Client Setup</h1>
+  <p>Building <code>qt_client/</code> with the Qt-installer toolchain (separate from MSYS2)</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">Qt6::Grpc Client</div>
+  <a href="#why">Why qt_client/</a>
+  <a href="#tldr">TL;DR</a>
+
+  <div class="nav-group">Setup</div>
+  <a href="#step1">1. Qt components</a>
+  <a href="#step2">2. Install protoc</a>
+  <a href="#step3">3. Build via .bat</a>
+  <a href="#step4">4. Build via Qt Creator</a>
+
+  <div class="nav-group">Reference</div>
+  <a href="#cmake-discovery">CMake auto-discovery</a>
+  <a href="#api-version">Qt 6 API version pins</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Troubleshooting</a>
+
+  <div class="nav-group">Companion docs</div>
+  <a href="index.html">&larr; Docs index</a>
+  <a href="mingw_setup.html">MinGW (MSYS2) setup</a>
+  <a href="vcpkg_setup.html">vcpkg + Qt MinGW setup</a>
+  <a href="service_creation.html">Service creation guide</a>
+  <a href="wasm_cleware_service_guide.html">WASM service guide</a>
+</nav>
+
+<main>
+
+<!-- =========================== Why ============================ -->
+<section id="why">
+<h2>Why a separate <code>qt_client/</code> project?</h2>
+<p>
+  When the wizard generates a service with GUI and you pick the
+  <strong>Qt6::Grpc</strong> client option, it emits a parallel CMake
+  project at <code>qt_client/</code>.  This sits next to the existing
+  Google-grpc <code>client/</code> folder, but is built with a
+  <em>different</em> toolchain.  The two coexist; you pick whichever
+  you prefer to run.
+</p>
+
+<table>
+  <tr><th>Folder</th><th>Toolchain</th><th>gRPC stack</th><th>Code style</th></tr>
+  <tr>
+    <td><code>client/</code></td>
+    <td>MSYS2 MinGW (g++ 14.x)</td>
+    <td>Google grpc++ + libprotobuf</td>
+    <td><code>grpc::ClientContext</code>, <code>JsonStringToMessage</code></td>
+  </tr>
+  <tr>
+    <td><code>qt_client/</code></td>
+    <td>Qt-installer MinGW (g++ 13.x)</td>
+    <td>Qt6::Grpc + Qt6::Protobuf</td>
+    <td><code>QGrpcClient</code>, <code>QProtobufJsonSerializer</code></td>
+  </tr>
+  <tr>
+    <td><code>qt_client_grpcpp/</code></td>
+    <td>Qt-installer MinGW (g++ 13.x) + vcpkg</td>
+    <td>Google grpc++ (vcpkg-built)</td>
+    <td><code>grpc::ClientContext</code> on <code>QtConcurrent::run</code>, <code>JsonStringToMessage</code></td>
+  </tr>
+</table>
+
+<div class="highlight-box">
+  <strong>Three options coexist.</strong>  This doc covers the
+  <code>qt_client/</code> variant.  For <code>qt_client_grpcpp/</code>
+  &mdash; Google grpc++ but compiled via vcpkg with Qt MinGW so client +
+  server share one ABI &mdash; see the
+  <a href="vcpkg_setup.html">vcpkg + Qt MinGW setup guide</a>.
+</div>
+
+<div class="warn-box">
+  <strong>Don't mix the two.</strong>  MSYS2's libstdc++ (GCC 14) and
+  Qt-installer's libstdc++ (GCC 13) ABIs are not compatible inside a
+  <em>single</em> binary &mdash; you'd get cryptic link errors like
+  <code>undefined reference to nanosleep64</code>.  Each project keeps
+  its own toolchain; they only share the <em>wire protocol</em>, which
+  is fine because Qt6::Grpc and Google grpc++ both speak the same
+  HTTP/2 dialect.
+</div>
+
+<p>
+  The server side <em>always</em> uses Google grpc++ (built with MSYS2
+  in the parent project) &mdash; <strong>Qt 6 has no server module</strong>,
+  only client.  So <code>qt_client/</code> talks to the same
+  <code>analog_input_service.exe</code>, <code>pps_service.exe</code>,
+  etc. that the Google-grpc <code>client/</code> talks to.  Wire
+  interop is automatic.
+</p>
+</section>
+
+<!-- =========================== TL;DR ============================ -->
+<section id="tldr">
+<h2>TL;DR</h2>
+<div class="tldr">
+  <strong>Three things to install</strong>: Qt + MinGW kit, Qt's GRPC and
+  Protobuf modules, Google's <code>protoc.exe</code> (separate from Qt!).
+  Then either run <code>build_qt.bat</code> or open in Qt Creator.
+  <br><br>
+  <strong>If Qt Creator complains "protoc not found"</strong>: add
+  <code>Protobuf_PROTOC_EXECUTABLE</code> to <em>Projects → Build →
+  CMake → Initial Configuration</em>, pointing at your
+  <code>protoc.exe</code>.
+</div>
+</section>
+
+<!-- =========================== Step 1 ============================ -->
+<section id="step1">
+<h2><span class="step-num">1</span> Qt components</h2>
+<p>
+  Install via the <strong>Qt Maintenance Tool</strong> (the same tool you
+  used for Qt itself).  Open <em>Add or remove components</em> and tick
+  every entry below under your chosen Qt version + MinGW kit:
+</p>
+
+<table>
+  <tr><th>Component</th><th>Why</th></tr>
+  <tr><td>Qt 6.x.x → <strong>MinGW 13.1.0 64-bit</strong></td>
+      <td>Qt 6 libraries built with MinGW</td></tr>
+  <tr><td>Qt 6.x.x → <strong>Qt GRPC</strong></td>
+      <td>Client-side gRPC.  Stable in <strong>6.8+</strong>; <em>Tech Preview</em> in 6.7 (works but API may shift).  <strong>Not installed by default.</strong></td></tr>
+  <tr><td>Qt 6.x.x → <strong>Qt Protobuf</strong></td>
+      <td><code>QProtobufMessage</code> runtime.  Same caveat as Qt GRPC.</td></tr>
+  <tr><td>Qt 6.x.x → <strong>Qt Protobuf WellKnownTypes</strong></td>
+      <td><code>Empty</code>, <code>Timestamp</code>, etc.</td></tr>
+  <tr><td>Qt → Tools → <strong>CMake</strong></td>
+      <td>CMake bundled with Qt (typically <code>C:\Qt\Tools\CMake_64</code>)</td></tr>
+  <tr><td>Qt → Tools → <strong>Ninja</strong></td>
+      <td>Build driver</td></tr>
+  <tr><td>Qt → Tools → <strong>MinGW 13.1.0 64-bit</strong></td>
+      <td>The compiler (typically <code>C:\Qt\Tools\mingw1310_64</code>)</td></tr>
+</table>
+
+<div class="highlight-box">
+  <strong>Qt 6.7 vs 6.8+:</strong> in 6.7 the GRPC/Protobuf modules are
+  <em>Tech Preview</em> &mdash; they exist but you have to opt in
+  explicitly.  In 6.8 they were promoted to stable and bundled by default
+  with the MinGW kit.  Strongly recommend 6.8 or later.
+</div>
+
+<h3>Verify the install</h3>
+<p>From a Windows <code>cmd</code>:</p>
+<pre><code>dir C:\Qt\6.11.0\mingw_64\lib\cmake\Qt6\Qt6Config.cmake
+dir C:\Qt\6.11.0\mingw_64\lib\cmake\Qt6Grpc\Qt6GrpcConfig.cmake
+dir C:\Qt\6.11.0\mingw_64\lib\cmake\Qt6Protobuf\Qt6ProtobufConfig.cmake
+dir C:\Qt\Tools\mingw1310_64\bin\g++.exe
+dir C:\Qt\Tools\CMake_64\bin\cmake.exe
+dir C:\Qt\Tools\Ninja\ninja.exe</code></pre>
+<p>
+  All six should list files.  If <code>Qt6GrpcConfig.cmake</code> is
+  missing, Qt GRPC wasn't ticked &mdash; rerun the Maintenance Tool.
+</p>
+</section>
+
+<!-- =========================== Step 2 ============================ -->
+<section id="step2">
+<h2><span class="step-num">2</span> Install Google's <code>protoc</code></h2>
+<div class="warn-box">
+  <strong>The Qt installer does NOT bundle <code>protoc</code>.</strong>
+  Qt's <code>qt_add_grpc</code> / <code>qt_add_protobuf</code> CMake
+  macros internally invoke Google's <code>protoc.exe</code> with
+  Qt-supplied plugins (<code>protoc-gen-qtprotobuf</code>,
+  <code>protoc-gen-qtgrpc</code>).  Qt ships only the plugins.
+</div>
+
+<p>
+  Once code generation is done, the resulting binary doesn't link against
+  Google's <code>libprotobuf</code> &mdash; it uses Qt's own
+  <code>QProtobufMessage</code> runtime.  You only need
+  <code>protoc.exe</code> at build time.
+</p>
+
+<h3>Easiest: MSYS2 (recommended if MSYS2 is already installed)</h3>
+<pre><code>pacman -S mingw-w64-x86_64-protobuf</code></pre>
+<p>
+  Lands at <code>C:\msys64\mingw64\bin\protoc.exe</code>.  The
+  generated <code>CMakeLists.txt</code> auto-discovers this path.
+</p>
+
+<h3>Standalone download</h3>
+<p>
+  From <a href="https://github.com/protocolbuffers/protobuf/releases" target="_blank" rel="noopener">protobuf releases</a>:
+</p>
+<ol>
+  <li>Download <code>protoc-&lt;version&gt;-win64.zip</code>.</li>
+  <li>Unzip anywhere, e.g. <code>C:\tools\protoc</code>.</li>
+  <li>Either add the <code>bin</code> folder to <code>PATH</code>, or set <code>PROTOC_DIR=C:\tools\protoc\bin</code> in your environment.</li>
+</ol>
+</section>
+
+<!-- =========================== Step 3 ============================ -->
+<section id="step3">
+<h2><span class="step-num">3</span> Build via <code>build_qt.bat</code></h2>
+<p>
+  The fastest one-shot build.  Open Windows <code>cmd</code> in the
+  <code>qt_client/</code> folder:
+</p>
+<pre><code>:: Adjust if your Qt is somewhere else:
+set "QT_DIR=C:\Qt\6.11.0\mingw_64"
+
+:: Optional &mdash; only needed if protoc isn't auto-discovered:
+set "PROTOC_DIR=C:\msys64\mingw64\bin"
+
+build_qt.bat</code></pre>
+
+<p>The script discovers the rest of the toolchain automatically:</p>
+<table>
+  <tr><th>Tool</th><th>Looked up under</th></tr>
+  <tr><td>MinGW g++</td><td><code>%QT_TOOLS%\mingw1310_64\bin\g++.exe</code> (with fallbacks)</td></tr>
+  <tr><td>CMake</td><td><code>%QT_TOOLS%\CMake_64\bin\cmake.exe</code></td></tr>
+  <tr><td>Ninja</td><td><code>%QT_TOOLS%\Ninja\ninja.exe</code></td></tr>
+  <tr><td>protoc</td><td><code>PROTOC_DIR</code> → MSYS2 → vcpkg → PATH</td></tr>
+</table>
+<p>
+  Default <code>QT_TOOLS</code> is <code>C:\Qt\Tools</code>.  If any
+  required tool is missing, the script aborts with a message naming
+  exactly which Maintenance Tool component to install.
+</p>
+<p>
+  Output: <code>build-qt\&lt;project&gt;_qt_gui.exe</code>.
+</p>
+</section>
+
+<!-- =========================== Step 4 ============================ -->
+<section id="step4">
+<h2><span class="step-num">4</span> Build via Qt Creator</h2>
+
+<h3>4a. Open the project</h3>
+<ol>
+  <li>File → Open File or Project… → pick <code>qt_client/CMakeLists.txt</code>.</li>
+  <li>In the kit picker, tick the <strong>Desktop Qt 6.11.x MinGW 13.1.0 64-bit</strong> kit.</li>
+  <li>Click <strong>Configure Project</strong>.</li>
+</ol>
+
+<h3>4b. If you see "protoc not found" / "Failed to find required Qt component Grpc"</h3>
+<p>
+  Qt Creator's kit doesn't always have your shell's <code>PATH</code>, so
+  the auto-discovery built into <code>CMakeLists.txt</code> may not find
+  <code>protoc</code>.  Tell it explicitly:
+</p>
+<ol>
+  <li>Click <strong>Projects</strong> in the left rail.</li>
+  <li>Under your kit → <strong>Build → CMake</strong> section.</li>
+  <li>Find <strong>Initial Configuration</strong> → click <strong>Add</strong>:</li>
+</ol>
+
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Key</td><td><code>Protobuf_PROTOC_EXECUTABLE</code></td></tr>
+  <tr><td>Type</td><td><strong>FILEPATH</strong></td></tr>
+  <tr><td>Value</td><td><code>C:/msys64/mingw64/bin/protoc.exe</code> (use forward slashes)</td></tr>
+</table>
+
+<div class="danger-box">
+  <strong>You must click "Re-configure with Initial Parameters", not the
+  regular Run CMake.</strong>  Initial Configuration is only consulted
+  when CMake's cache is rebuilt; a normal <em>Run CMake</em> uses the
+  stale cache and the variable won't take effect.  If unsure, right-click
+  the project → <strong>Clear CMake Configuration</strong> first.
+</div>
+
+<h3>4c. Build + run</h3>
+<ul>
+  <li><span class="kbd">Ctrl</span>+<span class="kbd">B</span> — Build All</li>
+  <li><span class="kbd">Ctrl</span>+<span class="kbd">R</span> — Run</li>
+  <li><span class="kbd">F5</span> — Debug (runs under Qt's bundled GDB)</li>
+</ul>
+
+<h3>4d. Alternative: via the kit Environment</h3>
+<p>
+  If you'd rather not change per-project settings, edit the kit env:
+  <strong>Tools → Options → Kits</strong> → your MinGW kit →
+  <em>Environment → Change…</em>, add:
+</p>
+<pre><code>PROTOC_DIR=C:\msys64\mingw64\bin</code></pre>
+<p>
+  The <code>CMakeLists.txt</code> picks up <code>PROTOC_DIR</code>
+  before falling back to its other candidates.  Restart Qt Creator
+  after editing kit env.
+</p>
+</section>
+
+<!-- ====================== CMake auto-discovery ====================== -->
+<section id="cmake-discovery">
+<h2>How <code>CMakeLists.txt</code> finds <code>protoc</code></h2>
+<p>
+  The generated <code>qt_client/CMakeLists.txt</code> contains an
+  auto-discovery block that runs before <code>find_package(Qt6 ...)</code>.
+  It checks these candidates in order, and uses the first one that
+  exists:
+</p>
+
+<table>
+  <tr><th>#</th><th>Candidate</th><th>How to override</th></tr>
+  <tr>
+    <td>1</td>
+    <td>Cache variable <code>Protobuf_PROTOC_EXECUTABLE</code> already set</td>
+    <td>Pass <code>-DProtobuf_PROTOC_EXECUTABLE=...</code> to CMake, or set in Qt Creator Initial Configuration.</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><code>$PROTOC_DIR/protoc.exe</code></td>
+    <td>Set <code>PROTOC_DIR</code> env var before invoking CMake / build_qt.bat.</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><code>C:/msys64/mingw64/bin/protoc.exe</code></td>
+    <td>Built-in default for MSYS2 mingw64.</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><code>C:/msys64/ucrt64/bin/protoc.exe</code></td>
+    <td>Built-in default for MSYS2 ucrt64.</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><code>$VCPKG_ROOT/installed/x64-windows/tools/protobuf/protoc.exe</code></td>
+    <td>If you use vcpkg.</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><code>find_program(protoc)</code> on <code>PATH</code></td>
+    <td>Make sure protoc is on Qt Creator's kit <code>PATH</code>.</td>
+  </tr>
+</table>
+
+<p>
+  Once a candidate matches, CMakeLists also:
+</p>
+<ul>
+  <li>Prepends the protoc folder to <code>ENV{PATH}</code> so Qt's
+      <code>WrapProtoc</code> module (which does its own
+      <code>find_program(protoc)</code>) sees it.</li>
+  <li>Adds the install prefix (the parent of <code>bin/</code>) to
+      <code>CMAKE_PREFIX_PATH</code> so <code>find_package(Protobuf)</code>
+      finds matching <code>libprotobuf</code> headers + libs.</li>
+</ul>
+
+<div class="highlight-box">
+  Qt's GRPC build hooks transitively call <code>find_dependency(Protobuf)</code>
+  &mdash; it wants the executable <em>and</em> headers + libs, even
+  though Qt doesn't link against <code>libprotobuf</code> at runtime.
+  When <code>protoc.exe</code> is on PATH, the standard
+  <code>FindProtobuf.cmake</code> derives those automatically; otherwise
+  the prefix push in step (b) is what makes it succeed.
+</div>
+</section>
+
+<!-- =========================== API pins ============================ -->
+<section id="api-version">
+<h2>Qt 6 API differences (6.5 → 6.11)</h2>
+<p>
+  The generated <code>MainWindow.cpp</code> targets <strong>Qt 6.8 or
+  later</strong>.  If you're on 6.5–6.7 you'll hit these differences:
+</p>
+
+<table>
+  <tr><th>API</th><th>6.5–6.7</th><th>6.8+</th></tr>
+  <tr>
+    <td>Channel options + URL</td>
+    <td><code>QGrpcChannelOptions opts(QUrl(...));<br>QGrpcHttp2Channel ch(opts);</code></td>
+    <td><code>QGrpcHttp2Channel ch(QUrl(...));</code></td>
+  </tr>
+  <tr>
+    <td>RPC return type</td>
+    <td><code>std::shared_ptr&lt;QGrpcCallReply&gt;</code></td>
+    <td><code>std::unique_ptr&lt;QGrpcCallReply&gt;</code></td>
+  </tr>
+  <tr>
+    <td>Reply read</td>
+    <td><code>bool reply-&gt;read(Msg*)</code></td>
+    <td><code>std::optional&lt;T&gt; reply-&gt;read&lt;T&gt;()</code></td>
+  </tr>
+</table>
+
+<p>
+  The generic <code>invokeRpc&lt;Req, Resp&gt;</code> template in the
+  generated <code>MainWindow.h</code> uses the 6.8+ shape:
+</p>
+<pre><code>auto reply = callRpc(req);
+auto* raw  = reply.get();
+connect(raw, &amp;QGrpcCallReply::finished, this,
+    [r = std::move(reply), done](const QGrpcStatus&amp; st) {
+        if (!st.isOk()) { done(false, "RPC failed: " + st.message()); return; }
+        auto resp = r-&gt;template read&lt;Resp&gt;();
+        if (!resp) { done(false, "Failed to read"); return; }
+        done(true, QString::fromUtf8(resp-&gt;serialize(&amp;ser)));
+    });</code></pre>
+
+<p>
+  Note <code>std::move</code> capture (because <code>reply</code> is
+  <code>unique_ptr</code>, not <code>shared_ptr</code>), and the
+  <code>r-&gt;template read&lt;Resp&gt;()</code> disambiguator (because
+  <code>Resp</code> is a dependent type inside a function template).
+</p>
+</section>
+
+<!-- ========================= Troubleshooting ========================= -->
+<section id="troubleshooting">
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr>
+    <td><code>'protoc' executable is not found</code></td>
+    <td>Install protoc (see <a href="#step2">Step 2</a>) and either set <code>PROTOC_DIR</code> or pass <code>-DProtobuf_PROTOC_EXECUTABLE=...</code> in Qt Creator Initial Configuration.  Don't forget to click <em>Re-configure with Initial Parameters</em>.</td>
+  </tr>
+  <tr>
+    <td><code>Failed to find required Qt component "Grpc"</code> &mdash; but <code>Qt6GrpcConfig.cmake</code> exists</td>
+    <td>This usually chains from a missing protoc or a missing Protobuf headers/libs.  Check that <code>C:\Qt\&lt;ver&gt;\mingw_64\lib\cmake\Qt6Grpc\</code> exists, and verify the <code>--&gt; Using protoc:</code> line shows up in the General Messages pane during configure.</td>
+  </tr>
+  <tr>
+    <td><code>Failed to find required Qt component "Grpc"</code> &mdash; <code>Qt6GrpcConfig.cmake</code> does NOT exist</td>
+    <td>Qt GRPC component wasn't installed.  Open Qt Maintenance Tool → tick <em>Qt 6.x.x → Qt GRPC</em>, install, retry.</td>
+  </tr>
+  <tr>
+    <td>Compiler picked up is <code>C:/StPerl532_x64/c/bin/c++.exe</code> or another stray g++</td>
+    <td>Strawberry Perl / random MinGW on PATH.  The generated <code>build_qt.bat</code> refuses this and forces Qt's bundled MinGW; if you're configuring from Qt Creator, make sure the kit's C++ compiler is the Qt-installer MinGW (<em>Tools → Options → Kits → Compilers</em>).</td>
+  </tr>
+  <tr>
+    <td>Cryptic link errors mentioning <code>nanosleep64</code>, <code>__cxa_throw_bad_array_*</code></td>
+    <td>You're mixing libstdc++ from two MinGW versions in one binary.  Don't add MSYS2's <code>C:\msys64\mingw64</code> to <code>CMAKE_PREFIX_PATH</code> for a Qt-installer build.  The auto-discovery only adds it for protoc's parent <em>directory</em>, which doesn't bring libstdc++ along.</td>
+  </tr>
+  <tr>
+    <td>Configure fails after a successful build, with stale variables</td>
+    <td>Right-click the project in Qt Creator → <strong>Clear CMake Configuration</strong>, or delete <code>build/Desktop_Qt_*</code>.  CMake caches things aggressively; an "unset" env var doesn't clear an old cache value.</td>
+  </tr>
+  <tr>
+    <td><code>'unique_ptr&lt;QGrpcCallReply&gt;' use of deleted copy constructor</code> while compiling MainWindow</td>
+    <td>You're on Qt 6.5–6.7 (where the API uses <code>shared_ptr</code>) but using the 6.8+ generated code.  Easiest fix: upgrade Qt to 6.8 or later.  Or hand-edit the lambda capture from <code>[reply, done]</code> to <code>[r = std::move(reply), done]</code>.</td>
+  </tr>
+  <tr>
+    <td><code>QGrpcChannelOptions(QUrl)</code> &mdash; no matching ctor</td>
+    <td>Same root cause: code expects 6.5–6.7 ctor.  In 6.8+ pass the URL directly to <code>QGrpcHttp2Channel(QUrl(...))</code>.  See the <a href="#api-version">Qt 6 API differences</a> table.</td>
+  </tr>
+  <tr>
+    <td>Build succeeds but exe silent-dies on Run</td>
+    <td>Almost always Qt's <em>platform plugin</em> (<code>platforms\qwindows.dll</code>) can't be found.  Install <em>Qt → Tools → Qt Tools</em> which gives you <code>windeployqt.exe</code>, then run it on your output binary.  Or set <code>QT_PLUGIN_PATH=C:\Qt\&lt;ver&gt;\mingw_64\plugins</code> in your shell.</td>
+  </tr>
+</table>
+</section>
+
+</main>
+
+<footer>
+  Companion to <a href="mingw_setup.html">mingw_setup.html</a> &mdash;
+  this page covers the Qt-installer / Qt6::Grpc workflow; that one
+  covers the MSYS2 / Google grpc++ workflow.  Both are valid, just
+  pick one toolchain per binary.
+</footer>
+
+</body>
+</html>

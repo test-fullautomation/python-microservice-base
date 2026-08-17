@@ -1,0 +1,38 @@
+@@{header}"""
+Settings for @@{service_name}.
+"""
+
+from __future__ import annotations
+
+from pydantic_settings import SettingsConfigDict
+
+from MicroserviceBase.runtime import BaseServiceSettings
+
+
+class Settings(BaseServiceSettings):
+    """
+Settings for the @@{service_name} service.
+
+Inherits the standard fields from :class:`BaseServiceSettings`
+(``service_host``, ``grpc_port``, ``advertise_addr``, ``consul_addr``,
+``consul_token``, ``log_level``).  Add service-specific fields here as
+plain class attributes — Pydantic will read them from env vars prefixed
+with ``@@{prefix}``.
+
+**Attributes:**
+
+* ``service_name``
+
+  / *Type*: str / *Default*: "@@{sn}" /
+
+  Logical service name used for Consul registration.  Override via
+  ``@@{prefix}SERVICE_NAME`` if running multiple instances of this
+  service on the same Consul cluster.
+    """
+    model_config = SettingsConfigDict(
+        env_prefix="@@{prefix}",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    service_name: str = "@@{sn}"

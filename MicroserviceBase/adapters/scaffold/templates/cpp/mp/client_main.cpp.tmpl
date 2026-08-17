@@ -1,0 +1,66 @@
+// Console client for @@{project_name} (multi-proto).
+//
+// All services are hosted by ONE binary on ONE port, so we make ONE
+// channel and instantiate all per-service stubs on it.
+//
+// Usage:
+//   @@{sn}_client                    # discover host:port via Consul (default)
+//   @@{sn}_client --direct HOST:PORT # bypass Consul, connect directly
+
+#include <iostream>
+#include <memory>
+#include <string>
+
+#include <grpcpp/grpcpp.h>
+#include "MicroserviceBase/ServiceClient.h"
+
+@@{inc_block}
+
+int main(int argc, char** argv) {
+    std::string target;
+    bool direct = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string a(argv[i]);
+        if (a == "--direct" && i + 1 < argc) {
+            target = argv[++i];
+            direct = true;
+        }
+    }
+
+    if (!direct) {
+        // Discover the multi-service binary via Consul.  All hosted services
+        // share ONE registration named after the project's snake_name, so
+        // one lookup yields the host:port for every service.
+        const char* consul_addr_env = std::getenv("@@{sn_upper}_CONSUL_ADDR");
+        std::string consul_addr = consul_addr_env
+            ? consul_addr_env : "http://127.0.0.1:8500";
+        microservice_base::ConsulResolver resolver(consul_addr);
+        auto endpoint = resolver.resolve("@@{sn}");
+        if (endpoint.empty()) {
+            std::cerr << "Consul lookup for '@@{sn}' returned no instances. "
+                      << "Pass --direct HOST:PORT to bypass." << std::endl;
+            return 1;
+        }
+        target = endpoint;
+    }
+
+    std::cout << "Connecting to @@{project_name} @ " << target << std::endl;
+    auto channel = grpc::CreateChannel(target, grpc::InsecureChannelCredentials());
+
+    try {
+@@{stub_block}
+
+        std::cout << "\nHosted services + methods:" << std::endl;
+@@{list_block}
+        std::cout << std::endl;
+        std::cout << "TODO: replace this scaffold with your own RPC calls." << std::endl;
+        std::cout << "Each *_stub above is ready to use, e.g.:" << std::endl;
+        std::cout << "  grpc::ClientContext ctx;" << std::endl;
+        std::cout << "  ::ns::FooRequest req;  ::ns::FooResponse resp;" << std::endl;
+        std::cout << "  auto status = your_stub->FooMethod(&ctx, req, &resp);" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Client error: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}

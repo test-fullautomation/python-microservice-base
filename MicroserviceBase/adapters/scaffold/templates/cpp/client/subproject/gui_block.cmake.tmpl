@@ -1,0 +1,44 @@
+
+
+# ----- Qt Widgets GUI client (@@{snake_name}_gui) ------------------------------
+# Qt 6 discovery: honour QT_DIR / Qt6_DIR env vars (set in set_env.bat/.sh).
+#   QT_DIR   = Qt install prefix, e.g. C:\Qt\6.7.1\msvc2019_64
+#   Qt6_DIR  = directory containing Qt6Config.cmake (overrides QT_DIR)
+if(NOT DEFINED Qt6_DIR AND DEFINED ENV{Qt6_DIR})
+    set(Qt6_DIR "$ENV{Qt6_DIR}" CACHE PATH "Qt6 config dir")
+endif()
+if(DEFINED ENV{QT_DIR} AND NOT Qt6_DIR)
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+endif()
+
+find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+qt_standard_project_setup()
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/gui")
+
+qt_add_executable(@@{snake_name}_gui
+    gui/main.cpp
+    gui/MainWindow.cpp
+    gui/MainWindow.h
+    gui/MainWindow.ui
+    ${STUB_SRCS}
+)
+
+target_include_directories(@@{snake_name}_gui PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/gui"
+    "${STUB_INC}"
+)
+
+target_link_libraries(@@{snake_name}_gui PRIVATE
+    microservice_base::runtime
+    gRPC::grpc++
+    protobuf::libprotobuf
+    Qt6::Widgets
+)
+
+set_target_properties(@@{snake_name}_gui PROPERTIES
+    WIN32_EXECUTABLE ON
+    MACOSX_BUNDLE    ON
+)
+mb_deploy_runtime(@@{snake_name}_gui QT_APP)

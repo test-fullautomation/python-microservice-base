@@ -1,0 +1,15 @@
+    // --- @@{method_name} (imported proto) ---
+    {
+        MethodBinding b;
+        b.name = "@@{method_name}";
+        b.params = {};
+        b.invoke = [this](const std::vector<QWidget*>& /*ws*/) -> QString {
+            grpc::ClientContext ctx;
+            @@{input_type} req;    // TODO: fill request fields
+            @@{output_type} resp;
+            auto st = m_client->stub().@@{method_name}(&ctx, req, &resp);
+            if (!st.ok()) return QString("[error] ") + QString::fromStdString(st.error_message());
+            return "@@{method_name}: OK (fill in response formatting)";
+        };
+        m_methods.push_back(std::move(b));
+    }

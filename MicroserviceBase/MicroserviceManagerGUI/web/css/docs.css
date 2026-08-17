@@ -95,11 +95,16 @@
 }
 
 /* ---------- Docs Body ---------- */
+/* flex:1 fills the area to the right of the TOC.  No max-width so the
+   content scales to the app width.  min-width:0 prevents flex children
+   (long <pre>/<code>) from blowing past the parent and forcing a
+   horizontal scroll on the whole layout.  Inner content (paragraphs,
+   tables, figures) gets readability caps below where they help. */
 .docs-body {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   padding: 2rem;
-  max-width: 900px;
 }
 
 /* ---------- Sections ---------- */

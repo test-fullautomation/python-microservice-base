@@ -1,0 +1,59 @@
+// client.cpp — unified interactive test client for the
+// @@{project_name} monorepo.  Picks a service, then an RPC method.
+
+#include <iostream>
+#include <string>
+#include <vector>
+#include "client_common.h"
+@@{includes}
+
+namespace client_common {
+    std::string g_direct_host;
+
+    int prompt_choice(const std::string& title,
+                      const std::vector<std::string>& choices) {
+        std::cout << "\n" << title << "\n";
+        for (size_t i = 0; i < choices.size(); ++i)
+            std::cout << "  " << (i + 1) << ") " << choices[i] << "\n";
+        std::cout << "  0) back/quit\n> " << std::flush;
+        int sel = 0;
+        if (!(std::cin >> sel)) {
+            std::cin.clear();
+            std::string discard; std::cin >> discard;
+            return 0;
+        }
+        if (sel < 0 || sel > static_cast<int>(choices.size())) return 0;
+        return sel;
+    }
+}
+
+int main(int argc, char* argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--direct" && i + 1 < argc) {
+            client_common::g_direct_host = argv[++i];
+        } else if (a == "-h" || a == "--help") {
+            std::cout <<
+                "Usage: @@{project_snake}_client [--direct host:port]\n"
+                "  --direct  bypass Consul, use <host:port> for every service\n";
+            return 0;
+        }
+    }
+
+    if (!client_common::g_direct_host.empty()) {
+        std::cout << "Direct mode -> " << client_common::g_direct_host << "\n";
+    } else {
+        std::cout << "Consul discovery mode\n";
+    }
+
+    std::vector<std::string> svc_labels = { @@{labels} };
+    while (true) {
+        int pick = client_common::prompt_choice("Pick a service:", svc_labels);
+        if (pick == 0) break;
+        switch (pick) {
+@@{dispatch_cases}
+            default: break;
+        }
+    }
+    return 0;
+}

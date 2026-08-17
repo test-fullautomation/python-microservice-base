@@ -1,0 +1,20 @@
+sep=|
+TESTID|SECTION|SUBSECTION|DESCRIPTION
+MSB_0001|ScaffoldGenerator_Python|GOODCASE|Generate a Python single-service project and assert file layout
+MSB_0002|ScaffoldGenerator_Python|GOODCASE|Generated Python project compiles (py_compile + protoc)
+MSB_0003|ScaffoldGenerator_Python|GOODCASE|Generated Python project's scripts/generate_protos.py runs cleanly
+MSB_0004|ScaffoldGenerator_Python|GOODCASE|Generated Python service registers in Consul and answers a gRPC call
+MSB_0005|ScaffoldGenerator_Cpp|GOODCASE|Generate a C++ multi_proto project (Toolbox=Calculator+Echo) and assert layout
+MSB_0006|ScaffoldGenerator_Python|GOODCASE|Generate a Python monorepo project (Toolbox = Calculator + Echo) and assert layout
+MSB_0007|ScaffoldGenerator_Python|GOODCASE|Python monorepo compiles + shared .proto compiles
+MSB_0008|ScaffoldGenerator_Cpp|GOODCASE|Generate a C++ single-service project (Echo) and assert layout
+MSB_0009|ScaffoldGenerator_Cpp|BADCASE|Python + multi_proto layout must raise NotImplementedError
+MSB_0010|ScaffoldGenerator_Python|GOODCASE|Python monorepo's scripts/generate_protos.py runs cleanly
+MSB_0011|ScaffoldGenerator_Python|GOODCASE|Python monorepo Calculator service registers in Consul + reflection works
+MSB_0012|ScaffoldGenerator_Cpp|GOODCASE|C++ single-service .proto parses cleanly through protoc
+MSB_0013|ScaffoldGenerator_Cpp|GOODCASE|C++ multi_proto: every per-service .proto parses cleanly
+MSB_0014|ScaffoldGenerator_Cpp|GOODCASE|Generate a C++ monorepo project (Toolbox = Calculator + Echo) and assert layout
+MSB_0015|ScaffoldGenerator_Cpp|GOODCASE|C++ monorepo shared toolbox.proto parses cleanly
+MSB_0016|ScaffoldGenerator_Cpp|GOODCASE|C++ single-service CMake configure step succeeds
+MSB_0017|ScaffoldGenerator_E2E|GOODCASE|Submit generated calculator.nomad.hcl to Nomad; service registers + answers reflection
+MSB_0018|ScaffoldGenerator_Python|BADCASE|Empty service_name produces malformed file paths (no input validation)

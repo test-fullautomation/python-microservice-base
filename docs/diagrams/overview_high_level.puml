@@ -1,0 +1,55 @@
+@startuml
+' High-level runtime picture: what actually runs on a developer machine
+' and how an external client reaches a service.
+' Rendered into docs/architecture/overview.md.
+
+skinparam backgroundColor transparent
+skinparam shadowing false
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 12
+skinparam ArrowFontSize 11
+skinparam roundCorner 6
+
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #7A7A7A
+  BorderThickness 1
+}
+skinparam database {
+  BackgroundColor #EEF4FB
+  BorderColor #4A78A8
+}
+skinparam node {
+  BackgroundColor #FAFAF7
+  BorderColor #9A9A9A
+}
+
+title Runtime processes and how a client reaches a service
+
+node "Developer machine" as dev {
+  rectangle "Manager GUI\n(Electron / Web)" as GUI
+  rectangle "FastAPI bridge\n(Python, one process)\n/api/grpc · /api/consul\n/api/nomad · /api/scaffold" as Bridge
+  database "Consul agent\n:8500" as Consul
+  database "Nomad agent\n:4646" as Nomad
+  rectangle "Service A\n(gRPC :NNNNN)" as SvcA
+  rectangle "Service B\n(gRPC :NNNNN)" as SvcB
+}
+
+rectangle "Other clients\n(CLI, Qt GUI,\nanother service)" as Client
+
+GUI     <--> Bridge : HTTP / JSON
+Bridge   --> Consul : Consul HTTP API
+Bridge   --> Nomad  : Nomad HTTP API
+Nomad    --> SvcA   : raw_exec
+Nomad    --> SvcB   : raw_exec
+
+SvcA    ..>  Consul : registers
+SvcB    ..>  Consul : registers
+Consul  ..>  SvcA   : health probes
+Consul  ..>  SvcB   : health probes
+
+Client   --> Consul : discover (Consul HTTP)
+Client   ==> SvcA   : gRPC over HTTP/2
+Client   ==> SvcB   : gRPC over HTTP/2
+
+@enduml

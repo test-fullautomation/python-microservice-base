@@ -1,0 +1,9 @@
+
+grpc::Status @@{service_name}GrpcAdapter::@@{method_name}(
+    grpc::ServerContext*,
+    const @@{input_type}* request,
+    @@{output_type}* response) {
+@@{param_reads}
+    response->set_result(m_domain.@@{snake_method}(@@{args}));
+    return grpc::Status::OK;
+}

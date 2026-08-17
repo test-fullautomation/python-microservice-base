@@ -1,6 +1,5 @@
 @startuml component_flow_qt_ui_loading
-!theme plain
-title Qt UI Loading — Component + Flow Diagram
+title Qt UI Loading — Component + Flow Diagram (post-migration: gRPC backend)
 footer Three rendering strategies: QML Shell, Widget Shell, Per-Service WASM
 
 skinparam rectangle {
@@ -168,19 +167,19 @@ SvcApp -[#CC0000]-> CallBridge : direct JS call
 ' ============================================================================
 
 rectangle "Backend" <<backend>> as Row6 {
-    component "FastAPI Bridge\nPOST /api/request" as FastAPI
-    component "RabbitMQ\nservices_request exchange" as RabbitMQ
-    component "C++ / Python Service\nsvc_api_*(args) → result" as SvcBackend
+    component "FastAPI Bridge\nPOST /api/grpc/<svc>/<method>" as FastAPI
+    component "GrpcReflectClient\n(or LocalProtoClient)\n+ Consul resolver" as ReflectGw
+    component "C++ / Python gRPC Service\n(ServiceRunner + adapter)" as SvcBackend
 
-    FastAPI --> RabbitMQ : AMQP publish
-    RabbitMQ --> SvcBackend : deliver to\nservice queue
+    FastAPI --> ReflectGw : call_unary(svc, method, json)
+    ReflectGw --> SvcBackend : gRPC over HTTP/2
 }
 
-RequestSvc -[#CC0000,bold]-> FastAPI : <b>(6)</b> {method, args, broker_url}
+RequestSvc -[#CC0000,bold]-> FastAPI : <b>(6)</b> {method, args, consul_addr}
 
 ' Response flow (upward)
-SvcBackend -[#009900,bold]-> RabbitMQ : <b>(7)</b> reply {result, result_data}
-RabbitMQ -[#009900,bold]-> FastAPI : callback queue
+SvcBackend -[#009900,bold]-> ReflectGw : <b>(7)</b> gRPC OK + response message
+ReflectGw -[#009900,bold]-> FastAPI : MessageToDict
 FastAPI -[#009900,bold]-> RequestSvc : JSON response
 RequestSvc -[#009900,bold]-> CallBridge : Promise.resolve()
 

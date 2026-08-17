@@ -24,7 +24,7 @@ Browser                              Server
 
 ### Prerequisites
 
-- [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
+- [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.md)
 - Qt 6.x built for WebAssembly (single-threaded)
 
 ### Build (Windows)

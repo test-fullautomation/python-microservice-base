@@ -40,9 +40,48 @@ logger = logging.getLogger(__name__)
 
 
 class NomadAPIError(Exception):
-   """Raised when the Nomad API returns a non-2xx response."""
+   """
+Raised when the Nomad API returns a non-2xx response.
+
+**Attributes:**
+
+* ``status_code``
+
+  / *Type*: int /
+
+  HTTP status code returned by Nomad (or ``0`` for transport errors).
+
+* ``url``
+
+  / *Type*: str /
+
+  The URL that was being requested when the error occurred.
+   """
 
    def __init__(self, status_code, message, url=''):
+      """
+Construct a NomadAPIError.
+
+**Arguments:**
+
+* ``status_code``
+
+  / *Condition*: required / *Type*: int /
+
+  HTTP status code (or ``0`` for network / transport errors).
+
+* ``message``
+
+  / *Condition*: required / *Type*: str /
+
+  Human-readable message body from Nomad (or the network error).
+
+* ``url``
+
+  / *Condition*: optional / *Type*: str / *Default*: '' /
+
+  URL that was being requested.  Included in the formatted message.
+      """
       self.status_code = status_code
       self.url = url
       super().__init__(f'Nomad API {status_code}: {message} ({url})')
@@ -52,12 +91,51 @@ class NomadClient:
    """
 HTTP client for the HashiCorp Nomad v1 API.
 
-Uses only ``urllib`` from the standard library — no external dependencies.
-Supports ACL token authentication and blocking queries (long-poll).
+Uses only ``urllib`` from the standard library — no external
+dependencies.  Supports ACL token authentication and blocking queries
+(long-poll).
    """
 
    def __init__(self, address='http://127.0.0.1:4646', token='',
                 namespace='default', timeout=30.0, verify_ssl=True):
+      """
+Construct a NomadClient bound to a Nomad server.
+
+**Arguments:**
+
+* ``address``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'http://127.0.0.1:4646' /
+
+  Nomad HTTP API endpoint, e.g. ``"http://nomad.example.com:4646"``.
+
+* ``token``
+
+  / *Condition*: optional / *Type*: str / *Default*: '' /
+
+  Nomad ACL token.  Sent in the ``X-Nomad-Token`` header on every
+  request when non-empty.
+
+* ``namespace``
+
+  / *Condition*: optional / *Type*: str / *Default*: 'default' /
+
+  Default Nomad namespace.  Forwarded as the ``namespace`` query
+  parameter on every request.
+
+* ``timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: 30.0 /
+
+  Per-request timeout in seconds.
+
+* ``verify_ssl``
+
+  / *Condition*: optional / *Type*: bool / *Default*: True /
+
+  When ``False``, disables certificate verification for HTTPS endpoints
+  (use only for dev clusters with self-signed certs).
+      """
       self._address = address.rstrip('/')
       self._namespace = namespace
       self._timeout = timeout
@@ -65,6 +143,14 @@ Supports ACL token authentication and blocking queries (long-poll).
       self._last_index = {}
       self._ssl_context = None
       if not verify_ssl:
+         # Deliberate, opt-in escape hatch for dev clusters using
+         # self-signed certs; `verify_ssl` defaults to True so the secure
+         # path is what you get unless a caller explicitly asks otherwise.
+         # Static analysis flags these two lines regardless of the guard
+         # (CodeQL, CWE-295 disabled certificate validation) -- that alert
+         # is expected here and should be dismissed as "used in tests /
+         # intended behaviour" rather than "fixed", since removing the
+         # option would break local Nomad setups.
          self._ssl_context = ssl.create_default_context()
          self._ssl_context.check_hostname = False
          self._ssl_context.verify_mode = ssl.CERT_NONE
@@ -153,6 +239,22 @@ Supports ACL token authentication and blocking queries (long-poll).
    def register_job(self, job_spec):
       """POST /v1/jobs — register (create or update) a job."""
       return self._request('POST', '/jobs', body={'Job': job_spec})
+
+   def parse_hcl(self, hcl_text, canonicalize=True):
+      """POST /v1/jobs/parse — convert an HCL job spec to JSON.
+
+      Used by the GUI "Submit Job" dialog so users can paste HCL directly
+      instead of JSON.  Nomad's own ``nomad job run`` does the same under
+      the hood.
+
+      Returns the parsed job dict ready to be wrapped in ``{"Job": ...}``
+      and POSTed to ``/v1/jobs``.
+      """
+      body = {
+         'JobHCL': hcl_text,
+         'Canonicalize': bool(canonicalize),
+      }
+      return self._request('POST', '/jobs/parse', body=body)
 
    def stop_job(self, job_id, purge=False):
       """DELETE /v1/job/:id — stop a job. purge=True removes it entirely."""

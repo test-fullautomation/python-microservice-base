@@ -1,8 +1,15 @@
 # ADR-015: Fleet Orchestrator for Multi-Hub Process Management
 
+> **⚠ Superseded** — 2026-05-07.  Pre-migration decision; no longer
+> applies to the gRPC + Consul + Nomad architecture.  See the existing
+> Status note below for the immediate successor, and
+> [`docs/changelog.md`](../reference/changelog.md) +
+> [`docs/adr/AUDIT.md`](AUDIT.md) for the full triage.  Kept here for
+> git archaeology.
+
 ## Status
 
-Accepted
+Superseded by [ADR-022 Nomad Orchestrator Integration](022-nomad-orchestrator-integration.md). The custom Fleet Orchestrator was replaced by a Nomad cluster — same multi-node coverage, mature scheduler, and a battle-tested HTTP API the Manager GUI consumes via `/api/nomad/...` endpoints.
 
 ## Date
 

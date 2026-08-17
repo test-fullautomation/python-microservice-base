@@ -1,0 +1,15 @@
+
+:: ----- Deploy Qt runtime for the GUI client -----
+if exist "%DIST%\@@{project_snake}_gui.exe" (
+    if exist "%MSYS2_ROOT%\bin\windeployqt-qt6.exe" (
+        echo Running windeployqt-qt6 for @@{project_snake}_gui.exe ...
+        "%MSYS2_ROOT%\bin\windeployqt-qt6.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime "%DIST%\@@{project_snake}_gui.exe" >nul
+    ) else if exist "%MSYS2_ROOT%\bin\windeployqt.exe" (
+        echo Running windeployqt for @@{project_snake}_gui.exe ...
+        "%MSYS2_ROOT%\bin\windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw --compiler-runtime "%DIST%\@@{project_snake}_gui.exe" >nul
+    ) else (
+        echo WARNING: windeployqt not found in %MSYS2_ROOT%\bin
+        echo          Install with:  pacman -S mingw-w64-x86_64-qt6-tools
+        echo          GUI exe will rely on QT_PLUGIN_PATH from run_@@{project_snake}_gui.bat
+    )
+)

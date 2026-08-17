@@ -1,5 +1,4 @@
 @startuml component_qt_service_templates
-!theme plain
 title Qt C++ Service Templates -- Architecture Comparison (Overview)
 footer See detailed diagrams: component_qt_template_qml / _widget / _wasm
 
@@ -95,20 +94,20 @@ rectangle "UI Layer -- Template-Specific Frontend" as Row2 {
 rectangle "Business API -- Same Pattern for All Templates" as Row3 {
 
     rectangle " QML Service " <<qmlcol>> as QmlBiz {
-        component "MyQmlService\n: ServiceBase" <<api>> as QmlSvc
-        component "main.cpp +\nconfig.json" <<config>> as QmlMain
+        component "MyQmlService\ngRPC servicer + Settings" <<api>> as QmlSvc
+        component "main.cpp +\nServiceRunner" <<config>> as QmlMain
         QmlMain --> QmlSvc
     }
 
     rectangle " Widget Service " <<widgetcol>> as WidgetBiz {
-        component "MyWidgetService\n: ServiceBase" <<api>> as WidgetSvc
-        component " main.cpp +\nconfig.json" <<config>> as WidgetMain
+        component "MyWidgetService\ngRPC servicer + Settings" <<api>> as WidgetSvc
+        component " main.cpp +\nServiceRunner" <<config>> as WidgetMain
         WidgetMain --> WidgetSvc
     }
 
     rectangle " WASM Service " <<wasmcol>> as WasmBiz {
-        component "MyWasmService\n: ServiceBase" <<api>> as WasmSvc
-        component "main.cpp +\n config.json" <<config>> as WasmMain
+        component "MyWasmService\ngRPC servicer + Settings" <<api>> as WasmSvc
+        component "main.cpp +\nServiceRunner" <<config>> as WasmMain
         WasmMain --> WasmSvc
     }
 
@@ -121,12 +120,12 @@ rectangle "Business API -- Same Pattern for All Templates" as Row3 {
 ' ============================================================================
 
 rectangle "Shared Infrastructure" <<infra>> as Row4 {
-    component "CppServiceBase Library" <<infra>> as CppLib
-    component "FastAPI Bridge" <<infra>> as FastAPI
-    component "RabbitMQ Broker" <<infra>> as RMQ
+    component "MicroserviceBase\n(ServiceRunner +\nConsulRegistration +\nServiceClient<T>)" <<infra>> as CppLib
+    component "FastAPI Bridge\n(/api/grpc + /api/consul +\n/api/nomad)" <<infra>> as FastAPI
+    component "Consul cluster\n(service discovery)" <<infra>> as Consul
 
-    FastAPI -right-> RMQ : AMQP
-    RMQ -right-> CppLib : deliver
+    FastAPI -right-> Consul : list / health
+    Consul -right-> CppLib : registers /\ndiscovers
 }
 
 ' ============================================================================

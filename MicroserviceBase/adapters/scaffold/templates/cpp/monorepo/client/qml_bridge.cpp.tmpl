@@ -1,0 +1,33 @@
+#include "ClientBridge.h"
+#include "ClientRegistry.h"
+
+QStringList ClientBridge::services() const {
+    QStringList out;
+    for (const auto& s : client_registry::services())
+        out << QString::fromStdString(s);
+    return out;
+}
+
+QStringList ClientBridge::methods(const QString& serviceName) const {
+    QStringList out;
+    for (const auto& m : client_registry::methods(serviceName.toStdString()))
+        out << QString::fromStdString(m);
+    return out;
+}
+
+void ClientBridge::setDirectHost(const QString& hostPort) {
+    client_registry::set_direct_host(hostPort.toStdString());
+}
+
+QVariantMap ClientBridge::invoke(const QString& serviceName,
+                                 const QString& methodName,
+                                 const QString& requestJson) {
+    auto [ok, body] = client_registry::invoke(
+        serviceName.toStdString(),
+        methodName.toStdString(),
+        requestJson.toStdString());
+    QVariantMap m;
+    m["ok"] = ok;
+    m["body"] = QString::fromStdString(body);
+    return m;
+}

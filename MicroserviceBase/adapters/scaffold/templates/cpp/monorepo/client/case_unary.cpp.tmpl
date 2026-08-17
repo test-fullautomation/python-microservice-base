@@ -1,0 +1,10 @@
+            case @@{idx}: {
+                grpc::ClientContext ctx;
+                @@{inT} req;
+@@{setters}
+                @@{outT} resp;
+                auto st = stub.@@{method}(&ctx, req, &resp);
+                if (st.ok()) std::cout << "  @@{method} -> " << @@{print_expr} << "\n";
+                else         std::cerr << "  @@{method} FAILED: " << st.error_message() << "\n";
+                break;
+            }

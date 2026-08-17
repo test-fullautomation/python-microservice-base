@@ -1,29 +1,43 @@
 @startuml class_ports
-!theme plain
-title MicroserviceBase - Port Interfaces
+title MicroserviceBase - Port Interfaces (post-migration, 2026-05-07)
 
 skinparam class {
     BackgroundColor<<abstract>> #CCCCFF
     BackgroundColor<<service>> #CCE5FF
+    BackgroundColor<<legacy>> #DDDDDD
 }
+
+note as N1
+  **Architecture status**
+  - **HubManagerPort** is the canonical orchestration interface.
+    NomadHubAdapter (current) and LocalHubManager (legacy)
+    both implement it.
+  - **TransportPort / ServiceRegistryPort** retain their
+    broker vocabulary (consume / exchange / routing_key).
+    They are still used by legacy services; new services
+    talk gRPC + Consul directly via runtime / grpc_bridge
+    code paths and do not depend on these ports.
+  - **UIBridgePort** is current — FastAPIBridge implements
+    it and serves both the Manager GUI and any browser /
+    Electron client.
+end note
 
 package "ports" {
 
-    abstract class TransportPort <<abstract>> {
-        {abstract} +connect()
-        {abstract} +disconnect()
-        {abstract} +consume(service_name, routing_key, exchange, handler)
-        {abstract} +rpc_call(request_data, exchange_name, routing_key): dict
-        {abstract} +publish(exchange, routing_key, body, properties)
-    }
-
-    abstract class ServiceRegistryPort <<abstract>> {
-        {abstract} +register(service_info)
-        {abstract} +unregister(service_info)
-        {abstract} +subscribe_to_events(handler)
-        {abstract} +notify_update(services_info)
-        {abstract} +get_update_channel_name(): str
-        {abstract} +cleanup()
+    abstract class HubManagerPort <<abstract>> {
+        {abstract} +start_hub(mode, **kwargs): dict
+        {abstract} +stop_hub(): dict
+        {abstract} +get_status(): dict
+        {abstract} +start_processes(names): dict
+        {abstract} +stop_processes(names, force): dict
+        {abstract} +get_config(): dict
+        {abstract} +add_config(name, config): dict
+        {abstract} +update_config(name, config): dict
+        {abstract} +remove_config(name): dict
+        {abstract} +get_service_log(name, tail): dict
+        {abstract} +import_service(name, source_path, zip_data, wait_time): dict
+        {abstract} +remove_service(name): dict
+        {abstract} +reset(): dict
     }
 
     abstract class UIBridgePort <<abstract>> {
@@ -32,48 +46,61 @@ package "ports" {
         {abstract} +broadcast_update(services_info)
     }
 
-    note right of TransportPort
-      **Handler signature:**
-      handler(ch, method, props, body)
+    abstract class TransportPort <<legacy>> {
+        {abstract} +connect()
+        {abstract} +disconnect()
+        {abstract} +stop_consuming()
+        {abstract} +consume(service_name, routing_key, exchange, handler)
+        {abstract} +rpc_call(request_data, exchange_name, routing_key): dict
+        {abstract} +publish(exchange, routing_key, body, properties)
+    }
 
-      **consume()** blocks the caller.
-      **rpc_call()** is synchronous
-      request-response with correlation ID.
-    end note
+    abstract class ServiceRegistryPort <<legacy>> {
+        {abstract} +register(service_info)
+        {abstract} +unregister(service_info)
+        {abstract} +subscribe_to_events(handler)
+        {abstract} +notify_update(services_info)
+        {abstract} +get_update_channel_name(): str
+    }
 
-    note right of ServiceRegistryPort
-      **subscribe_to_events()** blocks
-      the caller (run in daemon thread).
-
-      **notify_update()** broadcasts to
-      all connected UI clients.
+    note right of HubManagerPort
+      Backend-agnostic orchestration interface (ADR-022).
+      Same surface used by the FastAPI bridge whether the
+      backend is a single-host Nomad client (dev) or a
+      multi-node Nomad cluster (production, ADR-024).
     end note
 
     note right of UIBridgePort
-      **request_handler** routes
-      ServiceRequest -> ServiceResponse.
+      ``request_handler`` routes ServiceRequest → ServiceResponse.
+      ``services_info_provider`` returns the current discovery
+      view — for new services this is sourced from Consul,
+      for legacy services from the in-process ServiceRegistry.
+      ``broadcast_update()`` pushes to all connected UI clients.
+    end note
 
-      **services_info_provider** returns
-      current service registry state.
+    note bottom of TransportPort
+      Broker-era port (RabbitMQ AMQP).  Vocabulary
+      (exchange / routing_key / consume) doesn't fit
+      gRPC.  New services bypass this port and use
+      grpc_bridge / runtime_cpp directly.
+    end note
+
+    note bottom of ServiceRegistryPort
+      Broker-era port — superseded by Consul (ADR-023).
+      Still implemented by AMQPRegistryAdapter so legacy
+      services keep working during the migration window.
     end note
 }
 
-package "domain" {
+package "domain  <<legacy>>" {
 
-    class ServiceBase <<service>> {
+    class ServiceBase <<legacy>> {
         -_transport: TransportPort
         -_registry: ServiceRegistryPort
         +serve()
         +register_service()
         +request_service()
     }
-
-    class ServiceRegistry <<service>> {
-        +notify_updates()
-        +handle_update()
-    }
-
-    ServiceRegistry --|> ServiceBase
 }
 
 ' Dependency direction: domain depends on ports (inward)

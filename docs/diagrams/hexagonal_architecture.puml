@@ -1,0 +1,152 @@
+@startuml hexagonal_architecture
+!theme plain
+skinparam defaultTextAlignment center
+skinparam packageStyle rectangle
+skinparam componentStyle rectangle
+skinparam wrapWidth 200
+
+title MicroserviceBase - Hexagonal Architecture (Overview)
+
+' ============================================================================
+' Colors
+' ============================================================================
+skinparam component {
+    BackgroundColor<<domain>>   #e8f5e9
+    BackgroundColor<<port>>     #e3f2fd
+    BackgroundColor<<adapter>>  #fff3e0
+    BackgroundColor<<factory>>  #f3e5f5
+    BackgroundColor<<bridge>>   #e0f7fa
+    BackgroundColor<<external>> #f5f5f5
+}
+
+' ============================================================================
+' Layer 1 - Composition Root (top)
+' ============================================================================
+
+package "Composition root\n(main.py / main.cpp)" as FactoryLayer #f3e5f5 {
+    component "ServiceContext / DI" as Composition <<factory>>
+    component "Settings\n(<PREFIX>_*\nenv vars)" as Settings <<factory>>
+}
+
+' ============================================================================
+' Layer 2 - Adapters (Infrastructure-aware)
+' ============================================================================
+
+package "Adapters layer (infra-aware)" as AdaptersLayer #fff3e0 {
+    component "GrpcAdapter\n(gRPC server + reflection)" as GrpcAdapter <<adapter>>
+    component "ConsulRegistration\n(/v1/agent/service/...)"  as ConsulAdapter <<adapter>>
+    component "NomadHubAdapter\n(/v1/jobs, raw_exec)"        as NomadAdapter <<adapter>>
+    component "ScaffoldGenerator\n(cpp_tmpl / python_tmpl)"  as ScaffoldAdapter <<adapter>>
+    component "HardwarePort impl\n(or Mock)"                 as HwAdapter <<adapter>>
+}
+
+package "FastAPI bridge\n(REST front)" as BridgePkg #e0f7fa {
+    component "FastAPIBridge"     as FastBridge   <<bridge>>
+    component "GrpcReflectClient" as ReflectClient <<bridge>>
+    component "LocalProtoClient\n(fallback)" as LocalProto <<bridge>>
+}
+
+' ============================================================================
+' Layer 3 - Ports (Interfaces)
+' ============================================================================
+
+package "Ports layer (interfaces / protocols)" as PortsLayer #e3f2fd {
+    component "TransportPort\n(serve / call)"          as TransportPort <<port>>
+    component "ServiceRegistryPort\n(register / discover)" as RegistryPort <<port>>
+    component "ProcessPort\n(spawn / signal)"          as ProcessPort <<port>>
+    component "SerializationPort"                      as SerialPort <<port>>
+    component "UIBridgePort\n(REST front)"             as UIPort <<port>>
+}
+
+' ============================================================================
+' Layer 4 - Domain (Pure logic, zero infra)
+' ============================================================================
+
+package "Domain layer (zero infra deps)" as DomainLayer #e8f5e9 {
+    component "ServiceRunner\n(generic serve loop)" as Runner <<domain>>
+    component "<service>_service\n(business logic)"  as DomainSvc <<domain>>
+    component "Value types & messages\n(plain dataclasses / structs)" as Models <<domain>>
+}
+
+' ============================================================================
+' External systems (side)
+' ============================================================================
+
+component "Consul agent\n(:8500)"        as ConsulAgent <<external>>
+component "Nomad agent\n(:4646 / :5656)" as NomadAgent  <<external>>
+component "Manager GUI\n(Electron / browser)" as GUI <<external>>
+component "Robot Framework\n(QConnectBase GrpcClient)" as Robot <<external>>
+
+' ============================================================================
+' Vertical layout hints
+' ============================================================================
+
+FactoryLayer  -[hidden]down- AdaptersLayer
+AdaptersLayer -[hidden]down- PortsLayer
+PortsLayer    -[hidden]down- DomainLayer
+AdaptersLayer -[hidden]right- BridgePkg
+
+' ============================================================================
+' Composition root --> Adapters (wires)
+' ============================================================================
+
+Composition ..> GrpcAdapter   : creates
+Composition ..> ConsulAdapter : creates
+Composition ..> HwAdapter     : creates
+Composition --> Settings      : reads
+Composition ..> Runner        : injects adapters into
+
+' ============================================================================
+' Adapters --|> Ports (implements)
+' ============================================================================
+
+GrpcAdapter    ..|> TransportPort  : implements
+ConsulAdapter  ..|> RegistryPort   : implements
+NomadAdapter   ..|> ProcessPort    : implements
+HwAdapter      ..|> SerialPort     : implements
+FastBridge     ..|> UIPort         : implements
+
+' ============================================================================
+' Domain --> Ports (uses)
+' ============================================================================
+
+Runner    --> TransportPort : serves on
+Runner    --> RegistryPort  : registers via
+DomainSvc --> Models        : produces / consumes
+Runner    --> DomainSvc     : dispatches
+
+' ============================================================================
+' Adapters --> External systems
+' ============================================================================
+
+ConsulAdapter --> ConsulAgent : HTTP
+NomadAdapter  --> NomadAgent  : HTTP
+GrpcAdapter   --> GUI         : gRPC (via bridge)
+GrpcAdapter   --> Robot       : gRPC
+
+' ============================================================================
+' Bridge wiring (admin plane)
+' ============================================================================
+
+FastBridge    --> ReflectClient : invoke
+FastBridge    --> LocalProto    : fallback
+FastBridge    --> NomadAdapter  : /api/nomad/*
+FastBridge    --> ConsulAdapter : /api/consul/*
+FastBridge    --> ScaffoldAdapter : /api/scaffold/*
+GUI           --> FastBridge    : HTTP / JSON
+
+' ============================================================================
+' Legend
+' ============================================================================
+
+legend right
+    |= Color |= Layer |
+    | <#e8f5e9> | Domain (pure logic) |
+    | <#e3f2fd> | Ports (interfaces) |
+    | <#fff3e0> | Adapters (infrastructure) |
+    | <#e0f7fa> | FastAPI bridge (admin plane) |
+    | <#f3e5f5> | Composition root (DI / settings) |
+    | <#f5f5f5> | External systems |
+endlegend
+
+@enduml

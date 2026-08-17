@@ -1,0 +1,29 @@
+
+    async def @@{method}(self, request, context):
+        """
+Handle a unary @@{method} RPC.
+
+**Arguments:**
+
+* ``request``
+
+  / *Condition*: required / *Type*: @@{method}Request /
+
+  Proto request message.
+
+* ``context``
+
+  / *Condition*: required / *Type*: grpc.aio.ServicerContext /
+
+  Per-call context.
+
+**Returns:**
+
+* ``response``
+
+  / *Type*: @@{method}Response /
+
+  Proto response message.
+        """
+        result = await self._domain.@@{snake_method}()
+        return @@{proj_snake}_pb2.@@{method}Response(result=str(result))

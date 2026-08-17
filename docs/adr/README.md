@@ -30,6 +30,19 @@ ADRs document important architectural decisions made during the development of t
 | [ADR-020](020-exchange-topology-design.md) | Exchange Topology Design | Accepted | 2026-02-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-021](021-schema-driven-ui-builder.md) | Multi-Tier GUI Loading Architecture | Accepted | 2026-02-25 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
 | [ADR-022](022-nomad-orchestrator-integration.md) | Nomad Orchestrator Integration | Proposed | 2026-03-12 | Nguyen Huynh Tri Cuong | Nguyen Huynh Tri Cuong |
+| [ADR-023](023-multi-node-consul-cluster.md) | Multi-node Consul cluster with serf gossip | Proposed | 2026-05-07 | Audit follow-up | (pending) |
+| [ADR-024](024-multi-node-nomad-cluster.md) | Multi-node Nomad cluster | Proposed | 2026-05-07 | Audit follow-up | (pending) |
+| [ADR-025](025-wrapper-layer-for-raw-exec.md) | Wrapper layer for Nomad raw_exec workloads | Proposed | 2026-05-07 | Audit follow-up | (pending) |
+| [ADR-026](026-uv-python-service-envs.md) | uv-based Python service environments | Proposed | 2026-05-07 | Audit follow-up | (pending) |
+| [ADR-027](027-kafka-event-bus-alongside-grpc.md) | Kafka event bus alongside gRPC | Proposed | 2026-05-07 | Audit follow-up | (pending) |
+| [ADR-028](028-grpc-reflection-primary-rpc.md) | gRPC + reflection as the primary RPC layer | Proposed | 2026-05-07 | Audit follow-up | (pending) |
+| [ADR-029](029-robot-framework-primary-test-client.md) | Robot Framework as the primary test client (via QConnectBase `GrpcClient` connection type) | Proposed | 2026-05-10 | Audit follow-up | (pending) |
+
+> **Audit note (2026-05-07).** ADRs 023–029 capture the
+> post-migration architecture aligned with the TA reference at
+> [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+> Several earlier ADRs carry **Superseded** or **Archived** callouts;
+> see [`AUDIT.md`](AUDIT.md) for the full triage.
 
 ## Summary of Design Decisions
 
@@ -111,25 +124,25 @@ PlantUML diagrams are maintained in [`docs/diagrams/`](../diagrams/). Each diagr
 
 | Diagram | Description | Related ADRs |
 |---------|-------------|--------------|
-| [overview.puml](../diagrams/overview.puml) | System overview with all major components | All |
-| [architecture.puml](../diagrams/architecture.puml) | Hexagonal architecture layers | ADR-001, ADR-002 |
-| [component.puml](../diagrams/component.puml) | Component diagram with dependencies | ADR-001 through ADR-008 |
-| [class_domain.puml](../diagrams/class_domain.puml) | Domain layer class diagram | ADR-001 |
-| [class_ports.puml](../diagrams/class_ports.puml) | Port interfaces class diagram | ADR-001 |
-| [class_adapters.puml](../diagrams/class_adapters.puml) | Adapter classes (incl. Local Hub) | ADR-001, ADR-009, ADR-010 |
-| [gui_architecture.puml](../diagrams/gui_architecture.puml) | Dual-host GUI architecture | ADR-005, ADR-006, ADR-007, ADR-008 |
-| [sequence_registration.puml](../diagrams/sequence_registration.puml) | Service registration sequence | ADR-001 |
-| [sequence_rpc.puml](../diagrams/sequence_rpc.puml) | RPC request-response sequence | ADR-001 |
-| [sequence_alias.puml](../diagrams/sequence_alias.puml) | Alias routing sequence | ADR-001 |
-| [sequence_shutdown.puml](../diagrams/sequence_shutdown.puml) | Two-phase shutdown sequence | ADR-009, ADR-013 |
-| [sequence_service_import.puml](../diagrams/sequence_service_import.puml) | Service import flow | ADR-011 |
-| [state_process_lifecycle.puml](../diagrams/state_process_lifecycle.puml) | Process lifecycle state machine | ADR-009, ADR-010, ADR-013 |
-| [sequence_realtime_update.puml](../diagrams/sequence_realtime_update.puml) | Real-time update broadcast flow | ADR-020, ADR-006 |
+| [00_canonical_architecture.puml](../diagrams/00_canonical_architecture.puml) | Top-level cluster topology (post-migration north star) | ADR-022, ADR-023, ADR-024, ADR-025 |
+| [component.puml](../diagrams/component.puml) | Per-workload component diagram | ADR-001, ADR-022–ADR-029 |
+| [class_domain.puml](../diagrams/class_domain.puml) | Hexagonal class structure | ADR-001, ADR-002 |
+| [class_ports.puml](../diagrams/class_ports.puml) | Port interfaces | ADR-001, ADR-022 |
+| [class_adapters.puml](../diagrams/class_adapters.puml) | Adapter classes (Nomad, gRPC bridge, FastAPI, scaffold) | ADR-006, ADR-022, ADR-028 |
+| [gui_architecture.puml](../diagrams/gui_architecture.puml) | Manager GUI dual-host architecture | ADR-005, ADR-006, ADR-007, ADR-008 |
+| [sequence_communication.puml](../diagrams/sequence_communication.puml) | End-to-end gRPC + Consul flow | ADR-023, ADR-028 |
+| [sequence_rpc.puml](../diagrams/sequence_rpc.puml) | Unary + server-streaming with Consul-resolver pool | ADR-028 |
+| [sequence_registration.puml](../diagrams/sequence_registration.puml) | Nomad raw_exec → wrapper → ServiceRunner → Consul | ADR-022, ADR-023, ADR-025 |
+| [sequence_shutdown.puml](../diagrams/sequence_shutdown.puml) | Nomad signals → drain → Consul deregister | ADR-009, ADR-013, ADR-022 |
+| [state_process_lifecycle.puml](../diagrams/state_process_lifecycle.puml) | Service lifecycle state machine | ADR-013, ADR-022 |
 | [sequence_gui_plugin_loading.puml](../diagrams/sequence_gui_plugin_loading.puml) | GUI plugin loading flow | ADR-019, ADR-006 |
 | [flow_gui_loading_tiers.puml](../diagrams/flow_gui_loading_tiers.puml) | Multi-tier GUI detection waterfall | ADR-021 |
+| [`_archive/`](../diagrams/_archive/README.md) | Pre-migration diagrams (RabbitMQ / Fleet / LocalHub era) | ADR-003, ADR-010, ADR-011, ADR-015–ADR-018, ADR-020 |
+
+See [`docs/diagrams/AUDIT.md`](../diagrams/AUDIT.md) for the full triage and supersession map.
 
 ## References
 
 - [ADR GitHub Organization](https://adr.github.io/)
 - [Michael Nygard's ADR Article](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)
-- [MicroserviceBase Concept Document](../CONCEPT.md)
+- [MicroserviceBase Concept Document](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/_legacy/CONCEPT.md)

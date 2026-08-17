@@ -1,5 +1,4 @@
 @startuml flow_gui_loading_tiers
-!theme plain
 title Multi-Tier GUI Loading — Decision Flow
 
 start
