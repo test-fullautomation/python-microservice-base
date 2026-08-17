@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MultiProto &mdash; Build &amp; Run Guide</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --green: #10b981; --amber: #fbbf24; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0;
+         background: var(--bg); color: var(--text); line-height: 1.65; }
+  header { background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            padding: 24px 30px 24px 280px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  header h1 { margin: 0; font-size: 1.8em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 0.95em; }
+
+  .sidebar-nav { position: fixed; top: 0; left: 0; width: 250px; height: 100vh;
+                  background: #0b1220; border-right: 2px solid var(--border);
+                  overflow-y: auto; padding: 20px 0; z-index: 200; }
+  .sidebar-nav .nav-title { padding: 0 20px 14px; font-size: 0.82em; font-weight: 700;
+                             text-transform: uppercase; letter-spacing: 0.06em;
+                             color: var(--muted); border-bottom: 1px solid var(--border);
+                             margin-bottom: 8px; }
+  .sidebar-nav a { display: block; padding: 7px 20px; color: var(--muted);
+                    text-decoration: none; font-size: 0.88em; font-weight: 500;
+                    border-left: 3px solid transparent;
+                    transition: color 0.15s, border-color 0.15s, background-color 0.15s; }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav a.active { color: var(--accent); border-left-color: var(--accent);
+                           background: rgba(56,189,248,0.08); }
+  .sidebar-nav .nav-group { margin-top: 14px; padding: 0 20px 4px; font-size: 0.72em;
+                             font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 0.05em; color: rgba(148,163,184,0.6); }
+
+  main { margin-left: 250px; padding: 28px 38px; max-width: 1400px; }
+  section { background: var(--panel); border-radius: 12px; padding: 22px 26px;
+             margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+             border-left: 4px solid var(--accent); }
+  section h2 { color: var(--accent); margin-top: 0; border-bottom: 1px solid var(--border);
+                padding-bottom: 10px; font-size: 1.3em; }
+  h3 { color: var(--amber); margin-top: 18px; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px; color: #fcd34d;
+          font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: 0.9em; }
+  pre { background: #0b1220; padding: 14px 14px 14px 14px; border-radius: 8px;
+         overflow-x: auto; border: 1px solid var(--border); font-size: 0.88em;
+         position: relative; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  pre .copy-btn { position: absolute; top: 6px; right: 6px; background: #1e293b;
+                   border: 1px solid var(--border); color: var(--muted); padding: 3px 10px;
+                   font-size: 0.75em; border-radius: 4px; cursor: pointer; opacity: 0;
+                   transition: opacity 0.15s, color 0.15s, background 0.15s;
+                   font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  pre:hover .copy-btn { opacity: 1; }
+  pre .copy-btn:hover { color: var(--text); background: #334155; }
+  pre .copy-btn.copied { color: var(--green); border-color: var(--green); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0;
+           background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+            font-size: 0.92em; vertical-align: top; }
+  th { background: #0b1220; color: var(--accent); }
+  tr:last-child td { border-bottom: none; }
+  details { background: rgba(251,191,36,0.06); border-left: 3px solid var(--amber);
+             padding: 8px 14px; border-radius: 6px; margin: 8px 0; }
+  details summary { cursor: pointer; font-weight: 600; color: var(--amber); }
+  details p { margin: 8px 0 4px; }
+  a { color: var(--accent); }
+
+  /* Responsive: collapse sidebar on narrow viewports.  The page becomes
+     full-width and the sidebar is dismissed; user can still navigate via
+     the in-page Quick reference table or browser scroll. */
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header { padding-left: 30px; }
+    main { margin-left: 0; padding: 20px; }
+  }
+</style>
+</head>
+<body>
+<script>
+  // Add copy buttons to every <pre> block on load.  Uses the modern
+  // navigator.clipboard API, falls back to a textarea + execCommand for
+  // older browsers (or file:// where clipboard API is sandboxed).
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('pre').forEach((pre) => {
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.type = 'button';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', async () => {
+        const text = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
+        let ok = false;
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            ok = true;
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+        } catch (e) { ok = false; }
+        btn.textContent = ok ? 'Copied!' : 'Failed';
+        btn.classList.toggle('copied', ok);
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+      pre.appendChild(btn);
+    });
+
+    // Sidebar: highlight the active section as the user scrolls.  Uses
+    // IntersectionObserver so it stays cheap on long pages.
+    const links = document.querySelectorAll('.sidebar-nav a[href^="#"]');
+    const sections = Array.from(links)
+      .map(a => document.getElementById(a.getAttribute('href').slice(1)))
+      .filter(Boolean);
+    if ('IntersectionObserver' in window && sections.length) {
+      const linkFor = (id) => document.querySelector('.sidebar-nav a[href="#' + id + '"]');
+      const setActive = (id) => {
+        links.forEach(a => a.classList.remove('active'));
+        const a = linkFor(id);
+        if (a) a.classList.add('active');
+      };
+      const observer = new IntersectionObserver((entries) => {
+        const visible = entries.filter(e => e.isIntersecting)
+                               .sort((a, b) => a.target.offsetTop - b.target.offsetTop);
+        if (visible.length) setActive(visible[0].target.id);
+      }, { rootMargin: '-30% 0px -60% 0px', threshold: 0 });
+      sections.forEach(s => observer.observe(s));
+    }
+  });
+</script>
+<header>
+  <h1>MultiProto</h1>
+  <p>Build &amp; run guide.  Auto-generated by <code>mb-scaffold</code>.</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">MultiProto</div>
+  <a href="#overview">Project at a glance</a>
+  <a href="#quick-ref">Quick reference</a>
+  <a href="#folder-structure">Folder structure</a>
+  <a href="#flow">Build &amp; run flow</a>
+  <a href="#prereqs">Prerequisites</a>
+  <a href="#framework-dep">Framework dependency (MicroserviceBase)</a>
+
+  <div class="nav-group">Setup</div>
+  <a href="#env-setup">Environment setup</a>
+  <a href="#rationale">How vcpkg + Qt MinGW works</a>
+
+  <div class="nav-group">Build</div>
+  <a href="#cli-build">Build via CLI</a>
+  <a href="#qtc-build">Build in Qt Creator</a>
+  <a href="#prebuilt">Use prebuilt libraries</a>
+
+  <div class="nav-group">Run</div>
+  <a href="#run">Consul + Nomad</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Common issues &amp; fixes</a>
+  <a href="#see-also">See also</a>
+</nav>
+
+<main>
+
+  <section id="overview">
+    <h2>Project at a glance</h2>
+    <table>
+      <tr><th>Service</th><th>Methods</th><th>Env prefix</th></tr>
+        <tr><td><code>ComSetupDeviceService</code></td><td>8</td><td><code>COM_SETUP_DEVICE_SERVICE_</code></td></tr>
+        <tr><td><code>PowerSupplyService</code></td><td>12</td><td><code>POWER_SUPPLY_SERVICE_</code></td></tr>
+    </table>
+    <p>Server toolchain: <code>vcpkg</code>.  Client variant:
+       <code>google_vcpkg</code>.  GUI: <code>widget</code>.</p>
+  </section>
+
+  <section id="quick-ref">
+    <h2>Quick reference</h2>
+    <table>
+      <tr><th>Task</th><th>Command (run from project root)</th></tr>
+        <tr><td>Build server (vcpkg + Qt MinGW)</td><td><code>build_qt_vcpkg.bat</code></td></tr>
+        <tr><td>Deploy server</td><td><code>deploy_qt_vcpkg.bat</code></td></tr>
+        <tr><td>Build server (MSYS2)</td><td><code>build_deploy_msys2.bat</code></td></tr>
+        <tr><td>Build/deploy console + widget client (vcpkg)</td><td><code>cd client &amp;&amp; deploy_qt_vcpkg.bat</code></td></tr>
+        <tr><td>Build qt_client_grpcpp</td><td><code>cd qt_client_grpcpp &amp;&amp; build_qt.bat</code></td></tr>
+        <tr><td>Deploy qt_client_grpcpp</td><td><code>cd qt_client_grpcpp &amp;&amp; deploy_qt.bat</code></td></tr>
+        <tr><td>Import a teammate&rsquo;s prebuilt vcpkg artifacts</td><td><code>import_prebuilt.bat &lt;path&gt;.zip</code></td></tr>
+        <tr><td>Export prebuilt for sharing</td><td><code>export_prebuilt.bat</code></td></tr>
+        <tr><td>Resolve Nomad HCL placeholders</td><td><code>prep_nomad_paths.bat</code></td></tr>
+    </table>
+  </section>
+
+  <section id="folder-structure">
+    <h2>Folder structure</h2>
+    <p><code>[edit]</code> marks files you'll write business logic into.
+       Everything else is scaffolding regenerated by <code>mb-scaffold</code>
+       &mdash; safe to leave alone.</p>
+    <pre><code>MultiProto/
+&#9500;&#9472;&#9472; proto/multi_proto.proto     # one shared .proto for all services
+&#9500;&#9472;&#9472; src/&lt;service_snake&gt;/              # one folder per service
+&#9474;   &#9500;&#9472;&#9472; main.cpp                      # ServiceRunner entry-point
+&#9474;   &#9500;&#9472;&#9472; domain/&lt;Service&gt;.{h,cpp}      # [edit] business logic (pure C++)
+&#9474;   &#9492;&#9472;&#9472; adapters/api/&lt;Service&gt;GrpcAdapter.{h,cpp}  # [edit] proto&lt;-&gt;domain wrapper
+&#9500;&#9472;&#9472; deploy/&lt;service_snake&gt;.nomad.hcl  # one Nomad job per service
+&#9500;&#9472;&#9472; client/                           # console client subproject
+&#9500;&#9472;&#9472; CMakeLists.txt                    # single project, N add_executable() calls
+&#9500;&#9472;&#9472; build_deploy.bat / .sh            # one-shot build for all services
+&#9500;&#9472;&#9472; set_env*.bat / .sh                # toolchain env (VCPKG_ROOT, QT_DIR, ...)
+&#9492;&#9472;&#9472; dist/                             # output: N .exe&#39;s + shared DLLs</code></pre>
+  </section>
+
+  <section id="flow">
+    <h2>Build &amp; run flow</h2>
+    <p>Pick a toolchain on first build; subsequent rebuilds skip the
+       slow vcpkg compile (cache hit ~1&ndash;3 min).  See the
+       &quot;Use prebuilt libraries&quot; section if a teammate already
+       compiled the deps and shared a zip.</p>
+    <div class="mermaid">
+flowchart TD
+    Start([Start])
+    Setup["1\. One-time setup<br/>setx VCPKG_ROOT, QT_DIR, QT_MINGW_BIN"]
+    Choose{"Toolchain?"}
+    Prebuilt{"Have prebuilt zip?"}
+    Import["import_prebuilt.bat &lt;zip&gt;<br/>~30 seconds"]
+    BuildVcpkg["build_qt_vcpkg.bat<br/>(or Qt Creator F5)"]
+    BuildMSYS2["build_deploy_msys2.bat"]
+    BuildResult["build*/&lt;service&gt;.exe<br/>(N executables) + DLLs"]
+    LocalRun["Run any service:<br/>./&lt;service&gt;.exe"]
+    Pkg["deploy_qt_vcpkg.bat<br/>&rarr; dist-qt-vcpkg/"]
+    NomadRun["nomad job run<br/>deploy/&lt;svc&gt;.nomad.hcl<br/>(per-service jobs)"]
+    Discover["Clients discover via Consul<br/>(one entry per service)"]
+
+    Start --> Setup --> Choose
+    Choose -->|"Qt MinGW + vcpkg<br/>(recommended)"| Prebuilt
+    Choose -->|MSYS2| BuildMSYS2 --> BuildResult
+    Prebuilt -->|"Yes (~2 min total)"| Import --> BuildVcpkg
+    Prebuilt -->|"No (first build ~30-60 min)"| BuildVcpkg
+    BuildVcpkg --> BuildResult
+    BuildResult --> LocalRun
+    BuildResult -->|For sharing| Pkg
+    LocalRun --> NomadRun
+    Pkg --> NomadRun
+    NomadRun --> Discover
+    </div>
+  </section>
+
+
+  <section id="full-kit-walkthrough">
+    <h2>Full step-by-step: load both projects in Qt Creator with the
+        <code>Desktop Qt 6.x MinGW 64-bit</code> kit, no rebuild</h2>
+
+    <p>
+      The fastest path that loads <strong>both</strong> the server (this
+      project) and the <code>qt_client_grpcpp/</code> client into Qt
+      Creator with the <code>Desktop Qt 6.x MinGW 64-bit</code> kit
+      (no preset, no full vcpkg compile).  Follow exactly &mdash; each
+      step prevents a common pitfall covered in the troubleshooting
+      section.
+    </p>
+
+    <h3>One-time setup</h3>
+    <ol>
+      <li><strong>Set system env vars</strong> (in a regular CMD, replace
+          the paths with yours if different):
+        <pre><code>setx VCPKG_ROOT C:\vcpkg
+setx QT_DIR C:\Qt\6.11.0\mingw_64
+setx QT_MINGW_BIN C:\Qt\Tools\mingw1310_64\bin</code></pre>
+        <code>setx</code> writes the registry &mdash; only future
+        processes see the change.</li>
+      <li><strong>Fully close Qt Creator</strong>.  Check Task Manager for
+          stray <code>qtcreator.exe</code> and kill them.  Otherwise the
+          running Qt Creator keeps the old (empty) env, and the autodetect
+          block in CMakeLists won&rsquo;t see <code>VCPKG_ROOT</code>.</li>
+      <li><strong>Download the prebuilt zip</strong> from the SharePoint
+          link below (in the <em>Use prebuilt libraries</em> section) and
+          save anywhere, e.g.
+          <code>C:\prebuilt\vcpkg_installed_x64-mingw-qt.zip</code>.</li>
+    </ol>
+
+    <h3>Step 1 &mdash; configure the server (this) project</h3>
+    <ol>
+      <li>Open Qt Creator.  <em>File &rarr; Open File or Project</em>
+          &rarr; pick this project&rsquo;s <code>CMakeLists.txt</code>.</li>
+      <li>Configure dialog: <strong>untick every preset</strong>.  Tick
+          only the kit <strong>Desktop Qt 6.x MinGW 64-bit</strong>.
+          Click <em>Configure Project</em>.</li>
+      <li>The first configure may try to install vcpkg packages or fail
+          at <code>find_package(gRPC)</code> &mdash; <strong>that&rsquo;s
+          fine</strong>; we just need the build dir to exist.  If a long
+          vcpkg compile starts: <em>Build &rarr; Cancel Build</em> immediately.</li>
+      <li><em>Build &rarr; Clear CMake Configuration</em>.  This wipes
+          <code>CMakeCache.txt</code> so the vars you&rsquo;re about to add
+          actually take effect.  (<em>Clean</em> alone does NOT clear
+          cache.)</li>
+      <li><em>Projects (Ctrl+5) &rarr; Build (under
+          Desktop Qt 6.x MinGW 64-bit) &rarr; Initial Configuration
+          &rarr; Add</em>.  Add these <strong>five</strong> entries
+          (replace placeholders with your vcpkg checkout and project
+          absolute paths; leave forward slashes and the var-name S as
+          written):
+        <table>
+          <tr><th>Add as</th><th>Name</th><th>Value</th></tr>
+          <tr><td>String</td>  <td><code>CMAKE_TOOLCHAIN_FILE</code></td>   <td><code>C:/vcpkg/scripts/buildsystems/vcpkg.cmake</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_TARGET_TRIPLET</code></td>   <td><code>x64-mingw-qt</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_TRIPLETS</code></td> <td><code>C:/path/to/your/project/triplets</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_PORTS</code></td>    <td><code>C:/path/to/your/project/ports</code></td></tr>
+          <tr><td>Boolean</td> <td><code>VCPKG_MANIFEST_INSTALL</code></td> <td><code>OFF</code></td></tr>
+        </table>
+        Pitfall reminders:
+        <ul>
+          <li>Var name is <strong>plural</strong>:
+              <code>VCPKG_OVERLAY_TRIPLETS</code> (with S).</li>
+          <li>Use <strong>absolute paths</strong> for overlay vars.  Qt
+              Creator does <strong>not</strong> expand
+              <code>${sourceDir}</code> in <em>Initial Configuration</em>.</li>
+          <li>Forward slashes <code>/</code> only.</li>
+          <li><code>VCPKG_MANIFEST_INSTALL=OFF</code> is what tells the
+              vcpkg toolchain to skip its 30&ndash;60 min compile.  Without
+              this, vcpkg overwrites the prebuilt tree you&rsquo;re about
+              to import.</li>
+        </ul>
+      </li>
+      <li><em>Build &rarr; Run CMake</em>.  This will fail at
+          <code>find_package(gRPC)</code> &mdash; <strong>expected</strong>:
+          the build dir
+          <code>build\Desktop_Qt_*\</code> is now created but
+          <code>vcpkg_installed/</code> isn&rsquo;t populated yet.</li>
+    </ol>
+
+    <h3>Step 2 &mdash; configure the qt_client_grpcpp project</h3>
+    <ol>
+      <li><em>File &rarr; Open File or Project</em> &rarr;
+          <code>qt_client_grpcpp\CMakeLists.txt</code> (it&rsquo;s a
+          separate sub-project with its own build dir).</li>
+      <li>Configure dialog: <strong>untick every preset</strong>.  Tick
+          only <strong>Desktop Qt 6.x MinGW 64-bit</strong>.  Click
+          <em>Configure Project</em>.  Same as step 1: cancel any vcpkg
+          compile, then <em>Clear CMake Configuration</em>.</li>
+      <li><em>Projects (Ctrl+5) &rarr; Build &rarr; Initial Configuration
+          &rarr; Add</em>.  Same five entries as the server, but the two
+          overlay paths point at the <strong>parent</strong>
+          <code>triplets/</code> and <code>ports/</code> (one level up
+          from <code>qt_client_grpcpp/</code>):
+        <table>
+          <tr><th>Add as</th><th>Name</th><th>Value</th></tr>
+          <tr><td>String</td>  <td><code>CMAKE_TOOLCHAIN_FILE</code></td>   <td><code>C:/vcpkg/scripts/buildsystems/vcpkg.cmake</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_TARGET_TRIPLET</code></td>   <td><code>x64-mingw-qt</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_TRIPLETS</code></td> <td><code>C:/path/to/your/project/triplets</code></td></tr>
+          <tr><td>String</td>  <td><code>VCPKG_OVERLAY_PORTS</code></td>    <td><code>C:/path/to/your/project/ports</code></td></tr>
+          <tr><td>Boolean</td> <td><code>VCPKG_MANIFEST_INSTALL</code></td> <td><code>OFF</code></td></tr>
+        </table>
+      </li>
+      <li><em>Build &rarr; Run CMake</em>.  Will fail at
+          <code>find_package(Protobuf)</code> &mdash; expected; the
+          <code>qt_client_grpcpp\build\Desktop_Qt_*\</code> dir is now
+          created.</li>
+    </ol>
+
+    <h3>Step 3 &mdash; populate vcpkg_installed/ from the prebuilt zip</h3>
+    <ol>
+      <li>Open a regular CMD/PowerShell.  <code>cd</code> to the
+          <strong>parent project</strong> (this directory).</li>
+      <li>Run import once &mdash; it auto-detects every build dir
+          (server <strong>and</strong> qt_client_grpcpp) and extracts the
+          zip into all of them:
+        <pre><code>import_prebuilt.bat C:\prebuilt\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+      </li>
+      <li>Verify both build dirs got the tree:
+        <pre><code>dir build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\
+dir qt_client_grpcpp\build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\</code></pre>
+        Both should list <code>gRPCConfig.cmake</code>.  If only one is
+        present, your other project&rsquo;s build dir wasn&rsquo;t created
+        yet &mdash; go back to whichever step you skipped.</li>
+    </ol>
+
+    <h3>Step 4 &mdash; re-run CMake on both projects</h3>
+    <ol>
+      <li>In Qt Creator, switch to the <strong>server</strong> project
+          (top-left project selector) &rarr; <em>Build &rarr; Run CMake</em>.
+          Should complete in ~1&ndash;3 sec.  In <em>General Messages</em>:
+          <pre><code>-- Found gRPC: &lt;build-dir&gt;/vcpkg_installed/x64-mingw-qt/share/grpc
+-- Found Protobuf: ...
+-- Configuring done</code></pre>
+      </li>
+      <li>Switch to the <strong>qt_client_grpcpp</strong> project &rarr;
+          <em>Build &rarr; Run CMake</em>.  Same ~1&ndash;3 sec result.</li>
+      <li><em>Build &rarr; Build All</em> on both projects.  Project code
+          compiles in ~30 sec &ndash; 2 min; vcpkg deps are
+          <strong>not</strong> rebuilt.</li>
+    </ol>
+
+    <h3>Sanity check: did it really skip the rebuild?</h3>
+    <p>In <em>General Messages</em> you should <strong>not</strong> see:</p>
+    <pre><code>-- Building boringssl[core]:x64-mingw-qt...
+-- Building abseil[core]:x64-mingw-qt...
+-- Building grpc:x64-mingw-qt...</code></pre>
+    <p>If you do, <code>VCPKG_MANIFEST_INSTALL=OFF</code> didn&rsquo;t reach
+       the toolchain.  Check that:</p>
+    <ul>
+      <li>The Initial Configuration entry is type <strong>Boolean</strong>
+          (or String <code>OFF</code>) &mdash; not deleted.</li>
+      <li>You ran <em>Clear CMake Configuration</em> after adding it
+          (cached configures don&rsquo;t pick up new <code>-D</code> flags).</li>
+    </ul>
+    <p>If you forgot one of the four toolchain vars or used a wrong path,
+       the failure surfaces as <code>Could not find a package configuration
+       file provided by &quot;gRPC&quot;</code> at <code>find_package</code>
+       &mdash; not as a build of grpc itself.</p>
+  </section>
+
+  <section id="prereqs">
+    <h2>Prerequisites</h2>
+    <ul>
+        <li>Windows 10 1803+ (for built-in <code>tar.exe</code>)</li>
+        <li>Qt 6.x with MinGW 13.1.0 kit (online installer)</li>
+        <li>vcpkg cloned + bootstrapped, <code>VCPKG_ROOT</code> env var set</li>
+        <li>Env vars: <code>QT_DIR=C:\Qt\6.x.y\mingw_64</code>, <code>QT_MINGW_BIN=C:\Qt\Tools\mingw1310_64\bin</code></li>
+        <li>Consul + Nomad agents (if you plan to run via Nomad)</li>
+    </ul>
+  </section>
+
+  <section id="framework-dep">
+    <h2>Framework dependency (MicroserviceBase)</h2>
+    <p>
+      This service depends on the <strong>MicroserviceBase</strong> runtime
+      (C++ library + CMake package).  <code>CMakeLists.txt</code> calls
+      <code>find_package(MicroserviceBase CONFIG)</code> first and falls
+      back to <code>add_subdirectory(.../MicroserviceBase/runtime_cpp)</code>
+      for in-tree builds.  Pick one of three setups (any satisfies the
+      dependency):
+    </p>
+    <table>
+      <tr><th>Setup</th><th>When to use</th><th>One-time steps</th></tr>
+      <tr>
+        <td><strong>A. In-tree (zero install)</strong></td>
+        <td>You&rsquo;re working inside the framework checkout</td>
+        <td>Clone the framework so this scaffold sits at
+            <code>&lt;framework&gt;/examples/&lt;svc&gt;/</code> &mdash;
+            the relative path
+            <code>../../MicroserviceBase/runtime_cpp</code> resolves
+            automatically.</td>
+      </tr>
+      <tr>
+        <td><strong>A2. <code>MICROSERVICEBASE_DIR</code> env var</strong></td>
+        <td>Scaffold lives anywhere outside <code>examples/</code></td>
+        <td><code>setx MICROSERVICEBASE_DIR D:\workspace\python-microservice-base</code>
+            (accepts the framework root, the <code>runtime_cpp</code> parent,
+            or <code>runtime_cpp</code> itself).  Qt Creator inherits user
+            env so it picks this up automatically &mdash; close + reopen
+            Qt Creator after <code>setx</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>B. CMake install</strong></td>
+        <td>Standalone service, no vcpkg</td>
+        <td><code>cmake -S &lt;framework&gt;/MicroserviceBase/runtime_cpp -B build/mb &amp;&amp; cmake --build build/mb &amp;&amp; cmake --install build/mb --prefix $HOME/.local/microservice-base</code>,
+            then pass
+            <code>-DCMAKE_PREFIX_PATH=$HOME/.local/microservice-base</code>
+            on configure.</td>
+      </tr>
+      <tr>
+        <td><strong>C. vcpkg overlay-port</strong></td>
+        <td>Already using vcpkg (the Qt+vcpkg path)</td>
+        <td>Add <code>microservice-base</code> to your
+            <code>vcpkg.json</code> <code>dependencies</code> and pass
+            <code>-DVCPKG_OVERLAY_PORTS=&lt;framework&gt;/ports</code>.</td>
+      </tr>
+    </table>
+    <p>
+      <strong>Get the framework</strong> &mdash; branch
+      <code>ugc1hc/feat/migrate_to_ta_architecture</code> is the current
+      TA-architecture line (gRPC + Consul + Nomad runtime this scaffold
+      targets):
+    </p>
+    <pre><code>git clone -b ugc1hc/feat/migrate_to_ta_architecture ^
+    https://github.com/test-fullautomation/python-microservice-base.git</code></pre>
+    <p>What you get:</p>
+    <ul>
+      <li><code>MicroserviceBase/runtime_cpp/</code> &mdash; C++ runtime,
+          used by setups A, B, C.</li>
+      <li><code>ports/microservice-base/</code> &mdash; vcpkg overlay-port
+          for setup C.</li>
+      <li><code>docs/runtime_cpp_install.md</code> &mdash; full instructions
+          for each setup.</li>
+    </ul>
+    <p>
+      If <code>cmake -S .</code> fails with
+      <code>MicroserviceBase runtime not found.  Install + add to
+      CMAKE_PREFIX_PATH</code>, that&rsquo;s this dependency missing &mdash;
+      pick a setup above.
+    </p>
+  </section>
+
+  <section id="env-setup">
+    <h2>Environment setup (one-time)</h2>
+
+        <p>The vcpkg path needs three environment variables.  Set them once
+           system-wide via <code>setx</code> &mdash; <strong>then close every
+           open terminal/Qt Creator and start a fresh one</strong> so the new
+           values are inherited (<code>setx</code> only affects new processes).</p>
+        <h3>1. <code>VCPKG_ROOT</code> &mdash; vcpkg checkout</h3>
+        <p>If you don&rsquo;t have vcpkg installed yet:</p>
+        <pre><code>git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat</code></pre>
+        <p>Then point <code>VCPKG_ROOT</code> at it:</p>
+        <pre><code>setx VCPKG_ROOT C:\vcpkg</code></pre>
+        <p>(Replace <code>C:\vcpkg</code> with wherever you cloned it,
+           e.g. <code>D:\Project\Out\vcpkg</code>.)</p>
+
+        <h3>2. <code>QT_DIR</code> &mdash; Qt MinGW prefix</h3>
+        <p>Path to the directory containing <code>lib\cmake\Qt6\</code>:</p>
+        <pre><code>setx QT_DIR C:\Qt\6.11.0\mingw_64</code></pre>
+        <p>(Adjust the version number to your actual Qt install.)</p>
+
+        <h3>3. <code>QT_MINGW_BIN</code> &mdash; Qt MinGW compiler bin</h3>
+        <p>Path to the directory containing <code>g++.exe</code>:</p>
+        <pre><code>setx QT_MINGW_BIN C:\Qt\Tools\mingw1310_64\bin</code></pre>
+
+        <h3>Verify</h3>
+        <p>Open a new terminal and run:</p>
+        <pre><code>echo %VCPKG_ROOT%
+echo %QT_DIR%
+echo %QT_MINGW_BIN%
+dir %VCPKG_ROOT%\vcpkg.exe
+dir %QT_DIR%\bin\Qt6Core.dll
+dir %QT_MINGW_BIN%\g++.exe</code></pre>
+        <p>All three <code>dir</code> commands should print a file entry.
+           If any errors with <em>File Not Found</em>, double-check the path
+           and re-run <code>setx</code>.</p>
+
+        <h3>For Qt Creator specifically</h3>
+        <p>If Qt Creator was already running when you set these vars, it
+           won&rsquo;t see the new values until restarted.  Either:</p>
+        <ul>
+          <li><strong>Close + restart Qt Creator</strong> (simplest), or</li>
+          <li>Set them per-project at <em>Projects &rarr; Build &rarr;
+              Build Environment</em> (Add &rarr; type the var + value).</li>
+        </ul>
+  </section>
+
+  <section id="rationale">
+    <h2>How vcpkg + Qt MinGW works</h2>
+
+        <p>
+          Both server and client need Google&rsquo;s grpc++ and protobuf C++
+          libraries.  We compile them <strong>from source via vcpkg</strong>
+          using the <strong>Qt-installer&rsquo;s MinGW 13.1.0</strong>
+          compiler so every binary in the project shares one libstdc++ ABI.
+          Mixing toolchains (e.g. MSYS2 grpc + Qt MinGW client) yields
+          cryptic link errors and silent crashes at <code>std::string</code>
+          boundaries.
+        </p>
+        <p>The pieces that make this work:</p>
+        <ol>
+          <li><strong><code>triplets/x64-mingw-qt.cmake</code></strong> &mdash;
+              custom vcpkg triplet.  Pins <code>VCPKG_TARGET_ARCHITECTURE=x64</code>,
+              dynamic CRT/library linkage, and chainloads
+              <code>qt-mingw-toolchain.cmake</code> which sets
+              <code>CMAKE_C_COMPILER</code> and <code>CMAKE_CXX_COMPILER</code>
+              to absolute paths inside <code>C:\Qt\Tools\mingw1310_64\bin\</code>.
+              Vcpkg uses Qt&rsquo;s gcc to build every port regardless of
+              what&rsquo;s on <code>PATH</code>.</li>
+          <li><strong><code>ports/grpc/00018-gcc13-per-cpu-ice-workaround.patch</code></strong>
+              &mdash; gcc 13.1.0 has an internal compiler error on grpc 1.76&rsquo;s
+              <code>per_cpu.h</code> NSDMI brace-init.  The patch moves the
+              <code>std::unique_ptr&lt;T[]&gt;</code> allocation into the
+              constructor body, sidestepping the ICE.  An overlay-port
+              applies it on top of vcpkg&rsquo;s stock grpc port.</li>
+          <li><strong>Host tools (cross-triplet codegen)</strong> &mdash;
+              vcpkg builds <code>protoc</code> and <code>grpc_cpp_plugin</code>
+              for the host triplet (<code>x64-windows</code>) and uses them at
+              build time to generate <code>.pb.h/.pb.cc</code> stubs.  Our
+              CMakeLists pre-sets <code>Protobuf_PROTOC_EXECUTABLE</code> at
+              <code>build/.../vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe</code>
+              so it doesn&rsquo;t require <code>x64-windows/tools/protobuf/</code>.
+              <code>grpc_cpp_plugin</code> still ships from
+              <code>x64-windows/tools/grpc/</code> because vcpkg&rsquo;s grpc
+              port doesn&rsquo;t build it for the target triplet.</li>
+          <li><strong>Server reflection</strong> &mdash; the overlay-port
+              forces <code>gRPC_BUILD_CODEGEN=ON</code> in
+              <code>portfile.cmake</code>, which causes upstream grpc to
+              build and install <code>libgrpc++_reflection.a</code> +
+              register the <code>gRPC::grpc++_reflection</code> CMake
+              target.  Without that override, vcpkg&rsquo;s manifest-mode
+              feature selection drops <code>codegen</code> for the target
+              triplet (it stays on for the host triplet only) and
+              upstream&rsquo;s <code>add_library(grpc++_reflection ...)</code>
+              block gets skipped &mdash; the Manager GUI then sees
+              <code>UNIMPLEMENTED</code> from every reflection RPC.
+              CMakeLists keeps an <code>if(TARGET gRPC::grpc++_reflection)</code>
+              guard for unusual grpc distributions; the bridge also
+              has a <code>LocalProtoClient</code> fallback that compiles
+              <code>.proto</code> files from disk if reflection is
+              somehow still missing.</li>
+          <li><strong>vcpkg.json declares</strong> grpc + protobuf + curl
+              (Consul HTTP), with <code>features: ["codegen"]</code> for grpc
+              so <code>protoc-gen-grpc</code> is available.  Manifest names
+              are hyphenated (<code>{multi_proto.replace('_', '-')}-server-vcpkg</code>);
+              underscores are reserved.</li>
+        </ol>
+        <p>
+          <strong>First build cost</strong>: vcpkg compiles boringssl, abseil,
+          c-ares, re2, zlib, openssl, protobuf, grpc, curl &mdash; about
+          30&ndash;60 min on a typical workstation, mostly idle.  Subsequent
+          builds in the same triplet hit the binary cache at
+          <code>%LOCALAPPDATA%\vcpkg\archives\</code> and complete in seconds.
+        </p>
+  </section>
+
+  <section id="cli-build">
+    <h2>Build via CLI (no Qt Creator)</h2>
+    <ol>
+        <li><strong>One-time: set environment variables</strong><br><pre><code>setx VCPKG_ROOT C:\vcpkg
+setx QT_DIR C:\Qt\6.11.0\mingw_64
+setx QT_MINGW_BIN C:\Qt\Tools\mingw1310_64\bin</code></pre><p>Then open a fresh terminal so the env vars are inherited.</p></li>
+        <li><strong>Initialise the vcpkg overlay-port (idempotent)</strong><br><pre><code>init_vcpkg_overlay.bat</code></pre><p>Copies vcpkg&rsquo;s upstream grpc port into <code>ports/grpc/</code> and appends our gcc 13 ICE workaround patch.  No-op on subsequent runs.</p></li>
+        <li><strong>Build the server (and runs vcpkg install on first invocation)</strong><br><pre><code>build_qt_vcpkg.bat</code></pre><p>First time: ~30&ndash;60 min while vcpkg compiles boringssl + abseil + protobuf + grpc + curl.  Subsequent runs: cache hit, ~1&ndash;3 min.  Output: <code>build-qt-vcpkg\&lt;service&gt;.exe</code>.</p></li>
+        <li><strong>Bundle a self-contained dist</strong><br><pre><code>deploy_qt_vcpkg.bat</code></pre><p>Copies <code>.exe</code> + vcpkg DLLs + MinGW runtime + Qt DLLs into <code>dist-qt-vcpkg\</code>.  Zip + copy to any Win x64 PC; no Qt/vcpkg/MinGW install needed on target.</p></li>
+        <li><strong>Build console + Qt Widgets client</strong><br><pre><code>cd client
+build script: open client\CMakeLists.txt in Qt Creator,
+or use a one-liner:
+cmake -S . -B build-qt-vcpkg -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake \
+    -DVCPKG_TARGET_TRIPLET=x64-mingw-qt \
+    -DVCPKG_OVERLAY_TRIPLETS=../triplets \
+    -DVCPKG_OVERLAY_PORTS=../ports
+cmake --build build-qt-vcpkg --parallel
+deploy_qt_vcpkg.bat</code></pre></li>
+        <li><strong>Build the Qt grpc++ client</strong><br><pre><code>cd qt_client_grpcpp
+build_qt.bat
+deploy_qt.bat</code></pre></li>
+    </ol>
+    <p>
+      All scripts are runnable from the project root.  They use
+      <code>%~dp0</code>-relative paths internally so they work regardless
+      of where you call them from.
+    </p>
+  </section>
+
+  <section id="qtc-build">
+    <h2>Build &amp; run in Qt Creator</h2>
+
+    <h3>Recommended: use the bundled CMake preset</h3>
+    <ol>
+        <li>Open <code>CMakeLists.txt</code> in Qt Creator.  Qt Creator detects the
+            bundled <code>CMakePresets.json</code> and offers two presets:
+          <ul>
+            <li><strong>vcpkg-x64-mingw-qt</strong> &mdash; full vcpkg build (~30&ndash;60&nbsp;min first time).</li>
+            <li><strong>vcpkg-x64-mingw-qt-prebuilt</strong> &mdash; skip vcpkg install
+                (populate <code>build/.../vcpkg_installed/x64-mingw-qt/</code> first via
+                <code>import_prebuilt.bat</code>).</li>
+          </ul>
+        </li>
+        <li>Tick the preset(s) you want and click <em>Configure Project</em>.  Presets
+            already include <code>CMAKE_TOOLCHAIN_FILE</code>,
+            <code>VCPKG_TARGET_TRIPLET</code>, and overlay paths &mdash; no manual
+            wiring required.</li>
+    </ol>
+
+    <h3>Alternative: kit-based flow (Desktop Qt 6.x MinGW 64-bit)</h3>
+    <p>
+      If you prefer to use a Qt kit instead of the preset, you must give Qt Creator
+      the vcpkg toolchain explicitly &mdash; it does <strong>not</strong> auto-detect
+      vcpkg from <code>VCPKG_ROOT</code> the way the CLI build script does.
+    </p>
+    <ol>
+        <li><strong>Set system env vars (one-time)</strong>:
+          <pre><code>setx VCPKG_ROOT C:\vcpkg
+setx QT_DIR C:\Qt\6.11.0\mingw_64
+setx QT_MINGW_BIN C:\Qt\Tools\mingw1310_64\bin</code></pre>
+          <strong>Then fully close Qt Creator and reopen it</strong> &mdash;
+          <code>setx</code> only writes to the registry; the env vars only reach
+          processes started <em>after</em> the change.  An already-running Qt
+          Creator keeps the old (empty) environment.
+        </li>
+        <li><strong>Open the project &rarr; pick the kit
+            <em>Desktop Qt 6.x MinGW 64-bit</em></strong>.  In the
+            <em>Initial Configuration</em> panel, click <em>Add &rarr; String</em>
+            and add these four entries (replace the project path with yours):
+          <pre><code>CMAKE_TOOLCHAIN_FILE   = C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+VCPKG_TARGET_TRIPLET   = x64-mingw-qt
+VCPKG_OVERLAY_TRIPLETS = C:/path/to/your/project/triplets
+VCPKG_OVERLAY_PORTS    = C:/path/to/your/project/ports</code></pre>
+          <ul>
+            <li>Use forward slashes <code>/</code>, not back slashes
+                <code>\</code> (CMake interprets <code>\Q</code> as an escape).</li>
+            <li><strong>Use absolute paths for the overlay vars</strong>.
+                Qt Creator&rsquo;s <em>Initial Configuration</em> does
+                <strong>not</strong> expand <code>${sourceDir}</code> &mdash;
+                that&rsquo;s a CMakePresets-only macro.  If you paste
+                <code>${sourceDir}/triplets</code>, cmake gets it as a
+                literal string, vcpkg can&rsquo;t find the
+                <code>x64-mingw-qt</code> triplet, and manifest install
+                fails before grpc/protobuf even start to compile.</li>
+            <li>Make sure the var name is plural &mdash;
+                <code>VCPKG_OVERLAY_TRIPLETS</code> (with S), not
+                <code>VCPKG_OVERLAY_TRIPLET</code>.  vcpkg silently ignores
+                the singular form.</li>
+          </ul>
+        </li>
+        <li>Click <em>Configure Project</em>.  First configure: ~30&ndash;60 min while
+            vcpkg compiles boringssl + abseil + protobuf + grpc + curl.  Subsequent
+            configures: ~1&ndash;3 sec (cache hit).</li>
+        <li><strong>If you've already configured once and it failed</strong>:
+            <em>Build &rarr; Clear CMake Configuration</em>, then re-add the four
+            <em>Initial Configuration</em> entries above and re-run <em>Run CMake</em>.
+            Once <code>CMakeCache.txt</code> exists in the build dir, subsequent
+            CMake runs do <strong>not</strong> re-pass <code>-D</code> flags &mdash;
+            you must clear it to inject new vars.</li>
+    </ol>
+
+    <h3>Skip vcpkg install (use prebuilt)</h3>
+    <ol>
+        <li>Run <code>import_prebuilt.bat &lt;path&gt;.zip</code> from a terminal at
+            project root (it auto-detects the Qt Creator build dir).</li>
+        <li>In Qt Creator <em>Initial Configuration</em>, add
+            <code>VCPKG_MANIFEST_INSTALL = OFF</code> (BOOL).</li>
+        <li><em>Build &rarr; Clear CMake Configuration</em> &rarr; <em>Run CMake</em>.</li>
+    </ol>
+
+    <h3>Running the GUI from Qt Creator (F5) without copying DLLs</h3>
+    <p>
+      The build links the <code>.exe</code> against vcpkg DLLs in
+      <code>build/&lt;cfg&gt;/vcpkg_installed/x64-mingw-qt/bin/</code>, plus
+      Qt and MinGW runtime DLLs.  Windows&rsquo; DLL search only looks at the
+      <code>.exe</code>&rsquo;s folder and <code>%PATH%</code>, so a fresh
+      build run via F5 fails with <code>libprotobuf.dll not found</code>
+      (or <code>Qt6Core.dll</code>, <code>libgcc_s_seh-1.dll</code>, etc.).
+    </p>
+    <p>
+      Fix once per kit/preset: <em>Projects (Ctrl+5) &rarr; Run &rarr;
+      Environment &rarr; Details &rarr;</em> select <code>Path</code> and
+      click <em>Edit</em>.  Prepend (semicolon-separated) the three dirs
+      below.  Use absolute paths; replace
+      <code>&lt;build-dir&gt;</code> with this project&rsquo;s build dir
+      shown in the <em>Build</em> tab (e.g. <code>build/Desktop_Qt_*-Debug</code>
+      or <code>build-qt-vcpkg</code> for the preset):
+    </p>
+    <pre><code>&lt;build-dir&gt;\vcpkg_installed\x64-mingw-qt\bin;C:\Qt\6.x.y\mingw_64\bin;C:\Qt\Tools\mingw1310_64\bin</code></pre>
+    <p>
+      For <strong>qt_client_grpcpp/</strong> (a separate sub-project with
+      its own build dir), repeat the same edit on its
+      <em>Run &rarr; Environment</em> &mdash; substituting its build dir.
+      Re-doing this is only required when you change the build dir name
+      (switch between Debug/Release, change kit, etc.); it survives
+      rebuilds.
+    </p>
+    <p>
+      <strong>Permanent alternative</strong>: run <code>deploy_qt_vcpkg.bat</code>
+      (server) or <code>cd qt_client_grpcpp &amp;&amp; deploy_qt.bat</code>.
+      Each script copies every DLL next to the <code>.exe</code> in
+      <code>dist-qt-vcpkg/</code>; that folder is fully self-contained and
+      runs without any PATH setup.  Useful when shipping a build to a
+      teammate or to a test machine.
+    </p>
+  </section>
+
+<section id="prebuilt"><h2>Use prebuilt libraries (skip the 30-60 min vcpkg compile)</h2>
+        <p>
+          To skip the 30&ndash;60 min vcpkg compile, download a teammate&rsquo;s
+          prebuilt artifacts and import them.  Same triplet + same deps =
+          binary-compatible across machines that have the same Qt MinGW.
+        </p>
+        <p>
+          <strong>Download</strong>:
+          <a href="https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x"
+             target="_blank">
+            https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY
+          </a>
+        </p>
+        <p>
+          Pick <code>vcpkg_installed_x64-mingw-qt.zip</code> (the installed
+          tree, ~50&ndash;80&nbsp;MB after compression).  Save it anywhere.
+        </p>
+
+        <h3>Import via CLI</h3>
+        <ol>
+          <li>From the project root, run:
+            <pre><code>import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+            (or run <code>import_prebuilt.bat</code> with no arg for an
+             interactive prompt).  The script extracts the zip into every
+             build dir present in this project (server <code>build-qt-vcpkg/</code>,
+             <code>qt_client_grpcpp/build/</code>, and any <code>build/Desktop_Qt_*/</code>
+             from a previous Qt Creator run).</li>
+          <li>Build with the prebuilt:
+            <pre><code>set USE_PREBUILT_VCPKG=1
+build_qt_vcpkg.bat</code></pre>
+            <code>USE_PREBUILT_VCPKG=1</code> tells <code>build_qt_vcpkg.bat</code>
+            to skip the <code>vcpkg install</code> step entirely AND pass
+            <code>-DVCPKG_MANIFEST_INSTALL=OFF</code> to cmake (so the vcpkg
+            toolchain doesn&rsquo;t try to re-install).  Build proceeds in
+            ~30&nbsp;sec instead of 30&ndash;60 min.</li>
+        </ol>
+
+        <h3>Import via Qt Creator (preset flow &mdash; recommended)</h3>
+        <ol>
+          <li>If a full vcpkg compile is currently running, stop it:
+              <em>Build &rarr; Cancel Build</em> (or the red Stop button on the
+              bottom bar).</li>
+          <li>Use the bundled <strong>vcpkg-x64-mingw-qt-prebuilt</strong>
+              preset.  It already has <code>VCPKG_MANIFEST_INSTALL=OFF</code>
+              and the right toolchain + overlays.
+              <ul>
+                <li>If the project was opened with the kit instead of the
+                    preset: <em>File &rarr; Close Project</em>, delete
+                    <code>CMakeLists.txt.user</code>, reopen
+                    <code>CMakeLists.txt</code>, tick the
+                    <strong>vcpkg-x64-mingw-qt-prebuilt</strong> preset on the
+                    import dialog.</li>
+              </ul>
+          </li>
+          <li>Click <em>Configure Project</em>.  It will fail at
+              <code>find_package(gRPC)</code> &mdash; <strong>expected</strong>:
+              <code>vcpkg_installed/</code> isn&rsquo;t populated yet, but the
+              build dir is now created.</li>
+          <li>From a terminal at project root, populate it:
+              <pre><code>import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+              The script auto-detects every build dir in the project &mdash;
+              <code>build-qt-vcpkg/</code> (preset),
+              <code>build/Desktop_Qt_*/</code> (any kit), and the client
+              variants &mdash; and extracts to all of them.</li>
+          <li>Back in Qt Creator: <em>Build &rarr; Run CMake</em>.  Should
+              complete in ~1&ndash;3 sec.  Then <em>Build &rarr; Build All</em>.</li>
+        </ol>
+
+        <h3>Import via Qt Creator (kit flow)</h3>
+        <p>
+          If you tied debugger or run config to the
+          <code>Desktop Qt 6.x MinGW 64-bit</code> kit and don&rsquo;t want
+          to switch to the preset, do this instead:
+        </p>
+        <ol>
+          <li>If a full vcpkg compile is currently running, stop it
+              (<em>Build &rarr; Cancel Build</em>).</li>
+          <li><em>Build &rarr; Clear CMake Configuration</em> (don&rsquo;t use
+              <em>Clean</em> &mdash; it leaves <code>CMakeCache.txt</code>).</li>
+          <li><em>Projects (Ctrl+5) &rarr; Build &rarr; Initial Configuration
+              &rarr; Add &rarr; Boolean</em>:
+              <pre><code>VCPKG_MANIFEST_INSTALL = OFF</code></pre>
+              (or <em>Add &rarr; String</em> with value <code>OFF</code>; vcpkg
+              parses both).  This tells the vcpkg toolchain &ldquo;don&rsquo;t
+              run install &mdash; <code>vcpkg_installed/</code> is already
+              populated.&rdquo;  Without this, vcpkg will overwrite your
+              imported tree.</li>
+          <li>Click <em>Run CMake</em>.  It will fail at
+              <code>find_package(gRPC)</code> &mdash; expected; the build dir
+              is now created.</li>
+          <li>From a terminal at project root, populate
+              <code>vcpkg_installed/</code>:
+              <pre><code>import_prebuilt.bat C:\path\to\vcpkg_installed_x64-mingw-qt.zip</code></pre>
+              Verify extract worked:
+              <pre><code>dir build\Desktop_Qt_*\vcpkg_installed\x64-mingw-qt\share\grpc\</code></pre>
+              should list <code>gRPCConfig.cmake</code>.</li>
+          <li>Back in Qt Creator: <em>Build &rarr; Run CMake</em> &rarr;
+              completes in ~1&ndash;3 sec.  Then <em>Build &rarr; Build All</em>.</li>
+        </ol>
+
+        <h3>Verify it really used the prebuilt</h3>
+        <p>In <em>General Messages</em> after configure succeeds, you should
+           see:</p>
+        <pre><code>-- The CXX compiler identification is GNU 13.1.0
+-- Found gRPC: &lt;build-dir&gt;/vcpkg_installed/x64-mingw-qt/share/grpc
+-- Found Protobuf: ...
+-- Configuring done (X.Xs)</code></pre>
+        <p>You should <strong>not</strong> see lines like:</p>
+        <pre><code>-- Building boringssl[core]:x64-mingw-qt...
+-- Building abseil[core]:x64-mingw-qt...</code></pre>
+        <p>If you do, <code>VCPKG_MANIFEST_INSTALL=OFF</code> didn&rsquo;t reach
+           the toolchain &mdash; check <em>Initial Configuration</em> still has
+           the entry, then <em>Clear CMake Configuration</em> + <em>Run CMake</em>
+           again.</p>
+
+        <p>
+          <strong>Where the zip lands</strong>: <code>import_prebuilt.bat</code>
+          extracts into every detected build dir&rsquo;s <code>vcpkg_installed/</code>
+          subfolder.  Each gets its own copy (~184&nbsp;MB unpacked) so the
+          server, console+widget client, and qt_client_grpcpp can all build
+          independently against the same artifacts.
+        </p>
+
+        <p>
+          <strong>Sharing your own prebuilt back</strong>: after a successful
+          local build, run <code>export_prebuilt.bat</code> to pack
+          <code>build-qt-vcpkg/vcpkg_installed/x64-mingw-qt/</code> +
+          <code>x64-windows/tools/grpc/</code> into
+          <code>prebuilt/vcpkg_installed_x64-mingw-qt.zip</code>.  Upload to
+          the shared SharePoint folder so other devs save the rebuild cost.
+        </p></section>
+
+  <section id="run">
+    <h2>Run sequence (Consul + Nomad)</h2>
+
+        <h3>1. Start the agents (one-time per dev session)</h3>
+        <p>Open two terminals and leave them running.</p>
+        <p><strong>Terminal A &mdash; Consul</strong>:</p>
+        <pre><code>consul agent -dev -client=0.0.0.0 -ui</code></pre>
+        <p>UI at <a href="http://127.0.0.1:8500" target="_blank">http://127.0.0.1:8500</a>.
+           Sanity check: <code>consul members</code> &mdash; should list one alive member.</p>
+
+        <p><strong>Terminal B &mdash; Nomad</strong>:</p>
+        <p>Windows needs <code>raw_exec</code> driver enabled.  Create
+           <code>C:\nomad\dev.hcl</code> once with:</p>
+        <pre><code>plugin "raw_exec" {
+  config {
+    enabled = true
+  }
+}</code></pre>
+        <p>Then start the agent:</p>
+        <pre><code>nomad agent -dev -config=C:\nomad\dev.hcl</code></pre>
+        <p>UI at <a href="http://127.0.0.1:4646" target="_blank">http://127.0.0.1:4646</a>.
+           Sanity check: <code>nomad node status</code>.</p>
+
+        <h3>2. One-time setup: resolve absolute paths in HCL files</h3>
+        <p>Generated <code>deploy\*.nomad.hcl</code> files use a
+           <code>C:/path/to/&lt;project&gt;</code> placeholder.  Run this script
+           once after scaffold (or after moving the project folder):</p>
+        <pre><code>prep_nomad_paths.bat</code></pre>
+        <p>This rewrites every <code>.hcl</code> file to point at the
+           current project&rsquo;s absolute path.  Idempotent.</p>
+
+        <h3>3. Submit each service to Nomad</h3>
+        <p>Pick the dist folder matching your build path:</p>
+        <ul>
+          <li>MSYS2 build: HCL points at <code>dist-msys2\run_&lt;service&gt;.bat</code></li>
+          <li>vcpkg build (after <code>deploy_qt_vcpkg.bat</code>): the
+              <code>dist-qt-vcpkg\</code> copy of the HCL points at
+              <code>dist-qt-vcpkg\run_&lt;service&gt;.bat</code> instead.
+              Submit those from <code>dist-qt-vcpkg\deploy\</code>.</li>
+        </ul>
+        <p>Submit each job:</p>
+        <table>
+          <tr><th>Service</th><th>Submit</th><th>Stop</th></tr>
+        <tr><td><code>ComSetupDeviceService</code></td><td><pre><code>nomad job run deploy\com_setup_device_service.nomad.hcl</code></pre></td><td><pre><code>nomad job stop com_setup_device_service</code></pre></td></tr>
+        <tr><td><code>PowerSupplyService</code></td><td><pre><code>nomad job run deploy\power_supply_service.nomad.hcl</code></pre></td><td><pre><code>nomad job stop power_supply_service</code></pre></td></tr>
+        </table>
+        <p>After submission, Nomad picks a random free port (defined as
+           <code>port "grpc" { }</code> in the HCL) and exports it as
+           <code>${NOMAD_PORT_grpc}</code> &rarr; the service reads it from
+           <code>&lt;PREFIX&gt;_GRPC_PORT</code> env var and registers in
+           Consul under that port.</p>
+
+        <h3>4. Verify each service is up</h3>
+        <pre><code>nomad job status &lt;service&gt;
+consul catalog services
+curl http://127.0.0.1:8500/v1/health/service/&lt;service&gt;?passing=true</code></pre>
+        <p>The Consul query returns the resolved <code>host:port</code> the
+           UI client uses when <strong>Use Consul</strong> is checked.</p>
+
+        <h3>5. Tail logs / stop / restart</h3>
+        <pre><code>nomad alloc logs &lt;alloc-id&gt;        :: stream stdout/stderr
+nomad job stop &lt;service&gt;            :: deregister + kill
+nomad job run deploy\&lt;service&gt;.nomad.hcl  :: re-submit</code></pre>
+        <p>Get the alloc ID from <code>nomad job status &lt;service&gt;</code>.</p>
+
+        <h3>Direct launch (skip Nomad)</h3>
+        <p>Useful for quick smoke tests &mdash; the service still registers
+           with Consul if <code>CONSUL_ADDR</code> is reachable:</p>
+        <pre><code>set &lt;PREFIX&gt;_GRPC_PORT=50051
+dist-qt-vcpkg\run_&lt;service&gt;.bat</code></pre>
+        <p>(Replace <code>&lt;PREFIX&gt;</code> with the env prefix listed in
+           the &ldquo;Project at a glance&rdquo; table.)</p>
+  </section>
+
+  <section id="troubleshooting">
+    <h2>Common issues &amp; fixes</h2>
+    <p>Click each entry to expand.</p>
+        <details><summary>Qt Creator: <code>Could not find a package configuration file provided by &quot;gRPC&quot;</code></summary><p>Symptom (kit-based flow, <code>build/Desktop_Qt_*-Debug/</code>):</p><pre><code>CMake Error at CMakeLists.txt:60 (find_package):
+  Could not find a package configuration file provided by &quot;gRPC&quot; ...
+  Add the installation prefix of &quot;gRPC&quot; to CMAKE_PREFIX_PATH ...</code></pre><p>The cmake invocation has no <code>-DCMAKE_TOOLCHAIN_FILE=...</code> flag, so vcpkg never loads, and the manifest install never runs.  Two fixes:</p><p><strong>Fix A (recommended): switch to the preset.</strong>  Close the project, reopen via <em>File &rarr; Open File or Project &rarr; CMakeLists.txt</em> and select the <code>vcpkg-x64-mingw-qt</code> preset on the import dialog.</p><p><strong>Fix B: stay on the kit, but inject toolchain vars manually.</strong></p><ol><li><em>Build &rarr; Clear CMake Configuration</em> (<em>Clean</em> alone does NOT clear cache).</li><li><em>Projects (Ctrl+5) &rarr; Build &rarr; Initial Configuration &rarr; Add &rarr; String</em> and add all four (replace placeholders with your vcpkg checkout and project absolute paths):<pre><code>CMAKE_TOOLCHAIN_FILE   = C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+VCPKG_TARGET_TRIPLET   = x64-mingw-qt
+VCPKG_OVERLAY_TRIPLETS = C:/path/to/your/project/triplets
+VCPKG_OVERLAY_PORTS    = C:/path/to/your/project/ports</code></pre><strong>Pitfalls:</strong><ul><li>Use absolute paths for overlay vars &mdash; Qt Creator does <strong>not</strong> expand <code>${sourceDir}</code> in <em>Initial Configuration</em> (CMakePresets-only macro).  Literal <code>${sourceDir}/triplets</code> reaches vcpkg, which can&rsquo;t find <code>x64-mingw-qt.cmake</code> and aborts manifest install.</li><li>Var name is <strong>plural</strong>: <code>VCPKG_OVERLAY_TRIPLETS</code> (with S).  Singular <code>VCPKG_OVERLAY_TRIPLET</code> is silently ignored.</li><li>Forward slashes only.  <code>\</code> triggers <code>Invalid character escape \Q</code>.</li></ul></li><li>Click <em>Run CMake</em>.</li></ol><p>Why the autodetect in <code>CMakeLists.txt</code> didn&rsquo;t fire: it reads <code>$ENV{VCPKG_ROOT}</code>.  If you ran <code>setx VCPKG_ROOT</code> <em>after</em> Qt Creator was launched, the var isn&rsquo;t in its environment &mdash; the warning prints, but the toolchain stays unset and <code>find_package(gRPC)</code> fails.</p></details>
+        <details><summary>vcpkg <code>BUILD_FAILED</code> on grpc with gcc 13 ICE</summary><p>The overlay-port at <code>ports/grpc/</code> includes patch <code>00018-gcc13-per-cpu-ice-workaround.patch</code>.  If it didn&rsquo;t apply, delete <code>ports/grpc/portfile.cmake</code> and re-run <code>init_vcpkg_overlay.bat</code>.</p></details>
+        <details><summary><code>Could NOT find Protobuf (missing: Protobuf_PROTOC_EXECUTABLE)</code></summary><p>CMakeLists pre-sets <code>Protobuf_PROTOC_EXECUTABLE</code> to <code>build/.../vcpkg_installed/x64-mingw-qt/tools/protobuf/protoc.exe</code>.  If your zip doesn&rsquo;t have host tools, run <code>export_prebuilt.bat</code> from a fully-built dir to pack <code>x64-windows/tools/grpc/</code> too.</p></details>
+        <details><summary>Linker error <code>-ignore:4221 unrecognized</code></summary><p>find_package picked vcpkg&rsquo;s MSVC <code>x64-windows</code> libs instead of our MinGW <code>x64-mingw-qt</code>.  Wipe the build dir (<code>rmdir /s /q build\Desktop_Qt_*</code>) and re-configure.</p></details>
+        <details><summary><code>Could not find _grpc_cpp using ... grpc_cpp_plugin.exe</code></summary><p>Host tools missing.  Copy <code>x64-windows/tools/grpc/</code> from a complete vcpkg_installed tree, or re-import a zip exported with the latest <code>export_prebuilt.bat</code> (it now packs host plugin).</p></details>
+        <details><summary>CMake error <code>Invalid character escape \Q</code></summary><p>Stale <code>CMakeFiles\&lt;ver&gt;\CMakeCXXCompiler.cmake</code> from earlier failed configure.  Wipe the build dir entirely (Qt Creator Clean is not enough) and Run CMake.</p></details>
+        <details><summary>Qt Creator: <code>vcpkg executable not found</code></summary><p>Just a warning - the bundled <code>QT_CREATOR_SKIP_VCPKG_SETUP=ON</code> silences it.  If you still see it, ensure CMakeLists ran past <code>project()</code>.</p></details>
+        <details><summary><code>ninja: manifest \&apos;build.ninja\&apos; still dirty after 100 tries</code></summary><p>Code-gen output landing in source tree.  Generated files use <code>${CMAKE_BINARY_DIR}/grpc_gen</code> by design - never change to source dir.</p></details>
+        <details><summary>F5 in Qt Creator: <code>libprotobuf.dll</code> / <code>Qt6Core.dll</code> / <code>libgcc_s_seh-1.dll</code> not found</summary><p>Build dir holds only the <code>.exe</code> + import libs; the actual DLLs live in <code>build/&lt;cfg&gt;/vcpkg_installed/x64-mingw-qt/bin/</code> (vcpkg deps), <code>C:\Qt\6.x.y\mingw_64\bin\</code> (Qt), and <code>C:\Qt\Tools\mingw1310_64\bin\</code> (MinGW runtime).  Windows can&rsquo;t find them on F5.  Fix: <em>Projects (Ctrl+5) &rarr; Run &rarr; Environment &rarr; Details &rarr; Path &rarr; Edit</em>, prepend all three dirs (semicolon-separated).  See the &ldquo;Running the GUI from Qt Creator (F5)&rdquo; subsection for the full path string.  Or just run <code>deploy_qt.bat</code> / <code>deploy_qt_vcpkg.bat</code> &mdash; those copy every DLL next to the <code>.exe</code> in <code>dist-qt-vcpkg/</code>, no PATH hack needed.</p></details>
+        <details><summary>GUI exe fails at startup with missing Qt DLL (deployed dist)</summary><p>Re-run the appropriate deploy script.  <code>windeployqt</code> auto-detects Debug vs Release from PE header; if it copied wrong variant, delete <code>dist-*</code> and re-run deploy.</p></details>
+        <details><summary>Service starts but doesn&rsquo;t register in Consul</summary><p>Check <code>CONSUL_ADDR</code> env var (default <code>http://127.0.0.1:8500</code>).  In Nomad, set it via <code>env { ... }</code> in the .hcl, or set system-wide before running <code>build_deploy_*.bat</code>.</p></details>
+        <details><summary>Service binds wrong port</summary><p>Each service reads <code>&lt;PREFIX&gt;_GRPC_PORT</code> (e.g. <code>COM_SETUP_DEVICE_SERVICE_GRPC_PORT</code>).  Nomad sets it from <code>${NOMAD_PORT_grpc}</code>; for direct launch, export the env var manually.</p></details>
+        <details><summary>Qt Creator: <em>The ABI of the selected debugger does not match the toolchain ABI</em></summary><p>CMakePresets can pin compiler paths but has no field for a debugger.  Qt Creator&rsquo;s auto-imported preset kit pairs the MinGW compiler with whatever debugger it auto-detects (often MSVC <code>cdb.exe</code> or a system <code>gdb</code> with a different ABI), hence the warning.</p><p><strong>One-time fix</strong> (per machine, not per project):</p><ol><li><em>Edit &rarr; Preferences &rarr; Kits &rarr; Debuggers</em> &mdash; verify there&rsquo;s an entry for <code>C:\Qt\Tools\mingw1310_64\bin\gdb.exe</code>.  If not: <em>Add</em> &rarr; <em>Path</em> = that path, <em>Name</em> = <code>MinGW gdb (Qt 6.11)</code>.  <em>Apply</em>.</li><li><em>Kits</em> tab &rarr; select the auto-imported kit named after the preset (e.g. <code>vcpkg + Qt MinGW 13.1.0 (Release)</code>) &rarr; set <em>Debugger</em> to the entry from step 1.  <em>Apply</em> + <em>OK</em>.</li></ol><p>The fix sticks across project re-imports because Qt Creator stores it in the kit, not the preset.  If Qt&rsquo;s installer already registered the bundled gdb (sometimes as <code>MinGW Debugger</code>), step 1 is unnecessary &mdash; pick the existing entry in step 2.</p></details>
+  </section>
+
+  <section id="see-also">
+    <h2>See also</h2>
+    <ul>
+      <li><code>README.md</code> &mdash; same content as plain Markdown.</li>
+      <li><code>examples/docs/html/index.html</code> &mdash; framework-level
+          docs (toolchain matrix, vcpkg setup, MSYS2 setup).</li>
+      <li><code>vcpkg_setup.html</code> in the framework docs &mdash; the
+          <code>google_vcpkg</code> path explained in depth.</li>
+    </ul>
+  </section>
+
+</main>
+
+<!-- Mermaid for the build/run flow diagram in #flow.  Loaded from the
+     framework-level docs/js/mermaid.min.js if available (zero-cost when
+     missing -- diagrams just render as their source code instead). -->
+<script src="../../docs/js/mermaid.min.js"></script>
+<script>
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({
+      startOnLoad: true, theme: 'dark', securityLevel: 'loose',
+      flowchart: { htmlLabels: true, useMaxWidth: true }
+    });
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "multi-proto-qt-client-grpcpp",
+  "version-string": "1.0.0",
+  "description": "Qt client using Google grpc++ via vcpkg + Qt MinGW.",
+  "dependencies": [
+    { "name": "grpc", "default-features": false, "features": ["codegen"] },
+    "protobuf"
+  ]
+}

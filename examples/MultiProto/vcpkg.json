@@ -1,0 +1,10 @@
+{
+  "name": "multi-proto-server-vcpkg",
+  "version-string": "1.0.0",
+  "description": "Server build with Google grpc++ via vcpkg + Qt MinGW.",
+  "dependencies": [
+    { "name": "grpc", "default-features": false, "features": ["codegen"] },
+    "protobuf",
+    "curl"
+  ]
+}

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QWidget" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>820</width><height>560</height></rect>
+  </property>
+  <property name="windowTitle">
+   <string>MultiProto2 (Qt Client)</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="modeRow">
+     <item>
+      <widget class="QCheckBox" name="useConsul">
+       <property name="text"><string>Use Consul (resolve service → host:port)</string></property>
+       <property name="checked"><bool>true</bool></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="consulRow">
+     <item>
+      <widget class="QLabel" name="consulUrlLabel">
+       <property name="text"><string>Consul:</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="consulUrlEdit">
+       <property name="text"><string>http://127.0.0.1:8500</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="serviceNameLabel">
+       <property name="text"><string>Service name:</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="serviceNameEdit">
+       <property name="placeholderText"><string>e.g. analog_input_service</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="hostRow">
+     <item>
+      <widget class="QLabel" name="hostLabel">
+       <property name="text"><string>Direct URL:</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="hostEdit">
+       <property name="text"><string>http://127.0.0.1:50051</string></property>
+       <property name="enabled"><bool>false</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="connectButton">
+       <property name="text"><string>Connect</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="pickRow">
+     <item>
+      <widget class="QLabel" name="serviceLabel">
+       <property name="text"><string>Service:</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="serviceCombo"/>
+     </item>
+     <item>
+      <widget class="QLabel" name="methodLabel">
+       <property name="text"><string>Method:</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="methodCombo"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="requestLabel">
+     <property name="text"><string>Request (JSON):</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="requestEdit">
+     <property name="plainText"><string>{}</string></property>
+     <property name="placeholderText"><string>JSON body matching the RPC's request message — e.g. {"channel": 0}</string></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="sendRow">
+     <item>
+      <widget class="QPushButton" name="sendButton">
+       <property name="text"><string>Send</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="statusLabel">
+       <property name="text"><string>(not connected)</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="responseLabel">
+     <property name="text"><string>Response:</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="responseEdit">
+     <property name="readOnly"><bool>true</bool></property>
+     <property name="placeholderText"><string>RPC results appear here…</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

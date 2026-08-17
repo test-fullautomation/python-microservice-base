@@ -1,0 +1,164 @@
+// Multi-capability device service — Protocol Buffer definitions
+//
+// Six independent services, one per capability facet.
+// A device service may implement any combination of them.
+// The gRPC API adapter introspects the device service at start-up and
+// registers only the services whose capability is present (channel count > 0).
+
+syntax = "proto3";
+
+package power_device;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Generic request carrying only a channel index.
+message ChannelRequest {
+  int32 channel = 1;
+}
+
+// Generic response for operations that return a channel count.
+message ChannelCountResponse {
+  int32 count = 1;
+}
+
+// Generic command response (set / enable operations).
+message CommandResponse {
+  int32   errorcode = 1;
+}
+// errorcode value:
+// No error function work fine                        0
+// ERROR_CODE_DEVICE_NOT_CONNECTED                    -20
+// ERROR_CODE_DEVICE_NOT_INITIALIZED                  -22
+// ERROR_CODE_NO_COMMUNICATION                        -23
+// ERROR_CODE_DEVICE_FUNCTION_NOT_IMPLEMENTED         -24
+// ERROR_CODE_DEVICE_FUNCTION_NOT_WORKING             -25
+// ERROR_CODE_DEVICE_FUNCTION_NOT_SUPPORTED           -26
+// ERROR_CODE_DEVICE_FUNCTION_TIMEOUT                 -27
+
+// ERROR_CODE_APPLICATION_THREAD_IS_RUNNING           -30
+// ERROR_CODE_APPLICATION_THREAD_IS_STOPPED           -31
+// ERROR_CODE_DIALOG_THREAD_IS_RUNNING                -32
+// ERROR_CODE_LAST_PROCESS_NOT_FINISH                 -33
+
+// ERROR_CODE_FILE_NOT_FOUND                          -40
+// ERROR_CODE_PATH_NOT_FOUND                          -41
+// ERROR_CODE_INVALID_FILE_FORMAT                     -42
+// ERROR_CODE_FILE_CANNOT_BE_LOADED                   -43
+// ERROR_CODE_FILE_CANNOT_BE_SAVED                    -44
+
+// ERROR_CODE_COMMAND_NOT_IMPLEMENTED                 -50
+// ERROR_CODE_COMMAND_NOT_SENT_TO_DEVICE              -60
+// ERROR_CODE_COMMAND_NOT_RECEIVED_FROM_DEVICE        -70
+// ERROR_CODE_COMMAND_NOT_FOUND                       -99
+
+// ERROR_CODE_PARAMETER_VALUE_OUTSIDE_RANGE           -10
+// ERROR_CODE_DATA_NOT_RETRIEVED                      -11
+// ERROR_CODE_WAVE_NOT_FOUND                          -12
+// ERROR_CODE_PARAMETER_ELEMENT_NOT_FOUND             -13
+
+// ERROR_CODE_NO_MEMORY_AVAILABLE                     -50
+
+
+
+// Empty request (used for GetChannelCount where no input is needed).
+message Empty {}
+
+
+message SetVoltageRequest {
+  int32 channel = 1;
+  float voltage = 2;  // Volts, must be >= 0
+}
+
+message SetCurrentLimitRequest {
+  int32 channel = 1;
+  float current = 2;  // Amperes, must be >= 0
+}
+
+message SetOutputEnabledRequest {
+  int32 channel = 1;
+  bool  enabled = 2;
+}
+
+message GetMeasurementsResponse {
+  int32  errorcode = 1;
+  int32  channel   = 2;
+  float  value     = 3;  // unit depends on device (V, A, …)
+}
+
+message GetSubDeviceTypeResponse {
+  int32  errorcode = 1;
+  int32  value     = 2;  // SubDeviceType index selected
+}
+
+message GetSubDeviceTypeNameResponse {
+  int32  errorcode = 1;
+  string value     = 2;  // name SubDeviceType
+}
+
+message GetSubDeviceTypeIDResponse {
+  int32 errorcode = 1;
+  int32 value     = 2;  // ID SubDeviceType
+}
+
+message GetSubDeviceTypeListCountResponse {
+  int32 errorcode = 1;
+  int32 value     = 2;  // max SubDeviceType index
+}
+
+// 
+message SubDeviceTypeRequest {
+  int32 index = 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Programmable power supply
+// ─────────────────────────────────────────────────────────────────────────────
+service PowerSupplyService {
+
+
+  // config SubDeviceType
+  
+  // Set sub device type
+  rpc SetSubDeviceType (SubDeviceTypeRequest) returns (CommandResponse);
+  
+  // Return the index of sub device type select.
+  rpc GetSubDeviceType (Empty) returns (GetSubDeviceTypeResponse);
+  
+  // Return the number of output channels on this device select.
+  rpc GetSubDeviceTypeChannelCount (Empty) returns (ChannelCountResponse);
+  
+  // Return max index sub device types supported.
+  rpc GetSubDeviceType_ListCount (Empty) returns (GetSubDeviceTypeListCountResponse);
+	
+  // Return list element ID sub device type 
+  rpc GetSubDeviceType_ID (SubDeviceTypeRequest) returns (GetSubDeviceTypeIDResponse);	
+  
+  // Return list element name sub device type 
+  rpc GetSubDeviceType_Name (SubDeviceTypeRequest) returns (GetSubDeviceTypeNameResponse);	
+  
+  
+
+  // device function control
+  
+  // Init device (default setting)
+  rpc InitDevice (Empty) returns (CommandResponse);
+  
+  // Set the target output voltage of a power supply channel.
+  rpc SetVoltage (SetVoltageRequest) returns (CommandResponse);
+
+  // Set the current limit of a power supply channel.
+  rpc SetCurrentLimit (SetCurrentLimitRequest) returns (CommandResponse);
+
+  // Enable or disable the output of a power supply channel.
+  rpc SetOutputEnabled (SetOutputEnabledRequest) returns (CommandResponse);
+  
+  // Read measurement the current value of a power supply channel.
+  rpc ReadCurrent (ChannelRequest) returns (GetMeasurementsResponse);
+  
+  // Read measurement the voltage value of a power supply channel.
+  rpc ReadVoltage (ChannelRequest) returns (GetMeasurementsResponse);
+  
+
+}

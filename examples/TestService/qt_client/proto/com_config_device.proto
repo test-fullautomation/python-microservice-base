@@ -1,0 +1,136 @@
+// Multi-capability device service — Protocol Buffer definitions
+//
+// Six independent services, one per capability facet.
+// A device service may implement any combination of them.
+// The gRPC API adapter introspects the device service at start-up and
+// registers only the services whose capability is present (channel count > 0).
+
+syntax = "proto3";
+
+package Com_Setup_Device;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Generic command response (set / enable operations).
+message CommandResponse {
+  int32   errorcode = 1;
+}
+// errorcode value:
+// No error function work fine                        0
+// ERROR_CODE_DEVICE_NOT_CONNECTED                    -20
+// ERROR_CODE_DEVICE_NOT_INITIALIZED                  -22
+// ERROR_CODE_NO_COMMUNICATION                        -23
+// ERROR_CODE_DEVICE_FUNCTION_NOT_IMPLEMENTED         -24
+// ERROR_CODE_DEVICE_FUNCTION_NOT_WORKING             -25
+// ERROR_CODE_DEVICE_FUNCTION_NOT_SUPPORTED           -26
+// ERROR_CODE_DEVICE_FUNCTION_TIMEOUT                 -27
+
+// ERROR_CODE_APPLICATION_THREAD_IS_RUNNING           -30
+// ERROR_CODE_APPLICATION_THREAD_IS_STOPPED           -31
+// ERROR_CODE_DIALOG_THREAD_IS_RUNNING                -32
+// ERROR_CODE_LAST_PROCESS_NOT_FINISH                 -33
+
+// ERROR_CODE_FILE_NOT_FOUND                          -40
+// ERROR_CODE_PATH_NOT_FOUND                          -41
+// ERROR_CODE_INVALID_FILE_FORMAT                     -42
+// ERROR_CODE_FILE_CANNOT_BE_LOADED                   -43
+// ERROR_CODE_FILE_CANNOT_BE_SAVED                    -44
+
+// ERROR_CODE_COMMAND_NOT_IMPLEMENTED                 -50
+// ERROR_CODE_COMMAND_NOT_SENT_TO_DEVICE              -60
+// ERROR_CODE_COMMAND_NOT_RECEIVED_FROM_DEVICE        -70
+// ERROR_CODE_COMMAND_NOT_FOUND                       -99
+
+// ERROR_CODE_PARAMETER_VALUE_OUTSIDE_RANGE           -10
+// ERROR_CODE_DATA_NOT_RETRIEVED                      -11
+// ERROR_CODE_WAVE_NOT_FOUND                          -12
+// ERROR_CODE_PARAMETER_ELEMENT_NOT_FOUND             -13
+
+// ERROR_CODE_NO_MEMORY_AVAILABLE                     -50
+
+
+
+// Empty request (used for GetChannelCount where no input is needed).
+message Empty {}
+
+//
+message GetInterfaceTypeResponse {
+  int32  type = 1;  // 0-> RS232; 1-> client; 2-> NI-Visa; 3-> AG-Visa
+}
+
+// 
+message InterfaceTypeRequest {
+  int32 type = 1; // 0-> RS232; 1-> client; 2-> NI-Visa; 3-> AG-Visa
+}
+
+message GetConnectStateResponse {
+  bool   enabled = 1;
+}
+
+message GetInterfaceConfigResponse {
+  int32 errorcode = 1;
+  string value     = 2;  // lock table
+}
+
+
+message SetInterfaceConfigRequest {
+  string parametername = 1;
+  string parametervalue = 2;  // lock table
+}
+message GetInterfaceConfigRequest {
+  string parametername = 1;
+}
+
+
+// parametername:          parametervalue:
+// RS232_Port              COM1-COM255
+// RS232_Baud              9600, ...
+// RS232 FlowControl       None, ...
+// RS232_DataBits          5-8
+// RS232_Stop              1, 1.5, 2
+// RS232_Parity            None, Even, ...
+// CLIENT_ServerName       sample HI-C-004JU
+// CLIENT_ServerPort       sample 9000
+// NI_Visa_Address         visa address string
+// AG_Visa_Address         visa address string
+
+message LoadInterfaceConfigRequest {
+  string configfilename = 1;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configuration SCIPT device interface
+// ─────────────────────────────────────────────────────────────────────────────
+service ComSetupDeviceService {
+
+
+  // Set device interface type
+  rpc SetInterfaceType (InterfaceTypeRequest) returns (CommandResponse);
+  
+  // get device interface type select
+  rpc GetInterfaceType (Empty) returns (GetInterfaceTypeResponse);
+  
+  
+  // Set one interface configuration parameter
+  rpc SetInterfaceConfig (SetInterfaceConfigRequest) returns (CommandResponse);
+  
+  // Get one interface configuration parameter
+  rpc GetInterfaceConfig (SetInterfaceConfigRequest) returns (GetInterfaceConfigResponse);
+  
+  // Load configuration file
+  rpc LoadInterfaceConfig (LoadInterfaceConfigRequest) returns (CommandResponse);
+  
+  
+  // Connect device interface
+  rpc Connect (Empty) returns (CommandResponse);
+  
+  // DisConnect device interface
+  rpc DisConnect (Empty) returns (CommandResponse);
+  
+  // Read interface connect state
+  rpc GetConnectState (Empty) returns (GetConnectStateResponse);
+  
+}

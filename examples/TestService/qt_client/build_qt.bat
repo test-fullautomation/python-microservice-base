@@ -1,0 +1,129 @@
+@echo off
+:: Build the Qt-native client using the Qt-installer toolchain.
+::
+:: Honoured env vars (override any of these before invoking):
+::   QT_DIR    Qt install prefix.  Default: C:\Qt\6.11.0\mingw_64
+::   QT_TOOLS  Qt Tools root.       Default: C:\Qt\Tools
+::             (provides bundled CMake + Ninja + MinGW compiler)
+
+setlocal EnableDelayedExpansion
+if not defined QT_DIR   set "QT_DIR=C:\Qt\6.11.0\mingw_64"
+if not defined QT_TOOLS set "QT_TOOLS=C:\Qt\Tools"
+if not defined Qt6_DIR  set "Qt6_DIR=%QT_DIR%\lib\cmake\Qt6"
+
+:: Qt-bundled MinGW compiler — fall back through the versions Qt has shipped.
+set "MINGW="
+for %%V in (mingw1310_64 mingw1120_64 mingw900_64 mingw810_64) do (
+    if not defined MINGW if exist "%QT_TOOLS%\%%V\bin\g++.exe" (
+        set "MINGW=%QT_TOOLS%\%%V\bin"
+    )
+)
+
+:: Qt-bundled CMake — folder name varies (CMake_64 on most installs).
+set "QTCMAKE="
+for %%C in (CMake_64 CMake) do (
+    if not defined QTCMAKE if exist "%QT_TOOLS%\%%C\bin\cmake.exe" (
+        set "QTCMAKE=%QT_TOOLS%\%%C\bin"
+    )
+)
+
+:: Qt-bundled Ninja.
+set "QTNINJA="
+if exist "%QT_TOOLS%\Ninja\ninja.exe" set "QTNINJA=%QT_TOOLS%\Ninja"
+
+if defined MINGW   set "PATH=%MINGW%;%PATH%"
+if defined QTCMAKE set "PATH=%QTCMAKE%;%PATH%"
+if defined QTNINJA set "PATH=%QTNINJA%;%PATH%"
+set "PATH=%QT_DIR%\bin;%PATH%"
+
+:: Qt's qt_add_grpc / qt_add_protobuf invoke Google's `protoc` at build
+:: time (Qt only ships the Qt-side plugins).  The Qt installer doesn't
+:: bundle protoc, so we look for one from common installs.  PROTOC_DIR
+:: (env var) wins if explicitly set.
+set "PROTOC_DIR_FOUND="
+if defined PROTOC_DIR if exist "%PROTOC_DIR%\protoc.exe" set "PROTOC_DIR_FOUND=%PROTOC_DIR%"
+if not defined PROTOC_DIR_FOUND if exist "C:\msys64\mingw64\bin\protoc.exe" set "PROTOC_DIR_FOUND=C:\msys64\mingw64\bin"
+if not defined PROTOC_DIR_FOUND if defined VCPKG_ROOT if exist "%VCPKG_ROOT%\installed\x64-windows\tools\protobuf\protoc.exe" set "PROTOC_DIR_FOUND=%VCPKG_ROOT%\installed\x64-windows\tools\protobuf"
+if defined PROTOC_DIR_FOUND set "PATH=%PATH%;%PROTOC_DIR_FOUND%"
+
+where protoc >nul 2>&1 || (
+    echo ERROR: 'protoc' executable not found on PATH.
+    echo        Qt's qt_add_grpc / qt_add_protobuf needs Google's protoc
+    echo        at build time.  Easiest fix on Windows:
+    echo            pacman -S mingw-w64-x86_64-protobuf  ^(via MSYS2^)
+    echo        ...or download a release from
+    echo            https://github.com/protocolbuffers/protobuf/releases
+    echo        and either put protoc.exe on PATH or
+    echo            set "PROTOC_DIR=C:\path\to\folder\containing\protoc.exe"
+    echo        before re-running this script.
+    exit /b 1
+)
+
+:: Hard requirement: a Qt-bundled MinGW.  Refuse to fall back to a random
+:: g++ on PATH (Strawberry Perl, msys64, mingw-w64 standalone, …) — those
+:: ABIs don't match Qt's prebuilt libs and you'd hit cryptic link errors.
+if not defined MINGW (
+    echo ERROR: No Qt-bundled MinGW found under %%QT_TOOLS%%.
+    echo        Open Qt Maintenance Tool -^> Add or remove components,
+    echo        and tick exactly one of:
+    echo            Qt -^> Tools -^> MinGW 13.1.0 64-bit
+    echo            Qt -^> Tools -^> MinGW 11.2.0 64-bit
+    exit /b 1
+)
+if not defined QTCMAKE (
+    echo ERROR: cmake not found.  Install it via the Qt Maintenance Tool:
+    echo   Qt -^> Tools -^> CMake     ^(typically C:\Qt\Tools\CMake_64^)
+    exit /b 1
+)
+if not defined QTNINJA (
+    echo ERROR: ninja not found.  Install it via the Qt Maintenance Tool:
+    echo   Qt -^> Tools -^> Ninja     ^(typically C:\Qt\Tools\Ninja^)
+    exit /b 1
+)
+
+:: Sanity-check the Qt install before invoking CMake.  This gives a
+:: clearer error than CMake's "Could not find Qt6" stack trace.
+if not exist "%QT_DIR%\lib\cmake\Qt6\Qt6Config.cmake" (
+    echo ERROR: Qt6 not found at %%QT_DIR%% = %QT_DIR%
+    echo        Expected: %QT_DIR%\lib\cmake\Qt6\Qt6Config.cmake
+    echo        Set QT_DIR to the actual install prefix, e.g.:
+    echo            set "QT_DIR=C:\Qt\6.11.0\mingw_64"
+    echo        or check your install with: dir C:\Qt\
+    exit /b 1
+)
+if not exist "%QT_DIR%\lib\cmake\Qt6Grpc\Qt6GrpcConfig.cmake" (
+    echo ERROR: Qt6 GRPC module not installed at %%QT_DIR%%.
+    echo        Open Qt Maintenance Tool -^> Add or remove components,
+    echo        select your Qt version, and tick:
+    echo            Qt GRPC                 ^(stable in 6.8+, Tech Preview in 6.7^)
+    echo            Qt Protobuf
+    echo            Qt Protobuf Well Known Types
+    exit /b 1
+)
+
+set "BUILD=%~dp0build-qt"
+if not exist "%BUILD%" mkdir "%BUILD%"
+cd /d "%BUILD%"
+
+echo Using:
+echo   QT_DIR  = %QT_DIR%
+echo   MINGW   = %MINGW%
+echo   CMake   = %QTCMAKE%
+echo   Ninja   = %QTNINJA%
+echo.
+
+:: Pass the toolchain explicitly so PATH ordering can't matter.
+cmake -G "Ninja" ^
+    -DCMAKE_BUILD_TYPE=Release ^
+    -DCMAKE_PREFIX_PATH="%QT_DIR%" ^
+    -DCMAKE_C_COMPILER="%MINGW:\=/%/gcc.exe" ^
+    -DCMAKE_CXX_COMPILER="%MINGW:\=/%/g++.exe" ^
+    -DCMAKE_MAKE_PROGRAM="%QTNINJA:\=/%/ninja.exe" ^
+    ..
+if errorlevel 1 ( echo Configure failed. & exit /b 1 )
+cmake --build .
+if errorlevel 1 ( echo Build failed. & exit /b 1 )
+
+echo.
+echo Qt client built: %BUILD%\test_service_qt_gui.exe
+endlocal

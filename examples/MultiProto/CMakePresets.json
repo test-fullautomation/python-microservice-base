@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21 },
+  "configurePresets": [
+    {
+      "name": "vcpkg-x64-mingw-qt",
+      "displayName": "vcpkg + Qt MinGW 13.1.0 (Release)",
+      "description": "Builds with vcpkg-installed grpc/protobuf via Qt MinGW. If Qt Creator warns about debugger ABI mismatch, see README \"Troubleshooting: The ABI of the selected debugger does not match\".",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-qt-vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-qt",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/triplets",
+        "VCPKG_OVERLAY_PORTS": "${sourceDir}/ports",
+        "CMAKE_C_COMPILER": "$env{QT_MINGW_BIN}/gcc.exe",
+        "CMAKE_CXX_COMPILER": "$env{QT_MINGW_BIN}/g++.exe",
+        "CMAKE_PREFIX_PATH": "$env{QT_DIR}",
+        "QT_CREATOR_SKIP_VCPKG_SETUP": "ON"
+      },
+      "environment": {
+        "QT_MINGW_BIN": "C:/Qt/Tools/mingw1310_64/bin",
+        "QT_DIR":       "C:/Qt/6.11.0/mingw_64"
+      }
+    },
+    {
+      "name": "vcpkg-x64-mingw-qt-prebuilt",
+      "displayName": "vcpkg + Qt MinGW (use prebuilt artifacts)",
+      "description": "Skips vcpkg manifest install.  Drop a prebuilt vcpkg_installed/ in first (e.g. via import_prebuilt.bat).",
+      "inherits": "vcpkg-x64-mingw-qt",
+      "cacheVariables": { "VCPKG_MANIFEST_INSTALL": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "vcpkg-x64-mingw-qt",          "configurePreset": "vcpkg-x64-mingw-qt" },
+    { "name": "vcpkg-x64-mingw-qt-prebuilt", "configurePreset": "vcpkg-x64-mingw-qt-prebuilt" }
+  ]
+}
