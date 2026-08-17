@@ -1414,7 +1414,7 @@
       methods.forEach(function (m) {
         lines.push('# ' + m.name + ' (' + (m.input_type || '') + ' -> ' + (m.output_type || '') + ')'
                    + (m.server_streaming ? '  [server-streaming]' : ''));
-        lines.push('request = ' + _indentedJson(m.input_skeleton || {}, '').replace(/^/, ''));
+        lines.push('request = ' + _indentedJson(m.input_skeleton || {}, ''));
         lines.push('print(call("' + svc.name + '", "' + m.name + '", request))');
         lines.push('');
       });
