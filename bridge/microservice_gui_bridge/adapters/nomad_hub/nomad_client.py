@@ -143,6 +143,14 @@ Construct a NomadClient bound to a Nomad server.
       self._last_index = {}
       self._ssl_context = None
       if not verify_ssl:
+         # Deliberate, opt-in escape hatch for dev clusters using
+         # self-signed certs; `verify_ssl` defaults to True so the secure
+         # path is what you get unless a caller explicitly asks otherwise.
+         # Static analysis flags these two lines regardless of the guard
+         # (CodeQL, CWE-295 disabled certificate validation) -- that alert
+         # is expected here and should be dismissed as "used in tests /
+         # intended behaviour" rather than "fixed", since removing the
+         # option would break local Nomad setups.
          self._ssl_context = ssl.create_default_context()
          self._ssl_context.check_hostname = False
          self._ssl_context.verify_mode = ssl.CERT_NONE
