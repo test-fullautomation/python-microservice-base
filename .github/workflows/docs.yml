@@ -73,6 +73,12 @@ jobs:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-docs-${{ hashFiles('.github/workflows/docs.yml') }}
 
+      # urllib3 and requests are listed explicitly because
+      # plantuml-markdown 3.11.2 imports urllib3 at module load but
+      # declares NO dependencies at all (`Requires:` is empty). On a dev
+      # machine something else has usually pulled urllib3 in already, so
+      # the gap only shows up on a clean runner as:
+      #   ModuleNotFoundError: No module named 'urllib3'
       - name: Install ProperDocs toolchain
         run: |
           python -m pip install --upgrade pip
@@ -80,7 +86,12 @@ jobs:
             properdocs \
             properdocs-theme-readthedocs \
             plantuml-markdown \
-            mkdocs-glightbox
+            mkdocs-glightbox \
+            urllib3 \
+            requests
+
+      - name: Show installed versions
+        run: python -m pip list | grep -Ei 'properdocs|plantuml|glightbox|urllib3|requests|markdown'
 
       # The jar is gitignored (11 MB binary), so fetch it here. The path
       # must match `plantuml_cmd` in properdocs.yml: tools/plantuml.jar
