@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Manager GUI documentation</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --muted: #94a3b8;
+    --accent: #38bdf8; --green: #10b981; --amber: #fbbf24; --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0;
+         background: var(--bg); color: var(--text); line-height: 1.65; }
+  header { background: linear-gradient(135deg, #10b981, #0ea5e9); padding: 32px 30px;
+           box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p  { margin: 8px 0 0; opacity: 0.9; }
+  main { max-width: 1100px; margin: 0 auto; padding: 30px; }
+  section { background: var(--panel); border-radius: 12px; padding: 22px 26px;
+            margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border-left: 4px solid var(--green); }
+  section h2 { color: var(--green); margin-top: 0;
+               border-bottom: 1px solid var(--border); padding-bottom: 10px;
+               font-size: 1.3em; }
+  h3 { color: var(--amber); margin-top: 18px; }
+  code { background: #0b1220; padding: 2px 6px; border-radius: 4px; color: #fcd34d;
+         font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+         font-size: 0.9em; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0;
+          background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border);
+           font-size: 0.92em; vertical-align: top; }
+  th { background: #0b1220; color: var(--green); }
+  tr:last-child td { border-bottom: none; }
+  a { color: var(--accent); }
+  ul li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Manager GUI documentation</h1>
+  <p>Companion docs to the Microservice Manager GUI &mdash; what the panels do, how they map to bridge endpoints, how to script them.</p>
+</header>
+
+<main>
+
+<section>
+<p>
+  For a one-page overview of the GUI as a whole, start at
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/MicroserviceBase/MicroserviceManagerGUI/README.html"
+     target="_blank">repo: MicroserviceManagerGUI/README.html</a>.
+</p>
+</section>
+
+<section>
+<h2>Guides</h2>
+
+<h3><a href="ops_consul_nomad.html">Operating Consul + Nomad</a></h3>
+<p>
+  How the <strong>Service Network</strong> mode replaces the
+  per-terminal <code>consul agent -dev</code> /
+  <code>nomad agent -dev</code> workflow:
+</p>
+<ul>
+  <li>Bridge LED and what each colour means</li>
+  <li>Consul tab: Setup form (Dev / Config / Connect) + Connected dashboard</li>
+  <li>Nomad tab: same pattern + jobs table + Submit Job dialog</li>
+  <li>Navbar infra status pills (live LEDs, click-to-jump)</li>
+  <li>Typical end-to-end workflow (open GUI &rarr; service running)</li>
+  <li>CLI equivalents &mdash; every GUI action mapped to its bridge HTTP endpoint</li>
+  <li>Troubleshooting (port conflicts, stale PID files, missing services)</li>
+</ul>
+<p>8 screenshots showing each state of the panels.</p>
+
+<h3><a href="service_creator.html">Service Creator wizard</a></h3>
+<p>
+  The 4-step wizard for generating new service scaffolds (proto +
+  domain + adapter + clients + Nomad HCL) without writing boilerplate:
+</p>
+<ul>
+  <li>Step 1 &mdash; Basic Info (name, language, GUI type)</li>
+  <li>Step 2 &mdash; Technology (server / client toolchain matrix)</li>
+  <li>Step 3 &mdash; Methods (manual entry + import .proto)</li>
+  <li>Step 4 &mdash; Review &amp; Generate (output preview)</li>
+  <li>What gets generated, where, and how to build it</li>
+  <li>The <code>mb-scaffold</code> CLI equivalent + YAML config schema</li>
+</ul>
+<p>10 screenshots covering each step + the generated file tree.</p>
+
+<h3><a href="robot_generator.html">Generate Robot Framework resources</a></h3>
+<p>
+  Turn a folder of <code>.proto</code> files into typed Robot Framework
+  keyword libraries &mdash; one <code>.resource</code> per service, one
+  keyword per RPC method &mdash; that wrap
+  <code>QConnectBase.ConnectionManager</code> so tests don&rsquo;t have
+  to hand-roll JSON <code>send_cmd</code> strings:
+</p>
+<ul>
+  <li>Output conventions (service-prefixed keyword names,
+      <code>${conn_name}</code> first, <code>Open/Close Connection</code>
+      helpers chosen to avoid collisions with proto-defined
+      <code>Connect()</code> / <code>Disconnect()</code> RPCs)</li>
+  <li>GUI button location (methods panel toolbar + no-reflection
+      fallback card)</li>
+  <li><code>python -m MicroserviceBase.tools.robot_gen</code> CLI
+      &mdash; works without the bridge, CI-friendly</li>
+  <li><code>POST /api/scaffold/robot</code> HTTP endpoint</li>
+  <li>Proto3 default-value-omission caveat + the bridge-side fix
+      (<code>always_print_fields_with_no_presence=True</code>)</li>
+  <li>Troubleshooting (&ldquo;Failed to fetch&rdquo;, &ldquo;no .proto
+      files matched&rdquo;, duplicate keyword names &mdash; all the
+      regressions previous users hit)</li>
+</ul>
+</section>
+
+<section>
+<h2>Cross-references</h2>
+<table>
+  <tr><th>When you need&hellip;</th><th>Go to</th></tr>
+  <tr><td>The actual framework architecture (hexagonal layers, runtime model)</td>
+      <td><a href="https://github.com/test-fullautomation/python-microservice-base/tree/ugc1hc/feat/migrate_to_ta_architecture/docs"
+             target="_blank">repo: docs/</a> (repo-level)</td></tr>
+  <tr><td>A toolchain setup guide (MSYS2, Qt6::Grpc, vcpkg + Qt MinGW)</td>
+      <td><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/index.html">examples/docs/html/index.html</a></td></tr>
+  <tr><td>The lighter in-app help (loaded inside the running GUI)</td>
+      <td><code>../../web/docs/help.html</code> (or click the <strong>?</strong> in the navbar when the GUI is running)</td></tr>
+  <tr><td>A worked example of a multi-service C++ project</td>
+      <td><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/PowerDeviceService/README.html">examples/PowerDeviceService/README.html</a></td></tr>
+</table>
+</section>
+
+<section>
+<h2>In-app help vs long-form docs</h2>
+<table>
+  <tr><th></th><th>In-app <code>web/docs/help.html</code></th><th>Long-form <code>docs/</code> (this folder)</th></tr>
+  <tr><td><strong>Audience</strong></td><td>User running the app right now</td><td>Developer learning the framework</td></tr>
+  <tr><td><strong>Reading context</strong></td><td>Side panel inside the running GUI</td><td>GitHub / IDE markdown preview / browser</td></tr>
+  <tr><td><strong>Length</strong></td><td>Quick lookup (~500 lines)</td><td>Comprehensive (~1000-2000 lines per topic)</td></tr>
+  <tr><td><strong>Cross-links</strong></td><td>Mostly self-contained</td><td>Links across the repo (toolchains, examples, runtime)</td></tr>
+  <tr><td><strong>Screenshots</strong></td><td>10 (one per major panel)</td><td>18 (each panel state, plus per-wizard-step)</td></tr>
+  <tr><td><strong>Source of truth</strong></td><td>Mirror of long-form for the topics it covers</td><td>&#x2713; Canonical</td></tr>
+</table>
+<p>When the two diverge, fix the long-form first, then propagate the relevant snippet into <code>help.html</code>.</p>
+</section>
+
+</main>
+</body>
+</html>

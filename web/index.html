@@ -25,13 +25,44 @@
       <button class="mode-btn" id="btnModeCreator">Service Creator</button>
     </div>
     <div class="navbar-actions">
-      <div class="connected-brokers" id="connectedBrokers">
-        <!-- Broker chips dynamically inserted here -->
-      </div>
-      <span class="connection-badge">
+      <!-- Legacy broker chips/badge — kept in the DOM so existing app.js
+           references (#connectionDot, #connectionLabel, #connectedBrokers)
+           keep working, hidden via CSS. -->
+      <div class="connected-brokers legacy-broker-ui" id="connectedBrokers"></div>
+      <span class="connection-badge legacy-broker-ui">
         <span class="connection-dot" id="connectionDot"></span>
         <span id="connectionLabel">Disconnected</span>
       </span>
+
+      <!-- Bridge control: LED + Start/Stop buttons -->
+      <div class="bridge-control" id="bridgeControl" title="FastAPI bridge status">
+        <span class="bridge-led" id="bridgeLed"></span>
+        <span class="bridge-label" id="bridgeLabel">Bridge</span>
+        <button class="btn-bridge btn-bridge-start" id="btnBridgeStart" title="Start bridge">
+          <i class="bi bi-play-fill"></i>
+        </button>
+        <button class="btn-bridge btn-bridge-stop" id="btnBridgeStop" title="Stop bridge">
+          <i class="bi bi-stop-fill"></i>
+        </button>
+      </div>
+
+      <!-- Infrastructure status: Consul (service registry) + Nomad (orchestrator).
+           Each pill is a button — click to jump to the corresponding sub-tab. -->
+      <div class="infra-status" id="infraStatus">
+        <button type="button" class="infra-pill" id="infraConsulPill" title="Consul — click to open">
+          <span class="infra-led" id="infraConsulLed"></span>
+          <span class="infra-label">Consul</span>
+        </button>
+        <button type="button" class="infra-pill" id="infraNomadPill" title="Nomad — click to open">
+          <span class="infra-led" id="infraNomadLed"></span>
+          <span class="infra-label">Nomad</span>
+        </button>
+      </div>
+
+      <!-- Connected Consul clusters: one chip per URL with an x button.
+           Populated by app.js after a successful Connect. -->
+      <div class="consul-chips" id="consulChips"></div>
+
       <button class="btn-help" id="btnReportIssue" title="Report Issue">
         <i class="bi bi-bug"></i>
       </button>
@@ -41,7 +72,7 @@
       <button class="btn-settings" id="btnSettings" title="Settings">
         <i class="bi bi-gear"></i>
       </button>
-      <button class="btn-connect" id="btnConnect" title="Connect">
+      <button class="btn-connect" id="btnConnect" title="Connect to Consul">
         <i class="bi bi-plug"></i> Connect
       </button>
     </div>
@@ -93,25 +124,19 @@
       <div id="fleetContent" style="display:none;">
         <ul class="nav nav-tabs fleet-sub-tabs" id="fleetSubTabs" role="tablist">
           <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tabFleetRemote" data-bs-toggle="tab"
-                    data-bs-target="#fleetRemotePane" type="button" role="tab">
-              <i class="bi bi-cloud me-1"></i>Fleet</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tabLocalHub" data-bs-toggle="tab"
-                    data-bs-target="#localHubPane" type="button" role="tab">
-              <i class="bi bi-pc-display me-1"></i>Local Hub</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tabNomad" data-bs-toggle="tab"
+            <button class="nav-link active" id="tabNomad" data-bs-toggle="tab"
                     data-bs-target="#nomadPane" type="button" role="tab">
               <i class="bi bi-hdd-rack me-1"></i>Nomad</button>
           </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tabConsul" data-bs-toggle="tab"
+                    data-bs-target="#consulPane" type="button" role="tab">
+              <i class="bi bi-compass me-1"></i>Consul</button>
+          </li>
         </ul>
         <div class="tab-content fleet-tab-content" id="fleetSubTabContent">
-          <div class="tab-pane fade show active" id="fleetRemotePane" role="tabpanel"></div>
-          <div class="tab-pane fade" id="localHubPane" role="tabpanel"></div>
-          <div class="tab-pane fade" id="nomadPane" role="tabpanel"></div>
+          <div class="tab-pane fade show active" id="nomadPane" role="tabpanel"></div>
+          <div class="tab-pane fade" id="consulPane" role="tabpanel"></div>
         </div>
       </div>
     </main>
@@ -179,6 +204,50 @@
             <i class="bi bi-clipboard me-1"></i>Copy Code
           </button>
           <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Consul Connect Modal ===== -->
+  <div class="modal fade" id="consulConnectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-compass me-2"></i>Connect to Consul</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-3">
+            Connect to a Consul service registry.  Services registered with
+            this Consul will appear in the sidebar.
+          </p>
+          <form id="consulConnectForm">
+            <div class="mb-3">
+              <label for="consulConnectUrl" class="form-label">Consul URL</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="consulConnectUrl"
+                       placeholder="http://127.0.0.1:8500" value="http://127.0.0.1:8500">
+                <button class="btn btn-outline-secondary" type="button" id="btnConsulDetect"
+                        title="Scan local processes for running Consul agents">
+                  <i class="bi bi-search me-1"></i>Detect
+                </button>
+              </div>
+              <div class="form-text">Base URL of the Consul HTTP API. Click <strong>Detect</strong> to scan local processes.</div>
+            </div>
+            <div id="consulDetectResults"></div>
+            <div class="mb-3">
+              <label for="consulConnectToken" class="form-label">ACL Token <span class="text-muted">(optional)</span></label>
+              <input type="text" class="form-control" id="consulConnectToken" placeholder="">
+            </div>
+          </form>
+          <div id="consulConnectResult" class="small"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnConsulConnectSubmit">
+            <i class="bi bi-plug me-1"></i>Connect
+          </button>
         </div>
       </div>
     </div>
@@ -260,12 +329,13 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="js/MessageProtocol.js"></script>
   <script src="js/ServiceClient.js"></script>
-  <script src="js/FleetClient.js"></script>
-  <script src="js/FleetDashboard.js"></script>
-  <script src="js/LocalHubClient.js"></script>
-  <script src="js/LocalHubDashboard.js"></script>
   <script src="js/NomadClient.js"></script>
   <script src="js/NomadDashboard.js"></script>
+  <script src="js/ConsulClient.js"></script>
+  <script src="js/ConsulDashboard.js"></script>
+  <script src="js/BridgeControl.js"></script>
+  <script src="js/InfraStatus.js"></script>
+  <script src="js/GrpcClient.js"></script>
   <script src="js/SchemaRenderer.js"></script>
   <script src="js/SchemaAutoGen.js"></script>
   <script src="js/QtWasmLoader.js"></script>

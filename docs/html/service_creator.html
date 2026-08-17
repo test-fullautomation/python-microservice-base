@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Service Creator Wizard — Manager GUI Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  .sidebar-nav {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  main {
+    margin-left: 250px;
+    padding: 30px 40px;
+    max-width: 1100px;
+  }
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid #f59e0b;
+  }
+  section h2 {
+    color: #f59e0b;
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 14px; margin-bottom: 6px; font-size: 1em; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: #f59e0b; }
+  tr:last-child td { border-bottom: none; }
+
+  .step-num {
+    display: inline-block;
+    width: 32px; height: 32px;
+    line-height: 32px;
+    text-align: center;
+    border-radius: 50%;
+    background: #f59e0b;
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 0.9em;
+    margin-right: 10px;
+  }
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+
+  a { color: var(--accent); }
+  footer { text-align: center; padding: 30px; margin-left: 250px; color: var(--muted); font-size: 0.85em; }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Service Creator Wizard</h1>
+  <p>Generate a full service scaffold from the Manager GUI — no boilerplate</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">Wizard guide</div>
+  <a href="#when">When to use it</a>
+  <a href="#prereq">Prerequisites</a>
+  <a href="#start">Starting the GUI</a>
+
+  <div class="nav-group">The 5 wizard steps</div>
+  <a href="#step1">1. Basic Info</a>
+  <a href="#step2">2. Technology</a>
+  <a href="#step3">3. Methods</a>
+  <a href="#step4">4. GUI Support <em>(Python+HTML)</em></a>
+  <a href="#step5">5. Review &amp; Generate</a>
+  <a href="#screenshot-status">Screenshot status</a>
+
+  <div class="nav-group">After generation</div>
+  <a href="#output">What gets generated</a>
+  <a href="#after">Build &amp; run</a>
+  <a href="#cli">mb-scaffold CLI</a>
+
+  <div class="nav-group">Help</div>
+  <a href="#troubleshooting">Troubleshooting</a>
+
+  <div class="nav-group">Companion docs</div>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/index.html">&larr; Docs index</a>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/mingw_setup.html">MinGW (MSYS2) setup</a>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/qt_grpc_setup.html">Qt6::Grpc setup</a>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/vcpkg_setup.html">vcpkg + Qt MinGW setup</a>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/service_creation.html">Service creation tutorial</a>
+</nav>
+
+<main>
+
+<!-- =========================== When ============================ -->
+<section id="when">
+<h2>When to use the wizard</h2>
+<table>
+  <tr><th>You want to…</th><th>Wizard?</th></tr>
+  <tr><td>Create a brand-new service from a description of methods</td><td>✅ Yes</td></tr>
+  <tr><td>Import an existing <code>.proto</code> file and get a matching server + client</td><td>✅ Yes — <em>Import .proto…</em> button on Step 3</td></tr>
+  <tr><td>Generate multiple services from one or many <code>.proto</code> files</td><td>✅ Yes — pick the layout on the import dialog: <code>multi_proto</code> (single binary, N services on one port), <code>monorepo</code> (single project, N executables), or <code>separate</code> (N independent projects). See <a href="#step3">Step 3 — Import</a>.</td></tr>
+  <tr><td>Edit an <em>existing</em> service</td><td>❌ No — edit the source files directly. Re-running the wizard would overwrite.</td></tr>
+  <tr><td>Add a single new RPC to an existing service</td><td>❌ No — easier to edit <code>.proto</code> + adapter by hand. See <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/service_creation.html">service_creation.html</a>.</td></tr>
+</table>
+<p>
+  The wizard is equivalent to <code>mb-scaffold</code> (the
+  <a href="#cli">command-line tool</a>) — same generator backend, just
+  nicer to drive interactively.
+</p>
+</section>
+
+<!-- =========================== Prereq ============================ -->
+<section id="prereq">
+<h2>Prerequisites</h2>
+<ol>
+  <li><strong>MicroserviceBase Manager GUI</strong> running. See <a href="#start">Starting the Manager GUI</a> below.</li>
+  <li><strong>Bridge</strong> running (the GUI launches it automatically; for headless use start with
+      <code>python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</code>).</li>
+  <li><em>(For C++ scaffolds)</em> The toolchain you'll build with — <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/mingw_setup.html">MinGW (MSYS2)</a> for Google grpc++ services or <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/qt_grpc_setup.html">Qt-installer</a> for Qt-native clients.</li>
+</ol>
+</section>
+
+<!-- =========================== Starting ============================ -->
+<section id="start">
+<h2>Starting the Manager GUI</h2>
+
+<h3>One-time fresh-PC setup</h3>
+<pre><code>cd MicroserviceBase\MicroserviceManagerGUI
+setup_and_start.bat</code></pre>
+<p>
+  This downloads a portable Node.js (~30 MB), runs <code>npm install</code>,
+  and launches the GUI.  Subsequent runs skip the download — just
+  <code>npm start</code> or re-run <code>setup_and_start.bat</code>.
+</p>
+
+<h3>From an existing dev install</h3>
+<pre><code>cd MicroserviceBase\MicroserviceManagerGUI
+npm start</code></pre>
+<p>
+  The Electron window opens.  The bridge starts in the background on
+  <code>http://127.0.0.1:1112</code>.
+</p>
+
+<p><img src="../img/gui_wizard_01.png" alt="Microservice Manager main window — empty state" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>
+  The header shows the active <strong>Bridge</strong>,
+  <strong>Consul</strong>, and <strong>Nomad</strong> status pills plus
+  a quick <strong>Connect</strong> button for brokers.  The left
+  sidebar lists registered services (empty here because no service is
+  running yet).
+</p>
+</section>
+
+<!-- =========================== Reaching the wizard ============================ -->
+<section>
+<h2>Reaching the wizard</h2>
+<p>
+  Click the <strong>Service Creator</strong> tab in the
+  <strong>top navigation bar</strong> — between <em>Services</em> and
+  <em>Service Network</em>.  It opens the wizard in the main pane.
+</p>
+
+<p><img src="../img/gui_wizard_02.png" alt="Service Creator tab highlighted" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>
+  You don't need a broker connection to use the wizard — it talks
+  directly to the bridge over its REST API.
+</p>
+</section>
+
+<!-- =========================== Step 1 ============================ -->
+<section id="step1">
+<h2><span class="step-num">1</span> Basic Info</h2>
+<p>The first step captures the project's identity and human-readable metadata.</p>
+
+<p><img src="../img/gui_wizard_03.png" alt="Step 1 — Basic Information filled in" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<table>
+  <tr><th>Field</th><th>Required</th><th>Notes</th></tr>
+  <tr><td><strong>Service Name</strong></td><td>✅</td><td>PascalCase. Becomes the project folder name, the C++ class name, and (for monorepo) the parent directory. e.g. <code>SampleService</code>, <code>PowerServices</code>.</td></tr>
+  <tr><td><strong>Version</strong></td><td>✅</td><td>Semver. Default <code>1.0.0</code>. Surfaces in the .proto package, generated CMake <code>project(... VERSION ...)</code>, and <code>service_config.json</code>.</td></tr>
+  <tr><td><strong>Description</strong></td><td>optional</td><td>Longer free-text. Goes into the README.</td></tr>
+  <tr><td><strong>Short Description</strong></td><td>optional</td><td>One-liner for the Manager GUI's service card.</td></tr>
+  <tr><td><strong>Group</strong></td><td>optional</td><td>Logical grouping shown in the GUI sidebar (e.g. "Sensors", "pps").</td></tr>
+  <tr><td><strong>Tag</strong></td><td>optional</td><td>Free-form tag string (e.g. <code>v1</code>).</td></tr>
+  <tr><td><strong>Routing Key</strong></td><td>auto</td><td>Auto-generated from the service name (e.g. <code>service.sample_service</code>); editable. Carried in the generated config for back-compat — gRPC services do not use routing keys, so it's effectively cosmetic for new (gRPC) scaffolds.</td></tr>
+  <tr><td><strong>Transport Type</strong></td><td>dropdown</td><td><code>RabbitMQ</code> (default) or <code>EventBus</code>. Carried into the generated Python <code>main.py</code> to choose the legacy transport adapter. C++ scaffolds ignore this — they always emit a gRPC server with <code>ServiceRunner</code>.</td></tr>
+</table>
+
+<div class="highlight-box">
+  <strong>Naming tip.</strong> If you're going to import a <code>.proto</code>
+  later, set Service Name to whatever the proto's <code>service X { ... }</code>
+  block declares.  That way the generator doesn't have to choose for you.
+</div>
+
+<p>Click <strong>Next</strong> to advance.</p>
+</section>
+
+<!-- =========================== Step 2 ============================ -->
+<section id="step2">
+<h2><span class="step-num">2</span> Technology</h2>
+<p>Pick the language, GUI variant, and infrastructure files to generate.</p>
+
+<h3>Language</h3>
+<table>
+  <tr><th>Choice</th><th>Generates</th></tr>
+  <tr><td><strong>Python</strong></td><td><code>runtime/</code>-style Python service with FastAPI bridge integration. GUI options are <code>none</code> or <code>html</code> only.</td></tr>
+  <tr><td><strong>C++</strong></td><td>CMake project, hexagonal architecture, Google grpc++ server. GUI options expand to include Qt variants.</td></tr>
+</table>
+
+<h3>GUI Type</h3>
+<table>
+  <tr><th>Variant</th><th>Output</th><th>Toolchain doc</th></tr>
+  <tr><td><strong>None</strong></td><td>Service-only, no UI</td><td>—</td></tr>
+  <tr><td><strong>HTML / JS</strong> <em>(Python only)</em></td><td>Browser-based UI loaded by Manager GUI</td><td>—</td></tr>
+  <tr><td><strong>Widget</strong> <em>(C++)</em></td><td>Native Qt Widgets desktop client</td><td><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/mingw_setup.html">MinGW</a></td></tr>
+  <tr><td><strong>QML</strong> <em>(C++)</em></td><td>Qt Quick UI in C++ client</td><td><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/mingw_setup.html">MinGW</a></td></tr>
+  <tr><td><strong>WASM</strong> <em>(C++)</em></td><td>Qt Widgets compiled to WebAssembly</td><td><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/wasm_cleware_service_guide.html">WASM</a></td></tr>
+</table>
+
+<h3>Client gRPC Stack <em>(C++ only, when GUI ≠ None)</em></h3>
+<p>Three options, all wire-compatible (you can mix any client variant with any server):</p>
+<table>
+  <tr><th>Choice</th><th>Where client lives</th><th>Toolchain</th><th>What you get</th></tr>
+  <tr>
+    <td><strong>Google grpc++</strong> <em>(default)</em></td>
+    <td><code>client/</code> (next to server)</td>
+    <td>MSYS2 MinGW (same as server)</td>
+    <td>Console + optional Qt6 Widgets GUI from MSYS2's qt6-base. JSON-based dispatch via <code>google::protobuf::util::JsonStringToMessage</code>.</td>
+  </tr>
+  <tr>
+    <td><strong>Qt6::Grpc + Qt6::Protobuf</strong></td>
+    <td><code>qt_client/</code> (separate project)</td>
+    <td>Qt-installer MinGW (separate from server)</td>
+    <td>Qt-native RPC types with signal/slot integration. <strong>Requires Qt 6.8+ with Qt GRPC + Qt Protobuf modules.</strong> Server stays on MSYS2. See <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/qt_grpc_setup.html">Qt6::Grpc setup</a>.</td>
+  </tr>
+  <tr>
+    <td><strong>Google grpc++ via vcpkg + Qt MinGW</strong></td>
+    <td><code>qt_client_grpcpp/</code> (separate project)</td>
+    <td>Qt-installer MinGW (same as server)</td>
+    <td>One toolchain end-to-end. vcpkg builds grpc/protobuf/abseil with Qt's MinGW. <strong>First build ~30&ndash;60 min</strong>; subsequent instant via cache. Also re-targets the server's CMakeLists to use vcpkg. See <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/vcpkg_setup.html">vcpkg setup</a>.</td>
+  </tr>
+</table>
+
+<p>
+  If you pick <strong>Qt6::Grpc</strong>, the wizard shows a yellow
+  alert with the Qt version requirements &mdash; don't skip reading
+  it; Qt 6.7 has the modules as Tech Preview (must be ticked manually
+  in Qt Maintenance Tool), Qt 6.6 doesn't have them at all.
+</p>
+<p>
+  If you pick <strong>Google grpc++ via vcpkg + Qt MinGW</strong>, the
+  wizard shows a blue prerequisites alert reminding you to set
+  <code>VCPKG_ROOT</code>, <code>QT_MINGW_BIN</code>, and
+  <code>QT_DIR</code> before running <code>build_qt.bat</code>.
+  First-time build is slow because vcpkg compiles boringssl + abseil +
+  protobuf + grpc from source with Qt's gcc.
+</p>
+
+<p><strong>With Google grpc++ selected</strong> &mdash; the simplest case, no Qt-installer needed:</p>
+
+<p><img src="../img/gui_wizard_04a.png" alt="Step 2 — C++ + Widget + Google grpc++" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p><strong>With Qt6::Grpc selected</strong> &mdash; the alert with the version requirements appears below the radio:</p>
+
+<p><img src="../img/gui_wizard_04b.png" alt="Step 2 — C++ + Widget + Qt6::Grpc with version-requirement alert" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>
+  <strong>With Google grpc++ via vcpkg + Qt MinGW selected</strong>
+  &mdash; emits <code>qt_client_grpcpp/</code> plus shared
+  <code>triplets/</code> and <code>ports/</code> overlays at project
+  root. See the
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/vcpkg_setup.html">vcpkg setup guide</a> for the
+  prerequisites and full workflow including the gcc 13.1.0 ICE
+  workaround patch the generator emits automatically.
+</p>
+
+<h3>Server Toolchain <em>(C++ only)</em></h3>
+<p>
+  Independent of the Client gRPC Stack choice.  The server is always
+  Google grpc++; the toggle just picks how it's compiled and from
+  which prebuilt:
+</p>
+<table>
+  <tr><th>Choice</th><th>What you get</th></tr>
+  <tr><td><strong>MSYS2 prebuilt</strong> <em>(default)</em></td>
+      <td><code>mingw-w64-x86_64-grpc</code> from MSYS2's pacman tree.  Build via <code>build_deploy_msys2.bat</code>.  No vcpkg required.</td></tr>
+  <tr><td><strong>vcpkg + Qt MinGW</strong></td>
+      <td>grpc/protobuf/abseil compiled by vcpkg with the Qt-installer MinGW 13.1.0.  Build via <code>build_qt_vcpkg.bat</code>.  Emits the same shared <code>triplets/</code> + <code>ports/</code> overlay used by <code>qt_client_grpcpp/</code>.</td></tr>
+</table>
+<p>
+  The wizard auto-suggests <code>vcpkg</code> for the server when you
+  pick <code>google_vcpkg</code> for the client (one toolchain
+  end-to-end), but the toggle is independent &mdash; you can pick any
+  combination.  Two notable cases:
+</p>
+<ul>
+  <li><strong>Client <code>google_vcpkg</code> + Server <code>msys2</code></strong>
+      &mdash; mixed toolchains.  Wire-protocol still works, but client
+      and server use different libstdc++ ABIs.  Wizard shows a
+      warning.</li>
+  <li><strong>Client <code>google</code> or <code>qt</code> + Server <code>vcpkg</code></strong>
+      &mdash; server-only vcpkg.  The <code>vcpkg install</code>
+      populates a cache that's reusable later if you switch the
+      client to <code>google_vcpkg</code> (same triplet, same
+      overlay).  Wizard shows an info note.</li>
+</ul>
+
+<h3>Infrastructure files</h3>
+<p>Three checkboxes for what's generated alongside the service (right column):</p>
+<ul>
+  <li><strong>Nomad job file</strong> (<code>&lt;service&gt;.nomad.hcl</code>) — for Nomad deployment</li>
+  <li><strong>Build scripts</strong> (<code>build_deploy*.bat/sh</code>) — MSVC, MinGW, MSYS2 variants</li>
+  <li><strong>README.md</strong></li>
+</ul>
+<p>
+  All on by default.  Untick any you don't need.  The actual Nomad
+  job configuration (datacenter, driver, CPU, memory, Consul address)
+  is captured later on <strong>Step 5 — Review &amp; Generate</strong>.
+</p>
+
+<p>Click <strong>Next</strong>.</p>
+</section>
+
+<!-- =========================== Step 3 ============================ -->
+<section id="step3">
+<h2><span class="step-num">3</span> Methods</h2>
+<p>Define the RPC methods.  Two paths:</p>
+
+<h3>A. Manual entry</h3>
+<p>Click <strong>Add Method</strong> and fill in:</p>
+<table>
+  <tr><th>Field</th><th>Notes</th></tr>
+  <tr><td><strong>Name</strong></td><td>PascalCase, e.g. <code>Greet</code>, <code>ReadAnalogInput</code></td></tr>
+  <tr><td><strong>Description</strong></td><td>Goes into the .proto comments + README</td></tr>
+  <tr><td><strong>Server streaming</strong></td><td>Tick if the method returns <code>stream &lt;Response&gt;</code></td></tr>
+  <tr><td><strong>Return type</strong></td><td>Conventionally a single field. Default <code>string</code>.</td></tr>
+  <tr><td><strong>Parameters</strong></td><td>Each row: name, type (<code>string</code> / <code>int32</code> / <code>bool</code> / <code>float</code> / <code>double</code> / <code>bytes</code>), required flag, description</td></tr>
+</table>
+<p>
+  The wizard generates a corresponding <code>.proto</code> with
+  <code>&lt;Method&gt;Request</code> and <code>&lt;Method&gt;Response</code>
+  messages following the parameter list.
+</p>
+
+<p><img src="../img/gui_wizard_05.png" alt="Step 3 — gRPC Methods with two manual methods" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>
+  The lower half of this step has a <strong>Pre-generate proto stubs</strong>
+  section (ticked by default for C++) — when on, the bridge runs
+  <code>protoc</code> at scaffold time so the project builds without
+  needing <code>generate_stubs.bat</code> first.  You can leave the
+  <code>VCPKG_ROOT</code> / <code>protoc path</code> /
+  <code>grpc_cpp_plugin path</code> fields blank for auto-detect.
+</p>
+
+<h3>B. Import from <code>.proto</code> file(s)</h3>
+<p>
+  Click <strong>Import .proto…</strong> and pick <strong>one or many</strong>
+  <code>.proto</code> files from the OS file picker (the input is
+  multi-select):
+</p>
+
+<p><img src="../img/gui_wizard_06.png" alt="Import .proto file picker" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>
+  The bridge parses each file via <code>protoc --descriptor_set_out</code>.
+  What happens next depends on what you imported:
+</p>
+
+<table>
+  <tr><th>Import shape</th><th>Behaviour</th></tr>
+  <tr><td><strong>One file with one service</strong></td><td>Methods are loaded into the wizard immediately; you advance to Step&nbsp;5 normally.</td></tr>
+  <tr><td><strong>One file with N services</strong></td><td>A <strong>service picker modal</strong> opens (image below). You tick the services to include and pick a layout.</td></tr>
+  <tr><td><strong>N files</strong> (multi-select)</td><td>Every service from every file is loaded automatically. The layout is forced to <code>multi_proto</code> (one binary on one port). The picker modal does not appear — there's no per-file selection because the assumption is "I'm pointing at the proto-set for one device."</td></tr>
+</table>
+
+<h4>Service picker modal (single-file, multi-service path)</h4>
+
+<p><img src="../img/gui_wizard_07.png" alt="Service picker modal — multi-service .proto with three output-layout radios" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>The modal has three layout options:</p>
+
+<table>
+  <tr><th>Layout</th><th>Result</th></tr>
+  <tr><td><strong>Single binary, multiple services</strong> (<code>multi_proto</code>)</td><td>One <code>.exe</code> hosts every selected service on the <strong>same</strong> <code>grpc::ServerBuilder</code> &mdash; one Consul registration, one port, atomic lifecycle.  Best for one logical device with multiple capability surfaces (e.g. Power Supply: config + control).</td></tr>
+  <tr><td><strong>Single project (monorepo)</strong> &mdash; N executables (<code>monorepo</code>)</td><td>One project folder (single <code>CMakeLists.txt</code> for C++, single <code>pyproject.toml</code> for Python) that produces N entry points sharing the same <code>.proto</code>.  Each service has its own port and Consul registration.  Good for services that may scale independently.</td></tr>
+  <tr><td><strong>One folder per service</strong> (<code>separate</code>)</td><td>Each selected service becomes a self-contained scaffold with its own <code>proto/</code>, <code>CMakeLists.txt</code>, build script, Nomad job, and README.  Good for services that ship separately or are owned by different teams.</td></tr>
+</table>
+
+<h4>Inline layout switch on Step 3</h4>
+<p>
+  After import, Step 3 shows a green summary card with the picked
+  services and a <strong>layout selector</strong> at the top of that
+  card.  You can flip between <code>multi_proto</code>,
+  <code>monorepo</code>, and <code>separate</code> without
+  re-importing &mdash; the generator picks up the choice when you
+  click <strong>Save to Path</strong> on Step 5.
+</p>
+
+<div class="highlight-box">
+  <strong>Note.</strong> The imported <code>.proto</code> text is preserved verbatim
+  (comments, options, imports). Only the structural metadata
+  (services, methods, params) is read out for the wizard's internal
+  tracking. The generated adapter and domain stubs use the
+  <strong>real</strong> message types from the proto (e.g.
+  <code>device::ChannelRequest</code>), not fabricated
+  <code>&lt;Method&gt;Request</code> names.
+</div>
+
+<div class="highlight-box">
+  <strong>Imported proto + GUI = smart placeholder code.</strong>
+  Because we can't guess how your domain class maps to arbitrary message
+  fields, the generated adapter emits <code>UNIMPLEMENTED</code> stubs
+  with TODO comments, and the GUI client uses JSON serialization for any
+  message shape.  This compiles immediately; you fill in the body when
+  you're ready.
+</div>
+
+<p>Click <strong>Next</strong>.</p>
+</section>
+
+<!-- =========================== Step 4 (NEW) ============================ -->
+<section id="step4">
+<h2><span class="step-num">4</span> GUI Support <em>(Python + HTML/JS only)</em></h2>
+
+<div class="warn-box">
+  This step is <strong>skipped automatically</strong> for C++ projects (where the
+  GUI is defined by the Step 2 GUI Type radio &mdash; QML / WASM /
+  Widget) and for any project with <code>gui_type=none</code>.
+  Skipped steps don't show in the left sidebar, so for those flows
+  you go from Step&nbsp;3 straight to Step&nbsp;5.
+</div>
+
+<p>
+  When the step does show, the top of the panel has a
+  <strong>Generate GUI</strong> toggle.  Off &rArr; no UI files
+  emitted.  On &rArr; two tabs appear:
+</p>
+
+<h3>Tab A — Schema Builder <em>(recommended)</em></h3>
+
+<p><img src="../img/gui_wizard_04c_schema.png" alt="Step 4 — Schema Builder tab with seeded sections + live preview" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>
+  A declarative builder that produces a <code>gui_schema.json</code>.
+  The Manager GUI's loader then renders it at runtime &mdash; no
+  HTML/JS to maintain by hand.
+</p>
+<ul>
+  <li><strong>Layout</strong> &mdash; <code>tabs</code> /
+      <code>single</code> / <code>accordion</code>.  Drives how
+      sections are arranged.</li>
+  <li><strong>Title / Subtitle</strong> &mdash; show in the rendered
+      UI's header.</li>
+  <li><strong>Sections</strong> &mdash; each section has an
+      <code>id</code>, a <code>label</code>, and a list of
+      components.  Click <strong>Add Section</strong> to append; the
+      trash icon removes.</li>
+  <li>
+    <strong>Components</strong> (4 types):
+    <table>
+      <tr><th>Type</th><th>What it does</th></tr>
+      <tr><td><strong>Method Form</strong></td><td>Form that calls one of your gRPC methods. Picking the method auto-populates the field list from the method's params. Per-field widget choices: <code>text</code>, <code>number</code>, <code>textarea</code>, <code>checkbox</code>, <code>select</code>, <code>file</code>. Result-display modes: <code>text</code>, <code>json</code>, <code>table</code>, <code>image</code>, <code>none</code>.</td></tr>
+      <tr><td><strong>Result Table</strong></td><td>Renders the result of a method call as a table; optional auto-refresh interval (ms).</td></tr>
+      <tr><td><strong>Static Text</strong></td><td>Plain text/HTML block.</td></tr>
+      <tr><td><strong>Live Status</strong></td><td>Polls a method on an interval and renders it through a format string (e.g. <code>Voltage: {voltage} V</code>).</td></tr>
+    </table>
+  </li>
+  <li><strong>Live preview</strong> &mdash; below the editor, the schema
+      is rendered via <code>SchemaRenderer</code> so you see exactly
+      what the user will see.</li>
+  <li><strong>Export as JSON</strong> &mdash; download the resolved
+      schema for version control or hand-editing.</li>
+</ul>
+<p>
+  The wizard seeds an initial schema from the methods you defined on
+  Step&nbsp;3 (one section per method, each with a Method Form
+  component).
+</p>
+
+<h3>Tab B — Custom HTML/JS</h3>
+
+<p><img src="../img/gui_wizard_04d_custom.png" alt="Step 4 — Custom HTML/JS tab with editor + live preview side-by-side" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<p>
+  For when the schema builder isn't enough (charts, third-party
+  libraries, custom layouts).
+</p>
+<ul>
+  <li><strong>HTML editor</strong> (left) + <strong>live preview</strong>
+      (right) side-by-side with debounced refresh.</li>
+  <li><strong>Reset to Template</strong> restores a default Bootstrap
+      card scaffold.</li>
+  <li><strong>Upload HTML</strong> (button + drag-and-drop into the
+      editor) loads your hand-written HTML.</li>
+  <li><strong>JavaScript File</strong> dropzone (below the editor)
+      accepts a single <code>.js</code> file. Drag-drop or click. The
+      uploaded filename appears as a badge and survives navigation
+      between steps.</li>
+</ul>
+<p>
+  The editor's text and the JS upload are committed to
+  <code>_formData</code> when you click <strong>Next</strong> (or any
+  sidebar step).
+</p>
+
+<p>Click <strong>Next</strong> to advance to Review.</p>
+</section>
+
+<!-- =========================== Step 5 ============================ -->
+<section id="step5">
+<h2><span class="step-num">5</span> Review &amp; Generate</h2>
+
+<div class="highlight-box">
+  In the wizard sidebar this step is labelled <strong>Step&nbsp;5</strong>
+  even when Step&nbsp;4 (GUI Support) is hidden. Skipping a step
+  doesn't renumber the remaining ones.
+</div>
+
+<p>The left card summarises the service:</p>
+<ul>
+  <li>
+    <strong>Header</strong> &mdash; service name + version, or for
+    multi-service imports: service name + a
+    <strong>service-count badge</strong> + a <strong>layout badge</strong>
+    (<code>multi-proto (1 .exe)</code> /
+    <code>monorepo (N .exe)</code> /
+    <code>separate projects</code>).
+  </li>
+  <li>
+    <strong>Language</strong>, <strong>GUI</strong>,
+    <strong>Client gRPC</strong> <em>(C++ + GUI only)</em>,
+    <strong>Server toolchain</strong> <em>(C++ only)</em>,
+    Description, Group,
+    <strong>Infrastructure</strong> badges (Nomad HCL / Build scripts /
+    README / Proto stubs), and the imported <code>.proto</code> file
+    name when relevant.
+  </li>
+  <li>
+    <strong>Methods block</strong> &mdash; flat list for single-service,
+    per-service blocks for multi-service imports.  Each method shown as
+    <code>rpc Name(field:type, …) → returnType</code> with a
+    <code>stream</code> badge for server-streaming methods.
+  </li>
+</ul>
+
+<p>
+  The right pane has the <strong>Nomad Job Configuration</strong> form
+  (only when "Nomad job file" is ticked on Step&nbsp;2):
+</p>
+<ul>
+  <li><strong>Datacenter</strong> (default <code>dc1</code>)</li>
+  <li><strong>Driver</strong> &mdash; <code>raw_exec</code> (default), <code>exec</code> (Linux chroot), or <code>docker</code> (container)</li>
+  <li><strong>Command path</strong> &mdash; absolute path to the service binary/script</li>
+  <li><strong>Consul address</strong> &mdash; where the service registers itself</li>
+  <li><strong>CPU (MHz)</strong> + <strong>Memory (MB)</strong> &mdash; Nomad resource limits</li>
+</ul>
+<p>
+  A help line below the form notes that
+  <code>&lt;PREFIX&gt;_GRPC_PORT</code> and <code>ADVERTISE_ADDR</code>
+  are populated automatically from Nomad's dynamic port allocation;
+  <code>CONSUL_ADDR</code> uses the address configured above.
+</p>
+
+<p><img src="../img/gui_wizard_08.png" alt="Step 5 — Review &amp; Generate (monorepo example)" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+
+<h3>Generating</h3>
+<p>Three controls at the bottom:</p>
+<table>
+  <tr><th>Button</th><th>Result</th></tr>
+  <tr><td><strong>Browse…</strong> <em>(Electron only)</em></td><td>Pick the output folder via OS dialog (sets the <strong>Output Path</strong> field). Hidden in plain-browser mode where you have to type the path manually.</td></tr>
+  <tr><td><strong>Download ZIP</strong></td><td>Pure client-side &mdash; generates a Python-only minimal scaffold and downloads <code>&lt;ServiceName&gt;.zip</code> directly. <strong>Does not</strong> support the multi-service <code>multi_proto</code> / <code>monorepo</code> / <code>separate</code> layouts or the C++ scaffold path; use <strong>Save to Path</strong> for those.</td></tr>
+  <tr><td><strong>Save to Path</strong></td><td>POSTs to <code>/api/scaffold/generate-v2</code> on the bridge. Behaviour by import shape:</td></tr>
+</table>
+
+<table>
+  <tr><th>Import shape</th><th>Save behaviour</th></tr>
+  <tr><td>Single-service (manual or imported)</td><td>One POST &rarr; one project folder.</td></tr>
+  <tr><td>Multi-service import + <code>multi_proto</code></td><td>One POST &rarr; one project folder containing N services on one binary.</td></tr>
+  <tr><td>Multi-service import + <code>monorepo</code></td><td>One POST &rarr; one project folder with N executables.</td></tr>
+  <tr><td>Multi-service import + <code>separate</code></td><td>N sequential POSTs (one per service); progress reflected in a single summary toast. Partial failures show a yellow "X ok / Y failed" toast.</td></tr>
+</table>
+
+<p>
+  A success toast (bottom-right) confirms the path; a red toast surfaces
+  any error from the bridge.
+</p>
+
+<p><img src="../img/gui_wizard_09.png" alt="Success toast — Monorepo with 6 services saved" style="max-width:100%; border:1px solid var(--border); border-radius:6px;"></p>
+</section>
+
+<!-- =========================== Output ============================ -->
+<section id="output">
+<h2>What gets generated</h2>
+<p>For a typical C++ + Widget + Google-grpc scaffold:</p>
+
+<pre><code>DemoService/
+├── CMakeLists.txt
+├── README.md
+├── DemoService.nomad.hcl
+├── service_config.json
+├── set_env.bat / .sh / _mingw.bat / _msys2.bat
+├── build_deploy.bat / .sh / _mingw.bat / _msys2.bat
+├── proto/
+│   ├── demo_service.proto
+│   ├── generate_stubs.bat / .sh
+│   ├── demo_service.pb.h / .cc
+│   └── demo_service.grpc.pb.h / .cc
+├── src/
+│   ├── main.cpp
+│   ├── Settings.h
+│   ├── domain/DemoService.h / .cpp
+│   └── adapters/api/DemoServiceGrpcAdapter.h / .cpp
+└── client/
+    ├── CMakeLists.txt
+    ├── README.md
+    ├── src/client.cpp
+    └── gui/                 ← only when GUI ≠ None
+        ├── main.cpp
+        ├── MainWindow.h / .cpp / .ui
+        └── ClientRegistry.h / .cpp</code></pre>
+
+<p>
+  For Qt6::Grpc client mode, you additionally get <code>qt_client/</code>
+  (a parallel Qt-installer-toolchain project) — see
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/qt_grpc_setup.html">qt_grpc_setup.html</a> for its layout.
+</p>
+
+<p>
+  For Google-grpc-via-vcpkg client mode, you additionally get
+  <code>qt_client_grpcpp/</code> plus shared <code>triplets/</code>,
+  <code>ports/grpc/</code>, <code>init_vcpkg_overlay.bat</code>, and
+  <code>build_qt_vcpkg.bat</code> at project root.  See
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/vcpkg_setup.html">vcpkg_setup.html</a> for the layout, build
+  flow, and the gcc 13.1.0 ICE workaround.
+</p>
+
+<p>
+  For <strong>monorepo</strong> mode, you get one project folder with
+  <code>src/&lt;svc&gt;/...</code> per service, one shared
+  <code>proto/</code>, and per-service
+  <code>deploy/&lt;svc&gt;.nomad.hcl</code>.
+</p>
+
+<p>
+  For <strong>multi_proto</strong> mode, you get one project folder
+  with <strong><code>proto/&lt;file_a&gt;.proto</code> &hellip;
+  <code>proto/&lt;file_n&gt;.proto</code></strong> preserved verbatim
+  from the imports, one <code>main.cpp</code> (or
+  <code>main.py</code>) that constructs every servicer and registers
+  them all on a single <code>grpc::ServerBuilder</code>, and
+  <strong>one</strong> <code>.nomad.hcl</code> for the unified
+  binary.  There is one Consul registration with all service
+  full-names listed in the <code>tags</code> field.
+</p>
+
+<p>
+  For <strong>separate</strong> mode, you get N sibling project
+  folders, each fully self-contained &mdash; the same as running the
+  wizard N times, just batched.
+</p>
+</section>
+
+<!-- =========================== After ============================ -->
+<section id="after">
+<h2>After generation</h2>
+
+<ol>
+  <li><strong>Build:</strong>
+    <ul>
+      <li>MSYS2: <code>build_deploy_msys2.bat</code> (see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/mingw_setup.html">mingw_setup.html</a>)</li>
+      <li>Qt-installer + Qt6::Grpc: <code>qt_client/build_qt.bat</code> (see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/qt_grpc_setup.html">qt_grpc_setup.html</a>)</li>
+      <li>Qt-installer + Google grpc++ (vcpkg): <code>qt_client_grpcpp/build_qt.bat</code> and <code>build_qt_vcpkg.bat</code> (server) (see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/vcpkg_setup.html">vcpkg_setup.html</a>)</li>
+    </ul>
+  </li>
+  <li><strong>Start Consul + Nomad</strong> (one-time per session):
+    <pre><code>start /b consul agent -dev -client=0.0.0.0 -ui
+start /b nomad agent -dev -config=C:\nomad\dev.hcl</code></pre>
+  </li>
+  <li><strong>Run the service:</strong>
+    <pre><code>:: From cmd:
+nomad job run deploy\&lt;service&gt;.nomad.hcl
+:: Or directly:
+dist-msys2\run_&lt;service&gt;.bat</code></pre>
+  </li>
+  <li><strong>Use the GUI client:</strong>
+    <pre><code>dist-msys2\run_&lt;service&gt;_gui.bat</code></pre>
+  </li>
+  <li><strong>Edit the domain logic</strong> — the generator emits TODO
+      stubs in <code>src/.../domain/</code> and
+      <code>src/.../adapters/api/</code>.  Fill them in to wire up your
+      business logic / hardware access.</li>
+</ol>
+
+<p>
+  For a worked walkthrough of editing the generated code, see
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/service_creation.html">service_creation.html</a>.
+</p>
+</section>
+
+<!-- =========================== CLI ============================ -->
+<section id="cli">
+<h2>Alternative: the <code>mb-scaffold</code> CLI</h2>
+<p>
+  The wizard is a thin frontend over the same generator that
+  <code>mb-scaffold</code> calls.  If you'd rather script it (for CI /
+  repeat runs):
+</p>
+<pre><code>python -m MicroserviceBase.tools.scaffold_cli ^
+    --name DemoService --language cpp --gui widget ^
+    --output .\out</code></pre>
+<p>Or with a YAML/JSON config file:</p>
+<pre><code>python -m MicroserviceBase.tools.scaffold_cli --config demo.yaml</code></pre>
+<p>
+  <code>mb-scaffold</code> is a friendly nickname for
+  <code>python -m MicroserviceBase.tools.scaffold_cli</code> — there is
+  no installed binary, but you can wrap the long form in a
+  <code>mb-scaffold.bat</code> on your <code>PATH</code> if you use it
+  often.  Requires the bridge to be running
+  (<code>http://127.0.0.1:1112</code> by default; set with
+  <code>--bridge-url</code> or <code>MB_BRIDGE_URL</code>).
+</p>
+
+<h3>Config file structure (<code>demo.yaml</code>)</h3>
+<p>
+  The CLI accepts <strong>YAML or JSON</strong>.  Only
+  <code>service_name</code> and <code>output_path</code> are required
+  (and you can pass them via <code>--name</code> / <code>--output</code>
+  instead).
+</p>
+
+<p><strong>Minimal example</strong>:</p>
+<pre><code>service_name: HelloService
+output_path: ./out
+language: cpp</code></pre>
+
+<p><strong>Full example</strong> — single service, C++ Qt widget client
+   built with the vcpkg + Qt MinGW toolchain:</p>
+<pre><code>service_name: HelloService
+version: "1.0.0"
+description: "Demo service"
+short_desc: "Hello"
+group: "demo"
+tag: "v1"
+
+language: cpp                  # python | cpp
+gui_type: widget               # none | html | qml | wasm | widget
+client_grpc_kind: google_vcpkg # google | qt | google_vcpkg
+server_grpc_kind: vcpkg        # msys2 | vcpkg
+output_path: ./out
+
+# Generation toggles (defaults shown)
+gen_nomad:         true
+gen_build_scripts: true
+gen_readme:        true
+gen_stubs:         true
+
+# Toolchain hints (only when scripts can't auto-detect)
+vcpkg_root: ""                 # default: $VCPKG_ROOT
+protoc_path: ""                # default: $PATH lookup
+grpc_plugin_path: ""
+
+# Nomad job template
+nomad_dc:          "dc1"
+nomad_driver:      "raw_exec"
+nomad_command:     ""           # auto-derived from service_name if empty
+nomad_cpu:         100          # MHz
+nomad_mem:         128          # MB
+nomad_consul_addr: "http://127.0.0.1:8500"
+
+# RPC methods
+methods:
+  - name: SayHello
+    description: "Greet a caller by name"
+    return_type: string
+    server_streaming: false
+    params:
+      - name: name
+        type: string            # string|int32|int64|uint32|uint64|bool|float|double|bytes|...
+        required: true
+        description: "Caller name"
+
+# Verbatim .proto override (skip auto-synth from methods)
+proto_content_override: ""
+proto_package: ""               # only set when proto_content_override is set</code></pre>
+
+<div class="warn-box">
+  <strong>CLI gap.</strong> As of 2026-05-08 the CLI only supports
+  <code>--monorepo</code> for multi-service imports &mdash; it does
+  <strong>not</strong> yet support the GUI's <code>multi_proto</code>
+  (one binary, N services) or <code>separate</code> (N independent
+  projects) layouts. Use the GUI for those flows, or the bridge HTTP
+  API directly if you need to script them. Tracked as a TODO on
+  <code>MicroserviceBase/tools/scaffold_cli.py</code>.
+</div>
+
+<p><strong>Monorepo example</strong> — one project, N executables (one
+   per service):</p>
+<pre><code>service_name: PowerDeviceService
+output_path: ./out
+language: cpp
+gui_type: widget
+client_grpc_kind: google_vcpkg
+server_grpc_kind: vcpkg
+monorepo: true                  # ← key flag
+proto_package: power.v1
+
+services:                       # ← list of services instead of `methods`
+  - name: AnalogInputService
+    methods:
+      - name: ReadChannel
+        params: [{name: channel, type: int32}]
+        return_type: double
+      - name: ReadAllChannels
+        return_type: string
+        server_streaming: true
+
+  - name: RelayService
+    methods:
+      - name: SetRelay
+        params: [{name: id, type: int32}, {name: state, type: bool}]
+        return_type: bool</code></pre>
+
+<h3>Field reference</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+  <tr><td><code>service_name</code></td><td>str</td><td><strong>required</strong></td><td>Top-level service name (or monorepo project name)</td></tr>
+  <tr><td><code>version</code></td><td>str</td><td><code>"1.0.0"</code></td><td></td></tr>
+  <tr><td><code>description</code> / <code>short_desc</code> / <code>group</code> / <code>tag</code></td><td>str</td><td><code>""</code></td><td>Metadata only</td></tr>
+  <tr><td><code>language</code></td><td>str</td><td><code>"python"</code></td><td><code>python</code> | <code>cpp</code></td></tr>
+  <tr><td><code>gui_type</code></td><td>str</td><td><code>"none"</code></td><td><code>none</code> | <code>html</code> | <code>qml</code> | <code>wasm</code> | <code>widget</code></td></tr>
+  <tr><td><code>client_grpc_kind</code></td><td>str</td><td><code>"google"</code></td><td><code>google</code> | <code>qt</code> | <code>google_vcpkg</code> (only when <code>gui_type != "none"</code>)</td></tr>
+  <tr><td><code>server_grpc_kind</code></td><td>str</td><td><code>"msys2"</code></td><td><code>msys2</code> | <code>vcpkg</code> — independent of client</td></tr>
+  <tr><td><code>gen_nomad</code> / <code>gen_build_scripts</code> / <code>gen_readme</code> / <code>gen_stubs</code></td><td>bool</td><td><code>true</code></td><td></td></tr>
+  <tr><td><code>vcpkg_root</code> / <code>protoc_path</code> / <code>grpc_plugin_path</code></td><td>str</td><td><code>""</code></td><td>Override autodetect</td></tr>
+  <tr><td><code>nomad_dc</code></td><td>str</td><td><code>"dc1"</code></td><td></td></tr>
+  <tr><td><code>nomad_driver</code></td><td>str</td><td><code>"raw_exec"</code></td><td></td></tr>
+  <tr><td><code>nomad_command</code></td><td>str</td><td><code>""</code> (auto)</td><td></td></tr>
+  <tr><td><code>nomad_cpu</code> / <code>nomad_mem</code></td><td>int</td><td><code>100</code> / <code>128</code></td><td>MHz / MB</td></tr>
+  <tr><td><code>nomad_consul_addr</code></td><td>str</td><td><code>"http://127.0.0.1:8500"</code></td><td></td></tr>
+  <tr><td><code>methods</code></td><td>list[Method]</td><td><code>[]</code></td><td>Single-service mode</td></tr>
+  <tr><td><code>services</code></td><td>list[Service]</td><td><code>[]</code></td><td>Monorepo mode (<code>monorepo: true</code>)</td></tr>
+  <tr><td><code>output_path</code></td><td>str</td><td><strong>required</strong></td><td>Service folder is created inside this</td></tr>
+  <tr><td><code>monorepo</code></td><td>bool</td><td><code>false</code></td><td></td></tr>
+  <tr><td><code>proto_content_override</code></td><td>str</td><td><code>""</code></td><td>Verbatim <code>.proto</code> text</td></tr>
+  <tr><td><code>proto_package</code></td><td>str</td><td><code>""</code></td><td>When overriding proto</td></tr>
+</table>
+
+<p><strong>Method object</strong>:</p>
+<pre><code>- name: MyRpc                # required
+  params: []                 # list of Param objects
+  return_type: string        # primitive — used to synth *Response message
+  description: ""
+  server_streaming: false    # → stream&lt;...&gt; on the return side
+  input_type:  ""            # fully-qualified proto type (imported protos only)
+  output_type: ""            # fully-qualified proto type (imported protos only)</code></pre>
+
+<p><strong>Param object</strong>:</p>
+<pre><code>- name: foo                  # required
+  type: string               # string|int32|int64|uint32|uint64|bool|float|double|bytes|...
+  required: true
+  description: ""</code></pre>
+
+<p><strong>Service object</strong> (only used in monorepo
+   <code>services:</code> list):</p>
+<pre><code>- name: MyService
+  methods: [&lt;Method&gt;, ...]</code></pre>
+
+<h3>Inline-flag overrides</h3>
+<p>Flags compose with the config — flag values win.  Useful flags:</p>
+<table>
+  <tr><th>Flag</th><th>Maps to</th></tr>
+  <tr><td><code>-c FILE</code> / <code>--config FILE</code></td><td>Load YAML/JSON config</td></tr>
+  <tr><td><code>-n NAME</code> / <code>--name NAME</code></td><td><code>service_name</code></td></tr>
+  <tr><td><code>-l LANG</code> / <code>--language LANG</code></td><td><code>language</code></td></tr>
+  <tr><td><code>--gui {none,html,qml,wasm,widget}</code></td><td><code>gui_type</code></td></tr>
+  <tr><td><code>--client-grpc {google,qt,google_vcpkg}</code></td><td><code>client_grpc_kind</code></td></tr>
+  <tr><td><code>--server-grpc {msys2,vcpkg}</code></td><td><code>server_grpc_kind</code></td></tr>
+  <tr><td><code>-o DIR</code> / <code>--output DIR</code></td><td><code>output_path</code></td></tr>
+  <tr><td><code>--version VER</code></td><td><code>version</code></td></tr>
+  <tr><td><code>--description TEXT</code></td><td><code>description</code></td></tr>
+  <tr><td><code>--proto FILE</code></td><td>Import <code>.proto</code> (overrides <code>methods</code>/<code>services</code>)</td></tr>
+  <tr><td><code>--proto-service NAME</code></td><td>Pick one service from a multi-service <code>.proto</code></td></tr>
+  <tr><td><code>--monorepo</code></td><td><code>monorepo: true</code></td></tr>
+  <tr><td><code>--no-nomad</code> / <code>--no-build-scripts</code> / <code>--no-stubs</code></td><td>Disable generation toggles</td></tr>
+  <tr><td><code>--bridge-url URL</code></td><td>Override bridge endpoint (default <code>$MB_BRIDGE_URL</code> or <code>http://127.0.0.1:1112</code>)</td></tr>
+  <tr><td><code>--dry-run</code></td><td>Print the resolved JSON payload and exit</td></tr>
+  <tr><td><code>-q</code> / <code>--quiet</code></td><td>Print only the target path on success</td></tr>
+</table>
+
+<h3>Verify the config before sending</h3>
+<p>
+  <code>--dry-run</code> prints the resolved JSON the CLI would POST to
+  the bridge — the easiest way to check that your YAML maps to the
+  expected fields:
+</p>
+<pre><code>python -m MicroserviceBase.tools.scaffold_cli -c demo.yaml --dry-run</code></pre>
+</section>
+
+<!-- =========================== Troubleshooting ============================ -->
+<section id="troubleshooting">
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Service Creator button does nothing</td><td>Bridge not running. Check <code>http://127.0.0.1:1112/health</code> returns 200. Restart the Manager GUI.</td></tr>
+  <tr><td>"Failed to reach bridge" toast</td><td>Same as above, plus check no other process holds port 1112 (<code>netstat -ano | findstr :1112</code>).</td></tr>
+  <tr><td>Import .proto returns "parse error"</td><td>The proto is malformed or uses syntax the bundled <code>protoc</code> doesn't support. Test with: <code>protoc --descriptor_set_out=NUL your.proto</code></td></tr>
+  <tr><td>Import .proto succeeds but "service picker" is empty</td><td>Your .proto has no <code>service X { ... }</code> block — only messages. Add at least one service.</td></tr>
+  <tr><td>Generated build fails with "fabricated <code>&lt;Method&gt;Request</code> not declared"</td><td>Old generator bug. Make sure you're on the latest commit and regenerate.</td></tr>
+  <tr><td>Save succeeds but folder is empty</td><td>Bridge couldn't write to <code>output_path</code> — check write permissions. Defaults to wherever the bridge process runs.</td></tr>
+  <tr><td>C++ + Qt6::Grpc + monorepo emits two folders (<code>client/</code> and <code>qt_client/</code>)</td><td>This is intentional. <code>client/</code> has the Google-grpc console client (works without Qt installer); <code>qt_client/</code> is the Qt-native UI client. Use whichever fits.</td></tr>
+  <tr><td>Multi-service picker only shows two layout options</td><td>You're on a stale build. Pull and rebuild &mdash; the picker has had <strong>three</strong> layouts (<code>multi_proto</code>, <code>monorepo</code>, <code>separate</code>) since 2026-05.</td></tr>
+  <tr><td>Multi-file <code>.proto</code> import skipped the picker modal</td><td>Expected. Selecting N files forces <code>multi_proto</code> automatically (no per-file selection step). To use a different layout, import the protos one at a time, or change the layout via the inline selector on Step&nbsp;3 after import.</td></tr>
+  <tr><td><strong>Download ZIP</strong> produces a tiny / bare scaffold</td><td>The ZIP path is client-side-only and emits a minimal Python scaffold for sharing without the bridge. Use <strong>Save to Path</strong> for full C++ scaffolds, multi-service imports, and any <code>multi_proto</code> / <code>monorepo</code> / <code>separate</code> layout.</td></tr>
+</table>
+</section>
+
+<!-- =========================== Screenshot status ============================ -->
+<section id="screenshot-status">
+<h2>Screenshot status (2026-05-08)</h2>
+<p>
+  The doc was diffed against <code>web/js/ServiceCreator.js</code> on
+  2026-05-08 and all flagged screenshots were captured the same day.
+</p>
+<table>
+  <tr><th>Screenshot</th><th>Status</th><th>What it shows</th></tr>
+  <tr><td><code>gui_wizard_01.png</code></td><td>unchanged</td><td>Manager main window &mdash; empty state.</td></tr>
+  <tr><td><code>gui_wizard_02.png</code></td><td>unchanged</td><td>Service Creator tab highlighted in top nav.</td></tr>
+  <tr><td><code>gui_wizard_03.png</code></td><td>unchanged</td><td>Step&nbsp;1 &mdash; Basic Info filled in.</td></tr>
+  <tr><td><code>gui_wizard_04a.png</code></td><td>✅ updated 2026-05-08</td><td>Step&nbsp;2 &mdash; C++ + Widget + Google grpc++; the new two-column layout with the Server Toolchain block visible.</td></tr>
+  <tr><td><code>gui_wizard_04b.png</code></td><td>✅ updated 2026-05-08</td><td>Step&nbsp;2 &mdash; C++ + Widget + Qt6::Grpc; the version-requirement alert is captured with the refreshed wording.</td></tr>
+  <tr><td><code>gui_wizard_04c_schema.png</code></td><td>✨ new 2026-05-08</td><td>Step&nbsp;4 &mdash; Schema Builder tab with seeded sections, components, and the live preview.</td></tr>
+  <tr><td><code>gui_wizard_04d_custom.png</code></td><td>✨ new 2026-05-08</td><td>Step&nbsp;4 &mdash; Custom HTML/JS tab with editor + preview side-by-side.</td></tr>
+  <tr><td><code>gui_wizard_05.png</code></td><td>unchanged</td><td>Step&nbsp;3 &mdash; manual gRPC method entry.</td></tr>
+  <tr><td><code>gui_wizard_06.png</code></td><td>unchanged</td><td>OS file picker (now multi-select capable).</td></tr>
+  <tr><td><code>gui_wizard_07.png</code></td><td>✅ updated 2026-05-08</td><td>Multi-service picker modal with all three layout radios (<code>multi_proto</code> / <code>monorepo</code> / <code>separate</code>).</td></tr>
+  <tr><td><code>gui_wizard_08.png</code></td><td>✅ updated 2026-05-08</td><td>Step&nbsp;5 review with the new layout badge + Server toolchain summary row.</td></tr>
+  <tr><td><code>gui_wizard_09.png</code></td><td>unchanged</td><td>Success toast.</td></tr>
+</table>
+<p>
+  Both the Markdown and this HTML mirror were edited in the same pass,
+  including image references for the two new Step&nbsp;4 captures.
+</p>
+</section>
+
+</main>
+
+<footer>
+  Companion to <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md"
+                  target="_blank">repo: docs/md/service_creator.md</a> &mdash;
+  same content, different format.  GUI doc index:
+  <a href="index.html">index.html</a>.
+</footer>
+
+</body>
+</html>

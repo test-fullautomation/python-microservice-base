@@ -1,6 +1,6 @@
 {
   "name": "devatservgui",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Microservice Manager GUI - Dual hosting (Electron + Python Web)",
   "main": "electron/main.js",
   "scripts": {
@@ -33,6 +33,8 @@
       "web/**/*",
       "!web/services/**",
       "!electron/settings.json",
+      "docs/html/**/*",
+      "docs/img/**/*",
       "package.json"
     ],
     "extraResources": [
@@ -70,6 +72,10 @@
         ]
       },
       {
+        "from": "build-resources/bootstrap.sh",
+        "to": "bootstrap.sh"
+      },
+      {
         "from": "build-resources/icon.png",
         "to": "icon.png"
       },
@@ -81,12 +87,29 @@
           "!**/__pycache__/**",
           "!**/*.log",
           "!**/build/**",
+          "!**/build-*/**",
           "!**/dist/**",
-          "!**/.qt/**"
+          "!**/dist-*/**",
+          "!**/deploy/**",
+          "!**/.qt/**",
+          "!**/.qtcreator/**",
+          "!**/*.user",
+          "!**/vcpkg_installed/**",
+          "!**/CMakeFiles/**",
+          "!**/CMakeCache.txt",
+          "!**/cmake_install.cmake",
+          "!**/_legacy/**"
         ]
       }
     ],
+    "extraFiles": [
+      {
+        "from": "build-resources/README-install.html",
+        "to": "README.html"
+      }
+    ],
     "asar": true,
+    "electronLanguages": ["en-US"],
     "win": {
       "target": "nsis",
       "icon": "build-resources/icon.png"
@@ -106,6 +129,9 @@
         "deb"
       ],
       "icon": "build-resources/icon.png"
+    },
+    "deb": {
+      "afterInstall": "build-resources/postinst.sh"
     }
   },
   "devDependencies": {
