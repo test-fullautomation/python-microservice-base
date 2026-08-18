@@ -11,34 +11,14 @@
 #          grpcio>=1.60.0 (from microservicebase) (from versions: none)
 
 # --- gRPC + protobuf (primary RPC layer, ADR-028) -------------------
-#
-# TEMPORARY PIN: held at 1.48.x so protobuf 3.20.x can be used, because
-# another AIO component still needs protobuf 3.20 and the wheelhouse
-# installs into a single environment. grpcio-tools 1.49+ requires
-# protobuf >=4.21.3, so 1.48.2 is the last compatible release.
-#
-# Gated on python_version: grpcio 1.48.2 ships NO wheels for Python 3.11+
-# on any platform, so a flat pin would force a source build and break
-# developer machines. The AIO Linux target is Python 3.10
-# (config/CRepositoryConfig.py), which has wheels.
-#
-# See the matching comment block in pyproject.toml for the full rationale
-# and how to revert.
-#
+grpcio>=1.60.0
+grpcio-reflection>=1.60.0
+grpcio-health-checking>=1.60.0
 # grpcio-tools is a RUNTIME dep, not just build-time: the bridge's
 # "Pre-generate proto stubs" feature and the Robot resource generator
 # both shell out to `python -m grpc_tools.protoc`.
-grpcio>=1.48,<1.49 ; python_version < '3.11'
-grpcio-reflection>=1.48,<1.49 ; python_version < '3.11'
-grpcio-health-checking>=1.48,<1.49 ; python_version < '3.11'
-grpcio-tools>=1.48,<1.49 ; python_version < '3.11'
-protobuf>=3.20,<4 ; python_version < '3.11'
-
-grpcio>=1.60.0 ; python_version >= '3.11'
-grpcio-reflection>=1.60.0 ; python_version >= '3.11'
-grpcio-health-checking>=1.60.0 ; python_version >= '3.11'
-grpcio-tools>=1.60.0 ; python_version >= '3.11'
-protobuf>=4.25.0 ; python_version >= '3.11'
+grpcio-tools>=1.60.0
+protobuf>=4.25.0
 
 # --- Consul / Nomad HTTP clients + config ---------------------------
 httpx>=0.25.0

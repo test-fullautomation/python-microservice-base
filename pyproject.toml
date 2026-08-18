@@ -29,53 +29,18 @@ classifiers = [
 keywords = ["microservice", "grpc", "consul", "nomad", "registry", "rpc"]
 
 dependencies = [
-    # ---------------------------------------------------------------
-    # TEMPORARY PIN — grpc stack held at 1.48.x for protobuf 3.20.x
-    # ---------------------------------------------------------------
-    # Another library in the RobotFramework AIO installer requires
-    # protobuf 3.20, and the AIO offline wheelhouse installs everything
-    # into one environment. grpcio-tools 1.49+ requires protobuf
-    # >=4.21.3, so 1.48.2 is the last release that can coexist with
-    # protobuf 3.x:
-    #
-    #   grpcio-tools 1.48.2 -> protobuf >=3.12.0,<4.0dev   (OK)
-    #   grpcio-tools 1.49.1 -> protobuf >=4.21.3,<5.0dev   (conflict)
-    #
-    # Safe for this codebase: MicroserviceBase only uses protobuf APIs
-    # available in 3.20 (descriptor, descriptor_pool, symbol_database,
-    # internal.builder, json_format) and long-stable gRPC APIs
-    # (insecure_channel, *_rpc_method_handler, grpc_reflection.v1alpha).
-    # `_msg_to_dict` already falls back from
-    # always_print_fields_with_no_presence to
-    # including_default_value_fields, which is the correct kwarg on 3.x.
-    #
-    # The pin is gated on python_version because grpcio 1.48.2 publishes
-    # NO wheels for Python 3.11+ on any platform (highest tag is cp310).
-    # A flat pin would force a source build of 3-year-old C++ on modern
-    # interpreters and break local development.
-    #
-    #   Python <= 3.10  -> AIO target (config/CRepositoryConfig.py hardcodes
-    #                      lib/python3.10): old stack, protobuf 3.20.x
-    #   Python >= 3.11  -> developer machines (e.g. %RobotPythonPath%,
-    #                      currently 3.13): current stack, protobuf 4.25+
-    #
-    # REVERT: once the other AIO component moves off protobuf 3.20, drop
-    # the markers and keep only the >=3.11 line for every interpreter.
-    #
-    # grpcio-tools is a RUNTIME dep, not just build-time: the bridge's
-    # "Pre-generate proto stubs" feature and the Robot resource generator
-    # both run `python -m grpc_tools.protoc`.
-    "grpcio>=1.48,<1.49 ; python_version < '3.11'",
-    "grpcio-reflection>=1.48,<1.49 ; python_version < '3.11'",
-    "grpcio-health-checking>=1.48,<1.49 ; python_version < '3.11'",
-    "grpcio-tools>=1.48,<1.49 ; python_version < '3.11'",
-    "protobuf>=3.20,<4 ; python_version < '3.11'",
-
-    "grpcio>=1.60.0 ; python_version >= '3.11'",
-    "grpcio-reflection>=1.60.0 ; python_version >= '3.11'",
-    "grpcio-health-checking>=1.60.0 ; python_version >= '3.11'",
-    "grpcio-tools>=1.60.0 ; python_version >= '3.11'",
-    "protobuf>=4.25.0 ; python_version >= '3.11'",
+    "grpcio>=1.60.0",
+    "grpcio-reflection>=1.60.0",
+    "grpcio-health-checking>=1.60.0",
+    # grpcio-tools is needed at runtime by the bridge's "Pre-generate
+    # proto stubs" feature (Service Creator wizard) — `from grpc_tools
+    # import protoc` runs in-process when the user ticks that checkbox.
+    # Was previously an optional `proto-tools` extra; promoted to a base
+    # dep in 2026-05 because the wizard silently no-op'd when the bridge
+    # Python lacked it.  ~30 MB cost on every install, but removes a
+    # surprising failure mode.
+    "grpcio-tools>=1.60.0",
+    "protobuf>=4.25.0",
     "httpx>=0.25.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
