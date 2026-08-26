@@ -1,0 +1,18 @@
+[pytest]
+# Shared pytest config for @@{svc}.
+#
+# Passed to Bazel py_test targets via `data = ["pytest.ini"]`, and picked
+# up automatically by `uv run pytest` from the service directory.
+
+testpaths = unit architecture
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+
+# -ra shows why tests were skipped or xfailed; without it that
+# information is invisible in CI logs.
+addopts = -ra --strict-markers
+
+markers =
+    architecture: enforces a structural rule rather than behaviour
+    integration: needs a running dependency (Consul, hardware, ...)

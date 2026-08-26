@@ -1,0 +1,26 @@
+@@{header}"""
+Inbound port for @@{svc} -- what the domain OFFERS to the outside world.
+
+A driving adapter (the gRPC servicer) depends on this Protocol, never on
+the concrete domain class. That keeps the direction of the dependency
+pointing inward: adapters know about the core, the core knows nothing
+about adapters.
+"""
+
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class @@{cls}Port(Protocol):
+    """
+Operations the @@{svc} domain exposes to driving adapters.
+
+Implemented by ``core.domain.@@{sn}_service.@@{cls}``. The gRPC servicer
+in ``adapters/inbound/api/`` is typed against THIS, so the servicer can
+be unit-tested with a fake that satisfies the Protocol and never needs a
+running service.
+    """
+
+@@{port_methods}

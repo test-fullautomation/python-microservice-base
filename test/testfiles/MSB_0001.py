@@ -37,19 +37,46 @@ def test():
     try:
         # --- 1. exact set of relative paths the generator produced -------------
         produced = set(files.keys())
+        # Nested-hexagonal layout (aligned with taf_repo_proposal):
+        # core/ is pure (domain + the ports it declares), adapters/ is
+        # split by direction, generated/ holds checked-in proto stubs,
+        # and BUILD.bazel + tests/ ship with the service.
         expected = {
             "main.py",
             "config.py",
             "context.py",
             "pyproject.toml",
-            "domain/__init__.py",
-            "domain/calculator_service.py",
+            "BUILD.bazel",
+            # --- core: no infrastructure imports allowed --------------
+            "core/__init__.py",
+            "core/domain/__init__.py",
+            "core/domain/calculator_service.py",
+            "core/ports/__init__.py",
+            "core/ports/inbound/__init__.py",
+            "core/ports/inbound/calculator_port.py",
+            "core/ports/outbound/__init__.py",
+            "core/ports/outbound/calculator_backend_port.py",
+            # --- adapters: split driving / driven ---------------------
             "adapters/__init__.py",
-            "adapters/api/__init__.py",
-            "adapters/api/grpc_adapter.py",
+            "adapters/inbound/__init__.py",
+            "adapters/inbound/api/__init__.py",
+            "adapters/inbound/api/grpc_adapter.py",
+            "adapters/outbound/__init__.py",
+            # --- protos: sources in proto/, stubs in generated/ -------
+            "generated/__init__.py",
             "proto/__init__.py",
             "proto/calculator.proto",
             "scripts/generate_protos.py",
+            # --- tests: unit + executable architecture rules ----------
+            "tests/__init__.py",
+            "tests/pytest.ini",
+            "tests/pytest_wrapper.py",
+            "tests/BUILD.bazel",
+            "tests/unit/__init__.py",
+            "tests/unit/test_calculator_service.py",
+            "tests/architecture/__init__.py",
+            "tests/architecture/test_core_purity.py",
+            # --- packaging / deployment ------------------------------
             "README.md",
             "calculator.nomad.hcl",
             "service_config.json",

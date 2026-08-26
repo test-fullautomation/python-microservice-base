@@ -1,0 +1,89 @@
+@@{header}"""
+Architecture test: `core/` must stay pure.
+
+Scans every module under ``core/`` with the ``ast`` module and fails if
+any of them imports infrastructure. This is the executable form of the
+hexagonal rule -- without it, "the core is pure" is a claim in a README
+that drifts the first time someone is in a hurry.
+
+It is deliberately an AST scan rather than an import-time check: it
+catches the violation even when the offending branch never executes.
+"""
+
+from __future__ import annotations
+
+import ast
+import pathlib
+
+import pytest
+
+# Modules the core must never reach for. Transport, serialisation,
+# process control, and anything vendor-specific belong in adapters.
+FORBIDDEN_IMPORTS = {
+    "grpc",
+    "grpc_tools",
+    "socket",
+    "serial",
+    "requests",
+    "httpx",
+    "urllib",
+    "urllib3",
+    "subprocess",
+    "fastapi",
+    "uvicorn",
+    "kafka",
+    "pika",
+    "consul",
+}
+
+# Generated protobuf stubs are the one tolerated exception: the domain
+# speaks in message types, and they carry no I/O of their own.
+ALLOWED_PREFIXES = ("generated",)
+
+CORE_DIR = pathlib.Path(__file__).resolve().parents[2] / "core"
+
+
+def _core_modules() -> list[pathlib.Path]:
+    if not CORE_DIR.is_dir():
+        return []
+    return sorted(p for p in CORE_DIR.rglob("*.py") if p.name != "__init__.py")
+
+
+def _imported_roots(path: pathlib.Path) -> set[str]:
+    """Top-level package name of every import in `path`."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                roots.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            # `from . import x` has module=None -- relative, always fine.
+            if node.level == 0 and node.module:
+                roots.add(node.module.split(".")[0])
+    return roots
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    _core_modules(),
+    ids=lambda p: str(p.relative_to(CORE_DIR)) if isinstance(p, pathlib.Path) else str(p),
+)
+def test_core_module_has_no_infrastructure_imports(module_path: pathlib.Path) -> None:
+    """No module under core/ may import transport or vendor libraries."""
+    roots = _imported_roots(module_path)
+    violations = sorted(
+        r for r in roots
+        if r in FORBIDDEN_IMPORTS and not r.startswith(ALLOWED_PREFIXES)
+    )
+    assert not violations, (
+        f"{module_path.relative_to(CORE_DIR)} imports infrastructure: "
+        f"{violations}. Move that dependency behind a port in "
+        f"core/ports/outbound/ and implement it under adapters/outbound/."
+    )
+
+
+def test_core_directory_exists() -> None:
+    """Guard against the scan silently passing because core/ moved."""
+    assert CORE_DIR.is_dir(), f"core/ not found at {CORE_DIR}"
+    assert _core_modules(), f"no modules found under {CORE_DIR}"
