@@ -1,0 +1,97 @@
+# Root BUILD file -- makes the workspace root a Bazel package.
+#
+# Bazel is used here as an orchestration graph (build / install / test),
+# not as a C++ compiler. See MODULE.bazel for the rationale.
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "requirements_lock.txt",
+    "pyproject.toml",
+    "setup.py",
+    "README.md",
+    "properdocs.yml",
+])
+
+# Docs inputs. docs/gui and docs/examples are excluded: they are
+# generated at build time by docs_hooks/copy_external_docs.py from the
+# Manager GUI and examples trees, so listing them would declare a
+# build output as an input.
+filegroup(
+    name = "docs_sources",
+    srcs = glob(
+        [
+            "docs/**",
+            "docs_hooks/**/*.py",
+        ],
+        exclude = [
+            "docs/gui/**",
+            "docs/examples/**",
+            "docs/**/__pycache__/**",
+        ],
+    ) + glob(
+        [
+            "MicroserviceBase/MicroserviceManagerGUI/docs/md/**",
+            "MicroserviceBase/MicroserviceManagerGUI/docs/img/**",
+            "examples/docs/md/**",
+        ],
+        allow_empty = True,
+    ),
+)
+
+# The framework itself, importable as `MicroserviceBase`.
+#
+# Templates under adapters/scaffold/templates are `data`, not `srcs`:
+# the scaffold generator reads them from disk at runtime, so they must
+# land in the runfiles tree but must not be treated as Python sources.
+py_library(
+    name = "microservicebase_lib",
+    srcs = glob(
+        ["MicroserviceBase/**/*.py"],
+        exclude = [
+            "MicroserviceBase/**/__pycache__/**",
+            "MicroserviceBase/MicroserviceManagerGUI/**",
+        ],
+    ),
+    data = glob(
+        ["MicroserviceBase/adapters/scaffold/templates/**"],
+        allow_empty = True,
+    ),
+    imports = ["."],
+    deps = [
+        "@pypi//grpcio",
+        "@pypi//grpcio-health-checking",
+        "@pypi//grpcio-reflection",
+        "@pypi//grpcio-tools",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//psutil",
+        "@pypi//pydantic",
+        "@pypi//pydantic-settings",
+    ],
+)
+
+# The whole MicroserviceBase package as data, for targets that need the
+# source tree rather than an importable library (wheel build, installer).
+filegroup(
+    name = "microservicebase_sources",
+    srcs = glob(
+        ["MicroserviceBase/**"],
+        exclude = [
+            "MicroserviceBase/**/__pycache__/**",
+            "MicroserviceBase/MicroserviceManagerGUI/node_modules/**",
+            "MicroserviceBase/MicroserviceManagerGUI/dist/**",
+        ],
+    ),
+)
+
+# Convenience: `bazel test //:all_tests` runs every suite in the repo.
+test_suite(
+    name = "all_tests",
+    tests = [
+        "//pytest:legacy_suite",
+        "//test/pytest/pytestfiles:msb_suite",
+    ],
+)

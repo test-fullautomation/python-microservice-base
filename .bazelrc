@@ -1,0 +1,105 @@
+# Bazel configuration for MicroserviceBase.
+#
+# Adapted from taf_repo_proposal so both repos behave the same way and
+# share the Artifactory module registry + remote cache. Repo-specific
+# pieces (SBOM validation, TAF_* test env vars, downloader_config) are
+# intentionally omitted -- add them only when this repo needs them.
+
+# --- Module registry -------------------------------------------------
+# Corporate mirror; the public BCR is not reachable from the Bosch
+# network.
+common --registry=https://artifactory.boschdevcloud.com/artifactory/api/bazelmodules/bits-bcr
+
+# --- Corporate proxy (REQUIRED) --------------------------------------
+# artifactory.boschdevcloud.com does NOT resolve via plain DNS on the
+# Bosch network -- it is only reachable through the proxy on
+# localhost:3128. Bazel's registry fetches run on the JVM's HTTP client,
+# which reads system properties, NOT http_proxy/https_proxy env vars.
+# Without these you get a misleading "Unknown host: artifactory..." that
+# looks like DNS rather than a proxy problem.
+startup --host_jvm_args=-Dhttps.proxyHost=localhost
+startup --host_jvm_args=-Dhttps.proxyPort=3128
+startup --host_jvm_args=-Dhttp.proxyHost=localhost
+startup --host_jvm_args=-Dhttp.proxyPort=3128
+startup --host_jvm_args=-Dhttp.nonProxyHosts=localhost|127.0.0.1
+
+# --- Artifactory credentials (REQUIRED) ------------------------------
+# With the proxy set but no credentials the registry returns 401.
+# Bazel reads HTTP auth from ~/.netrc; create one containing:
+#
+#   machine artifactory.boschdevcloud.com
+#     login <your-bosch-user>
+#     password <your-artifactory-api-token>
+#
+# (and the same block for shared01.artifacts.app.bosch.com if you want
+# the remote cache). Do NOT commit credentials to this file.
+
+common --experimental_ui_max_stdouterr_bytes=-1
+common --show_timestamps
+
+# --- Corporate TLS ---------------------------------------------------
+# Bazel's downloader runs on the JVM and needs the Bosch CA chain to talk
+# to Artifactory (the public internet is not reachable from the corporate
+# network -- only Bosch hosts resolve). Truststore copied from
+# taf_repo_proposal/products/internal_development_platform/installer/certs.
+startup --host_jvm_args=-Djavax.net.ssl.trustStore=certs/truststore.jks
+startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
+
+# --- Windows ---------------------------------------------------------
+# NOTE: `startup` flags cannot be config-scoped (`startup:windows` is
+# rejected by Bazel 9 with "invalid command name"). taf_repo_proposal
+# carries that mistake; do not copy it back.
+#
+# Short output paths matter on Windows -- Bazel plus MSVC blow past the
+# 260-character path limit under the default output root. Put these in a
+# USER .bazelrc instead, where they apply only on that machine:
+#
+#   # %USERPROFILE%\.bazelrc
+#   startup --output_user_root=C:/_bzl
+#   startup --output_base=C:/bazel/out
+#
+common:windows --repository_cache=C:/bazel/repository_cache
+common:windows --repo_env=BAZEL_SH=C:/Program\ Files/Git/bin/bash.exe
+common:windows --shell_executable=C:/Program\ Files/Git/bin/bash.exe
+
+# --- Linux -----------------------------------------------------------
+common:linux --repository_cache=~/bazel/repository_cache
+build:linux --action_env=PATH
+
+# --- Tests -----------------------------------------------------------
+# Env the suites need is forwarded HERE, not declared in BUILD files, so
+# a test target does not have to know about the machine it runs on.
+#
+# PATH matters more than usual for this repo: MSB_0004/0011/0017 shell out
+# to the real `consul` and `nomad` binaries and skip themselves when those
+# are absent.
+test --test_env=PATH
+test --test_env=MB_PROTO_SEARCH_PATH
+test:windows --test_env=ProgramW6432
+test:windows --test_env=LOCALAPPDATA
+test:windows --test_env=TEMP
+test --test_verbose_timeout_warnings
+test --test_output=errors
+
+# The component tests spawn Consul/Nomad agents and wait on ports; the
+# default 60s "short" budget is not enough for the L4/L5 cases.
+test --test_timeout=60,300,900,3600
+
+# --- Build -----------------------------------------------------------
+build --jobs=auto
+build --verbose_failures
+build --disk_cache=~/.cache/bazel-disk-cache
+
+# --- Remote cache (Artifactory) --------------------------------------
+build --remote_cache=https://shared01.artifacts.app.bosch.com/artifactory/bits-bazel-remote-cache-local/cas
+build --remote_timeout=10s
+build --remote_max_connections=100
+build --remote_accept_cached=true
+build --remote_local_fallback
+build --remote_retries=5
+# Developers read only; CI is the sole writer.
+build --remote_upload_local_results=false
+
+# CI leans on Artifactory exclusively rather than a local disk cache that
+# does not survive the runner.
+build:ci --disk_cache=

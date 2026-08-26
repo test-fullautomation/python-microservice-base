@@ -1,0 +1,67 @@
+# Legacy transport / registry unit tests.
+#
+# These cover the RabbitMQ + AMQP path, which ADR-028 superseded but did
+# NOT delete -- the adapters still ship and these tests still pass. They
+# are kept in the graph so a change to the legacy path cannot break
+# unnoticed.
+#
+# One py_test per test file: a failure then names the file, and Bazel can
+# cache and re-run each independently instead of invalidating the suite.
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# conftest.py supplies the RabbitMQ fixtures every test here depends on.
+py_library(
+    name = "conftest_lib",
+    srcs = ["conftest.py"],
+    imports = [".."],
+    deps = [
+        "//:microservicebase_lib",
+        "@pypi//pika",
+        "@pypi//pytest",
+    ],
+)
+
+_LEGACY_TESTS = {
+    "factory": "Factory/test_Factory.py",
+    "end_to_end": "Integration/test_EndToEnd.py",
+    "registry_adapter": "Integration/test_RegistryAdapter.py",
+    "transport_adapter": "Integration/test_TransportAdapter.py",
+    "messages": "Messages/test_Messages.py",
+    "models": "Models/test_Models.py",
+    "security": "Security/test_Security.py",
+    "service_base": "ServiceBase/test_ServiceBase.py",
+    "service_registry": "ServiceRegistry/test_ServiceRegistry.py",
+    "versioning": "Versioning/test_Versioning.py",
+}
+
+[
+    py_test(
+        name = "test_%s" % name,
+        size = "small",
+        srcs = [
+            "//tools/bazel:pytest_wrapper.py",
+            src,
+        ],
+        imports = [".."],
+        main = "pytest_wrapper.py",
+        tags = [
+            "framework:pytest",
+            "legacy",
+        ],
+        deps = [
+            ":conftest_lib",
+            "//:microservicebase_lib",
+            "@pypi//pytest",
+            "@pypi//pytest-mock",
+        ],
+    )
+    for name, src in _LEGACY_TESTS.items()
+]
+
+test_suite(
+    name = "legacy_suite",
+    tests = [":test_%s" % name for name in _LEGACY_TESTS],
+)

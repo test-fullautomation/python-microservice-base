@@ -1,0 +1,113 @@
+# Packaging targets: wheel, docs site, installers.
+#
+# These are genrules that shell out to the EXISTING build scripts rather
+# than reimplementing them in Starlark. That is a deliberate trade:
+#
+#   gained  - one dependency graph, so the installer cannot be built
+#             against a stale wheel (the failure that shipped an
+#             installer advertising 2.1.0 while its wheel was 2.2.0);
+#             plus caching when inputs are unchanged, and one command
+#             that works the same locally and in CI.
+#   given up - fine-grained caching INSIDE each script. A genrule is
+#             all-or-nothing over its declared inputs, so touching one
+#             JS file rebuilds the whole installer.
+#
+# The Qt / vcpkg C++ builds are deliberately absent: 12 custom triplets
+# and patched gRPC ports do not survive Bazel's dependency model. They
+# stay on build_qt.sh.
+
+load("@rules_python//python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# ----------------------------------------------------------------------
+# Wheel
+# ----------------------------------------------------------------------
+# SKIP_DOCBUILD short-circuits setup.py's GenPackageDoc/LaTeX step, which
+# the wheel does not need and which would drag a TeX toolchain into the
+# graph.
+genrule(
+    name = "wheel",
+    srcs = [
+        "//:microservicebase_sources",
+        "//:pyproject.toml",
+        "//:setup.py",
+        "//:README.md",
+    ],
+    outs = ["microservicebase-2.2.0-py3-none-any.whl"],
+    cmd = select({
+        "@platforms//os:windows": (
+            "SKIP_DOCBUILD=1 python -m pip wheel --no-deps --no-build-isolation " +
+            "-w $(RULEDIR) . && " +
+            "cp $(RULEDIR)/microservicebase-*.whl $@ 2>/dev/null || true"
+        ),
+        "//conditions:default": (
+            "SKIP_DOCBUILD=1 python3 -m pip wheel --no-deps --no-build-isolation " +
+            "-w $(RULEDIR) . && " +
+            "cp $(RULEDIR)/microservicebase-*.whl $@ 2>/dev/null || true"
+        ),
+    }),
+    tags = [
+        "manual",  # not built by //... -- needs a network-capable pip
+        "requires-network",
+    ],
+)
+
+# ----------------------------------------------------------------------
+# Docs
+# ----------------------------------------------------------------------
+# Mirrors what docs.bat/docs.sh do: strict build, then DECODE every
+# rendered diagram. Counting SVGs would pass on PlantUML error images,
+# which is how four unrendered Mermaid blocks once shipped as visible
+# source text.
+#
+# Needs java + tools/plantuml.jar (gitignored, fetched in CI) and the
+# properdocs toolchain, so it is `manual` rather than part of //...
+genrule(
+    name = "docs",
+    srcs = [
+        "//:docs_sources",
+        "//:properdocs.yml",
+        "//tools:verify_diagrams.py",
+    ],
+    outs = ["docs_site.stamp"],
+    cmd = (
+        "python -m properdocs build --clean --strict -f properdocs.yml && " +
+        "python tools/verify_diagrams.py site && " +
+        "touch $@"
+    ),
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+)
+
+# ----------------------------------------------------------------------
+# Installers
+# ----------------------------------------------------------------------
+# Each depends on :wheel, so the graph enforces what the CI version-guard
+# currently checks by hand.
+[
+    genrule(
+        name = "%s_installer" % os_name,
+        srcs = [
+            ":wheel",
+            "//:microservicebase_sources",
+        ],
+        outs = ["%s_installer.stamp" % os_name],
+        cmd = (
+            "cd MicroserviceBase/MicroserviceManagerGUI && " +
+            "npm ci && " +
+            "npx electron-builder %s && " % flags +
+            "cd - >/dev/null && touch $@"
+        ),
+        tags = [
+            "manual",  # needs npm + network; run explicitly
+            "requires-network",
+        ],
+    )
+    for os_name, flags in [
+        ("windows", "--win --x64"),
+        ("linux", "--linux"),
+    ]
+]
