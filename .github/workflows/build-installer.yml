@@ -1,0 +1,185 @@
+name: Build DevAtServGUI installers
+
+# Builds the Windows and Linux installers whenever a PR lands on develop
+# (a merged PR is a push to develop), and on demand via the Actions tab.
+#
+# Two runners are required -- electron-builder cannot cross-build these:
+#   windows-latest -> NSIS .exe
+#   ubuntu-latest  -> AppImage + .deb
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'MicroserviceBase/**'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - '.github/workflows/build-installer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: build-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The version guard runs once, on Linux, before either installer is
+  # built -- no point burning two runners on a mismatch.
+  #
+  # installer.nsh hard-codes the wheel filename it installs:
+  #   !define MSB_VER   "2.2.0"
+  #   !define MSB_WHEEL "microservicebase-${MSB_VER}-py3-none-any.whl"
+  # When that drifted from pyproject.toml, the installer could not find
+  # its bundled wheel, silently fell back to PyPI, and shipped 2.1.0
+  # while the wheel was 2.2.0. Fail loudly instead.
+  version-check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        name: pyproject / installer.nsh / package.json must agree
+        working-directory: MicroserviceBase/MicroserviceManagerGUI
+        run: |
+          # sed everywhere, for two reasons:
+          #  - `grep -oP` needs PCRE, which is unavailable in some locales
+          #    and on non-GNU grep, and would fail silently.
+          #  - reading package.json with `node` would make this job depend
+          #    on a Node toolchain it otherwise has no use for. The build
+          #    job pins Node 20; this one would have picked up whatever
+          #    the runner image happened to ship.
+          proj=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ../../pyproject.toml | head -1)
+          nsh=$(sed -n 's/.*!define[[:space:]]\{1,\}MSB_VER[[:space:]]\{1,\}"\([^"]*\)".*/\1/p' build-resources/installer.nsh | head -1)
+
+          # No JSON parser here, so make the assumption explicit: bail out
+          # if "version" is not unique rather than silently taking the
+          # first match (which a nested key could shadow after a refactor).
+          pkg_hits=$(grep -c '"version"[[:space:]]*:' package.json)
+          if [ "$pkg_hits" -ne 1 ]; then
+            echo "::error::Expected exactly one \"version\" key in package.json, found $pkg_hits."
+            echo "::error::Disambiguate it, or switch this step to a real JSON parser."
+            grep -n '"version"[[:space:]]*:' package.json
+            exit 1
+          fi
+          pkg=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -1)
+
+          echo "pyproject.toml : $proj"
+          echo "installer.nsh  : $nsh"
+          echo "package.json   : $pkg"
+
+          if [ -z "$proj" ] || [ -z "$nsh" ] || [ -z "$pkg" ]; then
+            echo "::error::Could not read one of the versions"; exit 1
+          fi
+          if [ "$proj" != "$nsh" ] || [ "$proj" != "$pkg" ]; then
+            echo "::error::Version mismatch - the installer would bundle a wheel it cannot find"
+            exit 1
+          fi
+          echo "OK - versions agree ($proj)"
+          echo "version=$proj" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version-check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            builder_flags: '--win --x64'
+            artifact_glob: |
+              MicroserviceBase/MicroserviceManagerGUI/dist/*.exe
+              MicroserviceBase/MicroserviceManagerGUI/dist/*.exe.blockmap
+          - os: ubuntu-latest
+            name: linux
+            builder_flags: '--linux'
+            artifact_glob: |
+              MicroserviceBase/MicroserviceManagerGUI/dist/*.AppImage
+              MicroserviceBase/MicroserviceManagerGUI/dist/*.deb
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: MicroserviceBase/MicroserviceManagerGUI
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: MicroserviceBase/MicroserviceManagerGUI/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # electron-builder's .deb target shells out to dpkg/fakeroot, which
+      # are not all present on a bare ubuntu runner.
+      - name: Install Linux packaging tools
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fakeroot dpkg rpm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # SKIP_DOCBUILD avoids the GenPackageDoc/LaTeX step in setup.py,
+      # which the bundled wheel does not need.
+      - name: Build MicroserviceBase wheel
+        shell: bash
+        env:
+          SKIP_DOCBUILD: '1'
+        run: |
+          mkdir -p build-resources/installers
+          rm -f build-resources/installers/microservicebase-*.whl
+          python -m pip install --upgrade pip wheel setuptools colorama
+          python -m pip wheel --no-deps --no-build-isolation -w build-resources/installers ../..
+          ls -la build-resources/installers/
+
+      - name: Verify the bundled wheel is the one the installer expects
+        shell: bash
+        run: |
+          expected="microservicebase-${{ needs.version-check.outputs.version }}-py3-none-any.whl"
+          if [ ! -f "build-resources/installers/$expected" ]; then
+            echo "::error::Expected $expected but it is missing - the installer would fall back to PyPI"
+            ls -la build-resources/installers/
+            exit 1
+          fi
+          echo "OK - $expected present"
+
+      - name: Build installer (${{ matrix.name }})
+        run: npx electron-builder ${{ matrix.builder_flags }}
+
+      # Only the installers themselves. electron-builder also drops an
+      # ~84 MB .zip and debug yml into dist/; uploading those would
+      # roughly double the artifact for no benefit.
+      - name: Upload ${{ matrix.name }} installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevAtServGUI-${{ matrix.name }}-${{ needs.version-check.outputs.version }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "## ${{ matrix.name }} installer"
+            echo ""
+            echo "| File | Size |"
+            echo "|---|---|"
+            for f in dist/*.exe dist/*.AppImage dist/*.deb; do
+              [ -f "$f" ] || continue
+              printf '| `%s` | %s |\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+            done
+            echo ""
+            echo "Version \`${{ needs.version-check.outputs.version }}\` · commit \`${GITHUB_SHA:0:8}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
