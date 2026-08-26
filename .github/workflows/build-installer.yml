@@ -45,11 +45,27 @@ jobs:
         name: pyproject / installer.nsh / package.json must agree
         working-directory: MicroserviceBase/MicroserviceManagerGUI
         run: |
-          # sed, not `grep -oP`: PCRE mode is unavailable in some locales
-          # and on non-GNU grep, which would break the guard silently.
+          # sed everywhere, for two reasons:
+          #  - `grep -oP` needs PCRE, which is unavailable in some locales
+          #    and on non-GNU grep, and would fail silently.
+          #  - reading package.json with `node` would make this job depend
+          #    on a Node toolchain it otherwise has no use for. The build
+          #    job pins Node 20; this one would have picked up whatever
+          #    the runner image happened to ship.
           proj=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ../../pyproject.toml | head -1)
           nsh=$(sed -n 's/.*!define[[:space:]]\{1,\}MSB_VER[[:space:]]\{1,\}"\([^"]*\)".*/\1/p' build-resources/installer.nsh | head -1)
-          pkg=$(node -p "require('./package.json').version")
+
+          # No JSON parser here, so make the assumption explicit: bail out
+          # if "version" is not unique rather than silently taking the
+          # first match (which a nested key could shadow after a refactor).
+          pkg_hits=$(grep -c '"version"[[:space:]]*:' package.json)
+          if [ "$pkg_hits" -ne 1 ]; then
+            echo "::error::Expected exactly one \"version\" key in package.json, found $pkg_hits."
+            echo "::error::Disambiguate it, or switch this step to a real JSON parser."
+            grep -n '"version"[[:space:]]*:' package.json
+            exit 1
+          fi
+          pkg=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -1)
 
           echo "pyproject.toml : $proj"
           echo "installer.nsh  : $nsh"
