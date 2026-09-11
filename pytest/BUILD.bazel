@@ -35,6 +35,8 @@ _LEGACY_TESTS = {
     "service_base": "ServiceBase/test_ServiceBase.py",
     "service_registry": "ServiceRegistry/test_ServiceRegistry.py",
     "versioning": "Versioning/test_Versioning.py",
+    # Not legacy: exercises the FastAPI bridge's origin allow-list in-process.
+    "bridge_origins": "UIBridge/test_BridgeOrigins.py",
 }
 
 [
@@ -54,6 +56,8 @@ _LEGACY_TESTS = {
         deps = [
             ":conftest_lib",
             "//:microservicebase_lib",
+            "@pypi//fastapi",
+            "@pypi//httpx",
             "@pypi//pytest",
             "@pypi//pytest-mock",
         ],

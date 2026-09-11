@@ -43,6 +43,93 @@ from ...ports.ui_bridge import UIBridgePort
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Origin allow-list
+# ---------------------------------------------------------------------------
+#
+# Browser requests carry an ``Origin`` header; the bridge only serves the
+# origins on this list. The list comes from (highest priority first) the
+# ``allowed_origins`` constructor argument, the environment variable below,
+# or :func:`default_allowed_origins`.
+
+#: Comma-separated origins, e.g. ``http://localhost:1112,http://10.0.0.5:1112``.
+ALLOWED_ORIGINS_ENV = "MB_BRIDGE_ALLOWED_ORIGINS"
+
+#: What a browser sends for a page loaded from ``file://`` -- i.e. the
+#: Electron GUI. Listing it admits the desktop app.
+NULL_ORIGIN = "null"
+
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
+_UNSPECIFIED_HOSTS = ("0.0.0.0", "::")
+
+
+def _looks_like_origin(value):
+   """True for ``scheme://host[:port]`` with nothing after the authority."""
+   from urllib.parse import urlsplit
+   parts = urlsplit(value)
+   return (parts.scheme in ("http", "https")
+           and bool(parts.netloc)
+           and not parts.path and not parts.query and not parts.fragment)
+
+
+def parse_allowed_origins(value):
+   """
+Validate an allow-list given as a list or a comma-separated string.
+
+Returns the de-duplicated list in the order given; ``['*']`` when the
+check is switched off. Raises ``ValueError`` with a message that names
+the offending entry and shows what a valid one looks like.
+   """
+   if isinstance(value, str):
+      items = value.split(",")
+   else:
+      items = [str(v) for v in value]
+   items = [v.strip() for v in items]
+   items = [v for v in items if v]
+
+   if not items:
+      raise ValueError(
+         "the origin allow-list is empty. Give at least one origin such as "
+         "http://localhost:1112 (or '*' to accept any origin)."
+      )
+   if "*" in items:
+      if len(items) > 1:
+         raise ValueError(
+            "'*' accepts every origin and cannot be combined with other "
+            f"entries; got {items!r}."
+         )
+      return ["*"]
+
+   bad = [v for v in items if v != NULL_ORIGIN and not _looks_like_origin(v)]
+   if bad:
+      raise ValueError(
+         f"invalid origin(s) {bad!r}. An origin is scheme://host[:port] with "
+         "no path or trailing slash, e.g. http://localhost:1112 -- or the "
+         f"literal '{NULL_ORIGIN}' for the Electron GUI."
+      )
+   return list(dict.fromkeys(items))
+
+
+def default_allowed_origins(host, port):
+   """
+Origins the Manager GUI legitimately uses when nothing is configured.
+
+Always the bridge's own address and the loopback spellings of it. The
+Electron ``null`` origin is included only when the bridge is bound to
+loopback: on a machine-wide bind, ``null`` would admit any local page.
+   """
+   origins = []
+   for h in dict.fromkeys([host, "localhost", "127.0.0.1"]):
+      if h in _UNSPECIFIED_HOSTS:
+         continue   # no browser ever sends "0.0.0.0" as an origin
+      if ":" in h and not h.startswith("["):
+         h = f"[{h}]"   # bare IPv6 literal
+      origins.append(f"http://{h}:{port}")
+   if host in _LOOPBACK_HOSTS:
+      origins.append(NULL_ORIGIN)
+   return origins
+
+
 def _open_agent_log_file(agent_name):
    """Open a size-rotated on-disk log file for a managed agent.
 
@@ -192,7 +279,7 @@ Endpoints:
 Requires ``fastapi`` and ``uvicorn`` (optional dependencies).
    """
 
-   def __init__(self, host='localhost', port=8000):
+   def __init__(self, host='localhost', port=8000, allowed_origins=None):
       """
 Initialize the FastAPI bridge.
 
@@ -209,9 +296,20 @@ Initialize the FastAPI bridge.
   / *Condition*: optional / *Type*: int / *Default*: 8000 /
 
   Port to bind the server to.
+
+* ``allowed_origins``
+
+  / *Condition*: optional / *Type*: list[str] | str / *Default*: None /
+
+  Browser origins the bridge answers. ``None`` reads
+  ``MB_BRIDGE_ALLOWED_ORIGINS`` and, failing that, uses
+  :func:`default_allowed_origins`. ``['*']`` disables the check.
+  Invalid values raise ``ValueError`` here, at startup, not on the
+  first request.
       """
       self._host = host
       self._port = port
+      self._allowed_origins = self._resolve_allowed_origins(allowed_origins)
       self._request_handler = None
       self._services_info_provider = None
       self._app = None
@@ -222,38 +320,84 @@ Initialize the FastAPI bridge.
       self._server_loop = None
       self._fleet_api_url = None
 
+   def _resolve_allowed_origins(self, explicit):
+      if explicit is not None:
+         return parse_allowed_origins(explicit)
+      from_env = os.environ.get(ALLOWED_ORIGINS_ENV)
+      if from_env is not None:
+         try:
+            return parse_allowed_origins(from_env)
+         except ValueError as exc:
+            raise ValueError(f"{ALLOWED_ORIGINS_ENV}: {exc}") from None
+      return default_allowed_origins(self._host, self._port)
+
+   @property
+   def allowed_origins(self):
+      """The resolved origin allow-list (``['*']`` when the check is off)."""
+      return list(self._allowed_origins)
+
    def _build_app(self):
       """
 Build the FastAPI application with all routes.
       """
-      from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+      from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
       from fastapi.middleware.cors import CORSMiddleware
+      from fastapi.responses import JSONResponse
       from pydantic import BaseModel
       from typing import Any, Optional, List
 
       app = FastAPI(title="MicroserviceBase UI Bridge")
 
-      # NOTE on allow_credentials: it is deliberately False (the default).
-      #
-      # `allow_origins=["*"]` together with `allow_credentials=True` is
-      # invalid per the CORS spec -- a browser refuses to honour
-      # `Access-Control-Allow-Origin: *` on a credentialed request -- so
-      # the credentialed path never actually worked. It also made every
-      # origin on the machine able to drive an API that starts/stops
-      # Consul and Nomad agents and writes files via the scaffold
-      # generator (CodeQL: overly permissive CORS, CWE-942).
-      #
-      # The bridge has no cookie/session/bearer auth and the GUI never
-      # sends `credentials:` on fetch(), so dropping the flag changes no
-      # working behaviour. The wildcard origin is kept because the GUI
-      # legitimately calls in from `file://` (Electron, which sends
-      # `Origin: null`) as well as from the bridge's own HTTP origin.
+      allowed = list(self._allowed_origins)
+      allowed_set = set(allowed)
+      allow_all = allowed == ["*"]
+      if allow_all:
+         logger.warning(
+            "UI bridge accepts requests from ANY origin (%s='*'). Any page "
+            "that can reach this port may drive the bridge.", ALLOWED_ORIGINS_ENV)
+      else:
+         logger.info("UI bridge allowed origins: %s", ", ".join(allowed))
+
+      # allow_credentials stays False (the default): the bridge has no
+      # cookie/session/bearer auth and the GUI never sends `credentials:`
+      # on fetch(), and a wildcard origin with credentials is invalid per
+      # the CORS spec anyway (CodeQL CWE-942).
       app.add_middleware(
          CORSMiddleware,
-         allow_origins=["*"],
+         allow_origins=allowed,
          allow_methods=["*"],
          allow_headers=["*"],
       )
+
+      # CORSMiddleware only decides which response HEADERS a browser gets;
+      # the request itself still reaches the route handler. This rejects a
+      # disallowed origin before any handler runs, and logs it, which CORS
+      # on its own never does.
+      #
+      # Requests WITHOUT an Origin header (curl, Python clients, health
+      # probes) are not browser requests and pass through: an origin check
+      # cannot authenticate non-browser callers -- that is what bridge
+      # authentication is for, not this.
+      def _origin_rejected(origin, what):
+         logger.warning(
+            "Rejected %s from origin %r (allowed: %s). Add it to %s to permit it.",
+            what, origin, ", ".join(allowed), ALLOWED_ORIGINS_ENV)
+
+      if not allow_all:
+         @app.middleware("http")
+         async def reject_disallowed_origins(request: Request, call_next):
+            origin = request.headers.get("origin")
+            if origin is not None and origin not in allowed_set:
+               _origin_rejected(origin, f"{request.method} {request.url.path}")
+               return JSONResponse(
+                  status_code=403,
+                  content={
+                     "error": "origin_not_allowed",
+                     "origin": origin,
+                     "detail": ("This origin is not in the bridge allow-list. "
+                                f"Set {ALLOWED_ORIGINS_ENV} to permit it."),
+                  })
+            return await call_next(request)
 
       bridge = self
 
@@ -399,6 +543,14 @@ Return current services information.
          """
 WebSocket endpoint for real-time service update push.
          """
+         # HTTP middleware does not see WebSocket handshakes, so the
+         # origin check is repeated here. Closing before accept() answers
+         # the handshake with HTTP 403.
+         origin = websocket.headers.get("origin")
+         if not allow_all and origin is not None and origin not in allowed_set:
+            _origin_rejected(origin, "WebSocket /ws/updates")
+            await websocket.close(code=1008)   # policy violation
+            return
          await websocket.accept()
          with bridge._ws_clients_lock:
             bridge._ws_clients.add(websocket)

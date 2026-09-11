@@ -81,6 +81,11 @@ def parse_args():
                         help='FastAPI bridge listen host (overrides config)')
     parser.add_argument('--bridge-port', type=int, default=None,
                         help='FastAPI bridge listen port (overrides config)')
+    parser.add_argument('--allowed-origins', default=None, metavar='ORIGINS',
+                        help='Comma-separated browser origins the bridge answers, '
+                             'e.g. "http://10.0.0.5:1112,null" ("null" = Electron GUI, '
+                             '"*" = any). Overrides config.json "bridge_allowed_origins" '
+                             'and the MB_BRIDGE_ALLOWED_ORIGINS env var.')
     return parser.parse_args()
 
 
@@ -120,10 +125,16 @@ def main():
     def services_info_provider():
         return services_info
 
-    bridge = create_ui_bridge('fastapi', host=bridge_host, port=bridge_port)
+    # Origin allow-list: CLI > config.json > env var > built-in default.
+    # None lets the bridge apply the env var / default itself.
+    allowed_origins = args.allowed_origins or config.get('bridge_allowed_origins')
+
+    bridge = create_ui_bridge('fastapi', host=bridge_host, port=bridge_port,
+                              allowed_origins=allowed_origins)
 
     print(f" [*] FastAPI Bridge Configuration:")
     print(f" [*]   Bridge:    http://{bridge_host}:{bridge_port}")
+    print(f" [*]   Origins:   {', '.join(bridge.allowed_origins)}")
     print(f" [*]   Broker:    {broker_host}:{broker_port}")
     print(f" [*]   REST API:  http://{bridge_host}:{bridge_port}/api/request")
     print(f" [*]   Services:  http://{bridge_host}:{bridge_port}/api/services")
