@@ -69,6 +69,42 @@ hand-roll JSON `send_cmd` strings:
 | The lighter in-app help (loaded inside the running GUI) | `../../web/docs/help.html` (or click the **?** in the navbar when the GUI is running) |
 | A worked example of a multi-service C++ project | [`../../../../examples/PowerDeviceService/README.md`](../../../../examples/PowerDeviceService/README.md) |
 
+## Bridge security: allowed origins
+
+The Python bridge (`python/start_bridge.py`) only answers browser requests
+whose `Origin` is on an allow-list. Anything else gets `403` with
+`{"error": "origin_not_allowed"}`, and the bridge log records the origin
+and the setting that would permit it.
+
+**Default** (nothing configured): the bridge's own address plus
+`http://localhost:<port>` and `http://127.0.0.1:<port>`. When the bridge is
+bound to a loopback address the Electron GUI is admitted as well -- it loads
+from `file://`, which browsers report as `Origin: null`.
+
+**Configure** without touching code -- highest priority first:
+
+| Where | Form |
+|---|---|
+| CLI | `python start_bridge.py --allowed-origins "http://10.0.0.5:1112,null"` |
+| `python/config.json` | `"bridge_allowed_origins": ["http://10.0.0.5:1112", "null"]` |
+| Environment | `MB_BRIDGE_ALLOWED_ORIGINS=http://10.0.0.5:1112,null` |
+
+Rules:
+
+- An origin is `scheme://host[:port]` -- no path, no trailing slash.
+- `null` admits the Electron GUI. Add it yourself when the bridge is bound
+  to a non-loopback address such as `0.0.0.0`; it is left out of the default
+  there because any local page could otherwise reach the bridge.
+- `*` switches the check off entirely (the bridge logs a warning at start).
+- An empty or malformed list stops the bridge at startup with a message
+  naming the bad entry and showing a valid one.
+
+**What this does not do.** An origin check applies to browsers only. `curl`,
+Python scripts and other non-browser clients send no `Origin` header and
+pass through. Keep the bridge on `localhost` unless remote access is
+needed; controlling who may *call* the bridge is an authentication
+feature, not an origin rule.
+
 ## In-app help vs long-form docs
 
 | | In-app `web/docs/help.html` | Long-form `docs/` (this folder) |
