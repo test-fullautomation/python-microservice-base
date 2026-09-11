@@ -127,7 +127,8 @@
         Microservice Manager is a graphical interface for operating and
         building MicroserviceBase services.  It runs in two modes
         (Electron desktop or browser), connects to the same FastAPI
-        bridge, and gives you three top-level workspaces.
+        bridge, and keeps the Services view in front with developer and
+        administrator functions behind two menus.
       </p>
       <figure class="docs-figure">
         <img src="docs/img/gui_overview.png" alt="Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar">
@@ -144,13 +145,14 @@
       </ul>
       <p>Both modes share the same web front-end and connect to the same FastAPI bridge.</p>
 
-      <h3>Three Modes</h3>
-      <p>Use the mode toggle buttons in the top navigation bar:</p>
+      <h3>Navigation</h3>
+      <p>The navbar keeps the runtime view in front; developer and administrator functions sit behind two menus:</p>
       <ul>
-        <li><strong>Services</strong> &mdash; browse Consul-registered services, invoke gRPC methods via reflection.</li>
-        <li><strong>Service Network</strong> &mdash; start / stop / inspect Consul and Nomad agents; browse jobs; submit new <code>.nomad.hcl</code> files.</li>
-        <li><strong>Service Creator</strong> &mdash; 4-step wizard to scaffold a new service project (proto + domain + adapter + clients + Nomad HCL).</li>
+        <li><strong>Services</strong> (default) &mdash; active services and their GUIs; invoke gRPC methods via reflection. The app always starts here.</li>
+        <li><strong>Developer Tools &#9662;</strong> &mdash; <em>Service Creator</em> (4-step wizard: proto + domain + adapter + clients + Nomad HCL), plus <em>API Explorer</em> and <em>Code Examples</em> for the service selected in the sidebar.</li>
+        <li><strong>Administrator Tools &#9662;</strong> &mdash; <em>Consul agent</em> / <em>Nomad agent</em>: open the Service Network view to start / stop / inspect the agents, browse jobs, submit <code>.nomad.hcl</code> files.</li>
       </ul>
+      <p>Opening a menu never interrupts a running service GUI; switching back to <strong>Services</strong> shows it exactly as you left it.</p>
 
       <h3>Status pills in the navbar</h3>
       <p>To the right of the mode toggle, three small pills show live infrastructure health:</p>

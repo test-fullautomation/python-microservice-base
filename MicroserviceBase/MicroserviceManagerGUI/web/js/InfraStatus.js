@@ -124,19 +124,15 @@
   // --- Click handlers: jump to the matching Service Network sub-tab ---
 
   function _switchToFleetSubTab(tabId) {
-    // Click the top-level "Service Network" mode button if not already there.
-    var btnModeFleet = document.getElementById('btnModeFleet');
-    if (btnModeFleet && !btnModeFleet.classList.contains('active')) {
-      btnModeFleet.click();
+    // Service Network sits under Administrator Tools; app.js owns the
+    // mode switch and the sub-tab activation.
+    var app = window.MicroserviceManager;
+    if (app && typeof app.switchToFleetSubTab === 'function') {
+      app.switchToFleetSubTab(tabId);
+      return;
     }
-    // Then click the target sub-tab.
     var tab = document.getElementById(tabId);
-    if (tab && window.bootstrap && window.bootstrap.Tab) {
-      var bs = window.bootstrap.Tab.getOrCreateInstance(tab);
-      bs.show();
-    } else if (tab) {
-      tab.click();
-    }
+    if (tab) tab.click();
   }
 
   function _init() {

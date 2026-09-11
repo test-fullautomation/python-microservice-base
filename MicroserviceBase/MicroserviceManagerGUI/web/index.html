@@ -19,10 +19,46 @@
       <img src="img/logo.png" alt="Logo">
       Microservice Manager
     </a>
+    <!-- Services is the operator's view and the only top-level mode.
+         Developer and administrator functions sit behind two menus so
+         they stay reachable without cluttering the default workflow. -->
     <div class="nav-mode-toggle">
-      <button class="mode-btn active" id="btnModeServices">Services</button>
-      <button class="mode-btn" id="btnModeFleet">Service Network</button>
-      <button class="mode-btn" id="btnModeCreator">Service Creator</button>
+      <button class="mode-btn active" id="btnModeServices"
+              title="Active services and their GUIs">Services</button>
+
+      <div class="dropdown nav-tools-menu">
+        <button class="mode-btn dropdown-toggle" id="btnDevTools" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false"
+                title="Generate and test services">
+          <i class="bi bi-code-slash me-1"></i>Developer Tools
+        </button>
+        <ul class="dropdown-menu dropdown-menu-dark nav-tools-dropdown" aria-labelledby="btnDevTools">
+          <li><button class="dropdown-item" id="btnModeCreator" type="button">
+            <i class="bi bi-magic me-2"></i>Service Creator</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">For the selected service</h6></li>
+          <li><button class="dropdown-item" id="btnDevApiExplorer" type="button">
+            <i class="bi bi-diagram-3 me-2"></i>API Explorer</button></li>
+          <li><button class="dropdown-item" id="btnDevCodeExamples" type="button">
+            <i class="bi bi-file-earmark-code me-2"></i>Code Examples
+            <span class="text-muted small">(Python / C++ / Robot)</span></button></li>
+        </ul>
+      </div>
+
+      <div class="dropdown nav-tools-menu">
+        <button class="mode-btn dropdown-toggle" id="btnAdminTools" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false"
+                title="Configure the infrastructure">
+          <i class="bi bi-sliders me-1"></i>Administrator Tools
+        </button>
+        <ul class="dropdown-menu dropdown-menu-dark nav-tools-dropdown" aria-labelledby="btnAdminTools">
+          <li><h6 class="dropdown-header">Service Network</h6></li>
+          <li><button class="dropdown-item" id="btnAdminConsul" type="button">
+            <i class="bi bi-diagram-2 me-2"></i>Consul agent</button></li>
+          <li><button class="dropdown-item" id="btnAdminNomad" type="button">
+            <i class="bi bi-hdd-rack me-2"></i>Nomad agent</button></li>
+        </ul>
+      </div>
     </div>
     <div class="navbar-actions">
       <!-- Legacy broker chips/badge — kept in the DOM so existing app.js

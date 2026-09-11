@@ -48,15 +48,19 @@ red "Bridge down". Use the ▶ / ■ buttons to start or stop the bridge.*
 
 ---
 
-## The three top-level modes
+## The navbar: Services, Developer Tools, Administrator Tools
 
-The mode toggle in the navbar switches between:
+The navbar keeps the operator's view in front and tucks everything else
+behind two menus:
 
-| Mode | What it's for |
+| Entry | What it's for |
 |---|---|
-| **Services** | Runtime management — view registered services, send test gRPC calls, watch real-time updates. |
-| **Service Network** | Operate the infrastructure — start/stop Consul + Nomad, view jobs, view nodes. **This guide focuses here.** |
-| **Service Creator** | Generate a new service scaffold via the 4-step wizard.  See [service_creator.md](service_creator.md). |
+| **Services** (default) | Runtime view — active services and their GUIs, test gRPC calls, real-time updates. The app always starts here. |
+| **Developer Tools ▾** | Generate and test: *Service Creator* (4-step wizard, see [service_creator.md](service_creator.md)), plus *API Explorer* and *Code Examples* for the service selected in the sidebar. |
+| **Administrator Tools ▾** | Configure the infrastructure: *Consul agent* and *Nomad agent* open the Service Network view on that tab — start/stop agents, view jobs, view nodes. **This guide focuses here.** |
+
+Opening either menu does not touch a running service GUI; switching back
+to **Services** shows it exactly as it was left.
 
 ---
 

@@ -4119,13 +4119,15 @@
     if (fleetContent) fleetContent.style.display = mode === 'fleet' ? '' : 'none';
     if (creatorContent) creatorContent.style.display = mode === 'creator' ? '' : 'none';
 
-    // Toggle nav buttons
+    // Toggle nav buttons. Developer / Administrator Tools are menus; the
+    // menu button lights up while one of its views is active so the user
+    // can tell where they are.
     var btnServices = document.getElementById('btnModeServices');
-    var btnFleet = document.getElementById('btnModeFleet');
-    var btnCreator = document.getElementById('btnModeCreator');
+    var btnDevTools = document.getElementById('btnDevTools');
+    var btnAdminTools = document.getElementById('btnAdminTools');
     if (btnServices) btnServices.classList.toggle('active', mode === 'services');
-    if (btnFleet) btnFleet.classList.toggle('active', mode === 'fleet');
-    if (btnCreator) btnCreator.classList.toggle('active', mode === 'creator');
+    if (btnDevTools) btnDevTools.classList.toggle('active', mode === 'creator');
+    if (btnAdminTools) btnAdminTools.classList.toggle('active', mode === 'fleet');
 
     // Activate new mode
     if (mode === 'fleet') {
@@ -4207,19 +4209,62 @@
     if (MM.serviceCreator) MM.serviceCreator.deactivate();
   }
 
-  // Wire mode toggle buttons
-  var btnModeServices = document.getElementById('btnModeServices');
-  var btnModeFleet = document.getElementById('btnModeFleet');
-  if (btnModeServices) {
-    btnModeServices.addEventListener('click', function () { switchMode('services'); });
+  // Wire the navbar. Services is the default runtime view; everything
+  // else lives behind the Developer Tools / Administrator Tools menus so
+  // it is reachable without being in the operator's way.
+  function _wire(id, handler) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', handler);
   }
-  if (btnModeFleet) {
-    btnModeFleet.addEventListener('click', function () { switchMode('fleet'); });
+  _wire('btnModeServices', function () { switchMode('services'); });
+
+  // Developer Tools -- generate and test
+  _wire('btnModeCreator', function () { switchMode('creator'); });
+  _wire('btnDevApiExplorer', function () {
+    _withSelectedService('API Explorer', function (name) {
+      switchMode('services');
+      showServiceAPIExplorer(name);
+    });
+  });
+  _wire('btnDevCodeExamples', function () {
+    _withSelectedService('Code Examples', function (name) {
+      switchMode('services');
+      showServiceHelper(name);
+    });
+  });
+
+  // Administrator Tools -- configure infrastructure
+  _wire('btnAdminConsul', function () { switchToFleetSubTab('tabConsul'); });
+  _wire('btnAdminNomad', function () { switchToFleetSubTab('tabNomad'); });
+
+  /**
+   * Run a per-service developer tool against the service selected in the
+   * sidebar, or say why nothing happened.
+   */
+  function _withSelectedService(toolName, fn) {
+    var active = document.querySelector('#servicesList .list-group-item.active[data-service-name]');
+    var name = active && active.getAttribute('data-service-name');
+    if (!name || !MM.servicesInfor || !MM.servicesInfor[name]) {
+      showToast(toolName, 'Select a service in the Services view first.', 'info');
+      return;
+    }
+    fn(name);
   }
-  var btnModeCreator = document.getElementById('btnModeCreator');
-  if (btnModeCreator) {
-    btnModeCreator.addEventListener('click', function () { switchMode('creator'); });
+
+  /**
+   * Open the Service Network view on a given sub-tab (Consul / Nomad).
+   * Also used by the infra status pills in the navbar.
+   */
+  function switchToFleetSubTab(tabId) {
+    switchMode('fleet');
+    var tab = document.getElementById(tabId);
+    if (tab && window.bootstrap && window.bootstrap.Tab) {
+      window.bootstrap.Tab.getOrCreateInstance(tab).show();
+    } else if (tab) {
+      tab.click();
+    }
   }
+  MM.switchToFleetSubTab = switchToFleetSubTab;
 
   // Restore fleet URL from localStorage on page load
   try {
