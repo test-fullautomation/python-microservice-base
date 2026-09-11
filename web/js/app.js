@@ -183,8 +183,14 @@
   }
 
   /************************************************************
-   *               Session Persistence                         *
+   *               Connection Persistence                      *
    ************************************************************/
+
+  // Connections live in localStorage so they survive an application
+  // restart, not just a page refresh: sessionStorage is wiped when the
+  // renderer process ends, which is exactly what closing the app does.
+  // (Consul URLs further down already use localStorage for this reason.)
+  var CONNECTIONS_STORAGE_KEY = 'mm_connections';
 
   function persistConnections() {
     try {
@@ -192,24 +198,49 @@
         var conn = MM.connections[key];
         return { brokerUrl: conn.brokerUrl, routingKey: conn.routingKey };
       });
-      sessionStorage.setItem('mm_connections', JSON.stringify(data));
-    } catch (e) { /* sessionStorage unavailable */ }
+      localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(data));
+    } catch (e) { /* storage unavailable */ }
+  }
+
+  function _isValidSavedConnection(entry) {
+    return !!(entry && typeof entry.brokerUrl === 'string' && entry.brokerUrl.trim());
   }
 
   function loadPersistedConnections() {
     try {
-      var raw = sessionStorage.getItem('mm_connections');
+      var raw = localStorage.getItem(CONNECTIONS_STORAGE_KEY);
       if (raw) {
-        return JSON.parse(raw);
+        var parsed = JSON.parse(raw);
+        // Drop malformed entries instead of aborting the whole restore.
+        return Array.isArray(parsed) ? parsed.filter(_isValidSavedConnection) : [];
       }
-      // Legacy fallback
+
+      // Migration: earlier builds saved to sessionStorage. Move whatever
+      // is still there across once, then stop looking at it.
+      var legacy = sessionStorage.getItem(CONNECTIONS_STORAGE_KEY);
+      if (legacy) {
+        var migrated = JSON.parse(legacy);
+        migrated = Array.isArray(migrated) ? migrated.filter(_isValidSavedConnection) : [];
+        localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(migrated));
+        sessionStorage.removeItem(CONNECTIONS_STORAGE_KEY);
+        return migrated;
+      }
       var savedBrokerUrl = sessionStorage.getItem('mm_brokerUrl');
       var savedRoutingKey = sessionStorage.getItem('mm_routingKey');
       if (savedBrokerUrl) {
         return [{ brokerUrl: savedBrokerUrl, routingKey: savedRoutingKey || '' }];
       }
-    } catch (e) { /* sessionStorage unavailable */ }
+    } catch (e) { /* storage unavailable or corrupt -- start clean */ }
     return [];
+  }
+
+  function clearPersistedConnections() {
+    try {
+      localStorage.removeItem(CONNECTIONS_STORAGE_KEY);
+      sessionStorage.removeItem(CONNECTIONS_STORAGE_KEY);
+      sessionStorage.removeItem('mm_brokerUrl');
+      sessionStorage.removeItem('mm_routingKey');
+    } catch (e) { /* storage unavailable */ }
   }
 
   /************************************************************
@@ -741,11 +772,19 @@
               _fetchAndRenderServiceGUI(serviceName, altUrl, contentDiv, callbackName);
             } else {
               console.warn('No .html file found in', folderPath, '- showing API explorer');
+              showToast('Service GUI',
+                'No GUI files were found for ' + serviceName + ' - showing the API view instead.',
+                'warning');
               showServiceAPIExplorer(serviceName);
             }
           })
-          .catch(function () {
+          .catch(function (discoverError) {
             console.warn('Cannot discover GUI files for', serviceName, '- showing API explorer');
+            showToast('Service GUI',
+              'The GUI for ' + serviceName + ' could not be loaded (' +
+              ((discoverError && discoverError.message) || error.message || 'unknown error') +
+              ') - showing the API view instead.',
+              'warning');
             showServiceAPIExplorer(serviceName);
           });
       });
@@ -854,6 +893,13 @@
     var header = document.createElement('div');
     header.classList.add('broker-header');
 
+    // Per-source connection state. A source that cannot be reached stays
+    // in the list marked offline rather than vanishing, so the user can
+    // see which machine is the problem and retry or remove it.
+    var statusDot = document.createElement('span');
+    statusDot.classList.add('broker-status');
+    statusDot.title = 'Connecting…';
+
     var labelSpan = document.createElement('span');
     labelSpan.classList.add('broker-label');
     labelSpan.textContent = brokerUrl;
@@ -861,6 +907,15 @@
     var badge = document.createElement('span');
     badge.classList.add('broker-badge');
     badge.textContent = '0';
+
+    var retryBtn = document.createElement('button');
+    retryBtn.classList.add('broker-retry-btn');
+    retryBtn.title = 'Retry connection';
+    retryBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+    retryBtn.onclick = function (e) {
+      e.stopPropagation();
+      retryBroker(brokerUrl);
+    };
 
     var disconnectBtn = document.createElement('button');
     disconnectBtn.classList.add('broker-disconnect-btn');
@@ -871,8 +926,10 @@
       confirmDisconnectBroker(brokerUrl);
     };
 
+    header.appendChild(statusDot);
     header.appendChild(labelSpan);
     header.appendChild(badge);
+    header.appendChild(retryBtn);
     header.appendChild(disconnectBtn);
 
     var accordion = document.createElement('div');
@@ -897,6 +954,86 @@
     var items = section.querySelectorAll('.list-group-item[data-service-name]');
     var badge = section.querySelector('.broker-badge');
     if (badge) badge.textContent = items.length;
+  }
+
+  function _getBrokerSection(brokerUrl) {
+    var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    return servicesList.querySelector('.broker-section[data-broker-url="' + brokerUrl + '"]');
+  }
+
+  /**
+   * Show a source's connection state on its header.
+   *
+   * @param {string} brokerUrl - The broker address.
+   * @param {string} state - 'connecting' | 'online' | 'offline'.
+   * @param {string} [detail] - Tooltip text (defaults per state).
+   */
+  function setBrokerStatus(brokerUrl, state, detail) {
+    var section = _getBrokerSection(brokerUrl);
+    if (!section) return;
+    section.classList.remove('broker-connecting', 'broker-online', 'broker-offline');
+    section.classList.add('broker-' + state);
+    var dot = section.querySelector('.broker-status');
+    if (dot) {
+      dot.title = detail || {
+        connecting: 'Connecting…',
+        online: 'Connected',
+        offline: 'Unreachable'
+      }[state] || state;
+    }
+  }
+
+  /**
+   * Mark a source unreachable without removing it: its services are
+   * greyed out, the header turns red and offers a retry, and the saved
+   * connection is kept so it is tried again on the next start.
+   *
+   * @param {string} brokerUrl - The broker address.
+   * @param {string} reason - Why it went offline (shown as tooltip).
+   */
+  function markBrokerOffline(brokerUrl, reason) {
+    var conn = MM.connections[brokerUrl];
+    if (conn) {
+      // Force a fresh subscription when the retry succeeds.
+      conn.realtimeSubscribed = false;
+    }
+    var section = _getBrokerSection(brokerUrl);
+    if (section) {
+      var activeItem = section.querySelector('.list-group-item.active');
+      if (activeItem) {
+        activeItem.classList.remove('active');
+        _deactivateCurrentPanel();
+        clearServiceContent();
+      }
+      section.querySelectorAll('.list-group-item[data-service-name]').forEach(function (listItem) {
+        listItem.classList.add('service-disabled');
+        var icon = listItem.querySelector('.icon');
+        if (icon) icon.src = IMAGE_PATH.DISABLED;
+      });
+    }
+    setBrokerStatus(brokerUrl, 'offline', reason);
+    updateBrokerHeaders();
+  }
+
+  /**
+   * Re-attempt a source that is marked offline.
+   *
+   * @param {string} brokerUrl - The broker address.
+   */
+  function retryBroker(brokerUrl) {
+    var conn = MM.connections[brokerUrl];
+    if (!conn) return;
+    // Rebuild the section from scratch; createAccordionItems appends and
+    // would otherwise duplicate the greyed-out entries.
+    var section = _getBrokerSection(brokerUrl);
+    if (section) {
+      var accordion = section.querySelector('.broker-accordion');
+      if (accordion) accordion.innerHTML = '';
+    }
+    conn.services = {};
+    rebuildMergedServicesInfor();
+    addAliasServiceForBroker(brokerUrl, conn.routingKey);
+    requestServicesInforForBroker(brokerUrl, { restored: true });
   }
 
   /**
@@ -954,6 +1091,18 @@
 
     listItem.appendChild(icon);
     listItem.appendChild(label);
+
+    // A service without a GUI is still listed -- users need the full
+    // picture of what is running -- but says so up front instead of
+    // silently opening the API view on click.
+    if (!item.guiSupport) {
+      var noGuiBadge = document.createElement('span');
+      noGuiBadge.classList.add('no-gui-badge');
+      noGuiBadge.textContent = 'No GUI';
+      noGuiBadge.title = 'No GUI available - selecting this service opens the API view';
+      listItem.appendChild(noGuiBadge);
+    }
+
     listItem.appendChild(helperBtn);
 
     if (item.downloadable) {
@@ -3141,20 +3290,22 @@
     });
   });
 
-  // Auto-reconnect from sessionStorage on page refresh
+  // Restore saved connections on startup. Each source is attempted
+  // independently: one that is down is shown offline and does not stop
+  // the others from coming up.
   try {
     var savedConnections = loadPersistedConnections();
     if (savedConnections.length > 0) {
-      console.log('[app] Auto-reconnecting', savedConnections.length, 'broker(s) from saved session...');
+      console.log('[app] Restoring', savedConnections.length, 'saved connection(s)...');
       savedConnections.forEach(function (saved) {
         if (MM.connections[saved.brokerUrl]) return; // skip duplicates
         addConnection(saved.brokerUrl, saved.routingKey);
         addAliasServiceForBroker(saved.brokerUrl, saved.routingKey);
-        requestServicesInforForBroker(saved.brokerUrl);
+        requestServicesInforForBroker(saved.brokerUrl, { restored: true });
       });
       updateBrokerHeaders();
     }
-  } catch (e) { /* sessionStorage unavailable */ }
+  } catch (e) { /* storage unavailable */ }
 
   /************************************************************
    *          Functions: Logic and Interaction with Services   *
@@ -3228,7 +3379,8 @@
           {
             label: 'Alias',
             iconSrc: IMAGE_PATH.READY,
-            serviceName: 'ServiceAlias'
+            serviceName: 'ServiceAlias',
+            guiSupport: true
           }
         ]
       }
@@ -3304,11 +3456,7 @@
     unloadFunction = null;
     clearServiceList();
     clearServiceContent();
-    try {
-      sessionStorage.removeItem('mm_connections');
-      sessionStorage.removeItem('mm_brokerUrl');
-      sessionStorage.removeItem('mm_routingKey');
-    } catch (e) { /* sessionStorage unavailable */ }
+    clearPersistedConnections();
   }
 
   /**
@@ -3337,7 +3485,8 @@
         label: service.name,
         iconSrc: IMAGE_PATH.READY,
         serviceName: service.name,
-        downloadable: !!service.downloadable
+        downloadable: !!service.downloadable,
+        guiSupport: service.gui_support === true
       };
 
       if (!existingItem) {
@@ -3638,10 +3787,11 @@
       console.warn('[app] Registry shutdown detected for broker:', brokerUrl);
       showToast(
         'Registry Disconnected',
-        'The Service Registry on ' + brokerUrl + ' has shut down.',
+        'The Service Registry on ' + brokerUrl + ' has shut down. ' +
+        'It stays listed so you can retry or remove it.',
         'warning'
       );
-      disconnectBroker(brokerUrl);
+      markBrokerOffline(brokerUrl, 'Service Registry has shut down');
       return;
     }
 
@@ -3756,7 +3906,16 @@
    *
    * @param {string} brokerUrl - The broker to query.
    */
-  function requestServicesInforForBroker(brokerUrl) {
+  /**
+   * @param {string} brokerUrl - The broker to query.
+   * @param {object} [opts]
+   * @param {boolean} [opts.restored] - True when re-attaching a saved
+   *   connection (startup restore or manual retry). A failure then keeps
+   *   the source listed as offline instead of discarding it: the user
+   *   chose it once, and it may simply not be up yet.
+   */
+  function requestServicesInforForBroker(brokerUrl, opts) {
+    opts = opts || {};
     var conn = MM.connections[brokerUrl];
     if (!conn) return;
 
@@ -3768,6 +3927,9 @@
     // Set active broker context for the request
     setRegistryServiceInfo({ brokerUrl: brokerUrl, routingKey: conn.routingKey });
 
+    createBrokerSection(brokerUrl);
+    setBrokerStatus(brokerUrl, 'connecting');
+
     requestService(requestData, SERVICES_EXCHANGE_NAME, conn.routingKey)
       .then(function (data) {
         console.log('Received service infor from', brokerUrl, ':', data);
@@ -3776,16 +3938,28 @@
         rebuildMergedServicesInfor();
         var serviceItems = extractServicesInformation(servicesInfor);
         createAccordionItems(serviceItems, brokerUrl);
+        setBrokerStatus(brokerUrl, 'online');
         updateConnectionBadge();
-        showToast('Connected', 'Successfully connected to ' + brokerUrl, 'success');
+        showToast('Connected',
+          (opts.restored ? 'Restored connection to ' : 'Successfully connected to ') + brokerUrl,
+          'success');
 
         // Subscribe to realtime updates from this broker's Registry
         subscribeToRealtimeUpdatesForBroker(brokerUrl);
       })
       .catch(function (error) {
         console.error('Error loading data from', brokerUrl, ':', error);
-        disconnectBroker(brokerUrl);
-        showToast('Connection Failed', 'Could not connect to ' + brokerUrl + ': ' + (error.message || error), 'danger');
+        var reason = error.message || String(error);
+        if (opts.restored) {
+          markBrokerOffline(brokerUrl, 'Could not connect: ' + reason);
+          showToast('Connection Failed',
+            'Could not restore ' + brokerUrl + ': ' + reason +
+            '. Use the retry button on its header, or remove it.',
+            'warning');
+        } else {
+          disconnectBroker(brokerUrl);
+          showToast('Connection Failed', 'Could not connect to ' + brokerUrl + ': ' + reason, 'danger');
+        }
       });
   }
 
