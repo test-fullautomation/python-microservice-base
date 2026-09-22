@@ -867,6 +867,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openPlugin: (id, opts) => ipcRenderer.invoke('plugin-open', { id: id, opts: opts || {} }),
 
   /**
+   * Window plugins the main process found, and whether each is on the
+   * allow-list and loaded.
+   * @returns {Promise<Array<{id, source, allowed, loaded, error}>>}
+   */
+  windowPlugins: () => ipcRenderer.invoke('plugin-window-list'),
+
+  /**
+   * Allow or block a window plugin (saved in settings.json as windowPlugins).
+   * @returns {Promise<{ok: boolean, plugins: Array}>}
+   */
+  setWindowPluginAllowed: (id, allowed) => ipcRenderer.invoke('plugin-allow', { id: id, allowed: !!allowed }),
+
+  /**
    * Plugins installed on this PC: <userData>/plugins/<id>/plugin.json.
    * The page imports their entries from `base` (a file:// URL ending in /).
    * @returns {Array<{id: string, base: string, manifest?: object, error?: string}>}

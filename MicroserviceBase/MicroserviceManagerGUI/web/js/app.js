@@ -2641,7 +2641,8 @@
         return MM.endo.mountComponent(manifest, wrapper, {
           consulName: svc.name,
           consulUrl: svc.consulUrl,
-          protoPath: _getStoredProtoPath(svc.name)
+          protoPath: _getStoredProtoPath(svc.name),
+          base: new URL(folderPath + '/', document.baseURI).href   // frame tiles' pages
         }).then(function (handle) {
           wrapper.__endoHandle = handle;
           // Hiding the panel runs unload<Name>: stop polling while hidden (R5).

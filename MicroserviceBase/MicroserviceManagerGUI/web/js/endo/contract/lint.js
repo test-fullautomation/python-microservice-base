@@ -37,7 +37,7 @@
   /** Tile sizes on the 4-column stage: [columns, rows]. */
   var SIZES = { '1x1': [1, 1], '2x1': [2, 1], '2x2': [2, 2], '4x1': [4, 1] };
 
-  var CORE_KINDS = ['text', 'live-status', 'command-form', 'table', 'log', 'run-status'];
+  var CORE_KINDS = ['text', 'live-status', 'command-form', 'table', 'log', 'run-status', 'frame'];
 
   /** Reserved binds.consul value: the service that declared this component. */
   var SELF = '@self';
@@ -351,8 +351,11 @@
       }
     });
 
-    // Renderers other than schema arrive later.
-    if (manifest.renderer && manifest.renderer !== 'schema') {
+    // "html": code runs in frame tiles. "wasm", "qml", "widget" are not hosted yet.
+    var frames = (manifest.tiles || []).filter(function (t) { return t && t.kind === 'frame'; });
+    if (manifest.renderer === 'html' && !frames.length) {
+      add('K', 'warn', 'renderer', 'renderer "html" means frame tiles; this component has none');
+    } else if (manifest.renderer && manifest.renderer !== 'schema' && manifest.renderer !== 'html') {
       add('K', 'warn', 'renderer', 'renderer "' + manifest.renderer + '" is not supported by shell ' + shell +
           ' yet; its tiles still render');
     }
@@ -437,6 +440,17 @@
         if (CAPABILITIES.indexOf(n) < 0) add('R1', 'error', 'contributes.kinds[' + i + '].needs[' + j + ']', 'unknown capability "' + n + '"');
       });
     });
+    // Code runs in frames (frame) or its own window (window); schema plugins ship none.
+    if (manifest.isolation === 'schema' || manifest.isolation === 'window') {
+      ['kinds', 'navigators', 'stage.views', 'dock.sections', 'drawer.tabs', 'commands'].forEach(function (point) {
+        (Array.isArray(c[point]) ? c[point] : []).forEach(function (e, i) {
+          if (e && e.entry) {
+            add('P', 'error', 'contributes["' + point + '"][' + i + '].entry',
+                manifest.isolation + ' plugins run no module in the shell; use "isolation": "frame" for code');
+          }
+        });
+      });
+    }
     if (Array.isArray(c.renderers) && c.renderers.length) {
       add('K', 'warn', 'contributes.renderers', 'renderers are not loaded by shell ' + shell + ' yet (milestone M5)');
     }

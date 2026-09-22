@@ -438,3 +438,42 @@
 .plugin-row.state-refused .plugin-state, .plugin-row.state-error .plugin-state { background: color-mix(in srgb, #B83227 14%, transparent); color: #B83227; }
 .plugin-desc { font-size: 0.84rem; margin-top: 0.15rem; }
 .plugin-contrib { font: 0.72rem var(--font-mono, monospace); color: var(--muted, #5A665F); margin-top: 0.2rem; overflow-wrap: anywhere; }
+/* ================= Frames (milestone M5) ================= */
+.endo-frame-host { position: relative; min-width: 0; }
+.endo-tile-body.endo-frame-body { padding: 0; display: block; overflow: hidden; }
+.endo-frame { display: block; width: 100%; height: 100%; min-height: 3rem; border: 0; background: transparent; }
+.endo-tile-body.endo-frame-body > .endo-frame { position: absolute; inset: 0; }
+.bench-drawer-panel .endo-frame, .bench-dock-body .endo-frame, .sidebar-content .endo-frame { height: 8rem; }
+.app-content > [data-endo-mode] .endo-frame { min-height: 60vh; }
+.endo-frame-status { padding: 0.65rem 0.75rem; font-size: 0.82rem; }
+.endo-frame-dead {
+  margin: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--bad, #B83227) 45%, transparent);
+  border-left: 4px solid var(--bad, #B83227);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bad, #B83227) 6%, var(--surface, #fff));
+  font-size: 0.82rem;
+}
+.endo-frame-banner {
+  position: absolute;
+  left: 0.4rem;
+  right: 0.4rem;
+  bottom: 0.4rem;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  background: var(--surface, #fff);
+  border: 1px solid var(--rule, #D3D9D1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+.endo-frame-banner span { flex: 1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.endo-frame-banner.bad { border-color: color-mix(in srgb, var(--bad, #B83227) 55%, transparent); color: var(--bad, #B83227); }
+.endo-frame-banner.warn { border-color: color-mix(in srgb, var(--warn, #A96A12) 55%, transparent); color: var(--warn, #A96A12); }
+.endo-frame-banner button { border: 0; background: transparent; color: inherit; line-height: 1; font-size: 1rem; padding: 0 0.2rem; cursor: pointer; }
+.endo-tile { position: relative; }

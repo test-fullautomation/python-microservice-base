@@ -179,6 +179,14 @@
           "refresh": { "$ref": "#/definitions/refresh" }
         }
       },
+      "frame": {
+        "type": "object",
+        "description": "An HTML page of the component folder, run in a sandboxed frame; its scripts use window.endo.ctx (the component's capabilities).",
+        "required": ["entry"],
+        "properties": {
+          "entry": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.html?$" }
+        }
+      },
       "run-status": {
         "type": "object",
         "anyOf": [{ "required": ["rpc", "path"] }, { "required": ["steps"] }],

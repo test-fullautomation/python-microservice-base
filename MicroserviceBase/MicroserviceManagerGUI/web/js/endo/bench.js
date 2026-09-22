@@ -187,7 +187,8 @@
         return MM.endo.prepareComponent(res.manifest, {
           consulName: svc.name,
           consulUrl: svc.consulUrl,
-          protoPath: hooks.protoPathFor ? hooks.protoPathFor(svc.name) : ''
+          protoPath: hooks.protoPathFor ? hooks.protoPathFor(svc.name) : '',
+          base: new URL((MM.SERVICES_GUI_FOLDER || 'services') + '/' + r.folder + '/', document.baseURI).href
         }).then(function (prep) {
           mod.manifest = prep.manifest;
           mod.issues = prep.issues;

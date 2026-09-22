@@ -9,12 +9,16 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// The plugin's own styles, namespaced "charts-" (P2). The shell removes
-// everything marked data-endo-plugin="charts" when the plugin is turned
-// off, so this is (re)added whenever a strip is created.
+// The plugin's own styles, namespaced "charts-" (P2). The strip runs in a
+// sandboxed frame of its own (frame-host.js), so it styles that document;
+// a tile's frame has the tile's size, the strip fills it.
 const STYLE = `
-.charts-strip { display: grid; gap: 0.35rem; min-width: 0; }
-.charts-row { display: grid; gap: 0.1rem; min-width: 0; }
+html, body { height: 100%; }
+#endo-root { height: 100%; padding: 0.4rem 0.6rem; }
+.charts-strip { display: flex; flex-direction: column; gap: 0.3rem; height: 100%; min-width: 0; }
+.charts-row { flex: 1 1 0; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; min-height: 2rem; }
+.charts-row .charts-canvas { flex: 1 1 auto; height: auto; min-height: 0.8rem; }
+.charts-drawer-body .charts-row { flex: 0 0 auto; }
 .charts-meta { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.74rem; min-width: 0; }
 .charts-name { color: var(--muted, #5A665F); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); }
 .charts-last { font-family: var(--font-mono, monospace); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -23,7 +27,7 @@ const STYLE = `
 .charts-warn { color: var(--warn, #A96A12); font-size: 0.72rem; }
 .charts-empty { color: var(--muted, #5A665F); font-size: 0.84rem; margin: 0; }
 .charts-drawer-head { font-size: 0.84rem; margin-bottom: 0.4rem; }
-.charts-drawer-body .charts-canvas { height: 3.2rem; }
+.charts-drawer-body .charts-row .charts-canvas { flex: none; height: 3.2rem; }
 `;
 function ensureStyle() {
   if (document.querySelector('style[data-endo-plugin="charts"]')) return;

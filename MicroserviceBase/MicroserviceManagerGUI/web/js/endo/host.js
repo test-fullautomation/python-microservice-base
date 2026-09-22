@@ -87,6 +87,8 @@
     return {
       component: manifest.component,
       consulName: consulName,
+      /** URL of the component (or plugin) folder: where frame tiles find their pages. */
+      base: env.base || '',
 
       call: function (method, args) {
         if (!caps['grpc.call']) return denied('grpc.call');

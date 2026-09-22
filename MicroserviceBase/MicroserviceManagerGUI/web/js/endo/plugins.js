@@ -95,29 +95,63 @@
     });
   }
 
+  var windowRecords = {};   // id -> { allowed, loaded, error } from the main process
+
+  /** A window plugin's standing with the main process: null when it may run. */
+  function windowBlock(p) {
+    if (!window.electronAPI || typeof window.electronAPI.openPlugin !== 'function') {
+      return { state: 'unavailable', error: 'needs the desktop app (its own window)' };
+    }
+    var rec = windowRecords[p.id];
+    if (!rec) return { state: 'error', error: 'the main process did not find it' };
+    if (!rec.allowed) return { state: 'blocked', error: 'not on the window-plugin allow-list: allow it here to let it start processes' };
+    if (!rec.loaded) return { state: 'error', error: rec.error || 'its main module did not load' };
+    return null;
+  }
+
   /** Lint and decide each plugin's state before anything is applied. */
   function assess(list, schema) {
     var off = disabledSet();
     list.forEach(function (p) {
       p.issues = [];
+      p.error = p.error || '';
       if (!p.manifest) { p.state = 'error'; return; }
       p.issues = C().lintPlugin(p.manifest, { schema: schema });
       if (p.manifest.plugin && p.manifest.plugin !== p.id) {
         p.issues.push({ rule: 'S', severity: 'error', component: p.id, path: 'plugin',
                         message: 'must match the folder name "' + p.id + '"' });
       }
-      if (p.manifest.isolation === 'window') {
-        if (p.source !== 'bundled') {
-          p.issues.push({ rule: 'P', severity: 'error', component: p.id, path: 'isolation',
-                          message: 'installed window plugins need the allow-list of milestone M5; only bundled ones run' });
-        } else if (!window.electronAPI || typeof window.electronAPI.openPlugin !== 'function') {
-          p.state = 'unavailable';
-          p.error = 'needs the desktop app (its own window)';
-          return;
-        }
-      }
       if (C().hasErrors(p.issues)) { p.state = 'refused'; return; }
+      if (p.manifest.isolation === 'window') {
+        var block = windowBlock(p);
+        if (block) { p.state = block.state; p.error = block.error; return; }
+      }
       p.state = off.has(p.id) ? 'disabled' : 'pending';
+    });
+  }
+
+  /** Allow or block a window plugin (the main process owns the list). */
+  function setAllowed(id, allowed) {
+    var p = byId(id);
+    var api = window.electronAPI;
+    if (!p || !api || typeof api.setWindowPluginAllowed !== 'function') return Promise.resolve(false);
+    return api.setWindowPluginAllowed(id, allowed).then(function (res) {
+      windowRecords = {};
+      ((res && res.plugins) || []).forEach(function (r) { windowRecords[r.id] = r; });
+      var block = windowBlock(p);
+      if (block) {
+        removeAll(p);
+        p.state = block.state;
+        p.error = block.error;
+        notify({ plugin: id, enabled: false });
+        return false;
+      }
+      p.error = '';
+      if (disabledSet().has(id)) { p.state = 'disabled'; return true; }
+      return apply(p).then(function () {
+        notify({ plugin: id, enabled: p.state === 'active' });
+        return p.state === 'active';
+      });
     });
   }
 
@@ -128,8 +162,27 @@
     return Array.isArray(c[point]) ? c[point] : [];
   }
 
-  function importEntry(p, entry) {
-    return import(new URL(entry, p.base).href);
+  /**
+   * Run one entry of a plugin in a sandboxed frame (frame-host.js): its own
+   * process, no DOM of the shell, ctx over a port. fn: render | mount | run.
+   */
+  function inFrame(p, el, entry, fn, args, ctx, label, selection) {
+    el.classList.add('endo-frame-body');
+    return MM.endo.frames.create(el, {
+      mode: 'module', base: p.base, entry: entry, fn: fn, args: args || [], ctx: ctx,
+      label: label || ((p.manifest && p.manifest.title) || p.id), selection: selection,
+      // Tiles fill their cell; drawer, dock and views take the content's height.
+      autoHeight: fn !== 'render' || !(args && args[0] && args[0].kind)
+    });
+  }
+
+  /** The instance shape shells expect, calling through the (restartable) frame handle. */
+  function frameInstance(h, extraDestroy) {
+    return {
+      suspend: function () { h.suspend(); },
+      resume: function () { h.resume(); },
+      destroy: function () { if (extraDestroy) extraDestroy(); h.destroy(); }
+    };
   }
 
   /** Kinds first (they must exist before tiles render), then the rest. */
@@ -137,14 +190,18 @@
     p.state = 'loading';
     p.error = '';
     var kinds = contrib(p, 'kinds');
+    // Check that every kind's module graph can be shipped before registering.
     return Promise.all(kinds.map(function (k) {
-      return importEntry(p, k.entry).then(function (mod) {
-        if (typeof mod.render !== 'function') throw new Error(k.entry + ' does not export render()');
-        return { kind: k.kind, render: mod.render };
-      });
+      return MM.endo.frames.loadModules(p.base, k.entry).then(function () { return k; });
     })).then(function (loaded) {
-      loaded.forEach(function (l) {
-        MM.endo.kinds[l.kind] = { render: l.render, plugin: p.id };
+      loaded.forEach(function (k) {
+        MM.endo.kinds[k.kind] = {
+          plugin: p.id,
+          render: function (el, tile, ctx) {
+            // The using component's ctx: the kind gets no more than it (R1).
+            return frameInstance(inFrame(p, el, k.entry, 'render', [tile], ctx, k.kind + ' (' + p.manifest.title + ')'));
+          }
+        };
       });
       applyRibbon(p);
       applyNavigators(p);
@@ -300,26 +357,17 @@
     [['sidebar', nav, side], ['content', view, content]].forEach(function (t) {
       var key = t[0], spec = t[1], el = t[2];
       if (!spec || !el) return;
-      if (slot[key]) { if (slot[key].resume) slot[key].resume(); return; }
-      slot[key] = { pending: true };
-      importEntry(p, spec.entry).then(function (mod) {
-        if (typeof mod.mount !== 'function') throw new Error(spec.entry + ' does not export mount()');
-        slot[key] = mod.mount(el, pluginCtx(p)) || {};
-        if (hooks.currentMode() !== mode && slot[key].suspend) slot[key].suspend();
-      }).catch(function (e) {
-        el.innerHTML = '<div class="endo-error">' + esc(p.manifest.title + ': ' + (e.message || e)) + '</div>';
-        slot[key] = {};
-      });
+      if (slot[key]) { slot[key].resume(); return; }
+      slot[key] = frameInstance(inFrame(p, el, spec.entry, 'mount', [], pluginCtx(p), spec.title + ' (' + p.manifest.title + ')'));
     });
   }
 
   // ------------------------------------------------------------ commands
 
   /** A plugin's own ctx: its declared capabilities, no service binding. */
-  function pluginCtx(p, extra) {
-    var ctx = MM.endo.makeCtx({ component: 'plugin.' + p.id, title: p.manifest.title,
-                                requires: p.manifest.requires || {}, binds: { consul: '' } }, {});
-    return Object.assign(ctx, extra || {});
+  function pluginCtx(p) {
+    return MM.endo.makeCtx({ component: 'plugin.' + p.id, title: p.manifest.title,
+                             requires: p.manifest.requires || {}, binds: { consul: '' } }, { base: p.base });
   }
 
   function findCommand(id) {
@@ -342,10 +390,14 @@
       throw e;
     };
     if (c.entry) {
-      return importEntry(p, c.entry).then(function (mod) {
-        if (typeof mod.run !== 'function') throw new Error(c.entry + ' does not export run()');
-        return mod.run(pluginCtx(p));
-      }).catch(fail);
+      // A short-lived, invisible frame: run(ctx) and gone.
+      var holder = document.createElement('div');
+      holder.className = 'endo-frame-command';
+      holder.hidden = true;
+      document.body.appendChild(holder);
+      var h = inFrame(p, holder, c.entry, 'run', [], pluginCtx(p), c.title + ' (' + p.manifest.title + ')');
+      var done = function () { h.destroy(); holder.remove(); };
+      return h.ready.then(function (result) { done(); return result; }, function (e) { done(); return fail(e); });
     }
     if (c.window) {
       return window.electronAPI.openPlugin(p.id, {}).then(function (r) {
@@ -398,10 +450,11 @@
       return {
         key: t.key, title: t.entry.title, icon: t.entry.icon, plugin: t.plugin.id,
         mount: function (el, extra) {
-          return importEntry(t.plugin, t.entry.entry).then(function (mod) {
-            if (typeof mod.mount !== 'function') throw new Error(t.entry.entry + ' does not export mount()');
-            return mod.mount(el, pluginCtx(t.plugin, extra)) || {};
-          });
+          var sel = extra && extra.selection ? extra.selection() : null;
+          var h = inFrame(t.plugin, el, t.entry.entry, 'mount', [], pluginCtx(t.plugin), t.entry.title + ' (' + t.plugin.manifest.title + ')', sel);
+          // The frame reads the selection from pushes, not by calling back.
+          var off = extra && extra.onSelection ? extra.onSelection(function (s) { h.setSelection(s); }) : null;
+          return Promise.resolve(frameInstance(h, off));
         }
       };
     });
@@ -413,11 +466,10 @@
       .map(function (s) {
         return {
           key: s.key, title: s.entry.title, plugin: s.plugin.id,
-          render: function (el, selection, extra) {
-            return importEntry(s.plugin, s.entry.entry).then(function (mod) {
-              if (typeof mod.render !== 'function') throw new Error(s.entry.entry + ' does not export render()');
-              return mod.render(el, selection, pluginCtx(s.plugin, extra)) || {};
-            });
+          render: function (el, selection) {
+            var h = inFrame(s.plugin, el, s.entry.entry, 'render', [selection], pluginCtx(s.plugin),
+                            s.entry.title + ' (' + s.plugin.manifest.title + ')', selection);
+            return Promise.resolve(frameInstance(h));
           }
         };
       });
@@ -437,7 +489,7 @@
 
   function setEnabled(id, on) {
     var p = byId(id);
-    if (!p || p.state === 'refused' || p.state === 'unavailable') return Promise.resolve(false);
+    if (!p || p.state === 'refused' || p.state === 'unavailable' || p.state === 'blocked') return Promise.resolve(false);
     var off = disabledSet();
     if (on) off.delete(id); else off.add(id);
     saveDisabled(off);
@@ -457,7 +509,7 @@
   // ------------------------------------------------------------ manager (Administrator → Plugins)
 
   var STATE_TEXT = { active: 'active', disabled: 'off', refused: 'refused', error: 'failed to load',
-                     unavailable: 'desktop app only', loading: 'loading', pending: 'pending' };
+                     unavailable: 'desktop app only', loading: 'loading', pending: 'pending', blocked: 'not allowed' };
 
   function contributionsText(p) {
     var c = (p.manifest && p.manifest.contributes) || {};
@@ -496,7 +548,9 @@
     if (!box) return;
     box.innerHTML = plugins.map(function (p) {
       var m = p.manifest || {};
-      var canToggle = p.state !== 'refused' && p.state !== 'unavailable' && !!p.manifest;
+      var canToggle = p.state !== 'refused' && p.state !== 'unavailable' && p.state !== 'blocked' && !!p.manifest;
+      var isWindow = m.isolation === 'window' && p.state !== 'refused' && p.state !== 'unavailable';
+      var allowed = isWindow && windowRecords[p.id] && windowRecords[p.id].allowed;
       var on = p.state === 'active' || p.state === 'loading' || p.state === 'pending' || p.state === 'error';
       var errs = (p.issues || []).filter(function (i) { return i.severity === 'error'; });
       return '<div class="plugin-row state-' + p.state + '" data-plugin="' + esc(p.id) + '">' +
@@ -509,6 +563,10 @@
         '<span class="plugin-state">' + esc(STATE_TEXT[p.state] || p.state) + '</span></div>' +
         (m.description ? '<div class="plugin-desc">' + esc(m.description) + '</div>' : '') +
         '<div class="plugin-contrib">' + esc(contributionsText(p)) + '</div>' +
+        (isWindow ? '<div class="form-check form-switch plugin-allow mt-1"><input class="form-check-input" type="checkbox" role="switch"' +
+          ' id="pluginAllow-' + esc(p.id) + '"' + (allowed ? ' checked' : '') + '>' +
+          '<label class="form-check-label" for="pluginAllow-' + esc(p.id) + '">Allowed to open its own window and start processes' +
+          ' <span class="endo-muted">(window-plugin allow-list)</span></label></div>' : '') +
         (p.error ? '<div class="endo-error mt-1">' + esc(p.error) + '</div>' : '') +
         (errs.length ? '<div class="endo-refused mt-1">' + MM.endo.issuesListHtml(errs) + '</div>' : '') +
         '</div></div>';
@@ -517,7 +575,8 @@
       inp.addEventListener('change', function () {
         var id = inp.closest('.plugin-row').getAttribute('data-plugin');
         inp.disabled = true;
-        setEnabled(id, inp.checked).then(renderManager);
+        var change = /^pluginAllow-/.test(inp.id) ? setAllowed(id, inp.checked) : setEnabled(id, inp.checked);
+        change.then(renderManager, renderManager);
       });
     });
   }
@@ -528,8 +587,12 @@
     hooks = Object.assign(hooks, h || {});
     var btn = document.getElementById('btnAdminPlugins');
     if (btn) btn.addEventListener('click', openManager);
-    Promise.all([discover(), fetchJson(SCHEMA_URL).catch(function () { return null; })])
+    var api = window.electronAPI;
+    var winList = api && typeof api.windowPlugins === 'function'
+      ? Promise.resolve(api.windowPlugins()).catch(function () { return []; }) : Promise.resolve([]);
+    Promise.all([discover(), fetchJson(SCHEMA_URL).catch(function () { return null; }), winList])
       .then(function (r) {
+        (r[2] || []).forEach(function (rec) { windowRecords[rec.id] = rec; });
         plugins = r[0];
         assess(plugins, r[1]);
         // Apply in index order so ribbon contributions keep a stable order.
