@@ -1023,7 +1023,17 @@ Forward a request to the FleetWebAPI.
 
       class NomadAgentStartBody(BaseModel):
          mode: str = "dev"              # "dev" or "config"
-         bind_addr: str = "0.0.0.0"
+         # Empty = let `nomad agent -dev` bind and advertise loopback.
+         #
+         # This used to default to 0.0.0.0, which made Nomad advertise the
+         # machine's LAN IP (e.g. the Wi-Fi address). The dev client then
+         # heartbeats its own server via that IP, and on Windows the
+         # firewall commonly refuses that connection (WinError 10013). The
+         # node registers once through loopback, misses every heartbeat,
+         # is marked "down", and every job fails placement with
+         # "No nodes were eligible for evaluation". Remote clients need
+         # a specific NIC here *and* an inbound rule for TCP 4646-4648.
+         bind_addr: str = ""
          http_port: int = 4646
          datacenter: str = "dc1"
          node_name: str = ""
