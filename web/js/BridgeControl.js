@@ -30,6 +30,14 @@
     return 'http://localhost:1112';
   }
 
+  function _bridgePort() {
+    try {
+      return parseInt(new URL(_bridgeOrigin()).port, 10) || 80;
+    } catch (e) {
+      return 1112;
+    }
+  }
+
   function _isElectron() {
     return typeof window.electronAPI === 'object' && window.electronAPI !== null;
   }
@@ -83,7 +91,7 @@
       // Not reachable via HTTP — in Electron we can double-check the
       // subprocess state in case the port is still binding.
       if (_isElectron() && window.electronAPI.isBridgeRunning) {
-        Promise.resolve(window.electronAPI.isBridgeRunning())
+        Promise.resolve(window.electronAPI.isBridgeRunning({ port: _bridgePort() }))
           .then(function (info) {
             if (info && info.running) {
               _setLed('pending', 'Bridge starting...');
@@ -286,10 +294,15 @@
 
     _setLed('pending', 'Stopping bridge...');
 
-    Promise.resolve(window.electronAPI.killBridge())
+    // The port lets the preload find a bridge this GUI did not start
+    // (the installed app and `npm start` keep separate PID files).
+    Promise.resolve(window.electronAPI.killBridge({ port: _bridgePort() }))
       .then(function (info) {
         if (info && info.killed) {
-          MM.showToast('Bridge', 'Bridge stopped', 'success');
+          var how = info.via === 'port'
+            ? ' (pid ' + info.pid + ', found listening on port ' + _bridgePort() + ')'
+            : '';
+          MM.showToast('Bridge', 'Bridge stopped' + how, 'success');
         } else {
           MM.showToast('Bridge', 'Bridge was not running', 'info');
         }
