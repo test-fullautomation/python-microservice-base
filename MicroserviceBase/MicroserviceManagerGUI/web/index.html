@@ -165,31 +165,12 @@
                   title="Scaffold a new service: proto, domain, adapters, clients, Nomad job">
             <i class="bi bi-magic"></i><span>Service Creator</span>
           </button>
-          <button class="ribbon-btn" id="btnDevRobotGen" type="button"
-                  title="One Robot Framework .resource per service, from a .proto folder">
-            <i class="bi bi-robot"></i><span>Robot Resources</span>
-          </button>
-          <button class="ribbon-btn" id="btnDevGraphStudio" type="button"
-                  title="Edit Signals &amp; Blocks graph.json, generate a deployable graph service, watch its signals live">
-            <i class="bi bi-diagram-2"></i><span>Graph Studio</span>
-          </button>
+          <!-- Plugins add their Build commands here (robot-gen, graph-studio). -->
         </div>
         <div class="ribbon-group-label">Build</div>
       </div>
 
-      <div class="ribbon-group">
-        <div class="ribbon-group-items">
-          <button class="ribbon-btn" id="btnModeTestProject" type="button"
-                  title="Files, exported services and their sync state; re-export or add services">
-            <i class="bi bi-kanban"></i><span>Project view</span>
-          </button>
-          <button class="ribbon-btn" id="btnDevTestProject" type="button"
-                  title="Choose the folder services are exported into (Robot Framework AIO)">
-            <i class="bi bi-folder2-open"></i><span>Open project</span>
-          </button>
-        </div>
-        <div class="ribbon-group-label">Test project</div>
-      </div>
+      <!-- Plugin groups (e.g. test-project's "Test project") go here. -->
 
       <div class="ribbon-group ribbon-group-grow">
         <div class="ribbon-group-items">
@@ -216,7 +197,7 @@
 
     <!-- Administrator -->
     <div class="ribbon-panel" id="ribbonAdmin" role="tabpanel" aria-labelledby="btnAdminTools" hidden>
-      <div class="ribbon-group ribbon-group-grow">
+      <div class="ribbon-group">
         <div class="ribbon-group-items">
           <button class="ribbon-btn" id="btnAdminConsul" type="button"
                   title="Start, stop and inspect the service registry">
@@ -228,6 +209,15 @@
           </button>
         </div>
         <div class="ribbon-group-label">Service Network</div>
+      </div>
+      <div class="ribbon-group ribbon-group-grow">
+        <div class="ribbon-group-items">
+          <button class="ribbon-btn" id="btnAdminPlugins" type="button"
+                  title="Turn plugins on or off on this PC: tile kinds, tabs, views and commands they add">
+            <i class="bi bi-puzzle"></i><span>Plugins</span>
+          </button>
+        </div>
+        <div class="ribbon-group-label">Shell</div>
       </div>
     </div>
   </div>
@@ -273,22 +263,17 @@
         </div>
       </div>
 
-      <!-- Footer tabs: switch the left pane between the running services
-           and the open test project.  Always visible, so the project is
-           one click away instead of being buried in Developer Tools. -->
+      <!-- Footer tabs: switch the left pane (and the view). Plugins add
+           their navigators here, e.g. test-project's "Project". -->
       <div class="sidebar-switch" id="sidebarSwitch">
         <div class="sidebar-switch-group" role="tablist" aria-label="Left pane view">
           <button type="button" class="sidebar-switch-tab active" id="sidebarSwitchServices" title="Running services"
-                  role="tab" aria-selected="true">
+                  role="tab" aria-selected="true" data-mode="services">
             <i class="bi bi-box-seam"></i><span>Services</span>
           </button>
           <button type="button" class="sidebar-switch-tab" id="sidebarSwitchBench" title="Bench: the modules of the shown composition"
-                  role="tab" aria-selected="false">
+                  role="tab" aria-selected="false" data-mode="bench">
             <i class="bi bi-grid-1x2"></i><span>Bench</span>
-          </button>
-          <button type="button" class="sidebar-switch-tab" id="sidebarSwitchProject"
-                  role="tab" aria-selected="false">
-            <i class="bi bi-folder2-open"></i><span>Project</span>
           </button>
         </div>
       </div>
@@ -551,6 +536,7 @@
   <script src="js/endo/host.js"></script>
   <script src="js/endo/composition.js"></script>
   <script src="js/endo/bench.js"></script>
+  <script src="js/endo/plugins.js"></script>
   <script src="js/SchemaRenderer.js"></script>
   <script src="js/SchemaAutoGen.js"></script>
   <script src="js/QtWasmLoader.js"></script>

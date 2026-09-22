@@ -596,4 +596,8 @@ function openGraphStudio(opts) {
   return studioWin;
 }
 
-module.exports = { registerGraphStudioIpc, openGraphStudio, shutdownGraphStudio };
+module.exports = {
+  registerGraphStudioIpc, openGraphStudio, shutdownGraphStudio,
+  // The window-plugin interface (web/plugins/graph-studio/plugin.json "main").
+  register: registerGraphStudioIpc, open: openGraphStudio, shutdown: shutdownGraphStudio,
+};

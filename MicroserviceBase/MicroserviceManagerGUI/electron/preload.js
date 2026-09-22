@@ -859,6 +859,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openGraphStudio: (opts) => ipcRenderer.invoke('open-graph-studio', opts || {}),
 
   /**
+   * Open a bundled window plugin (its own BrowserWindow), e.g. 'graph-studio'.
+   * @param {string} id - plugin id
+   * @param {object} [opts] - passed to the plugin's open()
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  openPlugin: (id, opts) => ipcRenderer.invoke('plugin-open', { id: id, opts: opts || {} }),
+
+  /**
+   * Plugins installed on this PC: <userData>/plugins/<id>/plugin.json.
+   * The page imports their entries from `base` (a file:// URL ending in /).
+   * @returns {Array<{id: string, base: string, manifest?: object, error?: string}>}
+   */
+  listInstalledPlugins: () => {
+    const dir = path.join(_userDataPath, 'plugins');
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch (e) { return []; }
+    const { pathToFileURL } = require('url');
+    return names.filter((n) => /^[a-z0-9][a-z0-9-]*$/.test(n)).map((n) => {
+      const folder = path.join(dir, n);
+      const out = { id: n, base: pathToFileURL(folder + path.sep).href };
+      try {
+        out.manifest = JSON.parse(fs.readFileSync(path.join(folder, 'plugin.json'), 'utf-8').replace(/^﻿/, ''));
+      } catch (e) {
+        out.error = e.code === 'ENOENT' ? 'no plugin.json' : e.message;
+      }
+      return out;
+    });
+  },
+
+  /**
    * Read the tail of the launcher.log file.  Used by the bridge control to
    * surface spawn failures to the user instead of silently showing a red LED.
    * @param {number} [maxLines=50] - How many lines from the end to return.

@@ -203,6 +203,35 @@ services, and in which order, is a **composition**:
   `test/endo/fixtures/bench/` holds the proposal's prototype modules and
   compositions; `test/endo/test_endo_bench.js` tests them.
 
+### Plugins
+
+Plugins extend the shell itself; a component shows one service, a plugin
+adds something any component or user can use. **Administrator → Plugins**
+lists them and turns them on or off on this PC; turning one off removes
+what it added at once, and tiles of its kinds show *enable the plugin*.
+
+| Plugin | Adds |
+|---|---|
+| `charts` | tile kind `signal-strip` (live sparklines), drawer tab *Chart* for the selected tile's signals |
+| `test-project` | the *Project* tab under the left pane, the project view, the *Test project* ribbon group |
+| `robot-gen` | *Robot Resources* in the Developer tab's Build group |
+| `graph-studio` | *Graph Studio* in the Build group; opens its own window (desktop app only) |
+
+- **Bundled** plugins live in `web/plugins/<id>/` and are listed in
+  `web/plugins/index.json`; **installed** ones in
+  `%APPDATA%\DevAtServGUI\plugins\<id>\` (they win over a bundled plugin of
+  the same id). Installed plugins cannot run in their own window.
+- A plugin is a `plugin.json` (`web/js/endo/contract/plugin.schema.json`)
+  plus ES modules. Contribution points: `kinds`, `ribbon.groups`,
+  `commands`, `navigators`, `stage.views`, `dock.sections`,
+  `drawer.tabs`. A contribution names a module (`entry`) or a view or
+  action the shell already has (`shell`).
+- A kind's `schema` and `needs` are used when components are linted, so a
+  tile of a plugin kind is checked like a core one.
+- `node tools/endo-lint.js web/plugins` lints the plugin manifests;
+  `test/endo/test_endo_plugins.js` tests the bundled ones.
+- Plugin code runs in the page for now; frame isolation is the next step.
+
 ## Test projects
 
 A test project is a folder the Manager GUI exports services into, so test
