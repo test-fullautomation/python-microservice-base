@@ -4631,6 +4631,12 @@
     if (sidebarBench) sidebarBench.classList.toggle('active', mode === 'bench');
     var benchContent = document.getElementById('benchContent');
     if (benchContent) benchContent.style.display = mode === 'bench' ? '' : 'none';
+    // Plugin views (navigators and stage views with their own containers).
+    document.querySelectorAll('[data-endo-mode]').forEach(function (el) {
+      var on = el.getAttribute('data-endo-mode') === mode;
+      if (el.classList.contains('sidebar-mode')) el.classList.toggle('active', on);
+      else el.style.display = on ? '' : 'none';
+    });
 
     // Toggle content panels
     var serviceContent = document.getElementById('serviceContent');
@@ -4658,6 +4664,7 @@
     // The bench's tiles poll only while it is on screen (R5). After the
     // ribbon tab: a composition may open on its own role's tab.
     if (MM.endo && MM.endo.bench) MM.endo.bench.setActive(mode === 'bench');
+    if (MM.endo && MM.endo.plugins) MM.endo.plugins.modeChanged(mode);
 
     // Activate new mode
     if (mode === 'fleet') {
@@ -4667,7 +4674,8 @@
     } else if (mode === 'testproject') {
       renderTestProjectView();
     } else if (mode === 'services') {
-      _resumeActiveComponent();
+      if (_reopenOnServices) _reopenSelectedService();
+      else _resumeActiveComponent();
     }
   }
 
@@ -4766,17 +4774,13 @@
       showServiceHelper(sel.infoKey);
     });
   });
-  // Works from a .proto folder, so it needs no selected service; the
-  // folder dialogs come from _runRobotGen itself.
-  _wire('btnDevRobotGen', function () { _runRobotGen('', null); });
-
-  // Test projects: open a folder as a test project and export
-  // Consul-registered services into it (bridge: /api/test-project/*).
-  _wire('btnDevTestProject', function () { openTestProject(); });
-  _wire('btnModeTestProject', function () {
+  // Robot resources and test projects are reached through plugins
+  // (web/plugins/robot-gen, web/plugins/test-project); their commands call
+  // these shell actions (see the plugins init below).
+  function _testProjectView() {
     if (_getTestProject()) switchMode('testproject');
     else openTestProject();   // lands in the view once a project is open
-  });
+  }
   _wire('btnDevExportToProject', function () {
     _withSelectedService('Add to test project', function (sel) { exportToTestProject(sel); });
   });
@@ -5966,7 +5970,8 @@
   // is Electron-only. Seed its live panel with the Consul we are on and the
   // interpreter from Settings — the studio runs Python for "Run cluster"
   // and "Regenerate catalog", and a bare "python" is often a stub.
-  _wire('btnDevGraphStudio', function () {
+  // Reached through the graph-studio plugin's command (shell action).
+  function _openGraphStudio() {
     if (!window.electronAPI || !window.electronAPI.openGraphStudio) {
       showToast('Signal Graph Studio',
         'Available in the Electron app only — it opens a separate window.', 'warning');
@@ -5981,7 +5986,7 @@
       .catch(function (err) {
         showToast('Signal Graph Studio', 'Could not open: ' + (err.message || err), 'danger');
       });
-  });
+  }
   _wire('btnDevDownload', function () {
     _withSelectedService('Download service files', function (sel) {
       if (!sel.info || !sel.info.downloadable) {
@@ -6006,16 +6011,13 @@
    * leaves those views the same way the navbar does.
    */
   function _syncSidebarSwitch() {
-    [['sidebarSwitchServices', 'services'],
-     ['sidebarSwitchBench', 'bench'],
-     ['sidebarSwitchProject', 'testproject']].forEach(function (pair) {
-      var btn = document.getElementById(pair[0]);
-      if (!btn) return;
-      var on = _currentMode === pair[1];
+    // Built-in tabs and plugin navigators alike carry data-mode.
+    document.querySelectorAll('#sidebarSwitch .sidebar-switch-tab[data-mode]').forEach(function (btn) {
+      var on = _currentMode === btn.getAttribute('data-mode');
       btn.classList.toggle('active', on);
       btn.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    var project = document.getElementById('sidebarSwitchProject');
+    var project = document.querySelector('#sidebarSwitch .sidebar-switch-tab[data-mode="testproject"]');
     if (project) {
       var root = _getTestProject();
       // The tab works either way: with no project open the view offers to
@@ -6027,7 +6029,6 @@
 
   _wire('sidebarSwitchServices', function () { switchMode('services'); });
   _wire('sidebarSwitchBench', function () { switchMode('bench'); });
-  _wire('sidebarSwitchProject', function () { switchMode('testproject'); });
   _wire('btnModeBench', function () { switchMode('bench'); });
   _syncSidebarSwitch();
 
@@ -6173,6 +6174,52 @@
         var c = _connectedConsuls.filter(function (x) { return x.alive !== false; })[0];
         return c ? c.url : '';
       }
+    });
+  }
+
+  var _reopenOnServices = false;
+  function _reopenSelectedService() {
+    _reopenOnServices = false;
+    if (_selectedService && _selectedService.consul && _selectedService.consul.gui) _openConsulServiceGui(_selectedService);
+  }
+
+  // Plugins (js/endo/plugins.js): the shell actions and views their
+  // commands and navigators may name, and nothing else.
+  if (MM.endo && MM.endo.plugins) {
+    MM.endo.plugins.init({
+      actions: {
+        robotGen: function () { _runRobotGen('', null); },
+        openGraphStudio: _openGraphStudio,
+        testProjectView: _testProjectView,
+        openTestProject: function () { return openTestProject(); }
+      },
+      views: {
+        testproject: { sidebar: 'sidebarTestProject', content: 'testProjectContent' }
+      },
+      switchMode: function (mode) { switchMode(mode); },
+      currentMode: function () { return _currentMode; }
+    });
+    MM.endo.plugins.onChange(function (ev) {
+      _syncSidebarSwitch();
+      if (ev && ev.ready) return;
+      // A kind came or went: component panels in the Services view are
+      // mounted again so their tiles pick it up (or show the placeholder).
+      var dropActive = false;
+      Object.keys(_servicePanels).forEach(function (name) {
+        var panel = _servicePanels[name];
+        if (!panel || !panel.__endoHandle) return;
+        if (_activePanelName === name) { _deactivateCurrentPanel(); dropActive = true; }
+        panel.__endoHandle.destroy();
+        try { panel.remove(); } catch (e) { /* already gone */ }
+        delete _servicePanels[name];
+      });
+      // Remount the shown one now, or when the Services view comes back
+      // (mounting it hidden would start polling off-screen, R5).
+      if (dropActive) {
+        if (_currentMode === 'services') _reopenSelectedService();
+        else _reopenOnServices = true;
+      }
+      if (MM.endo.bench) MM.endo.bench.pluginsChanged();
     });
   }
 
@@ -6552,6 +6599,8 @@
       var el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
+    document.querySelectorAll('.app-content > [data-endo-mode]').forEach(function (el) { el.style.display = 'none'; });
+    if (MM.endo && MM.endo.plugins) MM.endo.plugins.modeChanged('__help__');
 
     // Unlight the ribbon tabs while help is on screen (closeHelp restores
     // them through switchMode).

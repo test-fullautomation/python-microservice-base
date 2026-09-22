@@ -398,6 +398,48 @@
       }
     });
     if (manifest.isolation === 'window' && !manifest.main) add('S', 'error', 'main', 'window plugins name their main-process module');
+
+    // P2: namespaced ids; ribbon commands name declared commands.
+    var c = manifest.contributes || {};
+    var cmdIds = {};
+    (Array.isArray(c.commands) ? c.commands : []).forEach(function (cmd, i) {
+      var p = 'contributes.commands[' + i + ']';
+      if (!cmd || typeof cmd.id !== 'string') return;
+      if (cmd.id.indexOf(id + '.') !== 0) add('P2', 'error', p + '.id', 'command ids start with the plugin id ("' + id + '.")');
+      if (cmdIds[cmd.id]) add('P2', 'error', p + '.id', 'duplicate command id "' + cmd.id + '"');
+      cmdIds[cmd.id] = true;
+      if (cmd.window && manifest.isolation !== 'window') add('S', 'error', p + '.window', 'only window plugins open a window');
+      if (cmd.entry && cmd.shell) add('S', 'warn', p, 'has both entry and shell; the entry is used');
+    });
+    (Array.isArray(c['ribbon.groups']) ? c['ribbon.groups'] : []).forEach(function (g, i) {
+      ((g && g.commands) || []).forEach(function (rc, j) {
+        if (rc && rc.id && !cmdIds[rc.id]) {
+          add('S', 'error', 'contributes["ribbon.groups"][' + i + '].commands[' + j + '].id',
+              '"' + rc.id + '" is not in contributes.commands');
+        }
+      });
+    });
+    ['navigators', 'stage.views', 'dock.sections', 'drawer.tabs'].forEach(function (point) {
+      var seen = {};
+      (Array.isArray(c[point]) ? c[point] : []).forEach(function (e, i) {
+        if (!e || !e.id) return;
+        if (seen[e.id]) add('P2', 'error', 'contributes["' + point + '"][' + i + '].id', 'duplicate id "' + e.id + '"');
+        seen[e.id] = true;
+      });
+    });
+    var kseen = {};
+    (Array.isArray(c.kinds) ? c.kinds : []).forEach(function (k, i) {
+      if (!k || !k.kind) return;
+      if (CORE_KINDS.indexOf(k.kind) >= 0) add('P2', 'error', 'contributes.kinds[' + i + '].kind', '"' + k.kind + '" is a core kind');
+      if (kseen[k.kind]) add('P2', 'error', 'contributes.kinds[' + i + '].kind', 'duplicate kind "' + k.kind + '"');
+      kseen[k.kind] = true;
+      (k.needs || []).forEach(function (n, j) {
+        if (CAPABILITIES.indexOf(n) < 0) add('R1', 'error', 'contributes.kinds[' + i + '].needs[' + j + ']', 'unknown capability "' + n + '"');
+      });
+    });
+    if (Array.isArray(c.renderers) && c.renderers.length) {
+      add('K', 'warn', 'contributes.renderers', 'renderers are not loaded by shell ' + shell + ' yet (milestone M5)');
+    }
     return issues;
   }
 

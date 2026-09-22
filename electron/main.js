@@ -8,7 +8,9 @@
 const { app, BrowserWindow, dialog, ipcMain, protocol, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const graphStudio = require('../graph-studio/ipc');
+// Bundled window plugins (Graph Studio): web/plugins/<id>/plugin.json + main module.
+const windowPlugins = require('./plugins-main');
+
 
 let mainWindow = null;
 let tray = null;
@@ -138,14 +140,17 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
-  graphStudio.registerGraphStudioIpc();
+  windowPlugins.registerWindowPlugins();
 });
 
-// Developer Tools -> Signal Graph Studio: a second window hosting the
-// vendored S&B graph editor (graph-studio/), with its own preload.
+// Open a window plugin (its own BrowserWindow and preload), e.g. Graph Studio.
+ipcMain.handle('plugin-open', async (_event, req) => {
+  return windowPlugins.openWindowPlugin(req && req.id, req && req.opts, { iconPath });
+});
+
+// Kept for callers of electronAPI.openGraphStudio: the graph-studio plugin.
 ipcMain.handle('open-graph-studio', async (_event, opts) => {
-  const win = graphStudio.openGraphStudio(Object.assign({}, opts || {}, { iconPath }));
-  return { ok: !!win };
+  return windowPlugins.openWindowPlugin('graph-studio', opts, { iconPath });
 });
 
 // Safety net: ensure bridge process cleanup on quit
@@ -156,9 +161,9 @@ app.on('before-quit', () => {
     tray = null;
   }
   console.log('[main] before-quit: bridge cleanup delegated to preload');
-  // The graph studio may hold child processes (a local cluster, one grpcurl
-  // per monitored endpoint); they are not ours to leak.
-  graphStudio.shutdownGraphStudio();
+  // Window plugins may hold child processes (Graph Studio: a local cluster,
+  // one grpcurl per monitored endpoint); they are not ours to leak.
+  windowPlugins.shutdownWindowPlugins();
 });
 
 // IPC handler for bridge cleanup (registered for completeness)

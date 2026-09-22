@@ -379,3 +379,62 @@
 .bench-signals.state-ok { color: var(--good); }
 .bench-signals.state-warn { color: var(--warn); }
 .bench-signals.state-bad { color: var(--bad); }
+/* ================= Plugins (milestone M4) ================= */
+.bench-drawer { grid-area: drawer; display: grid; gap: 0.4rem; min-width: 0; }
+.bench-drawer[hidden] { display: none; }
+.bench-drawer-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--rule, #D3D9D1); }
+.bench-drawer-tab {
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  border-radius: 6px 6px 0 0;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--muted, #5A665F);
+  cursor: pointer;
+}
+.bench-drawer-tab:hover { color: inherit; }
+.bench-drawer-tab.active { background: var(--surface, #fff); border-color: var(--rule, #D3D9D1); color: inherit; margin-bottom: -1px; }
+.bench-drawer-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bench-drawer-panel {
+  background: var(--surface, #fff);
+  border: 1px solid var(--rule, #D3D9D1);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 0.6rem 0.75rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+.bench { grid-template-areas: "main" "drawer" "status"; }
+.bench.with-dock { grid-template-areas: "main dock" "drawer drawer" "status status"; }
+@media (max-width: 900px) {
+  .bench.with-dock { grid-template-areas: "main" "dock" "drawer" "status"; }
+}
+.bench-plugin.ok { color: var(--good); }
+.bench-plugin.warn { color: var(--warn); }
+.bench-plugin.bad { color: var(--bad); }
+
+.plugin-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: start;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--rule, #D3D9D1);
+}
+.plugin-row:last-child { border-bottom: none; }
+.plugin-row .form-check { padding-top: 0.15rem; }
+.plugin-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.5rem; }
+.plugin-title code { font-size: 0.76rem; }
+.plugin-title .endo-muted { font-size: 0.76rem; }
+.plugin-state {
+  margin-left: auto;
+  font: 500 0.7rem var(--font-mono, monospace);
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted, #5A665F) 12%, transparent);
+}
+.plugin-row.state-active .plugin-state { background: color-mix(in srgb, #1E8449 14%, transparent); color: #1E8449; }
+.plugin-row.state-refused .plugin-state, .plugin-row.state-error .plugin-state { background: color-mix(in srgb, #B83227 14%, transparent); color: #B83227; }
+.plugin-desc { font-size: 0.84rem; margin-top: 0.15rem; }
+.plugin-contrib { font: 0.72rem var(--font-mono, monospace); color: var(--muted, #5A665F); margin-top: 0.2rem; overflow-wrap: anywhere; }

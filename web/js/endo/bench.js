@@ -226,7 +226,92 @@
   function teardown() {
     if (state.group) state.group.destroy();
     state.group = null;
+    closeDrawerInstance();
+    destroyDockInstance();
     removeRibbonGroups();
+  }
+
+  // ------------------------------------------------------------ selection (for plugins)
+
+  var selectionListeners = [];
+
+  /** What the selected tile shows: plugins' drawer tabs and dock sections read this. */
+  function selectionInfo() {
+    var slot = state.slots.filter(function (s) { return s.key === state.selectedKey; })[0];
+    if (!slot) return null;
+    var mod = slot.module, m = mod.manifest || {}, t = slot.tile || {};
+    var signals = [];
+    (t.fields || []).forEach(function (f) { if (f.signal && signals.indexOf(f.signal) < 0) signals.push(f.signal); });
+    (t.signals || []).forEach(function (n) { if (signals.indexOf(n) < 0) signals.push(n); });
+    return { key: slot.key, component: m.component || slot.component, title: (t.title || m.title || slot.component),
+             layer: m.layer || '', tile: slot.tile || null, service: mod.entry && mod.entry.service, signals: signals };
+  }
+
+  function emitSelection() {
+    var sel = selectionInfo();
+    selectionListeners.slice().forEach(function (fn) { try { fn(sel); } catch (e) { console.warn('[bench] selection listener:', e); } });
+  }
+
+  function selectionCtx() {
+    return {
+      selection: selectionInfo,
+      onSelection: function (fn) {
+        selectionListeners.push(fn);
+        return function () { selectionListeners = selectionListeners.filter(function (f) { return f !== fn; }); };
+      }
+    };
+  }
+
+  // ------------------------------------------------------------ drawer (plugins' drawer tabs)
+
+  var drawer = { key: null, inst: null, token: 0 };
+
+  function closeDrawerInstance() {
+    drawer.token++;
+    if (drawer.inst && drawer.inst.destroy) { try { drawer.inst.destroy(); } catch (e) { /* keep going */ } }
+    drawer.inst = null;
+  }
+
+  function drawDrawer() {
+    var box = document.getElementById('benchDrawer');
+    if (!box) return;
+    var tabs = MM.endo.plugins ? MM.endo.plugins.drawerTabs() : [];
+    if (!tabs.length) { box.hidden = true; box.innerHTML = ''; drawer.key = null; return; }
+    box.hidden = false;
+    if (drawer.key && !tabs.some(function (t) { return t.key === drawer.key; })) drawer.key = null;
+    box.innerHTML = '<div class="bench-drawer-tabs" role="tablist">' + tabs.map(function (t) {
+      var on = t.key === drawer.key;
+      return '<button type="button" class="bench-drawer-tab' + (on ? ' active' : '') + '" role="tab" aria-selected="' + on + '"' +
+        ' data-key="' + esc(t.key) + '"><i class="bi bi-' + esc(t.icon || 'layout-text-window') + ' me-1"></i>' + esc(t.title) + '</button>';
+    }).join('') + '</div><div class="bench-drawer-panel" id="benchDrawerPanel"' + (drawer.key ? '' : ' hidden') + '></div>';
+    box.querySelectorAll('.bench-drawer-tab').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var key = b.getAttribute('data-key');
+        closeDrawerInstance();
+        drawer.key = drawer.key === key ? null : key;
+        drawDrawer();
+      });
+    });
+    if (drawer.key && !drawer.inst) {
+      var tab = tabs.filter(function (t) { return t.key === drawer.key; })[0];
+      var panel = box.querySelector('#benchDrawerPanel');
+      var token = ++drawer.token;
+      tab.mount(panel, selectionCtx()).then(function (inst) {
+        if (token !== drawer.token) { if (inst.destroy) inst.destroy(); return; }
+        drawer.inst = inst;
+        if (!state.active && inst.suspend) inst.suspend();
+      }, function (e) {
+        panel.innerHTML = '<div class="endo-error">' + esc(tab.title + ': ' + (e.message || e)) + '</div>';
+      });
+    }
+  }
+
+  // ------------------------------------------------------------ dock sections from plugins
+
+  var dockInst = null;
+  function destroyDockInstance() {
+    if (dockInst && dockInst.destroy) { try { dockInst.destroy(); } catch (e) { /* keep going */ } }
+    dockInst = null;
   }
 
   function render() {
@@ -298,6 +383,7 @@
                            : 'Connect to a Consul (User tab) to fill the bench.') + '</div></div>') +
       '  </div>' +
       '  <aside class="bench-dock" id="benchDock" hidden></aside>' +
+      '  <section class="bench-drawer" id="benchDrawer" aria-label="Drawer"></section>' +
       '  <footer class="bench-status" id="benchStatus" aria-label="Modules on this bench"></footer>' +
       '</div>';
     var stage = el.querySelector('#benchStage');
@@ -327,6 +413,7 @@
 
     drawStatus();
     drawNav();
+    drawDrawer();
     addRibbonGroups();
     if (state.selectedKey && state.slots.some(function (s) { return s.key === state.selectedKey; })) select(state.selectedKey);
     else state.selectedKey = null;
@@ -395,8 +482,12 @@
         '<span class="n">' + esc((m.manifest && m.manifest.title) || (m.entry && m.entry.service) || id) + '</span>' +
         '<span class="s">' + esc(moduleBadgeText(m)) + '</span></button>';
     }).join('') +
-    (plugins.length ? '<span class="bench-plugins" title="Plugins arrive with milestone M4">plugins: ' +
-      plugins.map(esc).join(', ') + ' (not loaded yet)</span>' : '') +
+    (plugins.length ? '<span class="bench-plugins">plugins: ' + plugins.map(function (id) {
+      var st = MM.endo.plugins ? MM.endo.plugins.state(id) : 'missing';
+      var cls = st === 'active' ? 'ok' : st === 'missing' ? 'bad' : 'warn';
+      var label = st === 'active' ? '' : st === 'missing' ? ' (not installed)' : st === 'disabled' ? ' (off)' : ' (' + st + ')';
+      return '<span class="bench-plugin ' + cls + '" title="' + esc(id + ': ' + st) + '">' + esc(id + label) + '</span>';
+    }).join(', ') + '</span>' : '') +
     '<button type="button" class="bench-signals" id="benchSignals" title="Live signals: click to set where signal-discovery is"></button>';
     bar.querySelectorAll('.bench-badge').forEach(function (b) {
       b.addEventListener('click', function () { selectComponent(b.getAttribute('data-component')); });
@@ -534,6 +625,7 @@
       li.classList.toggle('active', li.getAttribute('data-component') === id);
     });
     showDock(slot.module, slot);
+    emitSelection();
   }
 
   function closeDock() {
@@ -542,8 +634,10 @@
     var b = document.querySelector('.bench');
     if (b) b.classList.remove('with-dock');
     state.selectedKey = null;
+    destroyDockInstance();
     document.querySelectorAll('#benchStage .endo-tile.selected').forEach(function (t) { t.classList.remove('selected'); });
     document.querySelectorAll('#benchNav .bench-nav-item.active').forEach(function (li) { li.classList.remove('active'); });
+    emitSelection();
   }
 
   function svcWithUrl(mod) { return mod.service ? Object.assign({}, mod.service) : null; }
@@ -553,10 +647,16 @@
     if (!dock) return;
     var m = mod.manifest || {};
     var tabs = ['details'];
+    var sections = {};   // plugin dock sections for this component's layer
     if (mod.state === 'ok') {
       (m.dock || []).forEach(function (t) { if (tabs.indexOf(t) < 0 && (t === 'api' || t === 'code')) tabs.push(t); });
+      (MM.endo.plugins ? MM.endo.plugins.dockSections(m.layer) : []).forEach(function (s) {
+        sections['plugin:' + s.key] = s;
+        tabs.push('plugin:' + s.key);
+      });
     }
     tab = tabs.indexOf(tab) >= 0 ? tab : 'details';
+    destroyDockInstance();
     var layer = C().LAYERS.indexOf(m.layer) >= 0 ? m.layer : null;
     dock.hidden = false;
     document.querySelector('.bench').classList.add('with-dock');
@@ -569,8 +669,8 @@
       '<i class="bi bi-x-lg"></i></button></div>' +
       (slot && slot.tile ? '<div class="bench-dock-sub">Tile <code>' + esc(slot.tile.id) + '</code> · ' + esc(slot.tile.kind) + ' · ' + esc(slot.tile.size) + '</div>' : '') +
       (tabs.length > 1 ? '<div class="dev-inspector-tabs">' + tabs.map(function (t) {
-        return '<button type="button" class="dev-inspector-tab' + (t === tab ? ' active' : '') + '" data-tab="' + t + '">' +
-          ({ details: 'Details', api: 'API', code: 'Code' })[t] + '</button>';
+        return '<button type="button" class="dev-inspector-tab' + (t === tab ? ' active' : '') + '" data-tab="' + esc(t) + '">' +
+          esc(sections[t] ? sections[t].title : ({ details: 'Details', api: 'API', code: 'Code' })[t]) + '</button>';
       }).join('') + '</div>' : '') +
       '<div class="bench-dock-body" id="benchDockBody"></div>';
     dock.querySelector('#benchDockClose').addEventListener('click', closeDock);
@@ -578,7 +678,13 @@
       b.addEventListener('click', function () { showDock(mod, slot, b.getAttribute('data-tab')); });
     });
     var body = dock.querySelector('#benchDockBody');
-    if (tab === 'api') {
+    if (sections[tab]) {
+      var key = state.selectedKey;
+      sections[tab].render(body, selectionInfo(), selectionCtx()).then(function (inst) {
+        if (state.selectedKey !== key) { if (inst.destroy) inst.destroy(); return; }
+        dockInst = inst;
+      }, function (e) { body.innerHTML = '<div class="endo-error">' + esc(e.message || e) + '</div>'; });
+    } else if (tab === 'api') {
       if (hooks.showApi && mod.service) hooks.showApi(svcWithUrl(mod), 'benchDockBody');
     } else if (tab === 'code') {
       body.innerHTML = '<p class="endo-note">Client code for Python, C++ and Robot Framework is in the developer inspector.</p>' +
@@ -939,10 +1045,20 @@
     if (on) {
       if (state.dirty || signatureOf(services()) !== state.signature) { reload(); return; }
       if (state.group) state.group.resume();
+      if (drawer.inst && drawer.inst.resume) drawer.inst.resume();
+      if (dockInst && dockInst.resume) dockInst.resume();
       if (hooks.setRibbonTab && state.comp && state.comp.role) hooks.setRibbonTab(state.comp.role);
-    } else if (state.group) {
-      state.group.suspend();
+    } else {
+      if (state.group) state.group.suspend();
+      if (drawer.inst && drawer.inst.suspend) drawer.inst.suspend();
+      if (dockInst && dockInst.suspend) dockInst.suspend();
     }
+  }
+
+  /** A plugin was turned on or off: its kinds, drawer tabs and dock sections changed. */
+  function pluginsChanged() {
+    if (state.active) reload();
+    else state.dirty = true;
   }
 
   /** The connected services changed: recompose if a name, folder or address moved. */
@@ -970,6 +1086,8 @@
     init: init,
     setActive: setActive,
     servicesChanged: servicesChanged,
+    pluginsChanged: pluginsChanged,
+    selection: selectionInfo,
     reload: reload,
     choose: choose,
     /** For probes and tests: what the bench currently shows. */

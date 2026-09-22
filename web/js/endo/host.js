@@ -22,8 +22,35 @@
 
   var SCHEMA_URL = 'js/endo/contract/component.schema.json';
 
-  /** Kinds that plugins will contribute (M4): used for "enable plugin X" hints. */
-  var KNOWN_PLUGIN_KINDS = { 'signal-strip': 'charts', 'uds-console': 'uds-console', 'graph': 'graph-studio' };
+  /**
+   * Kinds of plugins that are planned but not installed here, for a better
+   * hint than "no plugin provides it". Installed plugins answer for
+   * themselves through MM.endo.plugins.knownKinds().
+   */
+  var KNOWN_PLUGIN_KINDS = { 'uds-console': 'uds-console', 'graph': 'graph-studio' };
+
+  /** kind -> plugin id of every kind a plugin could provide (installed or planned). */
+  function pluginKindOwners() {
+    var out = Object.assign({}, KNOWN_PLUGIN_KINDS);
+    var known = MM.endo.plugins ? MM.endo.plugins.knownKinds() : {};
+    Object.keys(known).forEach(function (k) { out[k] = known[k].plugin; });
+    return out;
+  }
+
+  /** The "not available" text of a tile whose kind no active plugin provides. */
+  function missingKindHtml(kind) {
+    var known = (MM.endo.plugins ? MM.endo.plugins.knownKinds() : {})[kind];
+    if (known) {
+      var why = known.state === 'disabled' ? 'is turned off: enable it under <em>Administrator → Plugins</em>.'
+        : known.state === 'refused' ? 'was refused by the shell (see <em>Administrator → Plugins</em>).'
+        : known.state === 'error' ? 'failed to load (see <em>Administrator → Plugins</em>).'
+        : 'is not active.';
+      return 'Kind <code>' + esc(kind) + '</code> comes from the <strong>' + esc(known.title) + '</strong> plugin, which ' + why;
+    }
+    var owner = KNOWN_PLUGIN_KINDS[kind];
+    return 'Kind <code>' + esc(kind) + '</code> is not available. ' +
+      (owner ? 'It comes from the <strong>' + esc(owner) + '</strong> plugin, which is not installed.' : 'No plugin provides it.');
+  }
 
   var schemaPromise = null;
   function loadSchema() {
@@ -198,7 +225,10 @@
    */
   function prepareComponent(manifest, env) {
     env = env || {};
-    return loadSchema().then(function (schema) {
+    // Plugin kinds must be registered before tiles are linted and drawn.
+    var pluginsReady = MM.endo.plugins ? MM.endo.plugins.ready : Promise.resolve();
+    return Promise.all([loadSchema(), pluginsReady]).then(function (r) {
+      var schema = r[0];
       var C = window.EndoContract;
       var issues;
       if (manifest && manifest.__parseError) {
@@ -206,7 +236,11 @@
                     message: 'not valid JSON: ' + manifest.__parseError }];
         manifest = { title: 'component.json', layer: '?' };
       } else {
-        issues = C.lintComponent(manifest, { schema: schema, knownPluginKinds: KNOWN_PLUGIN_KINDS });
+        issues = C.lintComponent(manifest, {
+          schema: schema,
+          kinds: MM.endo.plugins ? MM.endo.plugins.kindInfo() : {},   // active plugins: their schemas and needs
+          knownPluginKinds: pluginKindOwners()
+        });
         if (!schema) {
           issues.push({ rule: 'S', severity: 'warn', component: manifest.component || '?', path: '(schema)',
                         message: 'contract schema could not be loaded; only the rules were checked' });
@@ -240,10 +274,7 @@
     var body = section.querySelector('.endo-tile-body');
     var kind = MM.endo.kinds[tile.kind];
     if (!kind) {
-      var owner = KNOWN_PLUGIN_KINDS[tile.kind];
-      body.innerHTML = '<div class="endo-placeholder">Kind <code>' + esc(tile.kind) + '</code> is not available. ' +
-        (owner ? 'It comes from the <strong>' + esc(owner) + '</strong> plugin (plugins arrive with milestone M4).'
-               : 'No plugin provides it.') + '</div>';
+      body.innerHTML = '<div class="endo-placeholder">' + missingKindHtml(tile.kind) + '</div>';
       return { section: section, instance: null };
     }
     var inst;
