@@ -22,10 +22,8 @@
   <div class="docs-body" id="docsBody">
 
     <!-- Modernisation banner kept as a top-of-page pointer to long-form docs -->
-    <div class="docs-callout" style="background: rgba(56,189,248,0.08);
-         border-left: 4px solid #38bdf8; padding: 14px 18px;
-         border-radius: 6px; margin: 0 0 18px 0;">
-      <div style="font-weight: 600; color: #38bdf8; margin-bottom: 6px;">
+    <div class="docs-callout info" style="padding: 14px 18px; margin: 0 0 18px 0;">
+      <div class="docs-callout-title" style="margin-bottom: 6px;">
         <i class="bi bi-info-circle me-1"></i>For the long-form guides, see <code>docs/</code>
       </div>
       <p style="margin: 0;">
@@ -148,8 +146,8 @@
       <h3>Navigation</h3>
       <p>The navbar keeps the runtime view in front; developer and administrator functions sit behind two menus:</p>
       <ul>
-        <li><strong>Services</strong> (default) &mdash; active services and their GUIs; invoke gRPC methods via reflection. The app always starts here.</li>
-        <li><strong>Developer Tools &#9662;</strong> &mdash; <em>Service Creator</em> (4-step wizard: proto + domain + adapter + clients + Nomad HCL), plus <em>API Explorer</em> and <em>Code Examples</em> for the service selected in the sidebar.</li>
+        <li><strong>Services</strong> (default) &mdash; active services and their GUIs. A service without a GUI shows an overview (health, instances with their checks, address, tags) and an <em>Actions</em> section with a typed form per method, so operators can invoke it without any developer tooling. It is marked <em>No GUI</em>. The app always starts here.</li>
+        <li><strong>Developer Tools &#9662;</strong> &mdash; the <em>Developer mode</em> switch docks an inspector on the right (amber accent + <em>DEV</em> pill in the navbar) showing the selected service's <em>API</em> (reflection, raw JSON calls), <em>Details</em> (instances, checks, Consul metadata) and <em>Code</em> (Python / C++ / Robot). The service itself stays in the main view. The menu also holds <em>Service Creator</em>, the <em>Robot Resource Generator</em>, <em>Signal Graph Studio</em> (the Signals &amp; Blocks graph editor, in its own window: draw a graph, generate a deployable graph service, watch live signal values and strip charts while it runs, set a setpoint into the running service, and scaffold new block types), <em>Code Examples</em> and <em>Download service files</em>. <em>Open test project&hellip;</em> picks a Robot Framework AIO test project and <em>Test project view</em> shows its files (generated, starter or yours, with locally edited ones flagged), the exported services, and lets you edit suites and your own files in place (Robot highlighting, Ctrl+S, syntax check, New suite&hellip;) while generated files stay read-only; <em>Add to test project</em> exports the selected service into it (generated resources, copied protos when available, a starter suite) after showing a plan of every file it would write.</li>
         <li><strong>Administrator Tools &#9662;</strong> &mdash; <em>Consul agent</em> / <em>Nomad agent</em>: open the Service Network view to start / stop / inspect the agents, browse jobs, submit <code>.nomad.hcl</code> files.</li>
       </ul>
       <p>Opening a menu never interrupts a running service GUI; switching back to <strong>Services</strong> shows it exactly as you left it.</p>

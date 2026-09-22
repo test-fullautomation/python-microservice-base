@@ -55,8 +55,8 @@ behind two menus:
 
 | Entry | What it's for |
 |---|---|
-| **Services** (default) | Runtime view — active services and their GUIs, test gRPC calls, real-time updates. The app always starts here. |
-| **Developer Tools ▾** | Generate and test: *Service Creator* (4-step wizard, see [service_creator.md](service_creator.md)), plus *API Explorer* and *Code Examples* for the service selected in the sidebar. |
+| **Services** (default) | Runtime view — active services and their GUIs, real-time updates. A service without a GUI is marked *No GUI* and shows an overview (health, instances and their checks, address, tags) plus an *Actions* section: one typed form per method, so operators can invoke the service without developer tooling. The app always starts here. |
+| **Developer Tools ▾** | The *Developer mode* switch docks an inspector on the right — amber accent and a *DEV* pill make the mode unmistakable — with the selected service's *API* (reflection, raw JSON calls), *Details* (instances, checks, Consul metadata) and *Code* (Python / C++ / Robot). The service stays in the main view. The menu also holds *Service Creator* (see [service_creator.md](service_creator.md)), the *Robot Resource Generator* (see [robot_generator.md](robot_generator.md)), *Code Examples* and *Download service files*. |
 | **Administrator Tools ▾** | Configure the infrastructure: *Consul agent* and *Nomad agent* open the Service Network view on that tab — start/stop agents, view jobs, view nodes. **This guide focuses here.** |
 
 Opening either menu does not touch a running service GUI; switching back

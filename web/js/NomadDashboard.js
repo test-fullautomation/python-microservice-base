@@ -138,7 +138,9 @@
               '</div>' +
               '<div class="col">' +
                 '<label for="nomadBindAddr" class="form-label">Bind Address</label>' +
-                '<input type="text" class="form-control" id="nomadBindAddr" value="0.0.0.0">' +
+                '<input type="text" class="form-control" id="nomadBindAddr" value="127.0.0.1"' +
+                '       title="127.0.0.1 for a local cluster. A LAN IP lets remote clients join but needs an ' +
+                'inbound firewall rule for TCP 4646-4648, otherwise the node shows as down.">' +
               '</div>' +
             '</div>' +
             '<div class="row mb-3">' +
@@ -282,7 +284,8 @@
         } else if (mode === 'config') {
           options.config_file = (document.getElementById('nomadConfigFile').value || '').trim();
           options.data_dir = (document.getElementById('nomadDataDir').value || '').trim();
-          options.bind_addr = (document.getElementById('nomadBindAddr').value || '').trim() || '0.0.0.0';
+          // Never fall back to 0.0.0.0: see NomadAgentStartBody in the bridge.
+          options.bind_addr = (document.getElementById('nomadBindAddr').value || '').trim() || '127.0.0.1';
           options.node_name = (document.getElementById('nomadCfgNodeName').value || '').trim();
           options.datacenter = (document.getElementById('nomadCfgDc').value || '').trim() || 'dc1';
         }
@@ -660,7 +663,7 @@
       '    <div class="fleet-stat-label">Dead</div>' +
       '  </div>' +
       '  <div class="fleet-stat-card">' +
-      '    <div class="fleet-stat-value" style="color:#3498db">' + readyNodes + '/' + nodes.length + '</div>' +
+      '    <div class="fleet-stat-value" style="color:var(--accent)">' + readyNodes + '/' + nodes.length + '</div>' +
       '    <div class="fleet-stat-label">Nodes Ready</div>' +
       '  </div>' +
       '</div>' +
@@ -795,7 +798,7 @@
       '<div class="col-md-3 col-sm-6">' +
       '  <div class="fleet-hub-card nomad-quick-link" data-path="' + _esc(path) + '" style="cursor:pointer">' +
       '    <div class="fleet-hub-card-body text-center py-3">' +
-      '      <i class="bi ' + icon + '" style="font-size:1.8rem;color:#3498db"></i>' +
+      '      <i class="bi ' + icon + '" style="font-size:1.8rem;color:var(--accent)"></i>' +
       '      <div class="fw-bold mt-1">' + _esc(title) + '</div>' +
       '      <div style="font-size:0.78rem;color:#7f8c8d" class="mt-1">' + _esc(desc) + '</div>' +
       '    </div>' +

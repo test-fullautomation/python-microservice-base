@@ -21,7 +21,7 @@
 .fleet-stat-value {
   font-size: 2rem;
   font-weight: 700;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
   line-height: 1.2;
 }
 
@@ -65,7 +65,7 @@
 .fleet-hub-card-title {
   font-weight: 600;
   font-size: 0.95rem;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
 }
 
 .fleet-hub-card-body {
@@ -89,8 +89,8 @@
 
 .fleet-process-tag {
   display: inline-block;
-  background: #ecf0f1;
-  color: #2c3e50;
+  background: var(--sidebar-text);
+  color: var(--sidebar-bg);
   font-size: 0.72rem;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
@@ -102,7 +102,7 @@
 }
 
 .fleet-process-tag.stopped {
-  background: #ecf0f1;
+  background: var(--sidebar-text);
   color: #95a5a6;
 }
 
@@ -112,8 +112,8 @@
 }
 
 .fleet-process-tag.more {
-  background: rgba(52, 152, 219, 0.1);
-  color: #3498db;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
 }
 
 .fleet-hub-card-actions {
@@ -175,7 +175,7 @@
   width: 100%;
   background: transparent;
   border: none;
-  color: var(--sidebar-text, #ecf0f1);
+  color: var(--sidebar-text, var(--sidebar-text));
   padding: 0.5rem 0.75rem;
   font-size: 0.85rem;
   border-radius: 4px;
@@ -185,11 +185,11 @@
 }
 
 .fleet-hub-list .hub-item:hover {
-  background-color: var(--sidebar-hover, #34495e);
+  background-color: var(--sidebar-hover, var(--sidebar-hover));
 }
 
 .fleet-hub-list .hub-item.active {
-  background-color: var(--sidebar-active, #3498db);
+  background-color: var(--sidebar-active, var(--accent));
   color: #fff;
 }
 
@@ -245,7 +245,7 @@
 }
 
 .fleet-back-link {
-  color: #3498db;
+  color: var(--accent);
   text-decoration: none;
   font-size: 0.85rem;
 }
@@ -319,7 +319,7 @@
 .fleet-process-name {
   flex: 1;
   font-size: 0.85rem;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
 }
 
 .fleet-process-item.stopped .fleet-process-name {
@@ -354,7 +354,7 @@
 
 .fleet-connection-item {
   font-size: 0.85rem;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
   padding: 0.25rem 0;
 }
 
@@ -414,7 +414,7 @@
 }
 
 .nav-mode-toggle .mode-btn.active {
-  background-color: var(--sidebar-active, #3498db);
+  background-color: var(--sidebar-active, var(--accent));
   color: #fff;
 }
 
@@ -486,7 +486,7 @@
 .fleet-cfg-table td {
   padding: 0.25rem 0.5rem;
   vertical-align: top;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
 }
 
 .fleet-cfg-table tr:not(:last-child) td {
@@ -525,7 +525,7 @@
 }
 
 .fleet-sub-tabs .nav-link.active {
-  color: #2c3e50;
+  color: var(--sidebar-bg);
   border-color: #dee2e6 #dee2e6 #fff;
 }
 
@@ -546,7 +546,7 @@
 
 .local-hub-setup-icon {
   font-size: 3rem;
-  color: #3498db;
+  color: var(--accent);
   margin-bottom: 1rem;
 }
 
@@ -652,4 +652,17 @@
   border-radius: 0 0 6px 6px;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* Menu items carry a one-line description under the label. */
+.nav-tools-dropdown .dropdown-item {
+  white-space: normal;
+}
+
+.nav-tools-dropdown .dev-menu-desc {
+  display: block;
+  margin-left: 1.55rem;
+  font-size: 0.7rem;
+  line-height: 1.3;
+  opacity: 0.6;
 }
