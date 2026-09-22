@@ -3280,6 +3280,20 @@ Generate scaffolding for a new microservice project.
       from .compositions import register_routes as _register_composition_routes
       _register_composition_routes(app)
 
+      # ---- Live signals (Manager GUI host bus) ----
+      def _ws_origin_allowed(websocket, what):
+         origin = websocket.headers.get("origin")
+         if not allow_all and origin is not None and origin not in allowed_set:
+            _origin_rejected(origin, what)
+            return False
+         return True
+
+      try:
+         from .signal_routes import register_routes as _register_signal_routes
+         self._signal_hubs = _register_signal_routes(app, _ws_origin_allowed)
+      except ImportError as exc:   # grpc missing: the rest of the bridge still works
+         logger.warning("Live signals disabled: %s", exc)
+
       # Mount static files for the GUI web application
       gui_path = os.path.join(
          os.path.dirname(__file__), '..', '..',

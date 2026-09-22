@@ -128,7 +128,11 @@ chart, the capabilities it uses and the tiles it shows:
 - **`binds.consul: "@self"`** means the service that declared the component
   through `Meta.gui`. A host, port or IP here is rejected.
 - **Capabilities** are enforced: an RPC or signal call that the manifest
-  did not declare fails with `CapabilityDenied`.
+  did not declare fails with `CapabilityDenied`. `signals.subscribe` and
+  `signals.set` (write a setpoint) are served by the bridge
+  (`WS /api/signals/stream`, `POST /api/signals/set`); `session.*` and
+  `config.*` are stubs until the session manager and the configuration
+  service exist.
 - **Lint** before shipping, from the Manager GUI folder:
   `node tools/endo-lint.js web/services/<gui>/component.json`. It exits
   non-zero on errors. A manifest with errors is not mounted; the GUI shows
@@ -187,6 +191,14 @@ services, and in which order, is a **composition**:
   has one.
 - The strip under the stage has one badge per module; the left pane lists
   the modules. Tiles stop polling while the bench is hidden.
+- **Live signals.** A `live-status` field with `"signal": "<name>"` shows
+  that signal's value as it changes (at most 10 times a second); the
+  component must declare `signals.subscribe`. The bridge finds
+  `signal-discovery` in the connected Consul (or at the address set with
+  the **signals** badge under the stage, or `MB_SIGNAL_DISCOVERY_ADDR`),
+  keeps **one** stream per graph service that owns a shown signal, and
+  closes it when no tile needs it. Names the catalog does not know show
+  *unknown signal* and fill in once their service is up.
 - `node tools/endo-lint.js <composition.json>` lints a composition in CI.
   `test/endo/fixtures/bench/` holds the proposal's prototype modules and
   compositions; `test/endo/test_endo_bench.js` tests them.
