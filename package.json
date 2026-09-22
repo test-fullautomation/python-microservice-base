@@ -31,11 +31,14 @@
     "files": [
       "electron/**/*",
       "web/**/*",
+      "graph-studio/**/*",
       "!web/services/**",
       "!electron/settings.json",
       "docs/html/**/*",
       "docs/img/**/*",
-      "package.json"
+      "package.json",
+      "!graph-studio/tests/**",
+      "!graph-studio/README.md"
     ],
     "extraResources": [
       {
@@ -109,7 +112,12 @@
       }
     ],
     "asar": true,
-    "electronLanguages": ["en-US"],
+    "asarUnpack": [
+      "graph-studio/**"
+    ],
+    "electronLanguages": [
+      "en-US"
+    ],
     "win": {
       "target": "nsis",
       "icon": "build-resources/icon.png"

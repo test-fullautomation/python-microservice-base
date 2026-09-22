@@ -1,0 +1,127 @@
+// Signal Graph / Signal Discovery — Protocol Buffer definitions
+//
+// Two service types share this file:
+//   - `signal_graph`     (servicer: SignalQueryService) — every signal_graph
+//     service (e.g. `signal-in`, `signal-out`, `signal-proc-foo-bar`)
+//     exposes this interface and carries all signal data directly:
+//     GetSignal, SetSignal (setpoint configurations only), ListSignals,
+//     Subscribe.
+//   - `signal_discovery` (servicer: SignalDiscoveryService) — the signal
+//     catalog/locator service. It is never on the signal data path: it only
+//     tells callers which `signal_graph` service owns a signal (via
+//     `ServiceEndpoint`) so they can connect to it directly. It also exposes
+//     `ListSignalErrors` for signal name collisions.
+//
+// Clients (e.g. Robot Framework test sequences) and `signal_graph` services
+// resolve the signal catalog from `signal-discovery` once (and periodically /
+// on error) and then connect directly to the owning `signal_graph` service's
+// `SignalQueryService` — `signal-discovery` never proxies signal data.
+
+syntax = "proto3";
+
+package signal;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Services
+// ─────────────────────────────────────────────────────────────────────────────
+
+service SignalQueryService {
+  // Return the latest value of a named signal owned by this service.
+  rpc GetSignal(GetSignalRequest) returns (SignalResponse);
+
+  // Write a setpoint value (only valid on signals registered as setpoints).
+  rpc SetSignal(SetSignalRequest) returns (SetSignalResponse);
+
+  // List all signal names owned by this service.
+  rpc ListSignals(ListSignalsRequest) returns (ListSignalsResponse);
+
+  // Server-side stream: yield a `SignalUpdate` for one or more named/prefixed
+  // signals owned by this service, each time a value changes.
+  rpc Subscribe(SubscribeRequest) returns (stream SignalUpdate);
+}
+
+service SignalDiscoveryService {
+  // The complete cluster-wide signal catalog, including each signal's owning
+  // `ServiceEndpoint`. Identical response for every caller (clients and
+  // `signal_graph` services alike); excludes signals currently excluded due
+  // to a name collision.
+  rpc ListSignals(ListSignalsRequest) returns (ListSignalsResponse);
+
+  // Signal names currently excluded from the catalog due to a name
+  // collision, along with the conflicting `ServiceEndpoint`s and reason.
+  rpc ListSignalErrors(ListSignalErrorsRequest) returns (ListSignalErrorsResponse);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ServiceEndpoint {
+  string host = 1;
+  uint32 port = 2;
+}
+
+message GetSignalRequest {
+  string name = 1;
+}
+
+message SignalResponse {
+  string name  = 1;
+  double value = 2;
+  // Unix epoch seconds of when the value was last updated (set by the owner service).
+  double timestamp = 3;
+}
+
+message SetSignalRequest {
+  string name  = 1;
+  double value = 2;
+}
+
+message SetSignalResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message ListSignalsRequest {
+  // Optional filter: only return names that start with this prefix.
+  string prefix = 1;
+}
+
+message ListSignalsResponse {
+  // Sorted list of signal metadata.
+  repeated SignalMeta signals = 1;
+}
+
+message SignalMeta {
+  string name              = 1;
+  // "observed" | "setpoint"
+  string kind               = 2;
+  string unit                = 3;
+  // Owning `signal_graph` service endpoint. Populated by `signal-discovery`;
+  // left unset when returned by a `signal_graph` service's own `ListSignals`
+  // (the owner is implicitly the responding service).
+  ServiceEndpoint endpoint    = 4;
+}
+
+message SubscribeRequest {
+  repeated string signal_names = 1;   // exact names and/or prefixes
+}
+
+message SignalUpdate {
+  string signal_name = 1;
+  double value        = 2;
+  double timestamp     = 3;           // Unix epoch seconds
+}
+
+message SignalError {
+  string signal_name = 1;
+  repeated ServiceEndpoint reporting_services = 2;  // conflicting owners
+  string reason = 3;                                // e.g. "duplicate_signal_name"
+}
+
+message ListSignalErrorsRequest {
+}
+
+message ListSignalErrorsResponse {
+  repeated SignalError errors = 1;
+}
