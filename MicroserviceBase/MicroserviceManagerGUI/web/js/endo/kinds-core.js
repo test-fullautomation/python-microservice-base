@@ -237,6 +237,9 @@
     return args;
   }
 
+  // Ribbon commands (bench.js) build the same forms.
+  MM.endo.util.form = { fromManifest: formFromManifest, fieldHtml: fieldHtml, collect: collect };
+
   var formSeq = 0;
   kinds['command-form'] = {
     render: function (el, tile, ctx) {
@@ -301,20 +304,38 @@
 
   // ----------------------------------------------------------------- table
 
+  /**
+   * Rows are objects read through each column's path, or (static rows)
+   * arrays read by position when a column has no path.
+   */
+  function drawTable(el, cols, rows) {
+    if (!rows.length) { el.innerHTML = '<span class="endo-muted">No rows.</span>'; return; }
+    var head = cols.length ? cols : (Array.isArray(rows[0]) ? rows[0].map(function () { return { label: '' }; }) : []);
+    el.innerHTML = '<div class="endo-table-wrap"><table class="endo-table">' +
+      (head.some(function (c) { return c.label; })
+        ? '<thead><tr>' + head.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead>' : '') +
+      '<tbody>' +
+      rows.map(function (r) {
+        return '<tr>' + head.map(function (c, i) {
+          var v = c.path != null ? getPath(r, c.path) : (Array.isArray(r) ? r[i] : undefined);
+          return '<td>' + esc(fmt(v, c.digits)) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
   kinds['table'] = {
     render: function (el, tile, ctx) {
-      el.innerHTML = '<span class="endo-muted">Loading…</span>';
       var cols = tile.columns || [];
+      if (!tile.rpc) {
+        drawTable(el, cols, tile.rows || []);
+        return { suspend: function () {}, resume: function () {}, destroy: function () {} };
+      }
+      el.innerHTML = '<span class="endo-muted">Loading…</span>';
       return polled(tile, function () {
         return ctx.call(tile.rpc, tile.args).then(function (d) {
           var rows = getPath(d.result, tile.path);
           if (!Array.isArray(rows)) { el.innerHTML = errorLine(tile.path + ' is not a list in the ' + tile.rpc + ' response'); return; }
-          if (!rows.length) { el.innerHTML = '<span class="endo-muted">No rows.</span>'; return; }
-          el.innerHTML = '<div class="endo-table-wrap"><table class="endo-table"><thead><tr>' +
-            cols.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-            rows.map(function (r) {
-              return '<tr>' + cols.map(function (c) { return '<td>' + esc(fmt(getPath(r, c.path), c.digits)) + '</td>'; }).join('') + '</tr>';
-            }).join('') + '</tbody></table></div>';
+          drawTable(el, cols, rows);
         }, function (err) { el.innerHTML = errorLine(err); });
       });
     }

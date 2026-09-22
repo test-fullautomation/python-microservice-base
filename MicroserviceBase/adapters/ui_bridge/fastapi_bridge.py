@@ -3276,6 +3276,10 @@ Generate scaffolding for a new microservice project.
                "files": sorted(file_map.keys()),
             }
 
+      # ---- Bench compositions (Manager GUI stage) ----
+      from .compositions import register_routes as _register_composition_routes
+      _register_composition_routes(app)
+
       # Mount static files for the GUI web application
       gui_path = os.path.join(
          os.path.dirname(__file__), '..', '..',

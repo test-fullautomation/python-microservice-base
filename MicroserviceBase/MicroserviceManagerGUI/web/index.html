@@ -107,6 +107,31 @@
         <div class="ribbon-group-label">Infrastructure</div>
       </div>
 
+      <!-- The bench: one stage composed from many services' components.
+           Components on the bench add their own groups after these. -->
+      <div class="ribbon-group">
+        <div class="ribbon-group-items">
+          <button class="ribbon-btn" id="btnModeBench" type="button"
+                  title="Show the bench: the tiles of every component in the chosen composition">
+            <i class="bi bi-grid-1x2"></i><span>Bench</span>
+          </button>
+          <div class="bench-picker-wrap">
+            <label class="visually-hidden" for="benchPicker">Composition</label>
+            <select class="form-select form-select-sm bench-picker" id="benchPicker"
+                    title="Which composition the bench shows"></select>
+            <div class="bench-picker-actions">
+              <button class="btn btn-sm bench-mini" id="btnBenchEdit" type="button"
+                      title="Edit, check and save the composition">
+                <i class="bi bi-pencil-square me-1"></i>Edit</button>
+              <button class="btn btn-sm bench-mini" id="btnBenchReload" type="button"
+                      title="Reload the compositions and the components' manifests">
+                <i class="bi bi-arrow-clockwise me-1"></i>Reload</button>
+            </div>
+          </div>
+        </div>
+        <div class="ribbon-group-label">Bench</div>
+      </div>
+
       <div class="ribbon-group ribbon-group-grow">
         <div class="ribbon-group-items">
           <button class="btn-connect" id="btnConnect" title="Connect to Consul">
@@ -223,6 +248,10 @@
           </div>
         </div>
       </div>
+      <!-- Bench navigator: the modules of the shown composition -->
+      <div class="sidebar-mode" id="sidebarBench">
+        <div class="sidebar-content bench-nav" id="benchNav"></div>
+      </div>
       <!-- Test project sidebar: file tree of the open test project -->
       <div class="sidebar-mode" id="sidebarTestProject">
         <div class="tpv-tree" id="testProjectTree"></div>
@@ -249,9 +278,13 @@
            one click away instead of being buried in Developer Tools. -->
       <div class="sidebar-switch" id="sidebarSwitch">
         <div class="sidebar-switch-group" role="tablist" aria-label="Left pane view">
-          <button type="button" class="sidebar-switch-tab active" id="sidebarSwitchServices"
+          <button type="button" class="sidebar-switch-tab active" id="sidebarSwitchServices" title="Running services"
                   role="tab" aria-selected="true">
             <i class="bi bi-box-seam"></i><span>Services</span>
+          </button>
+          <button type="button" class="sidebar-switch-tab" id="sidebarSwitchBench" title="Bench: the modules of the shown composition"
+                  role="tab" aria-selected="false">
+            <i class="bi bi-grid-1x2"></i><span>Bench</span>
           </button>
           <button type="button" class="sidebar-switch-tab" id="sidebarSwitchProject"
                   role="tab" aria-selected="false">
@@ -268,6 +301,7 @@
           <span><i class="bi bi-box-seam me-2"></i>Select a service to view its content</span>
         </div>
       </div>
+      <div id="benchContent" style="display:none;"></div>
       <div id="creatorContent" style="display:none;"></div>
       <div id="testProjectContent" style="display:none;"></div>
       <div id="helpContent" style="display:none;"></div>
@@ -514,6 +548,8 @@
   <script src="js/endo/contract/lint.js"></script>
   <script src="js/endo/kinds-core.js"></script>
   <script src="js/endo/host.js"></script>
+  <script src="js/endo/composition.js"></script>
+  <script src="js/endo/bench.js"></script>
   <script src="js/SchemaRenderer.js"></script>
   <script src="js/SchemaAutoGen.js"></script>
   <script src="js/QtWasmLoader.js"></script>

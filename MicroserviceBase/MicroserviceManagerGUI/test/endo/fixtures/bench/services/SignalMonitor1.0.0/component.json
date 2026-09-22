@@ -1,0 +1,29 @@
+{
+  "component": "signals.monitor",
+  "version": "1.0.0",
+  "layer": "signals",
+  "title": "Signal monitor",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": [
+      "signals.subscribe"
+    ]
+  },
+  "binds": {
+    "consul": "@self"
+  },
+  "tiles": [
+    {
+      "id": "trend",
+      "size": "2x1",
+      "kind": "signal-strip",
+      "title": "Chamber and supply",
+      "signals": [
+        "bench.chamber.temp.degC",
+        "bench.psu.voltage.V"
+      ],
+      "window": "120s"
+    }
+  ],
+  "renderer": "schema"
+}

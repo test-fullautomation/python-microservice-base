@@ -37,6 +37,8 @@ _LEGACY_TESTS = {
     "versioning": "Versioning/test_Versioning.py",
     # Not legacy: exercises the FastAPI bridge's origin allow-list in-process.
     "bridge_origins": "UIBridge/test_BridgeOrigins.py",
+    # Bench compositions: the per-user store and /api/ui/compositions.
+    "compositions": "UIBridge/test_Compositions.py",
     # Test projects: engine + Robot Framework AIO adapter + bridge endpoints.
     "test_project": "TestProject/test_TestProject.py",
     # Scaffold emits a Manager GUI component (contract v1); lint needs node.

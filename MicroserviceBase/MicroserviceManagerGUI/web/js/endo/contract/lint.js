@@ -334,6 +334,12 @@
         if (kindSchema) {
           validateSchema(kindSchema, t, opts.schema, p).forEach(function (e) { add('S', 'error', e.path, e.message); });
         }
+        // Rows from an RPC are objects: every column has to say where its value is.
+        if (t.kind === 'table' && t.rpc) {
+          (t.columns || []).forEach(function (c, j) {
+            if (c && c.path == null) add('S', 'error', p + '.columns[' + j + '].path', 'is required when the rows come from an RPC');
+          });
+        }
       } else if (kinds[t.kind]) {
         if (kinds[t.kind].schema) {
           validateSchema(kinds[t.kind].schema, t, kinds[t.kind].schema, p).forEach(function (e) { add('S', 'error', e.path, e.message); });
@@ -395,6 +401,63 @@
     return issues;
   }
 
+  /**
+   * Lint a composition (structure + R3 + R9, and C for composition rules).
+   * The components it references are linted when the bench resolves them.
+   *
+   * @param {object} comp
+   * @param {object} opts
+   * @param {object} [opts.schema] - composition.schema.json
+   * @param {string} [opts.shell] - shell version (default SHELL_VERSION)
+   * @returns {object[]} issues ({ component } holds the composition id)
+   */
+  function lintComposition(comp, opts) {
+    opts = opts || {};
+    var shell = opts.shell || SHELL_VERSION;
+    var issues = [];
+    var id = (comp && comp.composition) || '(composition)';
+    function add(rule, severity, path, message) {
+      issues.push({ rule: rule, severity: severity, component: id, path: path, message: message });
+    }
+    if (typeOf(comp) !== 'object') { add('S', 'error', '(root)', 'a composition must be a JSON object'); return issues; }
+    if (opts.schema) validateSchema(opts.schema, comp).forEach(function (e) { add('S', 'error', e.path, e.message); });
+
+    if (typeof comp.shell === 'string') {
+      var sat = /^\s*\*?\s*$/.test(comp.shell) ? null : satisfies(comp.shell, shell);
+      if (sat === null) add('R9', 'error', 'shell', 'pin a range such as "^' + shell.split('.').slice(0, 2).join('.') + '"');
+      else if (!sat) add('R9', 'error', 'shell', 'needs shell ' + comp.shell + ', this shell is ' + shell);
+    }
+
+    var seen = {};
+    (Array.isArray(comp.components) ? comp.components : []).forEach(function (e, i) {
+      var p = 'components[' + i + ']';
+      if (typeOf(e) !== 'object') return;
+      Object.keys(e).forEach(function (k) {
+        if (ADDRESS_KEY.test(k)) add('R3', 'error', p + '.' + k, 'is an address; reference the component by its Consul service name');
+      });
+      if (typeof e.service === 'string' && (/[:/\s]/.test(e.service) || ADDRESS_VALUE.test(e.service))) {
+        add('R3', 'error', p + '.service', '"' + e.service + '" is not a Consul service name');
+      }
+      var key = e.service + '|' + (e.gui || '');
+      if (seen[key]) add('C', 'warn', p, 'lists ' + e.service + ' again; its tiles would appear twice');
+      seen[key] = true;
+      var tseen = {};
+      (Array.isArray(e.tiles) ? e.tiles : []).forEach(function (t, j) {
+        if (tseen[t]) add('C', 'warn', p + '.tiles[' + j + ']', 'tile "' + t + '" is listed twice');
+        tseen[t] = true;
+      });
+    });
+    if (Array.isArray(comp.components) && !comp.components.length) {
+      add('C', 'warn', 'components', 'is empty; the bench shows nothing');
+    }
+    var oseen = {};
+    (Array.isArray(comp.order) ? comp.order : []).forEach(function (o, i) {
+      if (oseen[o]) add('C', 'warn', 'order[' + i + ']', '"' + o + '" is listed twice');
+      oseen[o] = true;
+    });
+    return issues;
+  }
+
   function hasErrors(issues) {
     return (issues || []).some(function (i) { return i.severity === 'error'; });
   }
@@ -415,6 +478,7 @@
     lintComponent: lintComponent,
     lintComponents: lintComponents,
     lintPlugin: lintPlugin,
+    lintComposition: lintComposition,
     hasErrors: hasErrors,
     formatIssue: formatIssue
   };

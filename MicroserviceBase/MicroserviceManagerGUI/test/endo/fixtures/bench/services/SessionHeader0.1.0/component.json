@@ -1,0 +1,29 @@
+{
+  "component": "session.header",
+  "version": "0.1.0",
+  "layer": "session",
+  "title": "Session",
+  "description": "Current session, its configuration set and labels.",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": [
+      "session.read"
+    ]
+  },
+  "binds": {
+    "consul": "@self"
+  },
+  "tiles": [
+    {
+      "id": "hdr",
+      "size": "4x1",
+      "kind": "text",
+      "title": "Session",
+      "text": "S-2026-09-22-014 · config set cfg-bench07-r12 · labels: climate, dut-B3 · retention 90 d"
+    }
+  ],
+  "dock": [
+    "details"
+  ],
+  "renderer": "schema"
+}

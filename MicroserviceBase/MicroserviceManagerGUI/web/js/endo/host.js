@@ -1,5 +1,5 @@
 /**
- * @fileoverview Bench Endoskeleton component host (contract v1, milestone M1).
+ * @fileoverview Bench Endoskeleton component host (contract v1).
  *
  * Mounts one component.json into a panel: lints it against the contract,
  * refuses it visibly when it breaks a rule (R10), otherwise lays its tiles
@@ -9,6 +9,10 @@
  *   MM.endo.mountComponent(manifest, el, env) -> Promise<handle>
  *     env:    { consulName, consulUrl, protoPath }
  *     handle: { suspend(), resume(), destroy(), issues }
+ *
+ * The bench (bench.js) mixes tiles of many components on one stage and
+ * uses the pieces directly: prepareComponent(), renderTile(),
+ * instanceGroup().
  */
 (function () {
   'use strict';
@@ -115,11 +119,7 @@
       : warns.length
         ? '<span class="endo-lint warn">contract v1 · ' + warns.length + ' warning' + (warns.length > 1 ? 's' : '') + '</span>'
         : '<span class="endo-lint ok">contract v1 · passes</span>';
-    var list = function (arr) {
-      return '<ul class="endo-issues">' + arr.map(function (i) {
-        return '<li><b>' + esc(i.rule) + '</b> <code>' + esc(i.path) + '</code> ' + esc(i.message) + '</li>';
-      }).join('') + '</ul>';
-    };
+    var list = issuesListHtml;
     return '<div class="endo-head">' +
       '<span class="endo-layer">' + esc(manifest.layer || '?') + '</span>' +
       '<h5>' + esc(manifest.title || manifest.component || 'Component') + '</h5>' +
@@ -137,7 +137,13 @@
     return 'endo-tile w' + s[0] + ' h' + s[1];
   }
 
-  function mountComponent(manifest, el, env) {
+  /**
+   * Lint a manifest (or the parse error of its file) and, when it passes,
+   * build its capability-gated ctx.
+   *
+   * @returns {Promise<{manifest, issues, ok, ctx}>} ctx is null when refused
+   */
+  function prepareComponent(manifest, env) {
     env = env || {};
     return loadSchema().then(function (schema) {
       var C = window.EndoContract;
@@ -153,69 +159,111 @@
                         message: 'contract schema could not be loaded; only the rules were checked' });
         }
       }
+      var ok = !C.hasErrors(issues);
+      return { manifest: manifest, issues: issues, ok: ok, ctx: ok ? makeCtx(manifest, env) : null };
+    });
+  }
 
+  /**
+   * Render one tile of a component into a new <section>. A tile that fails
+   * shows its error in place and the others keep working (R10).
+   *
+   * @param {object} tile - the manifest's tile
+   * @param {object} ctx - from prepareComponent
+   * @param {object} [opts] - { layer, source }: header colour and a label
+   *   naming the component (the bench shows tiles of many components)
+   * @returns {{section: HTMLElement, instance: object|null}}
+   */
+  function renderTile(tile, ctx, opts) {
+    opts = opts || {};
+    var section = document.createElement('section');
+    section.className = tileClasses(tile.size);
+    section.setAttribute('data-tile', tile.id);
+    if (opts.layer) section.style.setProperty('--layer', layerVar(opts.layer));
+    section.innerHTML =
+      '<header class="endo-tile-head"><span class="t">' + esc(tile.title || tile.id) + '</span>' +
+      '<span class="src">' + esc(opts.source || tile.kind) + '</span></header>' +
+      '<div class="endo-tile-body"></div>';
+    var body = section.querySelector('.endo-tile-body');
+    var kind = MM.endo.kinds[tile.kind];
+    if (!kind) {
+      var owner = KNOWN_PLUGIN_KINDS[tile.kind];
+      body.innerHTML = '<div class="endo-placeholder">Kind <code>' + esc(tile.kind) + '</code> is not available. ' +
+        (owner ? 'It comes from the <strong>' + esc(owner) + '</strong> plugin (plugins arrive with milestone M4).'
+               : 'No plugin provides it.') + '</div>';
+      return { section: section, instance: null };
+    }
+    var inst;
+    try { inst = kind.render(body, tile, ctx); }
+    catch (e) {
+      body.innerHTML = '<div class="endo-error">' + esc(e.message) + '</div>';   // fail small (R10)
+      return { section: section, instance: null };
+    }
+    if (inst && inst.refresh) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'endo-refresh';
+      btn.title = 'Refresh';
+      btn.setAttribute('aria-label', 'Refresh ' + (tile.title || tile.id));
+      btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+      btn.addEventListener('click', function (ev) { ev.stopPropagation(); inst.refresh(); });
+      section.querySelector('.endo-tile-head').appendChild(btn);
+    }
+    return { section: section, instance: inst || null };
+  }
+
+  /** suspend/resume/destroy over a list of tile instances; one failing never stops the rest. */
+  function instanceGroup(instances) {
+    function each(fn) {
+      return function () { instances.forEach(function (i) { try { i[fn](); } catch (e) { /* keep going */ } }); };
+    }
+    return {
+      suspend: each('suspend'),
+      resume: each('resume'),
+      destroy: function () { each('destroy')(); instances.length = 0; }
+    };
+  }
+
+  function issuesListHtml(arr) {
+    return '<ul class="endo-issues">' + arr.map(function (i) {
+      return '<li><b>' + esc(i.rule) + '</b> <code>' + esc(i.path) + '</code> ' + esc(i.message) + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function mountComponent(manifest, el, env) {
+    env = env || {};
+    return prepareComponent(manifest, env).then(function (prep) {
       el.innerHTML = '';
       var root = document.createElement('div');
       root.className = 'endo-comp';
-      root.style.setProperty('--layer', layerVar(manifest.layer));
-      root.innerHTML = headerHtml(manifest, issues, env);
+      root.style.setProperty('--layer', layerVar(prep.manifest.layer));
+      root.innerHTML = headerHtml(prep.manifest, prep.issues, env);
       el.appendChild(root);
 
       var instances = [];
-      var handle = {
-        issues: issues,
-        suspend: function () { instances.forEach(function (i) { try { i.suspend(); } catch (e) { /* keep going */ } }); },
-        resume: function () { instances.forEach(function (i) { try { i.resume(); } catch (e) { /* keep going */ } }); },
-        destroy: function () { instances.forEach(function (i) { try { i.destroy(); } catch (e) { /* keep going */ } }); instances = []; }
-      };
-      if (C.hasErrors(issues)) return handle;
+      var handle = instanceGroup(instances);
+      handle.issues = prep.issues;
+      if (!prep.ok) return handle;
 
-      var ctx = makeCtx(manifest, env);
       var stage = document.createElement('div');
       stage.className = 'endo-stage';
       root.appendChild(stage);
-
-      (manifest.tiles || []).forEach(function (tile) {
-        var section = document.createElement('section');
-        section.className = tileClasses(tile.size);
-        section.setAttribute('data-tile', tile.id);
-        section.innerHTML =
-          '<header class="endo-tile-head"><span class="t">' + esc(tile.title || tile.id) + '</span>' +
-          '<span class="src">' + esc(tile.kind) + '</span></header>' +
-          '<div class="endo-tile-body"></div>';
-        stage.appendChild(section);
-        var body = section.querySelector('.endo-tile-body');
-        var kind = MM.endo.kinds[tile.kind];
-        if (!kind) {
-          var owner = KNOWN_PLUGIN_KINDS[tile.kind];
-          body.innerHTML = '<div class="endo-placeholder">Kind <code>' + esc(tile.kind) + '</code> is not available. ' +
-            (owner ? 'It comes from the <strong>' + esc(owner) + '</strong> plugin (plugins arrive with milestone M4).'
-                   : 'No plugin provides it.') + '</div>';
-          return;
-        }
-        var inst;
-        try { inst = kind.render(body, tile, ctx); }
-        catch (e) {
-          body.innerHTML = '<div class="endo-error">' + esc(e.message) + '</div>';   // fail small (R10)
-          return;
-        }
-        instances.push(inst);
-        if (inst.refresh) {
-          var btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'endo-refresh';
-          btn.title = 'Refresh';
-          btn.setAttribute('aria-label', 'Refresh ' + (tile.title || tile.id));
-          btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
-          btn.addEventListener('click', function () { inst.refresh(); });
-          section.querySelector('.endo-tile-head').appendChild(btn);
-        }
+      (prep.manifest.tiles || []).forEach(function (tile) {
+        var r = renderTile(tile, prep.ctx);
+        stage.appendChild(r.section);
+        if (r.instance) instances.push(r.instance);
       });
       return handle;
     });
   }
 
   MM.endo.mountComponent = mountComponent;
+  MM.endo.prepareComponent = prepareComponent;
+  MM.endo.renderTile = renderTile;
+  MM.endo.instanceGroup = instanceGroup;
+  MM.endo.issuesListHtml = issuesListHtml;
+  MM.endo.layerVar = layerVar;
+  MM.endo.KNOWN_PLUGIN_KINDS = KNOWN_PLUGIN_KINDS;
   MM.endo.loadSchema = loadSchema;
   /** Exposed for plugin kinds (M4) and tests: the capability-gated context. */
   MM.endo.makeCtx = makeCtx;
