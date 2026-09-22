@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "endo/plugin.schema.json",
+  "title": "Bench Endoskeleton plugin, contract v1",
+  "description": "Extends the shell itself: tile kinds, navigators, stage views, drawer tabs, ribbon groups. The loader arrives with milestone M4; the schema is frozen with the component contract so plugin authors can start.",
+  "type": "object",
+  "required": ["plugin", "version", "title", "requires", "isolation", "contributes"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "plugin": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.-]+)?$" },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "requires": {
+      "type": "object",
+      "required": ["shell", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "shell": { "type": "string", "minLength": 1 },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "isolation": { "type": "string", "enum": ["schema", "frame", "window"] },
+    "main": { "type": "string", "description": "window plugins: main-process module" },
+    "preload": { "type": "string", "description": "window plugins: preload script" },
+    "contributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "entry", "schema"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+              "entry": { "type": "string" },
+              "schema": { "type": "object" },
+              "needs": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "ribbon.groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["tab", "group", "commands"],
+            "properties": {
+              "tab": { "type": "string", "enum": ["user", "dev", "admin"] },
+              "group": { "type": "string" },
+              "commands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "label"],
+                  "properties": { "id": { "type": "string" }, "label": { "type": "string" }, "icon": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "navigators": { "$ref": "#/definitions/entries" },
+        "stage.views": { "$ref": "#/definitions/entries" },
+        "dock.sections": { "$ref": "#/definitions/entries" },
+        "drawer.tabs": { "$ref": "#/definitions/entries" },
+        "commands": {
+          "type": "array",
+          "items": { "type": "object", "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" } } }
+        },
+        "renderers": { "$ref": "#/definitions/entries" }
+      }
+    }
+  },
+  "definitions": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "entry"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "title": { "type": "string" },
+          "icon": { "type": "string" },
+          "entry": { "type": "string" },
+          "for": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

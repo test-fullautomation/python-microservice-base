@@ -15,7 +15,9 @@ MicroserviceBase/MicroserviceManagerGUI/python/hub_processes.json
 MicroserviceBase/MicroserviceManagerGUI/python/services/
 nul
 MicroserviceBase/MicroserviceManagerGUI/node_modules
-MicroserviceBase/MicroserviceManagerGUI/tools/
+MicroserviceBase/MicroserviceManagerGUI/tools/*
+# Component linter for service CI (node tools/endo-lint.js <component.json>)
+!MicroserviceBase/MicroserviceManagerGUI/tools/endo-lint.js
 MicroserviceBase/MicroserviceManagerGUI/web/services/*
 !MicroserviceBase/MicroserviceManagerGUI/web/services/ServiceAlias*/
 # Reference GUI plugin for examples/hello_service (see examples/demo_gui.nomad.hcl).

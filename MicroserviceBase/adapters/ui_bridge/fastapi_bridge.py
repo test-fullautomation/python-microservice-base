@@ -2742,6 +2742,7 @@ Generate scaffolding for a new microservice project.
                                             # proto_file + proto_content.
          services: List[ScaffoldV2Service] = []  # for monorepo / multi_proto
          proto_package: str = ""            # real .proto `package X;` when importing
+         ui_layer: str = "bits"             # layer of the generated component.json
 
       class ParseProtoRequest(BaseModel):
          proto_content: str
@@ -3227,6 +3228,7 @@ Generate scaffolding for a new microservice project.
             ],
             proto_content_override=body.proto_content_override,
             proto_package_override=body.proto_package,
+            ui_layer=body.ui_layer,
             services=mono_services,
             layout=effective_layout or "monorepo",
          )

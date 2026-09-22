@@ -5,6 +5,7 @@ Produces:
 - service_config.json
 - Nomad .nomad.hcl job spec
 - README.md
+- ui/<Service><version>/component.json (Manager GUI component, contract v1)
 """
 
 from __future__ import annotations
@@ -13,8 +14,9 @@ import datetime as _dt
 import getpass as _getpass
 import json
 import os as _os
+import re as _re
 import sys as _sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
 if TYPE_CHECKING:
     from .generator import ScaffoldSpec, MethodSpec
@@ -356,6 +358,155 @@ Render the ``.proto`` file for a single service.
         lines.append("")
 
     return "\n".join(lines)
+
+
+# -----------------------------------------------------------------------
+# UI component (Manager GUI, Bench Endoskeleton contract v1)
+# -----------------------------------------------------------------------
+
+#: The TAG layer chart's layers; a component declares exactly one.
+UI_LAYERS = ("operator", "session", "config", "execution", "runner", "signals", "bits")
+
+
+def _kebab(name: str) -> str:
+    """``SetVoltage`` -> ``set-voltage``; ``PPSReading`` -> ``pps-reading``."""
+    s = _re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    s = _re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
+    return _re.sub(r"[^a-z0-9]+", "-", s).strip("-") or "x"
+
+
+def _form_type(proto_type: str) -> str:
+    """Proto3 scalar -> component form type (string | int | float | bool | json)."""
+    t = proto_type.lower()
+    if t == "bool":
+        return "bool"
+    if t in ("float", "double"):
+        return "float"
+    if _re.match(r"^(u?int|s?fixed|sint)(32|64)$", t):
+        return "int"
+    if t in ("string", "bytes"):
+        return "string"
+    return "json"
+
+
+def gen_ui_component(spec: "ScaffoldSpec", proto_text: str = "") -> Dict[str, str]:
+    """
+Render the service's Manager GUI component (``component.json``) and a
+README saying how to install it.
+
+A schema component needs no GUI code: one command form per unary RPC and
+one log per server-streaming RPC. For a wizard-built proto the forms are
+typed from the method parameters; for an imported proto the GUI builds
+them from gRPC reflection at run time, because imported message types are
+not known here.
+
+**Arguments:**
+
+* ``spec``
+
+  / *Condition*: required / *Type*: ScaffoldSpec /
+
+  Scaffold specification. ``spec.ui_layer`` picks the layer (default
+  ``bits``).
+
+* ``proto_text``
+
+  / *Condition*: optional / *Type*: str /
+
+  The generated or imported ``.proto`` text; for an imported proto the
+  gRPC service name is read from it.
+
+**Returns:**
+
+* ``files``
+
+  / *Type*: Dict[str, str] /
+
+  ``ui/<Service><version>/component.json`` and ``ui/README.md``.
+    """
+    layer = spec.ui_layer if getattr(spec, "ui_layer", "") in UI_LAYERS else "bits"
+    imported = bool(spec.proto_content_override)
+    grpc_service = f"{spec.service_name}Service"
+    if imported:
+        m = _re.search(r"^\s*service\s+(\w+)", proto_text or spec.proto_content_override, _re.M)
+        if m:
+            grpc_service = m.group(1)
+    folder = f"{spec.service_name}{spec.version}"
+
+    tiles = []
+    for method in spec.methods:
+        tile_id = _kebab(method.name)
+        if method.server_streaming:
+            tile = {"id": tile_id, "size": "4x1", "kind": "log",
+                    "title": f"{method.name} (stream)", "rpc": method.name}
+            if not imported:
+                tile["path"] = "result"
+        else:
+            tile = {"id": tile_id, "size": "2x1" if len(method.params) > 2 else "1x1",
+                    "kind": "command-form", "title": method.name,
+                    "call": method.name, "submitLabel": method.name}
+            if not imported:
+                form = {p.name: _form_type(_proto_type(p.type)) for p in method.params}
+                if form:
+                    tile["form"] = form
+                tile["resultPath"] = "result"
+        tiles.append(tile)
+    if not tiles:
+        tiles.append({"id": "about", "size": "4x1", "kind": "text",
+                      "text": spec.short_desc or spec.description
+                      or f"{spec.service_name} has no methods yet."})
+
+    manifest = {
+        "component": f"{layer}.{_kebab(spec.service_name)}",
+        "version": spec.version,
+        "layer": layer,
+        "title": spec.service_name,
+        "requires": {"shell": "^2.3",
+                     "capabilities": ["grpc.call"] if spec.methods else []},
+        # "@self": the service that declares this component through Meta.gui,
+        # so several instances under different Consul names share it.
+        "binds": {"consul": "@self", "grpc": f"{spec.proto_package}.{grpc_service}"},
+        "tiles": tiles,
+        "dock": ["api", "details"],
+        "renderer": "schema",
+    }
+    if spec.description or spec.short_desc:
+        manifest["description"] = spec.short_desc or spec.description
+
+    readme = "\n".join([
+        f"# {spec.service_name}: Manager GUI component",
+        "",
+        f"`{folder}/component.json` describes this service's panel in the Manager",
+        "GUI (Bench Endoskeleton component contract v1). It is declarative: the GUI",
+        "renders the tiles, nothing here runs code.",
+        "",
+        "## Install",
+        "",
+        f"1. Copy `{folder}/` into the Manager GUI's `web/services/`, or into",
+        "   `%APPDATA%/DevAtServGUI/web-services/` of an installed GUI.",
+        f"2. Declare it: the service registers `Meta.gui = {folder}` in Consul.",
+        f"   Python services: set `{spec.env_prefix}GUI={folder}`.",
+        "   C++ services: the C++ runtime does not register `Meta.gui` yet; until",
+        "   it does, the component can only be reached from a composition.",
+        "3. Check it, from the Manager GUI folder:",
+        f"   `node tools/endo-lint.js web/services/{folder}/component.json`",
+        "",
+        "## Adjust",
+        "",
+        f"- **Layer.** Generated as `{layer}`. If the service belongs to another",
+        "  layer of the TAG layer chart, change `layer` and the prefix of",
+        "  `component` together (rule R8).",
+        "- **Tiles.** One command form per unary RPC, one log per streaming RPC.",
+        "  Show live values with a `live-status` tile, lay results out with",
+        "  `table`, and use sizes 1x1, 2x1, 2x2 or 4x1 (rule R2).",
+        "- **Bindings.** `binds.consul` is `@self`; never put a host, port or IP",
+        "  there (rule R3).",
+        "",
+    ])
+    return {
+        f"ui/{folder}/component.json": json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        "ui/README.md": readme,
+    }
 
 
 # -----------------------------------------------------------------------
