@@ -142,6 +142,15 @@ html, body {
   display: flex;
 }
 
+/* Components on the bench add groups to a tab; when the band is full it
+   scrolls sideways instead of cutting the last groups off. */
+.ribbon-panel {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
 .ribbon-group {
   display: flex;
   flex-direction: column;
@@ -2448,7 +2457,8 @@ body.dev-mode .app-navbar {
   color: rgba(255, 255, 255, 0.5);
   font-size: 0.8rem;
   font-weight: 500;
-  padding: 0.3rem 0.85rem;
+  padding: 0.3rem 0.55rem;
+  min-width: 0;
   white-space: nowrap;
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
@@ -2465,6 +2475,17 @@ body.dev-mode .app-navbar {
 
 .sidebar-switch-tab i {
   font-size: 0.85rem;
+}
+
+/* Three tabs: in a narrow pane the icons carry them (titles still name them). */
+.sidebar-switch {
+  container-type: inline-size;
+}
+
+@container (max-width: 290px) {
+  .sidebar-switch-tab span {
+    display: none;
+  }
 }
 
 .tpv-view {

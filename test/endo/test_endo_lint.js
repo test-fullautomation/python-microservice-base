@@ -167,6 +167,19 @@ check('SHELL_VERSION is 2.3.x', /^2\.3\./.test(C.SHELL_VERSION));
   check('K: non-schema renderer warns until frames land', lint(m2).some((i) => i.rule === 'K' && /renderer/.test(i.message)));
 }
 
+// ---------- table: RPC rows or static rows ----------
+{
+  const m = clone(GOOD);
+  m.tiles[2] = { id: 'hist', size: '2x2', kind: 'table', columns: [{ label: 'Test' }, { label: 'Result' }],
+                 rows: [['Greet', 'PASS'], ['Read VIN', 'FAIL']] };
+  check('table: static rows with label-only columns pass', !C.hasErrors(lint(m)), lint(m));
+  const m2 = clone(GOOD); delete m2.tiles[2].columns[0].path;
+  check('table: an RPC column without a path is an error',
+        lint(m2).some((i) => i.rule === 'S' && i.path === 'tiles[2].columns[0].path'), lint(m2));
+  const m3 = clone(GOOD); m3.tiles[2] = { id: 'hist', size: '2x2', kind: 'table', columns: [{ label: 'T', path: 't' }] };
+  check('table: neither rpc nor rows is an error', rules(lint(m3), 'error').includes('S'), lint(m3));
+}
+
 // ---------- plugins ----------
 {
   const P = { plugin: 'charts', version: '1.0.0', title: 'Charts', isolation: 'frame',

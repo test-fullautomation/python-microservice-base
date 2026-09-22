@@ -198,3 +198,163 @@
 .endo-steps i.done { background: var(--good); }
 .endo-steps i.now { background: var(--accent); }
 .endo-small { font-size: 0.78rem; }
+
+/* ================= Bench (milestone M2): stage + dock + status strip ================= */
+.bench {
+  --good: #1E8449;
+  --warn: #A96A12;
+  --bad: #B83227;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main" "status";
+  gap: 0.75rem 1rem;
+  align-items: start;
+}
+.bench.with-dock {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  grid-template-areas: "main dock" "status status";
+}
+.bench-main { grid-area: main; display: grid; gap: 0.75rem; container-type: inline-size; min-width: 0; }
+.bench-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.7rem; }
+.bench-head h5 { margin: 0; font-weight: 600; }
+.bench-note {
+  font-size: 0.84rem;
+  color: var(--muted, #5A665F);
+  border-left: 3px solid var(--rule, #D3D9D1);
+  padding: 0.15rem 0.6rem;
+}
+.bench-loading, .bench-empty { color: var(--muted, #5A665F); padding: 1rem 0; }
+.bench-empty { display: grid; justify-items: center; gap: 0.5rem; padding: 3rem 1rem; text-align: center; }
+.bench-empty i { font-size: 1.8rem; opacity: 0.5; }
+
+.bench-stage .endo-tile { cursor: default; }
+.bench-stage .endo-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bench-stage .endo-tile.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* A module that shows no tiles still keeps its slot and says why (R10). */
+.bench-slot .endo-tile-head { background: var(--layer, var(--l-runner, #E6EAEE)); }
+.bench-slot.state-refused { border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.bench-slot.state-refused .endo-tile-head { background: color-mix(in srgb, var(--bad) 22%, var(--layer, #E6EAEE)); }
+.bench-slot.state-missing, .bench-slot.state-nogui { border-style: dashed; }
+.bench-slot-msg { font-size: 0.84rem; }
+.bench-rule {
+  font: 500 0.7rem var(--font-mono, monospace);
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+  border-radius: 3px;
+  padding: 0 0.3rem;
+}
+
+/* ---------- dock: details / API of the selected tile ---------- */
+.bench-dock {
+  grid-area: dock;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--navbar-height) - var(--ribbon-height) - 3rem);
+  overflow: auto;
+  background: var(--surface, #fff);
+  border: 1px solid var(--rule, #D3D9D1);
+  border-top: 4px solid var(--layer, var(--l-runner));
+  border-radius: 8px;
+  display: grid;
+  align-content: start;
+  min-width: 0;
+}
+.bench-dock-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem 0.3rem; }
+.bench-dock-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bench-dock-head .dev-inspector-close { margin-left: auto; }
+.bench-dock-sub { font-size: 0.76rem; color: var(--muted, #5A665F); padding: 0 0.75rem 0.4rem; }
+.bench-dock .dev-inspector-tabs { padding: 0 0.5rem; }
+.bench-dock-body { padding: 0.6rem 0.75rem 0.8rem; font-size: 0.84rem; min-width: 0; }
+.bench-dock-body .svc-card-table { width: 100%; font-size: 0.82rem; }
+.bench-dock-body .svc-card-table th { white-space: nowrap; padding-right: 0.6rem; vertical-align: top; }
+.bench-dock-body .svc-card-table td { overflow-wrap: anywhere; }
+.bench-dock-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+
+/* ---------- status strip: one badge per module ---------- */
+.bench-status {
+  grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule, #D3D9D1);
+}
+.bench-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--rule, #D3D9D1);
+  background: var(--surface, #fff);
+  border-radius: 999px;
+  padding: 0.12rem 0.6rem 0.12rem 0.45rem;
+  font-size: 0.76rem;
+  color: inherit;
+  cursor: pointer;
+  max-width: 100%;
+}
+.bench-badge:hover { border-color: var(--accent); }
+.bench-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bench-badge .dot, .bench-layer-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--layer, var(--l-runner, #E6EAEE));
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+.bench-badge .n { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bench-badge .s { font: 0.68rem var(--font-mono, monospace); color: var(--good); white-space: nowrap; }
+.bench-badge.state-refused .s, .bench-badge.state-error .s { color: var(--bad); }
+.bench-badge.state-missing .s, .bench-badge.state-nogui .s, .bench-badge.state-legacy .s { color: var(--warn); }
+.bench-plugins { font-size: 0.74rem; color: var(--muted, #5A665F); margin-left: auto; }
+
+/* ---------- navigator (left pane) ---------- */
+.bench-nav-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 0.25rem 0.5rem 0.4rem;
+}
+.sidebar-content .list-group-item.bench-nav-item { padding-left: 0.75rem; }
+.bench-nav-item .bench-layer-dot { margin-right: 0.5rem; border-color: rgba(255, 255, 255, 0.35); }
+.bench-nav-item.state-refused .svc-hint { color: #F1A097; }
+
+/* ---------- ribbon: the Bench group and components' groups ---------- */
+.bench-picker-wrap { display: grid; gap: 0.25rem; min-width: 11rem; }
+.bench-picker {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 0.76rem;
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+}
+.bench-picker option { color: #14201A; }
+.bench-picker-actions { display: flex; gap: 0.25rem; }
+.bench-mini {
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+}
+.bench-mini:hover { color: #fff; border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.08); }
+.ribbon-group.endo-contrib { border-left: 1px solid rgba(255, 255, 255, 0.08); }
+.ribbon-group.endo-contrib .ribbon-group-label { display: flex; align-items: center; justify-content: center; gap: 0.35rem; }
+.ribbon-group.endo-contrib .bench-layer-dot { width: 0.5rem; height: 0.5rem; }
+
+.bench-json { font: 0.78rem/1.45 var(--font-mono, monospace); }
+
+@container (max-width: 780px) {
+  .bench-stage { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .bench.with-dock { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "dock" "status"; }
+  .bench-dock { position: static; max-height: none; }
+}

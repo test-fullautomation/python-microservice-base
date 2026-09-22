@@ -118,9 +118,13 @@ chart, the capabilities it uses and the tiles it shows:
 ```
 
 - **Tile kinds:** `text`, `live-status` (polls RPCs), `command-form` (typed
-  form, or built from gRPC reflection when `form` is left out), `table`,
-  `log` (server-streaming RPC) and `run-status`. **Sizes** on the 4-column
-  stage: `1x1`, `2x1`, `2x2` and `4x1`.
+  form, or built from gRPC reflection when `form` is left out), `table`
+  (rows from an RPC, or static `rows`), `log` (server-streaming RPC) and
+  `run-status`. **Sizes** on the 4-column stage: `1x1`, `2x1`, `2x2` and
+  `4x1`.
+- **`ribbon[]`** groups of commands (`label`, `call`, optional `args`,
+  `form`, `confirm`) appear on their tab while the component is on the
+  bench (below).
 - **`binds.consul: "@self"`** means the service that declared the component
   through `Meta.gui`. A host, port or IP here is rejected.
 - **Capabilities** are enforced: an RPC or signal call that the manifest
@@ -137,7 +141,55 @@ The Service Creator and `mb-scaffold` emit a starting manifest in
 and one log per server-streaming RPC, in the `bits` layer unless the spec
 sets `ui_layer`. Multi-service projects don't get one yet. **C++
 services:** the C++ runtime does not register `Meta.gui` yet, so a C++
-service cannot declare its component itself.
+service cannot declare its component itself; a composition can name its
+folder instead (below).
+
+### The bench: one screen from many services
+
+**User → Bench** (or the **Bench** tab under the left pane) shows the
+tiles of several services' components on one 4-column stage. Which
+services, and in which order, is a **composition**:
+
+```json
+{
+  "composition": "bench07/operator",
+  "title": "Bench 07 · operator",
+  "shell": "^2.3",
+  "role": "user",
+  "components": [
+    { "from": "consul", "service": "session-service" },
+    { "from": "consul", "service": "testbench-device-psu", "tiles": ["out"] },
+    { "from": "consul", "service": "cpp-psu", "gui": "PowerSupply2.0.1" }
+  ],
+  "order": ["session.header", "*", "@cpp-psu"]
+}
+```
+
+- A composition references services by Consul name and never copies
+  their manifests. `gui` names the folder for a service that does not
+  register `Meta.gui`; `tiles` shows only some of a component's tiles.
+- `order` takes `<component>/<tile>`, `<component>`, `@<service>` and `*`
+  (everything not listed); unlisted tiles follow in composition order.
+- `role` is the ribbon tab the bench opens on.
+- Pick a composition in the **Bench** group of the User tab. **Edit** checks
+  one against the contract (S, R3, R9) and saves it through the bridge
+  (`GET/PUT/DELETE /api/ui/compositions/{bench}/{role}`) under
+  `%APPDATA%\devatservgui\compositions\` (`MB_COMPOSITIONS_DIR` overrides
+  it). With nothing stored, the bench shows **All components**: every
+  connected service that declares a GUI.
+- A module that shows no tiles still keeps a slot saying why: *refused*
+  with the broken rule ids, *classic panel* (no `component.json`; **Open
+  panel** shows it in the Services view), *no GUI* or *not registered*. The
+  rest of the bench keeps working.
+- Selecting a tile opens the **dock** with the component's details and,
+  when the manifest lists `api`, the API explorer. The dock also opens the
+  service in the Services view, or its classic panel when the folder still
+  has one.
+- The strip under the stage has one badge per module; the left pane lists
+  the modules. Tiles stop polling while the bench is hidden.
+- `node tools/endo-lint.js <composition.json>` lints a composition in CI.
+  `test/endo/fixtures/bench/` holds the proposal's prototype modules and
+  compositions; `test/endo/test_endo_bench.js` tests them.
 
 ## Test projects
 

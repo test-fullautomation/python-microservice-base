@@ -59,6 +59,7 @@
   var loginModal = null;
   var _servicePanels = {};     // { serviceName: HTMLElement }
   var _activePanelName = null; // name of the currently visible cached panel
+  var _classicPanels = {};     // { serviceName: true } while the cached panel is a classic panel shown instead of a component
 
   /**
    * Hides the active cached service panel, calls unloadFunction,
@@ -2386,6 +2387,10 @@
     // user is left with a stale panel showing methods for a service that
     // no longer exists.  Also drop the cached panel so re-registration
     // picks up fresh metadata instead of resurrecting the stale element.
+    // The bench composes from the same services; it recomposes only when a
+    // name, GUI folder or address changed.
+    if (MM.endo && MM.endo.bench) MM.endo.bench.servicesChanged();
+
     if (_activePanelName && !MM.servicesInfor[_activePanelName]) {
       var goneName = _activePanelName;
       _deactivateCurrentPanel();
@@ -2509,6 +2514,37 @@
     });
   }
 
+  /** Every service of every reachable Consul, with its consulUrl (the bench composes from these). */
+  function _allConnectedServices() {
+    var out = [];
+    _connectedConsuls.forEach(function (conn) {
+      if (conn.alive === false) return;
+      (conn.services || []).forEach(function (svc) {
+        out.push(Object.assign({}, svc, { consulUrl: conn.url }));
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Show a service in the Services view, as a click on its sidebar row
+   * would. opts.classic shows the classic panel of a folder that also has
+   * a component.json (the bench dock offers it).
+   */
+  function _openServiceFromBench(svc, opts) {
+    switchMode('services');
+    var infoKey = svc.name + '@' + svc.consulUrl;
+    _selectedService = { name: svc.name, infoKey: infoKey, consul: svc, info: null };
+    document.querySelectorAll('#servicesList .list-group-item.active').forEach(function (el) { el.classList.remove('active'); });
+    var row = Array.prototype.filter.call(
+      document.querySelectorAll('#servicesList .list-group-item[data-service-name]'),
+      function (el) { return el.getAttribute('data-service-name') === svc.name; })[0];
+    if (row) row.classList.add('active');
+    if (svc.gui) _openConsulServiceGui(_selectedService, opts);
+    else _showServiceOverview(_selectedService);
+    if (_devMode) _renderInspector(_selectedService);
+  }
+
   /**
    * Show the GUI a Consul-registered service declares through Meta.gui:
    * the name of a plugin folder under web/services/ (e.g. HelloService1.0.0),
@@ -2516,10 +2552,11 @@
    * Qt WASM, HTML). The panel is cached per service name. The plugin
    * learns which instance it drives from MM.currentGuiService.
    */
-  function _openConsulServiceGui(sel) {
+  function _openConsulServiceGui(sel, opts) {
     var svc = sel.consul;
     var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
     if (!contentDiv || !svc || !svc.gui) return;
+    var classic = !!(opts && opts.classic);
 
     MM.currentGuiService = {
       name: svc.name,
@@ -2529,6 +2566,17 @@
       grpcServices: svc.grpcServices,
       gui: svc.gui
     };
+
+    // One cached panel per service: drop it when the other kind is wanted
+    // (classic panel from the bench dock <-> the component from the sidebar).
+    var cachedPanel = _servicePanels[sel.name];
+    if (cachedPanel && (classic ? !!cachedPanel.__endoHandle : _classicPanels[sel.name])) {
+      if (_activePanelName === sel.name) _deactivateCurrentPanel();
+      if (cachedPanel.__endoHandle) cachedPanel.__endoHandle.destroy();
+      try { cachedPanel.remove(); } catch (e) { /* already gone */ }
+      delete _servicePanels[sel.name];
+    }
+    _classicPanels[sel.name] = classic;
 
     if (_servicePanels[sel.name]) {
       // Cache hit: loadServiceContent only consults servicesInfor on a
@@ -2544,6 +2592,10 @@
     var folderPath = SERVICES_GUI_FOLDER + '/' + folder;
     // A folder with component.json is a Bench Endoskeleton component
     // (contract v1); anything else loads through the legacy tiers unchanged.
+    if (classic) {
+      _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
+      return;
+    }
     _tryMountComponent(sel, svc, folderPath, contentDiv).then(function (mounted) {
       if (!mounted) _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
     });
@@ -4575,6 +4627,10 @@
     if (sidebarCreator) sidebarCreator.classList.toggle('active', mode === 'creator');
     var sidebarTestProject = document.getElementById('sidebarTestProject');
     if (sidebarTestProject) sidebarTestProject.classList.toggle('active', mode === 'testproject');
+    var sidebarBench = document.getElementById('sidebarBench');
+    if (sidebarBench) sidebarBench.classList.toggle('active', mode === 'bench');
+    var benchContent = document.getElementById('benchContent');
+    if (benchContent) benchContent.style.display = mode === 'bench' ? '' : 'none';
 
     // Toggle content panels
     var serviceContent = document.getElementById('serviceContent');
@@ -4592,11 +4648,16 @@
     var btnServices = document.getElementById('btnModeServices');
     var btnDevTools = document.getElementById('btnDevTools');
     var btnAdminTools = document.getElementById('btnAdminTools');
-    if (btnServices) btnServices.classList.toggle('active', mode === 'services');
+    if (btnServices) btnServices.classList.toggle('active', mode === 'services' || mode === 'bench');
+    var btnBench = document.getElementById('btnModeBench');
+    if (btnBench) btnBench.classList.toggle('active', mode === 'bench');
     if (btnDevTools) btnDevTools.classList.toggle('active', mode === 'creator' || mode === 'testproject');
     if (btnAdminTools) btnAdminTools.classList.toggle('active', mode === 'fleet');
     _syncSidebarSwitch();
     _setRibbonTab(_ribbonTabForMode(mode), { fromMode: true });
+    // The bench's tiles poll only while it is on screen (R5). After the
+    // ribbon tab: a composition may open on its own role's tab.
+    if (MM.endo && MM.endo.bench) MM.endo.bench.setActive(mode === 'bench');
 
     // Activate new mode
     if (mode === 'fleet') {
@@ -4689,7 +4750,8 @@
     var el = document.getElementById(id);
     if (el) el.addEventListener('click', handler);
   }
-  _wire('btnModeServices', function () { switchMode('services'); });
+  // btnModeServices (the User tab) is wired with the ribbon tabs below: it
+  // opens Services, or keeps the bench when that is showing.
 
   // Developer Tools -- generate and test
   _wire('btnModeCreator', function () { switchMode('creator'); });
@@ -5945,6 +6007,7 @@
    */
   function _syncSidebarSwitch() {
     [['sidebarSwitchServices', 'services'],
+     ['sidebarSwitchBench', 'bench'],
      ['sidebarSwitchProject', 'testproject']].forEach(function (pair) {
       var btn = document.getElementById(pair[0]);
       if (!btn) return;
@@ -5963,7 +6026,9 @@
   }
 
   _wire('sidebarSwitchServices', function () { switchMode('services'); });
+  _wire('sidebarSwitchBench', function () { switchMode('bench'); });
   _wire('sidebarSwitchProject', function () { switchMode('testproject'); });
+  _wire('btnModeBench', function () { switchMode('bench'); });
   _syncSidebarSwitch();
 
   /************************************************************
@@ -5987,7 +6052,7 @@
   function _ribbonTabForMode(mode) {
     if (mode === 'fleet') return 'admin';
     if (mode === 'creator' || mode === 'testproject') return 'dev';
-    if (mode === 'services') return 'user';
+    if (mode === 'services' || mode === 'bench') return 'user';
     return _ribbonTab;
   }
 
@@ -6059,14 +6124,14 @@
     if (!btn) return;
     btn.addEventListener('click', function () {
       // Decide open/close from the band's state before this click, not from
-      // _ribbonTab: the User tab's own handler may already have run
-      // switchMode, which moves _ribbonTab.
+      // _ribbonTab.
       var closeIt = _ribbonIsOpen() && _ribbonOpenTab === key;
       // Always select the tab here. Relying on switchMode alone left a tab
       // dead whenever its view was already showing (switchMode returns
       // early for the current mode), e.g. Developer -> User on Services.
       _setRibbonTab(key);
-      if (key === 'user') switchMode('services');
+      // User keeps the bench when it is showing: its components' commands are on this tab.
+      if (key === 'user' && _currentMode !== 'bench') switchMode('services');
       else if (key === 'admin') switchToFleetSubTab('tabConsul');
       if (closeIt) _closeRibbon(); else _openRibbon(key);
     });
@@ -6099,6 +6164,33 @@
     _setRibbonPinned(localStorage.getItem(RIBBON_PIN_KEY) === '1');
   } catch (e) { _setRibbonPinned(false); }
   _setRibbonTab(_ribbonTabForMode(_currentMode), { fromMode: true });
+
+  // The bench view (js/endo/bench.js) composes components of the services
+  // this window is connected to; it reaches the rest of the GUI only here.
+  if (MM.endo && MM.endo.bench) {
+    MM.endo.bench.init({
+      getServices: _allConnectedServices,
+      openService: _openServiceFromBench,
+      openInspector: function (svc, tab) {
+        _openServiceFromBench(svc);
+        setDevMode(true, { tab: tab, silent: true });
+      },
+      showApi: function (svc, containerId) {
+        // The explorer wires its controls by id: keep one copy in the DOM.
+        var box = document.getElementById(containerId);
+        document.querySelectorAll('[data-dev-panel="api-explorer"]').forEach(function (p) {
+          if (!box || !box.contains(p)) p.remove();
+        });
+        _inspectorKey = null;   // the inspector re-renders when shown again
+        _showGrpcServicePanel(svc, { containerId: containerId, compact: true });
+        // The dock has its own Code tab; this button targets the inspector.
+        var code = box && box.querySelector('#grpcCodeExamples');
+        if (code) code.hidden = true;
+      },
+      protoPathFor: _getStoredProtoPath,
+      setRibbonTab: function (tab) { _setRibbonTab(tab); }
+    });
+  }
 
   /**
    * The service currently highlighted in the sidebar, recorded by both
@@ -6438,20 +6530,17 @@
     // its commands act on the views help is covering. A component behind
     // help stops polling (R5); closeHelp -> switchMode resumes it.
     _suspendActiveComponent();
+    if (MM.endo && MM.endo.bench) MM.endo.bench.setActive(false);
     var sidebar = document.querySelector('.app-sidebar');
     if (sidebar) sidebar.style.display = 'none';
 
     var ribbon = document.getElementById('ribbon');
     if (ribbon) { ribbon.style.display = 'none'; ribbon.classList.remove('peek'); }
 
-    var serviceContent = document.getElementById('serviceContent');
-    var fleetContent = document.getElementById('fleetContent');
-    var creatorContent = document.getElementById('creatorContent');
-    var testProjectContent = document.getElementById('testProjectContent');
-    if (serviceContent) serviceContent.style.display = 'none';
-    if (fleetContent) fleetContent.style.display = 'none';
-    if (creatorContent) creatorContent.style.display = 'none';
-    if (testProjectContent) testProjectContent.style.display = 'none';
+    ['serviceContent', 'fleetContent', 'creatorContent', 'testProjectContent', 'benchContent'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
 
     // Unlight the ribbon tabs while help is on screen (closeHelp restores
     // them through switchMode).

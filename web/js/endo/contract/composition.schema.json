@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "endo/composition.schema.json",
+  "title": "Bench Endoskeleton composition, contract v1",
+  "description": "Which components one bench shows for one role, and in which order. References components by Consul service name; never copies their manifests. Structure only; lint.js checks the rules.",
+  "type": "object",
+  "required": ["composition", "shell", "components"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "composition": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "description": "<bench>/<name>, e.g. bench07/operator"
+    },
+    "title": { "type": "string" },
+    "shell": { "type": "string", "minLength": 1 },
+    "role": {
+      "type": "string",
+      "enum": ["user", "dev", "admin"],
+      "description": "Ribbon tab the bench opens on"
+    },
+    "plugins": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+      "description": "Plugins this bench enables (contribution points arrive with milestone M4)"
+    },
+    "components": { "type": "array", "items": { "$ref": "#/definitions/entry" } },
+    "order": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^(\\*|@[A-Za-z0-9][A-Za-z0-9._-]*|[a-z]+\\.[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?)$" },
+      "description": "Tile order on the stage: \"<component>/<tile>\", \"<component>\" (all its tiles), \"@<service>\" (the module of that Consul service, also when it shows no component) or \"*\" (everything not listed). Unlisted tiles follow in composition order."
+    }
+  },
+  "definitions": {
+    "entry": {
+      "type": "object",
+      "required": ["from", "service"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "enum": ["consul"] },
+        "service": { "type": "string", "minLength": 1, "description": "Consul service name" },
+        "gui": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "description": "GUI folder under web/services/, for a service that does not register Meta.gui itself (e.g. C++ services)"
+        },
+        "tiles": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "description": "Show only these tiles of the component"
+        }
+      }
+    }
+  }
+}

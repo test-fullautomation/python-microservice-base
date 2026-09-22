@@ -1,0 +1,23 @@
+{
+  "composition": "lint-demo/user",
+  "title": "Lint demo",
+  "shell": "^2.3",
+  "role": "user",
+  "plugins": [
+    "charts"
+  ],
+  "components": [
+    {
+      "from": "consul",
+      "service": "testbench-climate-chamber-sim"
+    },
+    {
+      "from": "consul",
+      "service": "bench-heater"
+    },
+    {
+      "from": "consul",
+      "service": "uds-request-service"
+    }
+  ]
+}

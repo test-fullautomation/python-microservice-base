@@ -5,8 +5,10 @@
  *   node tools/endo-lint.js <file-or-dir> [...] [--shell 2.3.0] [--warn-as-error]
  *
  * Files named component.json or plugin.json are linted; a directory is
- * searched for them. Components found together are also checked against
- * each other (duplicate ids). Exit code 1 on any error, so it fails CI.
+ * searched for them. A file named explicitly that has a "composition"
+ * field is linted as a bench composition. Components found together are
+ * also checked against each other (duplicate ids). Exit code 1 on any
+ * error, so it fails CI.
  */
 'use strict';
 
@@ -17,9 +19,10 @@ const contract = require('../web/js/endo/contract/lint.js');
 const CONTRACT_DIR = path.join(__dirname, '..', 'web', 'js', 'endo', 'contract');
 const componentSchema = JSON.parse(fs.readFileSync(path.join(CONTRACT_DIR, 'component.schema.json'), 'utf-8'));
 const pluginSchema = JSON.parse(fs.readFileSync(path.join(CONTRACT_DIR, 'plugin.schema.json'), 'utf-8'));
+const compositionSchema = JSON.parse(fs.readFileSync(path.join(CONTRACT_DIR, 'composition.schema.json'), 'utf-8'));
 
 function usage(code) {
-  console.log('usage: node tools/endo-lint.js <component.json|plugin.json|dir> [...] [--shell X.Y.Z] [--warn-as-error]');
+  console.log('usage: node tools/endo-lint.js <component.json|plugin.json|composition.json|dir> [...] [--shell X.Y.Z] [--warn-as-error]');
   process.exit(code);
 }
 
@@ -66,11 +69,15 @@ for (const file of files) {
     errors++;
     continue;
   }
-  const isPlugin = manifest && typeof manifest === 'object' && 'plugin' in manifest;
+  const isObj = manifest && typeof manifest === 'object';
+  const isPlugin = isObj && 'plugin' in manifest;
+  const isComposition = isObj && 'composition' in manifest && !('component' in manifest);
   const issues = isPlugin
     ? contract.lintPlugin(manifest, { schema: pluginSchema, shell })
-    : contract.lintComponent(manifest, { schema: componentSchema, shell });
-  if (!isPlugin) components.push(manifest);
+    : isComposition
+      ? contract.lintComposition(manifest, { schema: compositionSchema, shell })
+      : contract.lintComponent(manifest, { schema: componentSchema, shell });
+  if (!isPlugin && !isComposition) components.push(manifest);
   const e = issues.filter((i) => i.severity === 'error').length;
   const w = issues.length - e;
   errors += e;
