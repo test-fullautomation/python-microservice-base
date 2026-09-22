@@ -39,6 +39,8 @@ _LEGACY_TESTS = {
     "bridge_origins": "UIBridge/test_BridgeOrigins.py",
     # Bench compositions: the per-user store and /api/ui/compositions.
     "compositions": "UIBridge/test_Compositions.py",
+    # Live signals: the hub and /api/signals/* against a fake gRPC cluster.
+    "signal_hub": "Signals/test_SignalHub.py",
     # Test projects: engine + Robot Framework AIO adapter + bridge endpoints.
     "test_project": "TestProject/test_TestProject.py",
     # Scaffold emits a Manager GUI component (contract v1); lint needs node.

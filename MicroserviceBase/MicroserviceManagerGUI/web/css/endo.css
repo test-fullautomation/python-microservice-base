@@ -358,3 +358,24 @@
   .bench.with-dock { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "dock" "status"; }
   .bench-dock { position: static; max-height: none; }
 }
+/* ---------- live signals badge (milestone M3) ---------- */
+.bench-signals {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--rule, #D3D9D1);
+  background: var(--surface, #fff);
+  border-radius: 999px;
+  padding: 0.12rem 0.6rem;
+  font-size: 0.74rem;
+  color: var(--muted, #5A665F);
+  cursor: pointer;
+}
+.bench-plugins + .bench-signals { margin-left: 0.5rem; }
+.bench-badge + .bench-signals, .bench-status > .bench-signals:first-child { margin-left: auto; }
+.bench-signals code { font-size: 0.7rem; color: inherit; }
+.bench-signals:hover { border-color: var(--accent); }
+.bench-signals:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bench-signals.state-ok { color: var(--good); }
+.bench-signals.state-warn { color: var(--warn); }
+.bench-signals.state-bad { color: var(--bad); }

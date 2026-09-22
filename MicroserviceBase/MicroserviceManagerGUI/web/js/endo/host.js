@@ -37,11 +37,15 @@
 
   function esc(s) { return MM.endo.util.esc(s); }
 
-  function denied(cap) {
+  function deniedError(cap) {
     var e = new Error('CapabilityDenied: ' + cap + ' is not declared in requires.capabilities');
     e.code = 'CapabilityDenied';
-    return Promise.reject(e);
+    return e;
   }
+  function denied(cap) { return Promise.reject(deniedError(cap)); }
+
+  /** Local stand-in for the configuration service (stub until it exists). */
+  function configKey(scope, key) { return 'mm_config_stub:' + scope + ':' + key; }
 
   /** The only way a tile reaches the outside world. */
   function makeCtx(manifest, env) {
@@ -51,6 +55,7 @@
     var binds = manifest.binds || {};
     var consulName = binds.consul === '@self' ? env.consulName : binds.consul;
     var methodsP = null;
+    var open = 0;
 
     return {
       component: manifest.component,
@@ -87,11 +92,59 @@
       },
 
       signals: {
-        subscribe: function () {
-          if (!caps['signals.subscribe']) return denied('signals.subscribe');
-          return Promise.reject(new Error('Live signals arrive with the host bus (milestone M3).'));
+        /**
+         * Live values of signal names: cb(name, value, ts), at most 10 Hz.
+         * Returns unsubscribe(); throws CapabilityDenied when the manifest
+         * did not declare signals.subscribe. Kinds unsubscribe on suspend (R5).
+         */
+        subscribe: function (names, cb) {
+          if (!caps['signals.subscribe']) throw deniedError('signals.subscribe');
+          var off = MM.endo.bus.subscribe(names, cb);
+          var offStatus = cb.onStatus ? MM.endo.bus.onStatus(names, cb.onStatus) : function () {};
+          open++;
+          var done = false;
+          return function unsubscribe() {
+            if (done) return;
+            done = true;
+            open--;
+            off();
+            offStatus();
+          };
+        },
+        /** Write a setpoint on the service that owns it. */
+        set: function (name, value) {
+          if (!caps['signals.set']) return denied('signals.set');
+          return MM.endo.bus.set(name, value);
         }
       },
+
+      // Stubs until the session manager and the configuration service exist.
+      session: {
+        current: function () {
+          if (!caps['session.read']) return denied('session.read');
+          return Promise.resolve(null);
+        },
+        label: function (labels) {
+          if (!caps['session.label']) return denied('session.label');
+          console.info('[endo] ' + manifest.component + ' would label the session:', labels);
+          return Promise.resolve({ stored: false });
+        }
+      },
+      config: {
+        get: function (scope, key) {
+          if (!caps['config.read']) return denied('config.read');
+          try { return Promise.resolve(JSON.parse(localStorage.getItem(configKey(scope, key)) || 'null')); }
+          catch (e) { return Promise.resolve(null); }
+        },
+        put: function (scope, key, value) {
+          if (!caps['config.write']) return denied('config.write');
+          try { localStorage.setItem(configKey(scope, key), JSON.stringify(value)); } catch (e) { /* storage unavailable */ }
+          return Promise.resolve({ stored: 'local' });
+        }
+      },
+
+      /** Open signal subscriptions of this component (R5: 0 after suspend). */
+      openSubscriptions: function () { return open; },
 
       confirm: function (message) {
         return new Promise(function (resolve) {

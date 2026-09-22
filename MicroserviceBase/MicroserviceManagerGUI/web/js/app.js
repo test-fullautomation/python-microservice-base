@@ -6165,6 +6165,17 @@
   } catch (e) { _setRibbonPinned(false); }
   _setRibbonTab(_ribbonTabForMode(_currentMode), { fromMode: true });
 
+  // Live signals: without an explicit discovery address the bridge looks
+  // signal-discovery up in the first reachable Consul this window uses.
+  if (MM.endo && MM.endo.bus) {
+    MM.endo.bus.configure({
+      getConsul: function () {
+        var c = _connectedConsuls.filter(function (x) { return x.alive !== false; })[0];
+        return c ? c.url : '';
+      }
+    });
+  }
+
   // The bench view (js/endo/bench.js) composes components of the services
   // this window is connected to; it reaches the rest of the GUI only here.
   if (MM.endo && MM.endo.bench) {

@@ -396,10 +396,84 @@
         '<span class="s">' + esc(moduleBadgeText(m)) + '</span></button>';
     }).join('') +
     (plugins.length ? '<span class="bench-plugins" title="Plugins arrive with milestone M4">plugins: ' +
-      plugins.map(esc).join(', ') + ' (not loaded yet)</span>' : '');
+      plugins.map(esc).join(', ') + ' (not loaded yet)</span>' : '') +
+    '<button type="button" class="bench-signals" id="benchSignals" title="Live signals: click to set where signal-discovery is"></button>';
     bar.querySelectorAll('.bench-badge').forEach(function (b) {
       b.addEventListener('click', function () { selectComponent(b.getAttribute('data-component')); });
     });
+    bar.querySelector('#benchSignals').addEventListener('click', openSignalsDialog);
+    drawSignals();
+  }
+
+  // ------------------------------------------------------------ live signals
+
+  var SOCKET_LABEL = { idle: 'off', connecting: 'connecting', open: 'connected', retrying: 'reconnecting' };
+
+  /** The status strip's signal badge: socket state, discovery, live/unknown counts. */
+  function drawSignals() {
+    var b = document.getElementById('benchSignals');
+    if (!b || !MM.endo.bus) return;
+    var s = MM.endo.bus.stats();
+    var state = s.error && (s.socket !== 'open' || (s.names && !s.live)) ? 'bad'
+      : s.unknown.length || s.error ? 'warn' : s.socket === 'open' ? 'ok' : 'idle';
+    b.className = 'bench-signals state-' + state;
+    b.innerHTML = '<i class="bi bi-activity"></i>' +
+      '<span>signals · ' + esc(SOCKET_LABEL[s.socket] || s.socket) +
+      (s.names ? ' · ' + s.live + '/' + s.names + ' live' : '') +
+      (s.unknown.length ? ' · ' + s.unknown.length + ' unknown' : '') + '</span>' +
+      (s.discovery ? '<code>' + esc(s.discovery) + '</code>' : '');
+    b.title = (s.error ? s.error + '\n' : '') +
+      (s.unknown.length ? 'Not in the signal catalog: ' + s.unknown.join(', ') + '\n' : '') +
+      'Click to set where signal-discovery is.';
+  }
+
+  var sigModal = null;
+  function openSignalsDialog() {
+    var el = document.getElementById('benchSignalsModal');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'modal fade';
+      el.id = 'benchSignalsModal';
+      el.tabIndex = -1;
+      el.setAttribute('aria-labelledby', 'benchSignalsTitle');
+      el.setAttribute('aria-hidden', 'true');
+      el.innerHTML = '<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate>' +
+        '<div class="modal-header"><h5 class="modal-title" id="benchSignalsTitle">Live signals</h5>' +
+        '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>' +
+        '<div class="modal-body">' +
+        '  <label class="form-label" for="benchSignalsAddr">Signal discovery address</label>' +
+        '  <input class="form-control" id="benchSignalsAddr" placeholder="host:port, e.g. 127.0.0.1:50210" autocomplete="off">' +
+        '  <div class="form-text">Leave empty to use the <code>signal-discovery</code> service of the connected Consul. ' +
+        '  The bridge keeps one stream per graph service and sends each value at most 10 times a second.</div>' +
+        '  <div class="mt-3 endo-small" id="benchSignalsState"></div>' +
+        '  <div class="endo-result bad mt-2" id="benchSignalsError" hidden></div>' +
+        '</div>' +
+        '<div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>' +
+        '<button type="submit" class="btn btn-primary">Use this address</button></div></form></div>';
+      document.body.appendChild(el);
+      el.querySelector('form').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var v = el.querySelector('#benchSignalsAddr').value.trim();
+        var err = el.querySelector('#benchSignalsError');
+        if (v && !/^[A-Za-z0-9._-]+:\d{1,5}$/.test(v)) {
+          err.hidden = false;
+          err.textContent = 'Use host:port, e.g. 127.0.0.1:50210.';
+          return;
+        }
+        MM.endo.bus.setDiscovery(v);
+        sigModal.hide();
+      });
+    }
+    sigModal = bootstrap.Modal.getOrCreateInstance(el);
+    var s = MM.endo.bus.stats();
+    el.querySelector('#benchSignalsAddr').value = s.discoveryOverride || '';
+    el.querySelector('#benchSignalsError').hidden = true;
+    el.querySelector('#benchSignalsState').innerHTML =
+      'Now: <strong>' + esc(SOCKET_LABEL[s.socket] || s.socket) + '</strong>' +
+      (s.discovery ? ' via <code>' + esc(s.discovery) + '</code>' : '') +
+      ' · ' + s.names + ' signal(s), ' + s.subscribers + ' subscriber(s)' +
+      (s.error ? '<div class="endo-bad mt-1">' + esc(s.error) + '</div>' : '');
+    sigModal.show();
   }
 
   function drawNav() {
@@ -889,6 +963,7 @@
     if (rl) rl.addEventListener('click', function () { refreshList(); reload(); });
     renderPicker();
     refreshList();
+    if (MM.endo.bus) MM.endo.bus.onChange(drawSignals);
   }
 
   MM.endo.bench = {

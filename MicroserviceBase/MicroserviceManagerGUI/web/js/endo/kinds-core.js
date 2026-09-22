@@ -53,6 +53,8 @@
     return unit ? s + ' ' + unit : s;
   }
 
+  var runningTimers = 0;   // pollers with a live interval (R5: 0 while everything is suspended)
+
   /** Run fn now and every ms (0 = once); never overlaps; stops cleanly. */
   function poller(ms, fn) {
     var timer = null, running = false, busy = false;
@@ -67,15 +69,16 @@
         if (running) return;
         running = true;
         tick();
-        if (ms > 0) timer = setInterval(tick, ms);
+        if (ms > 0) { timer = setInterval(tick, ms); runningTimers++; }
       },
       stop: function () {
         running = false;
-        if (timer) { clearInterval(timer); timer = null; }
+        if (timer) { clearInterval(timer); timer = null; runningTimers--; }
       },
       now: function () { var was = running; running = true; tick(); running = was; }
     };
   }
+  poller.running = function () { return runningTimers; };
 
   function errorLine(err) {
     return '<div class="endo-error" role="status">' + esc((err && err.message) || err) + '</div>';
@@ -117,12 +120,10 @@
   kinds['live-status'] = {
     render: function (el, tile, ctx) {
       var fields = tile.fields || [];
-      var hasSignals = fields.some(function (f) { return f.signal; });
       el.innerHTML = fields.map(function (f, i) {
         return '<div class="endo-kv"><span class="k">' + esc(f.label) + '</span>' +
                '<span class="v" data-f="' + i + '">' + (f.signal ? '—' : '…') + '</span></div>';
       }).join('') +
-      (hasSignals ? '<div class="endo-note">Live signal values arrive with the host bus (milestone M3).</div>' : '') +
       '<div class="endo-foot" hidden></div>';
 
       // One call per distinct rpc + args, shared by the fields that read it.
@@ -145,8 +146,43 @@
           (high ? ' <span class="endo-chip warn">high</span>' : low ? ' <span class="endo-chip warn">low</span>' : '');
       }
 
-      if (!keys.length) return { suspend: function () {}, resume: function () {}, destroy: function () {} };
-      return polled(tile, function () {
+      // Signal fields: one subscription for the tile, held only while shown (R5).
+      var sigNames = [];
+      var sigIdx = {};
+      fields.forEach(function (f, i) {
+        if (!f.signal) return;
+        if (!sigIdx[f.signal]) { sigIdx[f.signal] = []; sigNames.push(f.signal); }
+        sigIdx[f.signal].push(i);
+      });
+      var unsub = null;
+      function onValue(name, value) {
+        (sigIdx[name] || []).forEach(function (i) { show(i, value); });
+      }
+      onValue.onStatus = function (s) {
+        if (s.state === 'live') return;
+        (sigIdx[s.name] || []).forEach(function (i) {
+          var cell = el.querySelector('[data-f="' + i + '"]');
+          if (!cell) return;
+          var label = s.state === 'unknown' ? 'unknown signal' : s.state === 'retrying' ? 'reconnecting' : 'unavailable';
+          cell.innerHTML = '<span class="endo-chip warn" title="' + esc(s.name + ': ' + (s.message || s.state)) + '">' + label + '</span>';
+        });
+      };
+      var signals = {
+        start: function () {
+          if (unsub || !sigNames.length) return;
+          try { unsub = ctx.signals.subscribe(sigNames, onValue); }
+          catch (e) {
+            sigNames.forEach(function (n) { onValue.onStatus({ name: n, state: 'error', message: e.message }); });
+          }
+        },
+        stop: function () { if (unsub) { unsub(); unsub = null; } }
+      };
+      signals.start();
+
+      if (!keys.length) {
+        return { suspend: signals.stop, resume: signals.start, destroy: signals.stop };
+      }
+      var inst = polled(tile, function () {
         return Promise.all(keys.map(function (key) {
           var g = groups[key];
           return ctx.call(g.rpc, g.args).then(function (d) {
@@ -166,6 +202,12 @@
                                  : '<span class="endo-muted">updated ' + new Date().toLocaleTimeString() + '</span>';
         });
       });
+      return {
+        suspend: function () { inst.suspend(); signals.stop(); },
+        resume: function () { inst.resume(); signals.start(); },
+        destroy: function () { inst.destroy(); signals.stop(); },
+        refresh: inst.refresh
+      };
     }
   };
 
