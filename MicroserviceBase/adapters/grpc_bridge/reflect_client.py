@@ -238,6 +238,42 @@ excluding the built-in reflection / health services.
         self._ingest_files(fd_bytes_list)
         self._loaded_symbols.add(symbol)
 
+    def file_descriptors(self, symbol: str) -> List[descriptor_pb2.FileDescriptorProto]:
+        """
+Return the ``FileDescriptorProto`` objects the server sends for the file
+declaring *symbol* (a fully-qualified service or message name).
+
+Used where a service's API description is needed without its ``.proto``
+on disk -- e.g. generating Robot resources for a running service.
+
+**Arguments:**
+
+* ``symbol``
+
+  / *Condition*: required / *Type*: str /
+
+  Fully-qualified name, e.g. ``"hello.v1.HelloService"``.
+
+**Returns:**
+
+* ``descriptors``
+
+  / *Type*: List[FileDescriptorProto] /
+
+  The declaring file first, possibly followed by files it depends on.
+        """
+        req = reflection_pb2.ServerReflectionRequest(file_containing_symbol=symbol)
+        resp = self._reflect(req)
+        if resp.HasField("error_response"):
+            raise GrpcReflectError(
+                f"Reflection on {self._target} could not resolve {symbol}: "
+                f"{resp.error_response.error_message}"
+            )
+        return [
+            descriptor_pb2.FileDescriptorProto.FromString(raw)
+            for raw in resp.file_descriptor_response.file_descriptor_proto
+        ]
+
     def _ingest_files(self, fd_bytes_list) -> None:
         """Add FileDescriptorProto bytes to the pool in dependency order."""
         # Parse + stage.  We may receive files in any order, so add them

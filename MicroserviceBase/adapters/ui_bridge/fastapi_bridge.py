@@ -2936,6 +2936,207 @@ Generate scaffolding for a new microservice project.
          return {"status": "ok", "written": written, "skipped": skipped,
                  "out_dir": out_abs}
 
+      # ---- Test projects: export services into a test project ----
+      #
+      # The GUI opens a folder as a test project and exports a Consul-
+      # registered service into it. Layout and generated files are the
+      # project's runner adapter's business (adapters/test_project); this
+      # layer resolves the service and where its API description comes
+      # from: a local .proto when one declares the service, otherwise the
+      # running service's reflection.
+
+      class TestProjectRootBody(BaseModel):
+         root: str
+
+      class TestProjectInitBody(BaseModel):
+         root: str
+         runner: str = "robotframework-aio"
+         consul_addr: str = ""
+
+      class TestProjectExportBody(BaseModel):
+         root: str
+         consul_name: str
+         consul: str = ""
+         proto_path: str = ""           # explicit .proto folder (GUI)
+         prefer_reflection: bool = False
+         create_starter: bool = True
+         apply: bool = False            # False = plan only
+         overwrite_modified: bool = False
+
+      def _tp_error(exc):
+         from ..test_project import TestProjectConflict
+         out = {"status": "error", "error": str(exc)}
+         if isinstance(exc, TestProjectConflict):
+            out["code"] = "conflict"   # the GUI offers reload / overwrite
+         return out
+
+      @app.post("/api/test-project/describe")
+      def test_project_describe(body: TestProjectRootBody):
+         from ..test_project import TestProjectError, describe
+         try:
+            return describe(body.root)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/init")
+      def test_project_init(body: TestProjectInitBody):
+         from ..test_project import TestProjectError, init_project
+         try:
+            return init_project(body.root, body.runner, consul_addr=body.consul_addr)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectFileBody(BaseModel):
+         root: str
+         path: str
+
+      @app.post("/api/test-project/tree")
+      def test_project_tree(body: TestProjectRootBody):
+         """Files of a test project with role and sync state (read-only)."""
+         from ..test_project import TestProjectError, project_tree
+         try:
+            return project_tree(body.root)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/file")
+      def test_project_file(body: TestProjectFileBody):
+         """Text of one file inside a test project, for a read-only preview."""
+         from ..test_project import TestProjectError, read_project_file
+         try:
+            return read_project_file(body.root, body.path)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectSaveBody(BaseModel):
+         root: str
+         path: str
+         content: str
+         expected_sha256: str = ""      # hash from the read; empty = no check
+         force: bool = False            # overwrite a concurrent change
+
+      class TestProjectCheckBody(BaseModel):
+         path: str
+         content: str
+
+      class TestProjectNewSuiteBody(BaseModel):
+         root: str
+         name: str
+         service: str = ""
+
+      @app.post("/api/test-project/file/save")
+      def test_project_file_save(body: TestProjectSaveBody):
+         """Save a user-owned project file; generated files and the manifest are refused."""
+         from ..test_project import TestProjectError, write_project_file
+         try:
+            return write_project_file(
+               body.root, body.path, body.content,
+               expected_sha256=body.expected_sha256 or None, force=body.force)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/file/check")
+      def test_project_file_check(body: TestProjectCheckBody):
+         """Robot Framework syntax problems of unsaved text (nothing is written)."""
+         from ..test_project import check_syntax
+         return {"status": "ok", "problems": check_syntax(body.path, body.content)}
+
+      @app.post("/api/test-project/suite")
+      def test_project_new_suite(body: TestProjectNewSuiteBody):
+         """Create a suite from the runner's template, optionally wired to a service."""
+         from ..test_project import TestProjectError, create_suite
+         try:
+            return create_suite(body.root, body.name, service=body.service or None)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/export")
+      def test_project_export(body: TestProjectExportBody):
+         """Plan (``apply=false``) or write one service's files into a test project.
+
+         Protos are copied when a local ``.proto`` declares every gRPC
+         service the instance advertises (explicit ``proto_path`` first,
+         then ``MB_PROTO_SEARCH_PATH`` + defaults); otherwise resources are
+         generated from server reflection and no protos are copied.
+         """
+         from ..grpc_bridge import GrpcReflectClient, GrpcReflectError, LocalProtoClient
+         from ..test_project import (
+            TestProjectError, collect_proto_set, export_service,
+            find_service_protos, validate_name,
+         )
+         try:
+            validate_name(body.consul_name, "service name")
+            target_info = _find_service_target(body.consul_name, consul=body.consul)
+            if target_info is None:
+               raise TestProjectError(
+                  "Service '%s' has no passing instance in Consul." % body.consul_name)
+            host, port, meta = target_info
+            target = "%s:%d" % (host, port)
+            grpc_services = [s.strip() for s in
+                             (meta.get("grpc_services") or "").split(",") if s.strip()]
+
+            proto_files = None
+            descriptors = None
+            warnings = []
+            search_paths = _proto_search_paths(
+               extra=[body.proto_path] if body.proto_path else [])
+            candidates = []
+            if grpc_services and not body.prefer_reflection:
+               candidates = find_service_protos(
+                  grpc_services, search_paths, is_excluded=LocalProtoClient._is_excluded)
+            located = candidates[0] if candidates else None
+
+            if located:
+               proto_files, warnings = collect_proto_set(located)
+               source = {"kind": "proto", "path": located}
+               if len(candidates) > 1:
+                  # Copies are common (service + client examples); say which
+                  # one was used instead of guessing silently.
+                  others = candidates[1:]
+                  warnings.insert(0,
+                     "%d .proto files declare %s; using the first one found. Others: %s%s. "
+                     "Pick a .proto folder to use a different copy."
+                     % (len(candidates), ", ".join(grpc_services),
+                        "; ".join(others[:4]),
+                        " (+%d more)" % (len(others) - 4) if len(others) > 4 else ""))
+            else:
+               try:
+                  with GrpcReflectClient(target) as client:
+                     if not grpc_services:
+                        grpc_services = client.list_services()
+                     descriptors, seen = [], set()
+                     for name in grpc_services:
+                        for fd in client.file_descriptors(name):
+                           if fd.name not in seen:
+                              seen.add(fd.name)
+                              descriptors.append(fd)
+               except GrpcReflectError as exc:
+                  raise TestProjectError(
+                     "No .proto declaring %s was found in %s, and server reflection on "
+                     "%s failed (%s). Point the export at the folder holding the "
+                     "service's .proto file."
+                     % (", ".join(grpc_services) or body.consul_name,
+                        search_paths or "<no search paths>", target, exc))
+               source = {"kind": "reflection", "path": target}
+
+            return export_service(
+               body.root, body.consul_name,
+               consul_addr=body.consul or "http://127.0.0.1:8500",
+               grpc_services=grpc_services,
+               proto_files=proto_files,
+               file_descriptors=descriptors,
+               source=source,
+               create_starter=body.create_starter,
+               apply=body.apply,
+               overwrite_modified=body.overwrite_modified,
+               warnings=warnings,
+            )
+         except TestProjectError as exc:
+            return _tp_error(exc)
+         except Exception as exc:    # noqa: BLE001
+            logger.exception("[test-project] export failed: %s", exc)
+            return _tp_error("Unexpected failure: %s: %s" % (type(exc).__name__, exc))
+
       @app.post("/api/scaffold/generate-v2")
       def scaffold_generate_v2(body: ScaffoldV2Request):
          """Generate scaffolding for a new microservice (v2 — Python/C++, multi-GUI)."""

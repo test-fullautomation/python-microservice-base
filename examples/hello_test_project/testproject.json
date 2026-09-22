@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "runner": "robotframework-aio",
+  "layout": {
+    "suites": "testsuites",
+    "resources": "resources",
+    "proto": "proto"
+  },
+  "created_at": "2026-09-15T19:24:15",
+  "generator": "MicroserviceBase 2.2.0",
+  "services": {
+    "hello": {
+      "grpc_services": [
+        "hello.v1.HelloService"
+      ],
+      "consul_addr": "http://127.0.0.1:8500",
+      "source": {
+        "kind": "proto",
+        "path": "examples/hello_service/proto/hello.proto"
+      },
+      "exported_at": "2026-09-15T19:24:15",
+      "generator": "MicroserviceBase 2.2.0",
+      "files": {
+        "resources/hello/hello_service.resource": {
+          "role": "generated",
+          "sha256": "5ad09bc1f14705eecf4760d302ab2b2cbefe031f33cd78ba22c6e6bead5fa56c"
+        },
+        "proto/hello/hello.proto": {
+          "role": "generated",
+          "sha256": "240c4fc6288d658a89b74ef5a2d5d10ac7e3b11599286e9ae28e9863206b8ef5"
+        },
+        "testsuites/config/robot_config.jsonp": {
+          "role": "starter"
+        },
+        "testsuites/hello_smoke.robot": {
+          "role": "starter"
+        }
+      }
+    }
+  }
+}

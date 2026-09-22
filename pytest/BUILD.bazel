@@ -37,6 +37,8 @@ _LEGACY_TESTS = {
     "versioning": "Versioning/test_Versioning.py",
     # Not legacy: exercises the FastAPI bridge's origin allow-list in-process.
     "bridge_origins": "UIBridge/test_BridgeOrigins.py",
+    # Test projects: engine + Robot Framework AIO adapter + bridge endpoints.
+    "test_project": "TestProject/test_TestProject.py",
 }
 
 [
