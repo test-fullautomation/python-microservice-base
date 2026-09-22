@@ -1,0 +1,167 @@
+/*
+ * Bench theme: the look of the Bench Endoskeleton prototype, applied to the
+ * whole Manager GUI. Loaded after every other stylesheet so its tokens and
+ * Bootstrap overrides win.
+ *
+ * Graphite-green chrome, one teal accent, IBM Plex for text and data. The
+ * fonts ship with the GUI (web/fonts/ibm-plex, SIL OFL 1.1) because the
+ * corporate proxy blocks font CDNs.
+ */
+
+/* ---------- fonts ---------- */
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: local("IBM Plex Sans"), url("../fonts/ibm-plex/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: local("IBM Plex Sans Medium"), url("../fonts/ibm-plex/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: local("IBM Plex Sans SemiBold"), url("../fonts/ibm-plex/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  font-weight: 600 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: local("IBM Plex Mono"), url("../fonts/ibm-plex/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: local("IBM Plex Mono Medium"), url("../fonts/ibm-plex/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+  font-weight: 500 700; font-style: normal; font-display: swap;
+}
+
+/* ---------- tokens ---------- */
+:root {
+  /* chrome (always dark) */
+  --navbar-bg: #111915;
+  --ribbon-bg: #1B2520;
+  --sidebar-bg: #22302A;
+  --sidebar-hover: #2C3C35;
+  --sidebar-text: #E6ECE8;
+  --sidebar-muted: #93A29A;
+  --sidebar-active: #127A69;
+
+  /* content */
+  --content-bg: #EEF1EC;
+  --surface: #FFFFFF;
+  --ink: #16201B;
+  --muted: #5A665F;
+  --rule: #D3D9D1;
+
+  /* one accent. #127A69 holds 5.2:1 against white and reads on the dark
+     chrome as a fill; --accent-bright is for small marks on dark. */
+  --accent: #127A69;
+  --accent-hover: #0E6152;
+  --accent-active: #0B5046;
+  --accent-soft: #D4EBE5;
+  --accent-bright: #45C3A8;
+
+  --font-family: "IBM Plex Sans", "Segoe UI", -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+
+  /* TAG slide-7 layer colours, for layer-coded headers and tiles */
+  --l-operator: #CCFFCC;
+  --l-session: #FBCFE8;
+  --l-config: #FFCC99;
+  --l-execution: #CCFFFF;
+  --l-runner: #E6EAEE;
+  --l-signals: #BFC3F5;
+  --l-bits: #9DB4D6;
+
+  /* Bootstrap 5.3 */
+  --bs-body-font-family: var(--font-family);
+  --bs-font-monospace: var(--font-mono);
+  --bs-body-color: #16201B;
+  --bs-body-color-rgb: 22, 32, 27;
+  --bs-border-color: #D3D9D1;
+  --bs-primary: #127A69;
+  --bs-primary-rgb: 18, 122, 105;
+  --bs-primary-bg-subtle: #D4EBE5;
+  --bs-primary-border-subtle: #A6D4C9;
+  --bs-primary-text-emphasis: #0A4A3F;
+  --bs-link-color: #127A69;
+  --bs-link-color-rgb: 18, 122, 105;
+  --bs-link-hover-color: #0E6152;
+  --bs-link-hover-color-rgb: 14, 97, 82;
+  --bs-focus-ring-color: rgba(18, 122, 105, 0.25);
+  /* Bootstrap's pink inline code clashed with the palette */
+  --bs-code-color: #0E6152;
+}
+
+/* Info alerts take the accent instead of Bootstrap's cyan. */
+.alert-info {
+  --bs-alert-color: #0A4A3F;
+  --bs-alert-bg: var(--accent-soft);
+  --bs-alert-border-color: #A6D4C9;
+  --bs-alert-link-color: #0A4A3F;
+}
+
+body { font-family: var(--font-family); }
+code, kbd, pre, samp, .font-monospace { font-family: var(--font-mono); }
+
+/* ---------- Bootstrap components that hard-code their blue ---------- */
+.btn-primary {
+  --bs-btn-bg: var(--accent);
+  --bs-btn-border-color: var(--accent);
+  --bs-btn-hover-bg: var(--accent-hover);
+  --bs-btn-hover-border-color: var(--accent-hover);
+  --bs-btn-active-bg: var(--accent-active);
+  --bs-btn-active-border-color: var(--accent-active);
+  --bs-btn-disabled-bg: var(--accent);
+  --bs-btn-disabled-border-color: var(--accent);
+  --bs-btn-focus-shadow-rgb: 18, 122, 105;
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--accent);
+  --bs-btn-border-color: var(--accent);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--accent);
+  --bs-btn-hover-border-color: var(--accent);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--accent-hover);
+  --bs-btn-active-border-color: var(--accent-hover);
+  --bs-btn-disabled-color: var(--accent);
+  --bs-btn-disabled-border-color: var(--accent);
+  --bs-btn-focus-shadow-rgb: 18, 122, 105;
+}
+.nav-pills { --bs-nav-pills-link-active-bg: var(--accent); }
+.nav { --bs-nav-link-color: var(--accent); --bs-nav-link-hover-color: var(--accent-hover); }
+.list-group { --bs-list-group-active-bg: var(--accent); --bs-list-group-active-border-color: var(--accent); }
+.dropdown-menu { --bs-dropdown-link-active-bg: var(--accent); }
+.progress, .progress-stacked { --bs-progress-bar-bg: var(--accent); }
+.pagination {
+  --bs-pagination-color: var(--accent);
+  --bs-pagination-active-bg: var(--accent);
+  --bs-pagination-active-border-color: var(--accent);
+}
+.accordion {
+  --bs-accordion-active-bg: var(--accent-soft);
+  --bs-accordion-active-color: #0A4A3F;
+  --bs-accordion-btn-focus-box-shadow: 0 0 0 0.2rem rgba(18, 122, 105, 0.25);
+}
+.form-control:focus, .form-select:focus, .form-check-input:focus {
+  border-color: #7DBFB1;
+  box-shadow: 0 0 0 0.2rem rgba(18, 122, 105, 0.2);
+}
+.form-check-input:checked { background-color: var(--accent); border-color: var(--accent); }
+.form-range::-webkit-slider-thumb { background-color: var(--accent); }
+
+/* ---------- the prototype's small monospace labels ---------- */
+.ribbon-group-label,
+.tpv-group-title,
+.infra-label,
+.bridge-label {
+  font-family: var(--font-mono);
+}
+.ribbon-group-label,
+.tpv-group-title {
+  letter-spacing: 0.08em;
+}
+
+/* The ribbon band's own colour now comes from the tokens above. */
+.ribbon { --ribbon-bg: #1B2520; }

@@ -69,6 +69,242 @@ hand-roll JSON `send_cmd` strings:
 | The lighter in-app help (loaded inside the running GUI) | `../../web/docs/help.html` (or click the **?** in the navbar when the GUI is running) |
 | A worked example of a multi-service C++ project | [`../../../../examples/PowerDeviceService/README.md`](../../../../examples/PowerDeviceService/README.md) |
 
+## Providing a GUI for a gRPC service
+
+A service registered in Consul is listed in the Services view with a
+**No GUI** marker and opens a runtime card (status, instances, address,
+tags). To show a GUI of its own instead, the service declares one and
+ships it:
+
+1. **Declare** — set `gui` in the service settings (env var
+   `<PREFIX>_GUI`, e.g. `HELLO_GUI=HelloService1.0.0`). `ServiceRunner`
+   registers it in Consul as `Meta.gui`.
+2. **Ship** — put the plugin folder under the Manager GUI's
+   `web/services/<gui>/`. A `component.json` (see below) is tried first;
+   without one, any of the loader's tiers works: `gui_schema.json`,
+   `ServiceUI.qml`, `ServiceUI.ui`, a Qt WASM build (`.html` + `.js` +
+   `.wasm`), or plain `<Name>.html` + `<Name>.js`.
+3. **Talk to the service** — from JavaScript use
+   `MM.grpcClient.callMethod({ consulName, consulUrl, grpcService, method,
+   argsJson })`; the bridge resolves the instance through Consul and
+   invokes it via gRPC reflection, so the plugin needs no generated
+   stubs. `MM.currentGuiService` holds `{ name, consulUrl, address, port,
+   grpcServices }` for the selected instance.
+
+`web/services/HelloService1.0.0/` is a complete example for the
+`examples/hello_service` sample; `examples/demo_gui.nomad.hcl` runs that
+service with the GUI declared.
+
+### Component manifests (`component.json`)
+
+A component is a declarative panel: the GUI draws it from the manifest,
+so the service ships no GUI code. It names its layer of the TAG layer
+chart, the capabilities it uses and the tiles it shows:
+
+```json
+{
+  "component": "operator.hello",
+  "version": "1.0.0",
+  "layer": "operator",
+  "title": "Hello",
+  "requires": { "shell": "^2.3", "capabilities": ["grpc.call"] },
+  "binds": { "consul": "@self", "grpc": "hello.v1.HelloService" },
+  "tiles": [
+    { "id": "greet", "size": "1x1", "kind": "command-form", "call": "Greet",
+      "form": { "name": "string" }, "resultPath": "message" }
+  ],
+  "renderer": "schema"
+}
+```
+
+- **Tile kinds:** `text`, `live-status` (polls RPCs), `command-form` (typed
+  form, or built from gRPC reflection when `form` is left out), `table`,
+  `log` (server-streaming RPC) and `run-status`. **Sizes** on the 4-column
+  stage: `1x1`, `2x1`, `2x2` and `4x1`.
+- **`binds.consul: "@self"`** means the service that declared the component
+  through `Meta.gui`. A host, port or IP here is rejected.
+- **Capabilities** are enforced: an RPC or signal call that the manifest
+  did not declare fails with `CapabilityDenied`.
+- **Lint** before shipping, from the Manager GUI folder:
+  `node tools/endo-lint.js web/services/<gui>/component.json`. It exits
+  non-zero on errors. A manifest with errors is not mounted; the GUI shows
+  the list of broken rules instead.
+- The contract lives in `web/js/endo/contract/component.schema.json`; the
+  linter's tests are in `test/endo/test_endo_lint.js`.
+
+The Service Creator and `mb-scaffold` emit a starting manifest in
+`ui/<Service><version>/component.json`: one command form per unary RPC
+and one log per server-streaming RPC, in the `bits` layer unless the spec
+sets `ui_layer`. Multi-service projects don't get one yet. **C++
+services:** the C++ runtime does not register `Meta.gui` yet, so a C++
+service cannot declare its component itself.
+
+## Test projects
+
+A test project is a folder the Manager GUI exports services into, so test
+authors get working Robot Framework keywords without copying generated
+files around by hand.
+
+A complete sample — generated resources, starter files and a hand-written
+API suite — is in `examples/hello_test_project/`.
+
+**Open one:** *Developer Tools → Open test project…* (or the folder chip in
+the developer inspector). A folder that is not a test project yet can be
+initialized; existing files are never moved or changed.
+
+**See what's in it:** *Developer Tools → Test project view* (opening a
+project lands there too). The sidebar lists every file grouped into suites,
+resources, protos and configuration, each marked **gen** (generated),
+**starter**, **yours** or **manifest**. A generated file edited since the last
+export shows an amber dot, a deleted one a red dot. The overview shows the
+exported services with their file state and the command that runs all
+suites; from there you can **Re-export** a running service or export
+another one.
+
+**Edit suites in place.** Selecting a suite, a starter file or one of your
+own files opens it in an editor with Robot Framework highlighting and line
+numbers (Tab inserts four spaces, Enter keeps the indentation, **Ctrl+S**
+saves). A save refuses to overwrite a file that changed on disk since you
+opened it, and offers *Overwrite* or *Reload* instead. On save — or with
+**Check** — the bridge parses the file with Robot Framework and lists syntax
+problems by line; click one to jump there. Unsaved text survives a reload
+and is offered again when you reopen the file. Generated files and the
+manifest open read-only. **New suite…** (overview, or **+** next to
+*Suites*) creates a suite already wired to an exported service's keywords.
+
+**Export a service:** select a Consul-registered service, then *Developer
+Tools → Add to test project* (or the button in the inspector's API tab).
+The GUI first shows a plan — every file with its status and a diff for
+anything that would change — and writes only when you confirm.
+
+Structure for **Robot Framework AIO** (the first supported runner):
+
+```text
+<project>/
+├─ testproject.json                   manifest: runner, layout, what was exported
+├─ testsuites/
+│  ├─ config/robot_config.jsonp       RF AIO config (level 3); CONSUL_ADDR in params.global
+│  └─ <service>_smoke.robot           starter suite per service
+├─ resources/<service>/*.resource     generated keywords
+└─ proto/<service>/*.proto            copied protos, when available
+```
+
+Run a starter suite from the project root with the RF AIO interpreter:
+`python -m robot -d results testsuites/<service>_smoke.robot`.
+
+| Status | Meaning |
+|---|---|
+| **new** | The file does not exist yet and will be created. |
+| **update** | Written by an earlier export and not edited since; regenerated. |
+| **unchanged** | Already identical (the generation date is ignored). |
+| **edited locally** | Differs from what the tool last wrote, or was not written by it. Left alone unless you allow overwriting. |
+| **kept** | Starter file (suite, config) that already exists — yours, never overwritten. |
+
+How it decides what to generate from:
+
+- **Proto available** — a local `.proto` declaring the service is found
+  (a folder you pick first, then `MB_PROTO_SEARCH_PATH` and the default
+  locations). It and its local imports are copied to `proto/<service>/`,
+  and the resources are generated from exactly those copies.
+- **No proto** — the resources are generated from the running service's
+  server reflection. Nothing is copied; at test time the connection also
+  uses reflection (`${PROTO_DIR}` is empty).
+
+Resources connect through Consul by service name, never by host and port —
+Nomad assigns a new port on every placement. Generated resources should not
+be edited; put your own keywords in a separate resource.
+
+**Other test runners.** `testproject.json` names the runner, and everything
+runner-specific sits behind one interface
+(`MicroserviceBase/ports/test_project.py`). Supporting another runner means
+adding an adapter next to `adapters/test_project/robot_aio.py` and
+registering it; the manifest, proto handling and the plan/apply safety rules
+stay the same.
+
+## Signal Graph Studio
+
+**Developer Tools → Signal Graph Studio** opens the Signals & Blocks graph
+editor in its own window: draw blocks/wires/observe taps, map device
+parameters to Consul services, validate, and generate a deployable graph
+service (configs folder + Nomad job + `RUN.txt`, with a cross-graph
+signal-name collision scan).
+
+Beyond authoring, the studio also watches a graph run and grows the block
+library:
+
+- **◉ Monitor** subscribes to the graph's observed signals (one long-lived
+  `grpcurl … SignalQueryService/Subscribe` per owning endpoint) and shows the
+  live value and age on every observe tag, a value badge on each
+  `SubscriberSourceBlock`, and a pulse through the blocks upstream of each
+  update. It works against anything already running — a Nomad-deployed graph
+  service included.
+- **Chart tab** (log drawer → *Chart*) draws the same signals as small
+  multiples over a shared time axis: one strip per signal with its own
+  y-scale, 10/30/120 s window, crosshair, pause and per-signal toggles.
+- **Set signal** (inspector of a `SetpointBlock`) writes a value into the
+  running service through its own `SetSignal` RPC — the same path a Robot
+  `Set Signal` keyword takes — so write-direction graphs can be demonstrated
+  end to end: set → watch the wired blocks react → see the ack.
+- **▶ Run graph / ▶ Run cluster** starts a *local, fully mocked* cluster for
+  a wiring check. It needs `run_cluster.py`, which belongs to the signals
+  repository and is deliberately not vendored here: point
+  **`MB_SIGNALS_ROOT`** at a checkout that contains it, otherwise the button
+  reports the snapshot as missing. Deploying the generated Nomad job and
+  using ◉ Monitor is the supported path for a real bench.
+- **Library…** has two tabs: *New block skeleton* scaffolds a block package
+  (`blocks.py`, test stub, README, file header) with the catalog hints
+  already in place and, with the *layout* box ticked, the hexagonal skeleton
+  around it (`ports/<pkg>_port.py`, `adapters/mock.py`,
+  `adapters/grpc_client.py`, `adapters/registry.py`); it never overwrites an
+  existing file, so re-running it on an older package only adds what is
+  missing. *Regenerate catalog* runs the generator over chosen sources and
+  hot-reloads the palette without a restart.
+
+Live lookups, Monitor and Set signal need `grpcurl` on `PATH` (as the API
+Explorer does). Graph services serve no gRPC reflection, so the vendored
+`reference/protos/signal.proto` is passed as `-import-path`; the Live panel's
+*proto dir* overrides it.
+
+It is vendored under `graph-studio/` and hosted, not merged:
+
+- Its renderer (`graph-studio/app/`) is unchanged from the stand-alone
+  tool and owns its own document — the manager's DOM and CSS are not
+  involved.
+- It gets its own preload exposing `window.bridge`, and its IPC channels
+  are prefixed `gs:` so they cannot collide with the manager's.
+- `graph-studio/ipc.js` replaces the tool's `main.js`: the same handlers,
+  registered by the manager's main process, plus the window opener. It also
+  owns the studio's child processes — the host stops them on quit and when
+  the studio window closes.
+- The live panel is pre-filled with the Consul the manager is connected to
+  and the Python from *Settings* (a previously saved endpoint in the studio
+  wins).
+- Closing with unsaved changes asks first.
+- The installer unpacks `graph-studio/**` from the asar archive, because
+  `grpcurl` and Python are given real file paths (the reference proto, the
+  catalog generator, and the catalog it rewrites).
+
+The headless harness lives in `graph-studio/tests/` and is excluded from the
+installer. Run it after any change to the vendored model, catalog, generator
+or library code:
+
+```bash
+node graph-studio/tests/test_graph_studio.js   # GS_PYTHON=<interpreter> if
+                                               # "python" is not on PATH
+```
+
+**The block catalog is generated.** `graph-studio/blocks_catalog.json`
+and the `DEFAULT_CATALOG` inside `app/catalog.js` come from the signals
+library's `blocks.py`:
+
+```bash
+python graph-studio/tools/generate_catalog.py <path-to-blocks.py> --update-tool graph-studio
+```
+
+Never hand-edit either file; regenerate after the library changes. The
+vendored `tools/reference/blocks.py` is a snapshot for that generator and
+is excluded from the installer.
+
 ## Bridge security: allowed origins
 
 The Python bridge (`python/start_bridge.py`) only answers browser requests

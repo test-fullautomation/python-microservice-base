@@ -61,6 +61,7 @@
       // Technology (step 2 — new)
       language: 'python',        // 'python' | 'cpp'
       guiType: 'none',           // 'none' | 'html' | 'qml' | 'wasm' | 'widget'
+      uiLayer: 'bits',           // layer of the generated component.json
       clientGrpcKind: 'google',  // 'google' | 'qt' | 'google_vcpkg' — only relevant when guiType != 'none' on C++
       serverGrpcKind: 'msys2',   // 'msys2' | 'vcpkg' — toolchain the server is built with (independent of client)
       genNomad: true,
@@ -318,6 +319,18 @@
       '  <div id="scGuiTypeRadios">' + guiRadios + '</div>' +
       '</div>' +
 
+      // Layer of the generated ui/<Service><version>/component.json.
+      '<div class="mb-4">' +
+      '  <label class="form-label fw-bold" for="scUiLayer">Manager GUI component layer</label>' +
+      '  <select class="form-select" id="scUiLayer">' +
+           ['operator', 'session', 'config', 'execution', 'runner', 'signals', 'bits'].map(function (l) {
+             return '<option value="' + l + '"' + ((f.uiLayer || 'bits') === l ? ' selected' : '') + '>' + l + '</option>';
+           }).join('') +
+      '  </select>' +
+      '  <div class="form-text">Where the service sits in the TAG layer chart. The generated ' +
+      '    <code>component.json</code> declares it.</div>' +
+      '</div>' +
+
       // Client gRPC stack — only relevant for C++ projects with a Qt GUI.
       // Server is always Google grpc++ (Qt has no server module); this
       // controls which stack the *client* uses.
@@ -503,6 +516,9 @@
         _renderStepTechnology(container);
       });
     });
+
+    var uiLayerSel = container.querySelector('#scUiLayer');
+    if (uiLayerSel) uiLayerSel.addEventListener('change', function () { f.uiLayer = this.value; });
 
     // Wire Client gRPC stack (only present when a C++ GUI is selected).
     // Re-render so the version-support alert shows/hides immediately.
@@ -2161,7 +2177,7 @@
           totalMethods + ' total across ' + d.importedServices.length + ' services' +
         '</div>' +
         d.importedServices.map(function (svc) {
-          return '<div class="mb-3 p-2" style="background:rgba(56,189,248,0.06); border-left:3px solid var(--bs-info,#0dcaf0); border-radius:4px">' +
+          return '<div class="mb-3 p-2" style="background:color-mix(in srgb, var(--accent) 6%, transparent); border-left:3px solid var(--accent); border-radius:4px">' +
             '<div class="fw-semibold mb-1">' +
               '<i class="bi bi-box me-1"></i>' + _escapeHtml(svc.name) +
               '<span class="text-muted small ms-2">' +
@@ -3142,7 +3158,8 @@
       }),
       output_path: d.outputPath,
       proto_content_override: d.importedProtoContent || '',
-      proto_package: d.protoPackage || ''
+      proto_package: d.protoPackage || '',
+      ui_layer: d.uiLayer || 'bits'
     };
   }
 
