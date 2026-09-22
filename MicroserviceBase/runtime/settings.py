@@ -76,6 +76,16 @@ service's name (e.g. ``HELLO_``).
 
   Python logging level name (``DEBUG``, ``INFO``, ``WARNING``,
   ``ERROR``, ``CRITICAL``).
+
+* ``gui``
+
+  / *Type*: str / *Default*: "" /
+
+  Name of the GUI plugin folder the Manager GUI should show for this
+  service, e.g. ``HelloService1.0.0``. Registered in Consul as
+  ``Meta.gui``; the Manager GUI loads ``web/services/<gui>/`` with its
+  usual tiers (schema, QML, Widget, Qt WASM, HTML). Empty = no GUI, the
+  service is listed with a "No GUI" marker.
     """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -89,3 +99,5 @@ service's name (e.g. ``HELLO_``).
     consul_token: str = ""
 
     log_level: str = "INFO"
+
+    gui: str = ""

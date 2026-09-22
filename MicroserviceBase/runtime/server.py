@@ -212,6 +212,10 @@ Start, register with Consul, and block until a shutdown signal arrives.
         meta = {
             "grpc_services": ",".join(e.full_service_name for e in self._servicers),
         }
+        # The Manager GUI shows web/services/<gui>/ for this service when
+        # set; absent, the service is listed as "No GUI".
+        if self._settings.gui:
+            meta["gui"] = self._settings.gui
 
         async with ConsulRegistration(
             name=self._settings.service_name,
