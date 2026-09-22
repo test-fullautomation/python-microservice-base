@@ -1,0 +1,31 @@
+/* Hello panel: the shell's theme tokens arrive as CSS variables. */
+.hello { display: grid; gap: 0.5rem; padding: 0.65rem 0.75rem; font-size: 0.86rem; }
+.row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+label { color: var(--muted, #5A665F); font-size: 0.78rem; }
+input {
+  flex: 1;
+  min-width: 6rem;
+  font: inherit;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--rule, #D3D9D1);
+  border-radius: 5px;
+  background: var(--surface, #fff);
+  color: inherit;
+}
+button {
+  font: inherit;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--accent, #127A69);
+  border-radius: 5px;
+  background: var(--accent, #127A69);
+  color: #fff;
+  cursor: pointer;
+}
+button:not(.primary) { background: transparent; color: var(--accent, #127A69); }
+button:disabled { opacity: 0.6; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent, #127A69); outline-offset: 1px; }
+.answer { margin: 0; font-family: var(--font-mono, monospace); font-size: 1rem; }
+.answer.bad { color: var(--bad, #B83227); font-size: 0.8rem; }
+.ticks { margin: 0; padding-left: 1.2rem; font-family: var(--font-mono, monospace); font-size: 0.76rem; }
+.muted { color: var(--muted, #5A665F); font-size: 0.74rem; }
+.foot { margin: 0; }

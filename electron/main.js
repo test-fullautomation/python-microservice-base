@@ -8,9 +8,16 @@
 const { app, BrowserWindow, dialog, ipcMain, protocol, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-// Bundled window plugins (Graph Studio): web/plugins/<id>/plugin.json + main module.
+// Window plugins (Graph Studio, allow-listed installed ones): plugin.json + main module.
 const windowPlugins = require('./plugins-main');
 
+// Component and plugin code runs in sandboxed frames (web/js/endo/frame-host.js).
+// These put EACH sandboxed frame in its own process ("per-document"; the
+// default groups all frames of the page into one, so one hang froze them
+// all): a module that hangs or crashes cannot freeze the window or its
+// neighbours, and the frame watchdog removes it.
+app.commandLine.appendSwitch('site-per-process');
+app.commandLine.appendSwitch('enable-features', 'IsolateSandboxedIframes:grouping/per-document');
 
 let mainWindow = null;
 let tray = null;
@@ -140,13 +147,15 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
-  windowPlugins.registerWindowPlugins();
+  // Same settings.json as the preload's: userData when packaged, electron/ in dev.
+  windowPlugins.registerWindowPlugins({
+    settingsPath: app.isPackaged ? path.join(app.getPath('userData'), 'settings.json') : path.join(__dirname, 'settings.json'),
+    userData: app.getPath('userData'),
+  });
 });
 
-// Open a window plugin (its own BrowserWindow and preload), e.g. Graph Studio.
-ipcMain.handle('plugin-open', async (_event, req) => {
-  return windowPlugins.openWindowPlugin(req && req.id, req && req.opts, { iconPath });
-});
+// Window plugins: list / allow-list / open (its own BrowserWindow), e.g. Graph Studio.
+windowPlugins.registerIpc(ipcMain, { iconPath });
 
 // Kept for callers of electronAPI.openGraphStudio: the graph-studio plugin.
 ipcMain.handle('open-graph-studio', async (_event, opts) => {

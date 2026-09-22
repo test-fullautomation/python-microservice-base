@@ -408,6 +408,31 @@
     }
   };
 
+  // ----------------------------------------------------------------- frame
+
+  // An HTML page of the component folder in a sandboxed frame (frame-host.js).
+  // Its scripts reach the service only through window.endo.ctx, which the
+  // shell answers with this component's ctx.
+  kinds['frame'] = {
+    render: function (el, tile, ctx) {
+      if (!ctx.base || !MM.endo.frames) {
+        el.innerHTML = errorLine('frame tiles need the component folder');
+        return { suspend: function () {}, resume: function () {}, destroy: function () {} };
+      }
+      el.classList.add('endo-frame-body');
+      var h = MM.endo.frames.create(el, {
+        mode: 'html', base: ctx.base, entry: tile.entry, ctx: ctx,
+        label: (tile.title || tile.id) + ' (' + ctx.component + ')'
+      });
+      // Through the handle, not bound to it: a restarted frame replaces its methods.
+      return {
+        suspend: function () { h.suspend(); },
+        resume: function () { h.resume(); },
+        destroy: function () { h.destroy(); }
+      };
+    }
+  };
+
   // ------------------------------------------------------------ run-status
 
   function drawRun(el, flow, steps, current) {

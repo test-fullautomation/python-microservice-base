@@ -122,6 +122,14 @@ chart, the capabilities it uses and the tiles it shows:
   (rows from an RPC, or static `rows`), `log` (server-streaming RPC) and
   `run-status`. **Sizes** on the 4-column stage: `1x1`, `2x1`, `2x2` and
   `4x1`.
+- **Frame tiles** (`"kind": "frame", "entry": "panel.html"`) show an HTML
+  page of the component folder in a **sandboxed frame**: its own process,
+  no access to the GUI's page, storage or the network. Its scripts reach
+  the service only through `window.endo.ctx` (`call`, `signals.subscribe`,
+  …), answered with the component's capabilities. A frame that hangs is
+  stopped and its tile says so; the rest of the screen keeps working.
+  `web/services/HelloService1.0.0/panel.html` is the example
+  (`"renderer": "html"`).
 - **`ribbon[]`** groups of commands (`label`, `call`, optional `args`,
   `form`, `confirm`) appear on their tab while the component is on the
   bench (below).
@@ -230,7 +238,16 @@ what it added at once, and tiles of its kinds show *enable the plugin*.
   tile of a plugin kind is checked like a core one.
 - `node tools/endo-lint.js web/plugins` lints the plugin manifests;
   `test/endo/test_endo_plugins.js` tests the bundled ones.
-- Plugin code runs in the page for now; frame isolation is the next step.
+- **Plugin code runs in sandboxed frames** (`"isolation": "frame"`), like
+  frame tiles: the GUI sends the plugin's modules to the frame and answers
+  its `ctx` calls. `schema` plugins contain no code.
+- **Window plugins** (their own window, may start processes) load only if
+  they are on the **allow-list**: `windowPlugins` in the GUI's
+  `settings.json`, changed under *Administrator → Plugins*. Without the
+  setting, the bundled ones (Graph Studio) are allowed and installed ones
+  are not.
+- Each frame is a separate process, so a bench with many frame or plugin
+  tiles uses noticeably more memory than one of plain tiles.
 
 ## Test projects
 

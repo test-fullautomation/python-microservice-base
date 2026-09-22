@@ -1,5 +1,6 @@
 // charts: the "Chart" drawer tab. Plots the signals of the tile selected on
-// the bench (its signal fields, or a signal-strip's signals).
+// the bench (its signal fields, or a signal-strip's signals). Runs in a
+// sandboxed frame; the selection arrives from the shell (ctx.onSelection).
 import { createStrip } from './strip.js';
 
 const MAX_SIGNALS = 8;
