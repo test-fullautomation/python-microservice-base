@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Signal Graph Studio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="toolbar">
+    <span class="title">⬡ Signal Graph Studio</span>
+    <button id="btn-new">New</button>
+    <button id="btn-open">Open…</button>
+    <button id="btn-save" class="primary">Save</button>
+    <select id="sel-example">
+        <option value="">Examples…</option>
+        <option value="signal_in">signal-in (adc → scale → record)</option>
+        <option value="signal_proc">signal-proc (subscribe → threshold → record)</option>
+    </select>
+    <button id="btn-layout">Auto-layout</button>
+    <button id="btn-generate">Generate service…</button>
+    <button id="btn-library" title="scaffold a block package / regenerate the palette from code">Library…</button>
+    <span class="sep"></span>
+    <button id="btn-run-graph" title="run THIS graph (saved file) in a local mocked cluster">▶ Run graph</button>
+    <button id="btn-run-all" title="run the three shipped configs (signal-in/out/proc)">▶ Run cluster</button>
+    <button id="btn-stop" title="stop the running cluster">■</button>
+    <button id="btn-monitor" title="subscribe to this graph's observed signals and show live values">◉ Monitor</button>
+    <span id="mon-status" class="pill">idle</span>
+    <span class="file" id="file-label">unsaved graph</span>
+</div>
+
+<div id="banner">
+    <span id="banner-text"></span>
+    <button id="banner-reload">Reload from disk</button>
+    <button id="banner-dismiss">Keep my version</button>
+</div>
+
+<div id="body">
+    <div id="palette"></div>
+    <div id="canvas-wrap">
+        <svg id="canvas"></svg>
+        <div id="toast"></div>
+    </div>
+    <div id="inspector"><div class="empty">Select a block or wire.<br><br>
+        · drag from an <b>output</b> port to an <b>input</b> port to wire<br>
+        · click a palette entry to add a block<br>
+        · drag empty canvas to pan, wheel to zoom<br>
+        · Delete removes the selection</div></div>
+</div>
+
+<div id="logdrawer" class="collapsed" data-tab="log">
+    <div id="logdrawer-resize" title="drag to resize the drawer · double-click to reset"></div>
+    <div id="logdrawer-head">
+        <span id="logdrawer-title">Run / Monitor</span>
+        <button class="tab" data-tab="log">Log</button>
+        <button class="tab" data-tab="chart">Chart</button>
+        <span style="flex:1"></span>
+        <span id="chart-controls">
+            window
+            <select id="chart-window">
+                <option value="10">10 s</option>
+                <option value="30" selected>30 s</option>
+                <option value="120">120 s</option>
+            </select>
+            rows
+            <select id="chart-rowh" title="minimum height of one strip — smaller fits more without scrolling">
+                <option value="36">compact</option>
+                <option value="48" selected>normal</option>
+                <option value="72">tall</option>
+            </select>
+            <button id="chart-pause">pause</button>
+        </span>
+        <button id="logdrawer-clear">clear</button>
+        <button id="logdrawer-toggle">▲</button>
+    </div>
+    <pre id="logdrawer-body"></pre>
+    <div id="chart-panel">
+        <div id="chart-signals"></div>
+        <!-- strips scroll; the shared time axis is its own canvas below so it stays visible -->
+        <div id="chart-scroll"><canvas id="chart"></canvas></div>
+        <canvas id="chart-axis"></canvas>
+        <div id="chart-hint">no monitored signals yet — press ◉ Monitor (or ▶ Run) to start streaming</div>
+    </div>
+</div>
+
+<div id="issues"></div>
+
+<!-- Library dialog (Phase E): scaffold a block package / regenerate the catalog -->
+<div id="modal" class="hidden">
+    <div class="modal-box">
+        <div class="modal-head">
+            <span id="modal-title">Library</span>
+            <span id="modal-tabs">
+                <button data-tab="scaffold" class="on">New block skeleton</button>
+                <button data-tab="catalog">Regenerate catalog</button>
+            </span>
+            <button id="modal-close" title="close (Esc)">✕</button>
+        </div>
+        <div id="modal-body"></div>
+    </div>
+</div>
+
+<!-- hidden file input for browser mode (Electron uses native dialogs) -->
+<input type="file" id="file-input" accept=".json" multiple style="display:none">
+
+<script src="catalog.js"></script>
+<script src="model.js"></script>
+<script src="layout.js"></script>
+<script src="editor.js"></script>
+<script src="library.js"></script>
+</body>
+</html>
