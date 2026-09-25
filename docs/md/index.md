@@ -60,6 +60,27 @@ hand-roll JSON `send_cmd` strings:
 - Troubleshooting (Failed to fetch, "no .proto files matched", duplicate
   keyword names — all the regressions previous users hit)
 
+### Guided tour — `docs/html/tour.html`
+
+A tour program for an audience — nine stops, about 55 minutes: what the
+GUI gives you, how it is configured, what a service has to provide to
+appear in it, and building one live in the wizard. Each stop says what to
+show, what to say, and what the takeaway is. Open it from the GUI's help
+(**?** in the navbar) or straight from `docs/html/tour.html`; it is a
+presenter's page rather than a reference, so it has no Markdown twin.
+
+### [Bench demo](bench_demo.md)
+
+A ten-minute walkthrough of the bench on live services — the climate
+chamber, the bench signals and the hello service on one stage:
+
+- What to start first (demo cluster, chamber, `examples/ara_demo.nomad.hcl`)
+- The stored composition, and what the bench does without one
+- Eight beats: composed not built, tiles from the manifest, gRPC values,
+  live signals, the charts plugin, a command from a tile, the sandboxed
+  panel, and a second bench from the same services
+- Troubleshooting the demo (origins, the proxy, a missing catalog)
+
 ## Cross-references
 
 | When you need… | Go to |
@@ -94,6 +115,36 @@ ships it:
 `web/services/HelloService1.0.0/` is a complete example for the
 `examples/hello_service` sample; `examples/demo_gui.nomad.hcl` runs that
 service with the GUI declared.
+
+**The service can hand the GUI its files.** A service built on
+`ServiceRunner` serves its GUI folder over gRPC
+(`microservicebase.gui.v1.ServiceGui`, ADR-031): set `gui` and keep the
+files next to the service in `gui/<gui>/`, `ui/<gui>/` (what the scaffold
+emits) or a folder named after the component, or point `gui_dir` at them.
+When the Manager GUI opens a service whose `web/services/<gui>/` is empty,
+it asks the service, extracts what comes back and mounts it — so a fresh
+machine populates itself, and updating a panel is a service deployment.
+The checksum is cached per folder, so later opens download nothing. A
+service that does not serve the contract (the C++ runtime, third-party
+services) still needs its folder shipped some other way; the GUI says so
+instead of showing an empty panel.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/service-gui/info/{service}` | what the service offers: folder, checksum, size |
+| `POST /api/service-gui/fetch/{service}` | download, then extract (browser) or return the ZIP (desktop) |
+
+`MB_GUI_SERVICES_DIR` overrides where the bridge extracts.
+
+**A folder may ship both.** When it holds a `component.json` *and* a
+classic panel (`<Name>.html`, `ServiceUI.qml`, `ServiceUI.ui`, a Qt WASM
+build or `gui_schema.json`), the component is what opens, and
+**Developer → Selected service → Classic panel** switches that service to
+the other one. The choice is remembered per service (`mm_classic_panel` in
+local storage), so the service opens that way from the sidebar until it is
+switched back; the button is greyed out for a folder that ships only one
+kind. The bench dock offers the same switch through **Open classic
+panel**.
 
 ### Component manifests (`component.json`)
 
@@ -300,7 +351,8 @@ Structure for **Robot Framework AIO** (the first supported runner):
 ```
 
 Run a starter suite from the project root with the RF AIO interpreter:
-`python -m robot -d results testsuites/<service>_smoke.robot`.
+`python -m robot -d results testsuites/<service>_smoke.robot` — or run it in
+the GUI, see [Running tests](#running-tests).
 
 | Status | Meaning |
 |---|---|
@@ -329,7 +381,63 @@ runner-specific sits behind one interface
 (`MicroserviceBase/ports/test_project.py`). Supporting another runner means
 adding an adapter next to `adapters/test_project/robot_aio.py` and
 registering it; the manifest, proto handling and the plan/apply safety rules
-stay the same.
+stay the same — and so does running, below.
+
+### Running tests
+
+Every file the project's runner can run gets a **▶** in the sidebar (on
+hover) and a **Run…** button in its editor; **Run all…** on the overview
+runs the whole suites folder. For Robot Framework AIO that is `.robot`
+suites and **flow files** (`*.flow.json`, listed under *Flows*): a test plan
+drawn as a graph that the RobotFramework AIO fork's `robot.flow` parser
+builds into a suite at run time.
+
+- **Script, Diagram, Robot** — a flow file opens with three tabs. *Script*
+  is the JSON, the only thing you edit. *Diagram* draws the flow: a lane per
+  phase, gates as hexagons, a loop as a frame with its body, `next` return
+  and recovery (`on_failure` → `continue` / `abort`), decisions with their
+  yes / no branches. *Robot* shows the suite the flow becomes. Both are made
+  by the fork itself (`robot.flow`, with the project's run settings) from
+  the text in *Script*, unsaved changes included. Click a node to find it in
+  *Script*; a flow the fork refuses shows its message and a link to the
+  node or line it names.
+- **Run dialog** — variables for this run (`NAME=value`, one per line; they
+  override the file's own values) and **Dry run** (check keywords and
+  arguments, execute nothing). Both are remembered per file.
+- **Runs** (sidebar, under *Overview*) — the run being shown: its verdict
+  (**Pass**, **Fail**, **Unknown**, **Skipped**, **Error**), what was run with
+  which variables, the console as it happens and, when it ends, one row per
+  test with its message. **Log** and **Report** open Robot's `log.html` and
+  `report.html` in the browser; **Run again** repeats it with the same
+  variables. The history below lists earlier runs; click one to see it.
+- **Stop** ends a run gracefully: the running keyword finishes, teardowns
+  still run and the reports are written. While it is stopping, **Force stop**
+  kills it at once. Only one run per project at a time — two runs would
+  fight over the same bench.
+- A toast reports the verdict when a run finishes, wherever you are in the
+  GUI; the sidebar's *Runs* entry pulses while one is in progress.
+
+Each run gets its own folder, `results/<date-time>_<name>/`, with the
+runner's output, `console.log` and `run.json` (what ran, when, the outcome),
+so the history survives restarts. **UNKNOWN** is a verdict of its own: the
+bench was not ready (a flow's gate timed out), so nothing was tested.
+
+**Run settings…** (overview or *Runs*) are stored in `testproject.json`
+under `"run"`, so a project runs the same way for everyone who opens it:
+
+| Setting | Meaning |
+|---|---|
+| Interpreter | Python that runs the tests; empty means the bridge's own (the one in *Settings*). |
+| PYTHONPATH | Folders put in front of the path, relative to the project root — e.g. the `src` of a RobotFramework AIO checkout that brings `robot.flow`. |
+| Extra arguments | Added to every run (one per line). |
+| Environment | `NAME=value` pairs for every run. |
+
+All of this is runner-neutral: the adapter says which files it can run, the
+exact command (`run_plan`) and how to read the outcome (`read_results`),
+and which extra views a file has (`file_views`, `inspect_file`: views of
+type `flow-graph` or `code`); the bridge (`/api/test-project/run`,
+`/run/status`, `/run/stop`, `/runs`, `/run-settings`, `/inspect`) and this
+view stay the same for any runner.
 
 ## Signal Graph Studio
 
@@ -424,22 +532,25 @@ and the setting that would permit it.
 
 **Default** (nothing configured): the bridge's own address plus
 `http://localhost:<port>` and `http://127.0.0.1:<port>`. When the bridge is
-bound to a loopback address the Electron GUI is admitted as well -- it loads
-from `file://`, which browsers report as `Origin: null`.
+bound to a loopback address the Electron GUI is admitted as well. It loads
+from `file://`, which the browser reports as `Origin: null` on its HTTP
+requests and as `Origin: file://` on its WebSocket handshakes -- live
+signals use the latter, so both spellings are admitted together.
 
 **Configure** without touching code -- highest priority first:
 
 | Where | Form |
 |---|---|
-| CLI | `python start_bridge.py --allowed-origins "http://10.0.0.5:1112,null"` |
-| `python/config.json` | `"bridge_allowed_origins": ["http://10.0.0.5:1112", "null"]` |
-| Environment | `MB_BRIDGE_ALLOWED_ORIGINS=http://10.0.0.5:1112,null` |
+| CLI | `python start_bridge.py --allowed-origins "http://10.0.0.5:1112,null,file://"` |
+| `python/config.json` | `"bridge_allowed_origins": ["http://10.0.0.5:1112", "null", "file://"]` |
+| Environment | `MB_BRIDGE_ALLOWED_ORIGINS=http://10.0.0.5:1112,null,file://` |
 
 Rules:
 
 - An origin is `scheme://host[:port]` -- no path, no trailing slash.
-- `null` admits the Electron GUI. Add it yourself when the bridge is bound
-  to a non-loopback address such as `0.0.0.0`; it is left out of the default
+- `null` and `file://` admit the Electron GUI -- list both, or its live
+  signals stay disconnected. Add them yourself when the bridge is bound to a
+  non-loopback address such as `0.0.0.0`; they are left out of the default
   there because any local page could otherwise reach the bridge.
 - `*` switches the check off entirely (the bridge logs a warning at start).
 - An empty or malformed list stops the bridge at startup with a message

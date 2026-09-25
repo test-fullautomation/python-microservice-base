@@ -25,10 +25,12 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import asdict
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ...ports.test_project import (
     PlannedFile,
+    RunSettings,
     ServiceExport,
     TestProjectConflict,
     TestProjectError,
@@ -560,12 +562,16 @@ _KINDS = {
 
 
 def _kind(rel: str) -> str:
+    if rel.lower().endswith(".flow.json"):
+        return "flow"
     return _KINDS.get(os.path.splitext(rel)[1].lower(), "other")
 
 
-def _file_entry(root: str, rel: str, tracked) -> dict:
+def _file_entry(root: str, rel: str, tracked, runner: Optional[TestProjectRunner] = None) -> dict:
     full = os.path.join(root, *rel.split("/"))
-    entry = {"path": rel, "kind": _kind(rel), "size": os.path.getsize(full), "service": None}
+    entry = {"path": rel, "kind": _kind(rel), "size": os.path.getsize(full), "service": None,
+             "runnable": bool(runner and rel != MANIFEST_NAME and runner.can_run(rel)),
+             "views": runner.file_views(rel) if runner and rel != MANIFEST_NAME else []}
     if rel == MANIFEST_NAME:
         entry.update(role="manifest", state="ok")
         return entry
@@ -616,13 +622,14 @@ def project_tree(root: str) -> dict:
                 break
             rel = os.path.relpath(os.path.join(dirpath, fname), root).replace(os.sep, "/")
             seen.add(rel)
-            files.append(_file_entry(root, rel, tracked.get(rel)))
+            files.append(_file_entry(root, rel, tracked.get(rel), runner))
         if truncated:
             break
     if not truncated:
         for rel, (service, meta) in sorted(tracked.items()):
             if rel not in seen:
                 files.append({"path": rel, "kind": _kind(rel), "size": 0, "service": service,
+                              "runnable": False, "views": [],
                               "role": meta.get("role", "generated"), "state": "missing"})
 
     services = []
@@ -653,7 +660,67 @@ def project_tree(root: str) -> dict:
         "files": files,
         "truncated": truncated,
         "run_hint": runner.project_run_hint(layout),
+        "can_run": runner.can_run(""),
+        "run_settings": asdict(run_settings_of(manifest)),
     }
+
+
+# ---------------------------------------------------------------------------
+# Run settings (``"run"`` in the manifest)
+# ---------------------------------------------------------------------------
+
+def run_settings_of(manifest: dict) -> RunSettings:
+    raw = manifest.get("run") if isinstance(manifest.get("run"), dict) else {}
+
+    def strings(value) -> List[str]:
+        return [str(v) for v in value] if isinstance(value, list) else []
+
+    env = raw.get("env") if isinstance(raw.get("env"), dict) else {}
+    return RunSettings(python=str(raw.get("python") or ""),
+                       pythonpath=strings(raw.get("pythonpath")),
+                       args=strings(raw.get("args")),
+                       env={str(k): str(v) for k, v in env.items()})
+
+
+def get_run_settings(root: str) -> dict:
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    return {"status": "ok", "root": root, "settings": asdict(run_settings_of(manifest))}
+
+
+def set_run_settings(root: str, settings: dict) -> dict:
+    """Replace the project's run settings; unknown keys are refused."""
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    if not isinstance(settings, dict):
+        raise TestProjectError("Run settings must be an object.")
+    unknown = set(settings) - {"python", "pythonpath", "args", "env"}
+    if unknown:
+        raise TestProjectError(f"Unknown run settings: {', '.join(sorted(unknown))}")
+    for key in ("pythonpath", "args"):
+        value = settings.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise TestProjectError(f"'{key}' must be a list of strings.")
+    if not isinstance(settings.get("python", ""), str):
+        raise TestProjectError("'python' must be a string.")
+    env = settings.get("env", {})
+    if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        raise TestProjectError("'env' must map names to strings.")
+    clean = RunSettings(python=settings.get("python", "").strip(),
+                        pythonpath=[p.strip() for p in settings.get("pythonpath", []) if p.strip()],
+                        args=[a for a in settings.get("args", []) if a.strip()],
+                        env={k.strip(): v for k, v in env.items() if k.strip()})
+    data = asdict(clean)
+    if any(data.values()):
+        manifest["run"] = data
+    else:
+        manifest.pop("run", None)
+    _save_manifest(root, manifest)
+    return {"status": "ok", "root": root, "settings": data}
 
 
 _EDITABLE_ROLES = ("yours", "starter")
@@ -709,14 +776,48 @@ def read_project_file(root: str, rel: str) -> dict:
             "content": raw.decode("utf-8", errors="replace")}
 
 
+def inspect_file(root: str, rel: str, content: Optional[str] = None) -> dict:
+    """The runner's extra views of a file (e.g. a flow's diagram and Robot text).
+
+    ``content`` is the editor's text; without it the file on disk is used.
+    """
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    runner = get_runner(manifest["runner"])
+    rel = str(rel).replace("\\", "/")
+    full = _safe_join(root, rel)
+    views = runner.file_views(rel)
+    if not views:
+        raise TestProjectError(f"{rel} has no views besides its text.")
+    if content is None:
+        if not os.path.isfile(full):
+            raise TestProjectError(f"No such file in the test project: {rel}")
+        content = _read_text(full)
+    result = runner.inspect_file(root, _layout(runner, manifest), rel, content,
+                                 run_settings_of(manifest))
+    out = {"status": "ok", "path": rel, "available": views}
+    out.update(result)
+    return out
+
+
 def check_syntax(rel: str, content: str) -> List[dict]:
-    """Robot Framework parse problems of a ``.robot`` / ``.resource`` text.
+    """Robot Framework parse problems of a ``.robot`` / ``.resource`` text,
+    or the parse error of a ``.json`` file (flow files included).
 
     Returns ``[{"line": n, "message": text}]``; empty when the text parses
     cleanly, when the file is not Robot data, or when Robot Framework is not
     installed. This is a syntax check -- keyword names are not resolved.
     """
     lower = str(rel).lower()
+    if lower.endswith(".json"):
+        try:
+            json.loads(content)
+        except ValueError as exc:
+            return [{"line": getattr(exc, "lineno", 1),
+                     "message": f"Invalid JSON: {getattr(exc, 'msg', exc)}"}]
+        return []
     if not lower.endswith((".robot", ".resource")):
         return []
     try:

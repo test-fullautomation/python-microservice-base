@@ -3,12 +3,18 @@
  * endo-lint: check Bench Endoskeleton manifests before they ship.
  *
  *   node tools/endo-lint.js <file-or-dir> [...] [--shell 2.3.0] [--warn-as-error]
+ *                                        [--plugins <dir>] [--no-plugins]
  *
  * Files named component.json or plugin.json are linted; a directory is
  * searched for them. A file named explicitly that has a "composition"
  * field is linted as a bench composition. Components found together are
  * also checked against each other (duplicate ids). Exit code 1 on any
  * error, so it fails CI.
+ *
+ * The kinds contributed by the bundled plugins (web/plugins, or --plugins
+ * <dir>) count as available, and a tile of such a kind is checked against
+ * the schema the plugin declares for it. --no-plugins drops them, which
+ * is how a manifest is checked against the bare shell.
  */
 'use strict';
 
@@ -22,21 +28,43 @@ const pluginSchema = JSON.parse(fs.readFileSync(path.join(CONTRACT_DIR, 'plugin.
 const compositionSchema = JSON.parse(fs.readFileSync(path.join(CONTRACT_DIR, 'composition.schema.json'), 'utf-8'));
 
 function usage(code) {
-  console.log('usage: node tools/endo-lint.js <component.json|plugin.json|composition.json|dir> [...] [--shell X.Y.Z] [--warn-as-error]');
+  console.log('usage: node tools/endo-lint.js <component.json|plugin.json|composition.json|dir> [...] [--shell X.Y.Z] [--warn-as-error] [--plugins <dir>] [--no-plugins]');
   process.exit(code);
 }
 
 const args = process.argv.slice(2);
 let shell = contract.SHELL_VERSION;
 let warnAsError = false;
+let pluginsDir = path.join(__dirname, '..', 'web', 'plugins');
 const targets = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--shell') shell = args[++i];
   else if (args[i] === '--warn-as-error') warnAsError = true;
+  else if (args[i] === '--plugins') pluginsDir = args[++i];
+  else if (args[i] === '--no-plugins') pluginsDir = null;
   else if (args[i] === '-h' || args[i] === '--help') usage(0);
   else targets.push(args[i]);
 }
 if (!targets.length) usage(2);
+
+// Kinds the bundled plugins contribute, so a tile of such a kind is known
+// and gets checked against the plugin's own schema for it.
+function pluginKinds(dir) {
+  const kinds = {};
+  let names;
+  try { names = fs.readdirSync(dir); } catch (e) { return kinds; }
+  for (const name of names) {
+    const file = path.join(dir, name, 'plugin.json');
+    let p;
+    try { p = JSON.parse(fs.readFileSync(file, 'utf-8').replace(/^﻿/, '')); } catch (e) { continue; }
+    const contributed = (p.contributes && p.contributes.kinds) || [];
+    contributed.forEach((k) => {
+      if (k && k.kind && !kinds[k.kind]) kinds[k.kind] = { plugin: p.plugin || name, schema: k.schema, needs: k.needs };
+    });
+  }
+  return kinds;
+}
+const kinds = pluginsDir ? pluginKinds(pluginsDir) : {};
 
 function collect(p, out) {
   let st;
@@ -76,7 +104,7 @@ for (const file of files) {
     ? contract.lintPlugin(manifest, { schema: pluginSchema, shell })
     : isComposition
       ? contract.lintComposition(manifest, { schema: compositionSchema, shell })
-      : contract.lintComponent(manifest, { schema: componentSchema, shell });
+      : contract.lintComponent(manifest, { schema: componentSchema, shell, kinds });
   if (!isPlugin && !isComposition) components.push(manifest);
   const e = issues.filter((i) => i.severity === 'error').length;
   const w = issues.length - e;

@@ -25,6 +25,11 @@
 #   generated and where it goes. Supporting another test runner means one
 #   new implementation of TestProjectRunner, registered with the engine.
 #
+#   Running is optional and runner-neutral too: a runner that implements
+#   can_run / run_plan / read_results gets the GUI's Run button, live
+#   console and results view. The engine spawns exactly the command the
+#   runner plans; the GUI only ever sees RunPlan artifacts and RunResult.
+#
 # *******************************************************************************
 
 from __future__ import annotations
@@ -116,9 +121,97 @@ Exactly one of ``proto_dir`` / ``file_descriptors`` describes the API.
    project_name: str = ""
 
 
+@dataclass
+class RunSettings:
+   """
+How a project's tests are started, stored under ``"run"`` in
+``testproject.json`` and edited in the GUI.
+
+**Attributes:**
+
+* ``python`` -- interpreter to run with; empty means the bridge's own.
+* ``pythonpath`` -- folders put in front of ``PYTHONPATH``; relative ones
+  are relative to the project root (e.g. a runner checkout's ``src``).
+* ``args`` -- extra command-line arguments added to every run.
+* ``env`` -- extra environment variables for every run.
+   """
+
+   python: str = ""
+   pythonpath: List[str] = field(default_factory=list)
+   args: List[str] = field(default_factory=list)
+   env: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class RunOptions:
+   """
+Per-run choices made when starting a run.
+
+* ``variables`` -- ``{name: value}`` handed to the tests.
+* ``dryrun`` -- check the tests without executing them, when supported.
+   """
+
+   variables: Dict[str, str] = field(default_factory=dict)
+   dryrun: bool = False
+
+
+@dataclass
+class RunArtifact:
+   """
+A file a run leaves in its output folder that the GUI can open.
+
+* ``name`` -- file name inside the output folder (``log.html``).
+* ``label`` -- what the GUI calls it (``Log``).
+* ``primary`` -- the one to open first.
+   """
+
+   name: str
+   label: str
+   primary: bool = False
+
+
+@dataclass
+class RunPlan:
+   """
+The exact process a run starts. The engine spawns ``argv`` in ``cwd``
+with ``env`` merged over its own environment (a value of ``None``
+removes that variable) and keeps the console output.
+
+``stop_file``: when set, *Stop* first creates this file and gives the
+process a grace period to finish on its own (teardowns, reports) before
+it is killed. Without it, *Stop* kills at once.
+   """
+
+   argv: List[str]
+   cwd: str
+   env: Dict[str, Optional[str]] = field(default_factory=dict)
+   artifacts: List[RunArtifact] = field(default_factory=list)
+   stop_file: str = ""
+
+
+@dataclass
+class RunResult:
+   """
+What a finished run found, in runner-neutral terms.
+
+* ``verdict`` -- ``"pass"`` | ``"fail"`` | ``"unknown"`` | ``"skip"`` |
+  ``"error"`` (the run itself broke: nothing was reported).
+* ``counts`` -- ``{"pass": n, "fail": n, "unknown": n, "skip": n}``.
+* ``tests`` -- one ``{"name", "suite", "status", "message",
+  "elapsed_s"}`` per test, ``status`` using the verdict words.
+* ``message`` -- one line for the GUI when there is something to say.
+   """
+
+   verdict: str
+   counts: Dict[str, int] = field(default_factory=dict)
+   tests: List[Dict[str, object]] = field(default_factory=list)
+   message: str = ""
+
+
 class TestProjectRunner(ABC):
    """
-A test runner the Manager GUI can export services for.
+A test runner the Manager GUI can export services for -- and, when it
+implements the run methods, run tests with.
    """
 
    __test__ = False   # not a pytest test class
@@ -182,3 +275,56 @@ empty string when the runner cannot create suites (the default).
 Command that runs the exported service's starter tests, from the
 project root.
       """
+
+   # ---- running (optional) ---------------------------------------------------
+
+   def can_run(self, rel_path: str) -> bool:
+      """
+Whether ``rel_path`` (a project file, or ``""`` for the whole project)
+is something this runner can run. Default: nothing -- the GUI then
+offers no Run button.
+      """
+      return False
+
+   def run_plan(self, root: str, layout: Dict[str, str], target: str,
+                settings: RunSettings, options: RunOptions,
+                output_dir: str) -> RunPlan:
+      """
+The process that runs ``target`` (project-relative; ``""`` = the whole
+project) and writes its results into ``output_dir``, which exists.
+Raise :class:`TestProjectError` when it cannot be run.
+      """
+      raise TestProjectError(f"{self.display_name or self.runner_id} cannot run tests.")
+
+   # ---- extra file views (optional) -------------------------------------------
+
+   def file_views(self, rel_path: str) -> List[Dict[str, str]]:
+      """
+Views the GUI offers next to a file's text, as
+``[{"id", "title", "type"}]``. ``type`` is what the GUI knows how to draw:
+``"flow-graph"`` (a structured test flow) or ``"code"`` (read-only text,
+with an optional ``"language"``). Default: none -- the file shows as text
+only.
+      """
+      return []
+
+   def inspect_file(self, root: str, layout: Dict[str, str], rel_path: str,
+                    content: str, settings: RunSettings) -> Dict[str, object]:
+      """
+The data of :meth:`file_views` for ``content`` (the editor's text, saved or
+not): ``{"ok": True, "views": {view_id: data}}``, or ``{"ok": False,
+"error": ..., "node": <id or None>, "line": <n or None>}`` when the file
+cannot be read that way. ``missing: True`` means the runner's tooling is
+not available with the project's run settings.
+      """
+      return {"ok": False, "error": f"{self.display_name or self.runner_id} has no extra views."}
+
+   def read_results(self, output_dir: str, returncode: Optional[int]) -> RunResult:
+      """
+The outcome of a finished run from what it left in ``output_dir``.
+``returncode`` is ``None`` when the run was stopped. Default: the return
+code alone.
+      """
+      if returncode is None:
+         return RunResult("error", message="Stopped before it finished.")
+      return RunResult("pass" if returncode == 0 else "fail")

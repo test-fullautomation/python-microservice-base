@@ -61,6 +61,67 @@
   var _activePanelName = null; // name of the currently visible cached panel
   var _classicPanels = {};     // { serviceName: true } while the cached panel is a classic panel shown instead of a component
 
+  // Which kind of GUI a service opens with, when its folder ships both a
+  // component and a classic panel. Set by the "Classic panel" button of the
+  // Developer tab and by the bench dock; remembered per service.
+  var CLASSIC_PREF_KEY = 'mm_classic_panel';
+  var CLASSIC_FILE_RE = /(\.html|\.qml|\.ui|\.wasm|^gui_schema\.json)$/i;
+  var _bothKinds = {};         // { folder: Promise<boolean> } -- folder listings are stable
+  var _guiChecked = {};        // { folder: true } -- compared with its service once per window
+  var _guiFetchFailedAt = {};  // { serviceName: ms } -- a failed download is retried after a pause
+  var GUI_FETCH_RETRY_MS = 15000;
+  var _guiFetchNotified = {};  // { serviceName: true } -- the fetch already explained the failure
+
+  function _classicPrefs() {
+    try { return JSON.parse(localStorage.getItem(CLASSIC_PREF_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function _prefersClassic(name) { return !!_classicPrefs()[name]; }
+  function _setClassicPref(name, classic) {
+    var prefs = _classicPrefs();
+    if (classic) prefs[name] = true;
+    else delete prefs[name];
+    try { localStorage.setItem(CLASSIC_PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* storage unavailable */ }
+  }
+
+  /** True when the GUI folder ships a component *and* a classic panel. */
+  function _folderHasBothKinds(folder) {
+    folder = String(folder || '').replace(/^[\/\\]+|[\/\\]+$/g, '');
+    if (!folder) return Promise.resolve(false);
+    if (!_bothKinds[folder]) {
+      _bothKinds[folder] = MM.listServiceFiles(SERVICES_GUI_FOLDER + '/' + folder)
+        .then(function (files) {
+          files = files || [];
+          return files.indexOf('component.json') >= 0
+              && files.some(function (f) { return CLASSIC_FILE_RE.test(f); });
+        })
+        .catch(function () { return false; });
+    }
+    return _bothKinds[folder];
+  }
+
+  /**
+   * Enable the Developer tab's "Classic panel" button for a service whose
+   * folder ships both kinds, and show whether the classic one is on screen.
+   */
+  function _refreshClassicPanelBtn(sel) {
+    var btn = document.getElementById('btnDevClassicPanel');
+    if (!btn) return;
+    var showing = !!(sel && _classicPanels[sel.name]);
+    btn.setAttribute('aria-pressed', showing ? 'true' : 'false');
+    btn.title = showing
+      ? 'Back to the component tiles of this service'
+      : 'Show the service\'s classic panel instead of its component tiles';
+    var svc = sel && sel.consul;
+    if (!svc || !svc.gui) { btn.disabled = true; return; }
+    _folderHasBothKinds(svc.gui).then(function (both) {
+      // The user may have picked another service while the listing ran.
+      if (_selectedService !== sel) return;
+      btn.disabled = !both;
+      if (!both) btn.title = 'This service ships only one kind of GUI';
+    });
+  }
+
   /**
    * Hides the active cached service panel, calls unloadFunction,
    * and removes any non-cached content (API explorer, placeholders).
@@ -777,21 +838,24 @@
               console.log('Retrying with discovered file:', altUrl);
               _fetchAndRenderServiceGUI(serviceName, altUrl, contentDiv, callbackName);
             } else {
-              console.warn('No .html file found in', folderPath, '- showing API explorer');
-              showToast('Service GUI',
-                'No GUI files were found for ' + serviceName + ' - showing the API view instead.',
-                'warning');
-              showServiceAPIExplorer(serviceName);
+              console.warn('No .html file found in', folderPath, '- showing the service view');
+              // The service fetch already explained why, when it was tried.
+              if (!_guiFetchNotified[serviceName]) {
+                showToast('Service GUI',
+                  'No GUI files were found for ' + serviceName + ' - showing its service view instead.',
+                  'warning');
+              }
+              _showNoGuiView(serviceName);
             }
           })
           .catch(function (discoverError) {
-            console.warn('Cannot discover GUI files for', serviceName, '- showing API explorer');
+            console.warn('Cannot discover GUI files for', serviceName, discoverError);
             showToast('Service GUI',
               'The GUI for ' + serviceName + ' could not be loaded (' +
               ((discoverError && discoverError.message) || error.message || 'unknown error') +
-              ') - showing the API view instead.',
+              ') - showing its service view instead.',
               'warning');
-            showServiceAPIExplorer(serviceName);
+            _showNoGuiView(serviceName);
           });
       });
   }
@@ -1181,6 +1245,24 @@
    *
    * @param {string} serviceName - The service name key in MM.servicesInfor.
    */
+  /**
+   * Where a service lands when none of its GUI files can be shown.
+   *
+   * A registry service has `servicesInfor` (methods, methods_info) and gets
+   * the legacy explorer. A Consul service has none of that -- calling the
+   * legacy explorer for it throws -- and gets its runtime card instead,
+   * whose API view works through gRPC reflection.
+   */
+  function _showNoGuiView(serviceName) {
+    if (MM.servicesInfor && MM.servicesInfor[serviceName]) {
+      showServiceAPIExplorer(serviceName);
+    } else if (_selectedService && _selectedService.name === serviceName) {
+      _showServiceOverview(_selectedService);
+    } else {
+      _showServiceOverview({ name: serviceName, consul: null, info: null });
+    }
+  }
+
   function showServiceAPIExplorer(serviceName) {
     var serviceInfo = MM.servicesInfor[serviceName];
     var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
@@ -2556,7 +2638,11 @@
     var svc = sel.consul;
     var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
     if (!contentDiv || !svc || !svc.gui) return;
-    var classic = !!(opts && opts.classic);
+    // An explicit choice (the Classic panel button, the bench dock) is
+    // remembered; opening from the sidebar follows what was chosen last.
+    var explicit = opts && typeof opts.classic === 'boolean';
+    var classic = explicit ? !!opts.classic : _prefersClassic(svc.name);
+    if (explicit) _setClassicPref(svc.name, classic);
 
     MM.currentGuiService = {
       name: svc.name,
@@ -2577,6 +2663,7 @@
       delete _servicePanels[sel.name];
     }
     _classicPanels[sel.name] = classic;
+    _refreshClassicPanelBtn(sel);
 
     if (_servicePanels[sel.name]) {
       // Cache hit: loadServiceContent only consults servicesInfor on a
@@ -2592,12 +2679,17 @@
     var folderPath = SERVICES_GUI_FOLDER + '/' + folder;
     // A folder with component.json is a Bench Endoskeleton component
     // (contract v1); anything else loads through the legacy tiers unchanged.
-    if (classic) {
-      _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
-      return;
-    }
-    _tryMountComponent(sel, svc, folderPath, contentDiv).then(function (mounted) {
-      if (!mounted) _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
+    // Bring the folder up to date from the service first (ADR-031): it
+    // arrives when missing and is replaced when the service's copy moved
+    // on. Whichever kind is shown then reads files that are current.
+    _fetchGuiFromService(sel, svc, folder).then(function () {
+      if (classic) {
+        _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
+        return;
+      }
+      return _tryMountComponent(sel, svc, folderPath, contentDiv).then(function (mounted) {
+        if (!mounted) _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
+      });
     });
   }
 
@@ -2621,6 +2713,119 @@
    * or superseded by a newer selection), false to fall back to the legacy
    * loader.
    */
+  /**
+   * Bring a service's GUI folder up to date from the service itself.
+   *
+   * Consul-registered services serve their own files over gRPC
+   * (`microservicebase.gui.v1.ServiceGui`, ADR-031). The bridge downloads
+   * the package and either extracts it (browser mode, where the bridge
+   * serves web/) or hands it back for the desktop app to unpack -- only
+   * Electron knows whether it runs from the source tree or from %APPDATA%.
+   *
+   * - Folder missing or empty: download it. A failed attempt is remembered
+   *   for GUI_FETCH_RETRY_MS only, so a service that starts serving its
+   *   files later is picked up without reloading the window.
+   * - Folder present and it came from the service (a checksum is stored):
+   *   ask once per window whether the service's copy changed, and replace
+   *   it if so. A failure here is silent; the files on disk still work.
+   * - Folder present but put there by hand (no checksum stored): left
+   *   alone, so local edits are never overwritten.
+   *
+   * Resolves true when new files were written.
+   */
+  function _fetchGuiFromService(sel, svc, folder) {
+    if (!folder || !svc) return Promise.resolve(false);
+    var folderPath = SERVICES_GUI_FOLDER + '/' + folder;
+    return MM.listServiceFiles(folderPath)
+      .catch(function () { return []; })
+      .then(function (files) {
+        var present = (files || []).length > 0;
+        var known = _guiChecksum(folder);
+        if (present && (!known || _guiChecked[folder])) return false;
+        if (!present) {
+          var failedAt = _guiFetchFailedAt[sel.name];
+          if (failedAt && Date.now() - failedAt < GUI_FETCH_RETRY_MS) return false;
+        }
+        _guiChecked[folder] = true;
+
+        // Nothing on disk: never claim to hold a version, or the bridge
+        // would answer "unchanged" and write nothing.
+        var canExtractLocally = !!(window.electronAPI && window.electronAPI.extractGUIZip);
+        var body = {
+          consul: svc.consulUrl || '',
+          folder: folder,
+          known_checksum: present ? known : '',
+          extract: !canExtractLocally
+        };
+        function failed(msg) {
+          if (present) return false;               // what is on disk still works
+          _guiFetchFailedAt[sel.name] = Date.now();
+          _guiFetchNotified[sel.name] = true;
+          showToast('Service GUI', msg, 'warning');
+          return false;
+        }
+        return fetch(_bridgeApiUrl() + '/api/service-gui/fetch/' + encodeURIComponent(sel.name), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data || data.status !== 'ok') {
+              // "unavailable" is the ordinary case for a service that does
+              // not serve its own files; one message says all of it.
+              return failed((data && data.status === 'unavailable')
+                ? folder + ' is not in web/services, and ' + sel.name +
+                  ' does not serve its own GUI files - showing its service view.'
+                : 'Could not fetch the GUI of ' + sel.name + ': ' +
+                  ((data && (data.error || data.detail)) || 'no answer') + '.');
+            }
+            if (data.checksum) _guiChecksum(folder, data.checksum);
+            if (data.cached) return false;            // already current
+            if (!data.zip_base64) return true;        // the bridge extracted it
+            return window.electronAPI.extractGUIZip(folderPath, data.zip_base64)
+              .then(function () { return true; });
+          })
+          .then(function (wrote) {
+            if (wrote) {
+              delete _guiFetchFailedAt[sel.name];
+              delete _guiFetchNotified[sel.name];
+              showToast('Service GUI', (present ? 'Updated' : 'Loaded') + ' the GUI of ' +
+                        sel.name + ' from the service.', 'success');
+            }
+            return wrote;
+          })
+          .catch(function (err) {
+            return failed('Could not fetch the GUI of ' + sel.name + ': ' + err.message);
+          });
+      });
+  }
+
+  /**
+   * The bridge's base URL. In the desktop app the service client's apiUrl
+   * is the page's own `file://` origin -- truthy but unfetchable -- so fall
+   * back to localhost on the configured bridge port, as ServiceCreator,
+   * ConsulClient and GrpcClient do.
+   */
+  function _bridgeApiUrl() {
+    var apiUrl = (MM.serviceClient && MM.serviceClient.apiUrl) || '';
+    if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('http') !== 0) {
+      var settings = MM.getSettings ? MM.getSettings() : {};
+      apiUrl = 'http://localhost:' + (settings.bridgePort || 1112);
+    }
+    return apiUrl.replace(/\/+$/, '');
+  }
+
+  /** Read or write the cached checksum of a GUI folder. */
+  function _guiChecksum(folder, value) {
+    var key = 'mm_gui_checksum:' + folder;
+    try {
+      if (value === undefined) return localStorage.getItem(key) || '';
+      localStorage.setItem(key, value);
+    } catch (e) { /* storage unavailable */ }
+    return value || '';
+  }
+
   function _tryMountComponent(sel, svc, folderPath, contentDiv) {
     if (!MM.endo || !MM.endo.mountComponent) return Promise.resolve(false);
     return fetch(folderPath + '/component.json', { cache: 'no-store' })
@@ -2669,6 +2874,7 @@
     // Hide any cached GUI panel and drop previous non-cached content. The
     // overview is itself non-cached, so the next selection replaces it.
     _deactivateCurrentPanel();
+    _refreshClassicPanelBtn(sel);   // no GUI to switch: the button goes grey
 
     var svc = sel.consul;
     var info = sel.info || {};
@@ -4769,6 +4975,27 @@
     switchMode('services');
     setDevMode(true, { tab: 'api', silent: true });
   });
+  // Switch the selected service between its component tiles and the
+  // classic panel its folder also ships. The choice sticks for that
+  // service until it is switched back.
+  _wire('btnDevClassicPanel', function () {
+    _withSelectedService('Classic panel', function (sel) {
+      var svc = sel.consul;
+      if (!svc || !svc.gui) {
+        showToast('Classic panel', sel.name + ' does not declare a GUI.', 'info');
+        return;
+      }
+      _folderHasBothKinds(svc.gui).then(function (both) {
+        if (!both) {
+          showToast('Classic panel', svc.gui + ' ships only one kind of GUI.', 'info');
+          _refreshClassicPanelBtn(sel);
+          return;
+        }
+        switchMode('services');
+        _openConsulServiceGui(sel, { classic: !_classicPanels[sel.name] });
+      });
+    });
+  });
   _wire('btnDevCodeExamples', function () {
     _withSelectedService('Code Examples', function (sel) {
       switchMode('services');
@@ -4792,6 +5019,8 @@
       if (!_tpState) return;
       if (_tpState.action === 'init') _applyInit();
       else if (_tpState.action === 'export') _applyExport();
+      else if (_tpState.action === 'run') _applyRunDialog();
+      else if (_tpState.action === 'run-settings') _applyRunSettings();
     });
   })();
 
@@ -5172,10 +5401,12 @@
   // Sidebar: the project's files grouped by kind, with role and sync state.
   // Content: an overview (exported services, re-export, add a running
   // service) or a read-only preview of the selected file.
-  var _tpView = { selected: null, data: null };
+  // `runs`: the Runs pane is shown (then `selected` is null).
+  var _tpView = { selected: null, data: null, runs: false };
 
   var TPV_GROUPS = [
     { kind: 'suite', title: 'Suites', icon: 'bi-play-circle' },
+    { kind: 'flow', title: 'Flows', icon: 'bi-diagram-3' },
     { kind: 'resource', title: 'Resources', icon: 'bi-puzzle' },
     { kind: 'proto', title: 'Protos', icon: 'bi-file-earmark-code' },
     { kind: 'config', title: 'Configuration', icon: 'bi-sliders' },
@@ -5191,12 +5422,14 @@
 
   function _showTestProjectView() {
     _tpView.selected = null;
+    _tpView.runs = false;
     if (_currentMode === 'testproject') renderTestProjectView();
     else switchMode('testproject');
   }
 
   function _tpvGroupOf(f) {
-    return (f.kind === 'suite' || f.kind === 'resource' || f.kind === 'proto' || f.kind === 'config')
+    return (f.kind === 'suite' || f.kind === 'flow' || f.kind === 'resource' || f.kind === 'proto' ||
+            f.kind === 'config')
       ? f.kind : 'other';
   }
 
@@ -5259,6 +5492,7 @@
         if (!keep) _tpView.selected = null;
         _renderTpvSidebar(data);
         if (_tpView.selected) _showTpvFile(_tpView.selected);
+        else if (_tpView.runs) _renderTpvRuns();
         else _renderTpvOverview(data);
       })
       .catch(function (err) {
@@ -5277,8 +5511,14 @@
       '  <div class="tpv-project-name"><i class="bi bi-folder2-open me-1"></i>' + _escapeHtml(data.name) + '</div>' +
       '  <div class="tpv-project-meta">' + _escapeHtml(data.runner_name) + '</div>' +
       '</div>' +
-      '<button type="button" class="tpv-item' + (_tpView.selected ? '' : ' active') + '" data-tpv-overview="1">' +
-      '  <i class="bi bi-grid-1x2"></i><span class="tpv-item-label">Overview</span></button>';
+      '<button type="button" class="tpv-item' + (_tpView.selected || _tpView.runs ? '' : ' active') + '" data-tpv-overview="1">' +
+      '  <i class="bi bi-grid-1x2"></i><span class="tpv-item-label">Overview</span></button>' +
+      (data.can_run
+        ? '<button type="button" class="tpv-item' + (_tpView.runs ? ' active' : '') + '" data-tpv-runs="1">' +
+          '  <i class="bi bi-activity"></i><span class="tpv-item-label">Runs</span>' +
+          (_tprLiveRun(data.root) ? '<span class="tpv-live" title="A run is in progress"></span>' : '') +
+          '</button>'
+        : '');
 
     TPV_GROUPS.forEach(function (g) {
       var files = data.files.filter(function (f) { return _tpvGroupOf(f) === g.kind; });
@@ -5301,6 +5541,10 @@
           '  <span class="tpv-dot tpv-state-' + _escapeHtml(f.state) + '"></span>' +
           '  <span class="tpv-item-label">' + _escapeHtml(_tpvLabel(data, f)) +
           (open && _tpvDirty() ? ' <span class="tpv-unsaved" title="Unsaved changes">\u25cf</span>' : '') + '</span>' +
+          (f.runnable
+            ? '  <span class="tpv-play" role="button" tabindex="0" data-tpv-run="' + _escapeHtml(f.path) + '"' +
+              ' title="Run ' + _escapeHtml(f.path) + '…"><i class="bi bi-play-fill"></i></span>'
+            : '') +
           '  <span class="tpv-role tpv-role-' + _escapeHtml(f.role) + '" title="' + _escapeHtml(role[1]) + '">' +
                _escapeHtml(role[0]) + '</span>' +
           '</button>';
@@ -5314,16 +5558,32 @@
       b.addEventListener('click', function () {
         _tpvGuard(function () {
           _tpView.selected = null;
+          _tpView.runs = false;
           _renderTpvSidebar(data);
           _renderTpvOverview(data);
         });
       });
+    });
+    sidebar.querySelectorAll('[data-tpv-runs]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        _tpvGuard(function () { _showTpvRuns(); });
+      });
+    });
+    sidebar.querySelectorAll('[data-tpv-run]').forEach(function (b) {
+      function go(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        _tpvRunDialog(b.getAttribute('data-tpv-run'));
+      }
+      b.addEventListener('click', go);
+      b.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') go(e); });
     });
     sidebar.querySelectorAll('[data-tpv-path]').forEach(function (b) {
       b.addEventListener('click', function () {
         var path = b.getAttribute('data-tpv-path');
         if (path === _tpView.selected && _tpvEditor) return;
         _tpvGuard(function () {
+          _tpView.runs = false;
           _tpView.selected = path;
           _renderTpvSidebar(data);
           _showTpvFile(path);
@@ -5408,7 +5668,14 @@
         ? '<div class="tp-hint"><span class="small text-muted">Run all suites from the project root</span>' +
           '<code id="tpvRunHint" title="Copy">' + _escapeHtml(data.run_hint) + '</code></div>'
         : '') +
-      '      <div class="mt-3"><button type="button" class="btn btn-sm btn-outline-primary" id="tpvNewSuite">' +
+      '      <div class="mt-3 d-flex flex-wrap gap-2">' +
+      (data.can_run
+        ? '<button type="button" class="btn btn-sm btn-primary" id="tpvRunAll" title="Run every suite and flow of the project">' +
+          '<i class="bi bi-play-fill me-1"></i>Run all\u2026</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvRunSettings" title="Interpreter, PYTHONPATH and arguments for every run">' +
+          '<i class="bi bi-gear me-1"></i>Run settings\u2026</button>'
+        : '') +
+      '        <button type="button" class="btn btn-sm btn-outline-primary" id="tpvNewSuite">' +
       '        <i class="bi bi-file-earmark-plus me-1"></i>New suite\u2026</button></div>' +
       '    </section>' +
       '    <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-plus-circle me-1"></i>Add a service</h6>' +
@@ -5420,6 +5687,11 @@
           '<th>Source</th><th>Exported</th><th>Files</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<div class="small text-muted">Nothing exported yet — pick a running service above.</div>') +
       '  </section>' +
+      (data.can_run
+        ? '  <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-activity me-1"></i>Recent runs' +
+          '    <a href="#" class="ms-2 small fw-normal" id="tpvAllRuns">All runs →</a></h6>' +
+          '    <div id="tpvRecentRuns">' + _devLoading('Reading runs…') + '</div></section>'
+        : '') +
       '</div>';
 
     function on(id, fn) {
@@ -5431,6 +5703,10 @@
     on('tpvRoot', function () { _copyText(data.root, 'Path'); });
     on('tpvRunHint', function () { _copyText(data.run_hint, 'Command'); });
     on('tpvNewSuite', function () { _showTpvNewSuite(data); });
+    on('tpvRunAll', function () { _tpvRunDialog(''); });
+    on('tpvRunSettings', function () { _tpvRunSettingsDialog(); });
+    on('tpvAllRuns', function (e) { e.preventDefault(); _showTpvRuns(); });
+    if (data.can_run) _tprFillRecent(data.root);
     on('tpvAddButton', function () {
       var name = document.getElementById('tpvAddSelect').value;
       exportToTestProject(_findDiscoveredService(name));
@@ -5449,6 +5725,7 @@
             { path: path, role: 'yours', state: 'yours', kind: 'other' };
     var role = TPV_ROLE[f.role] || [f.role, ''];
     _tpvEditor = null;
+    _tpvViewState = null;
 
     var head =
       '<div class="tpv-file-head">' +
@@ -5482,8 +5759,18 @@
       return;
     }
 
+    // Views the project's runner offers besides the text (a flow: Diagram, Robot).
+    var views = f.views || [];
+    var tabs = views.length
+      ? '<div class="tpr-tabs tpv-tabs" id="tpvTabs" role="tablist">' +
+        '<button type="button" class="tpr-tab active" data-tpv-tab="script">Script</button>' +
+        views.map(function (v) {
+          return '<button type="button" class="tpr-tab" data-tpv-tab="' + _escapeHtml(v.id) + '">' + _escapeHtml(v.title) + '</button>';
+        }).join('') + '</div>'
+      : '';
     content.innerHTML = '<div class="tpv-view">' + head + note +
-      '<div id="tpvBanner"></div><div id="tpvFileBody">' + _devLoading('Loading\u2026') + '</div></div>';
+      '<div id="tpvBanner"></div>' + tabs + '<div id="tpvFileBody">' + _devLoading('Loading\u2026') + '</div>' +
+      (views.length ? '<div class="tpv-view-pane" id="tpvViewPane" hidden></div>' : '') + '</div>';
     _tpvWireBack(data);
 
     MM.testProjectClient.file(_getTestProject(), path)
@@ -5532,17 +5819,24 @@
       e.preventDefault();
       _tpvGuard(function () {
         _tpView.selected = null;
+        _tpView.runs = false;
         _renderTpvSidebar(data);
         _renderTpvOverview(data);
       });
     });
   }
 
+  // Run (runner-neutral: offered for whatever the project's runner can run)
+  // and, for Robot suites, the command line to copy.
   function _tpvCopyRunButton(f) {
-    return f.kind === 'suite'
+    return (f.runnable
+      ? '<button type="button" class="btn btn-sm btn-success" id="tpvRunFile" title="Run it here and follow the console">' +
+        '<i class="bi bi-play-fill me-1"></i>Run…</button>'
+      : '') +
+      (f.kind === 'suite'
       ? '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyRun" title="Copy the command that runs this suite">' +
         '<i class="bi bi-terminal me-1"></i>Run command</button>'
-      : '';
+      : '');
   }
 
   function _tpvWireCopyRun(path) {
@@ -5552,6 +5846,8 @@
         _copyText('python -m robot -d results ' + path, 'Command');
       });
     }
+    var run = document.getElementById('tpvRunFile');
+    if (run) run.addEventListener('click', function () { _tpvRunDialog(path); });
   }
 
   function _tpvShowPreview(f, res) {
@@ -5562,12 +5858,13 @@
       '<pre class="helper-code-pre tpv-preview">' + _numberedCode(res.content) + '</pre>';
     _tpvWireCopyRun(res.path);
     document.getElementById('tpvCopyFile').addEventListener('click', function () { _copyText(res.content, 'File'); });
+    _tpvWireViews(f, function () { return res.content; });
   }
 
   function _tpvOpenEditor(f, res) {
     var root = _getTestProject();
     document.getElementById('tpvTools').innerHTML =
-      '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCheck" title="Check the Robot Framework syntax">' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCheck" title="Check the syntax">' +
       '<i class="bi bi-check2-square me-1"></i>Check</button>' +
       _tpvCopyRunButton(f) +
       '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvRevert" disabled title="Back to the saved version">' +
@@ -5611,6 +5908,7 @@
       });
     });
     _tpvWireCopyRun(res.path);
+    _tpvWireViews(f, function () { return ta.value; });
 
     // Offer unsaved changes left over from an earlier session.
     var draft = _tpvLoadDraft(root, res.path);
@@ -5643,7 +5941,7 @@
     var hl = document.getElementById('tpvHl');
     if (!hl) return;
     var value = ed.textarea.value;
-    hl.innerHTML = _rfHighlight(value);
+    hl.innerHTML = /\.json$/i.test(ed.path) ? _jsonHighlight(value) : _rfHighlight(value);
     var lines = value.split('\n').length;
     if (lines !== ed.lines) {
       ed.lines = lines;
@@ -5903,6 +6201,779 @@
       }
       return out + comment;
     }).join('\n') + '\n';
+  }
+
+  // ---- Extra views of a file ---------------------------------------------------
+  // The project's runner lists them per file (tree entry `views`) and supplies
+  // their data (/api/test-project/inspect) from the text in Script -- unsaved
+  // edits included. Types drawn here: "flow-graph" and "code".
+
+  var TPV_TAB_KEY = 'mm_tpv_tab';
+  var _tpvViewState = null;   // { path, views, getText, tab, cacheText, cacheRes }
+
+  function _tpvWireViews(f, getText) {
+    var views = f.views || [];
+    var bar = document.getElementById('tpvTabs');
+    if (!views.length || !bar) { _tpvViewState = null; return; }
+    _tpvViewState = { path: f.path, views: views, getText: getText, tab: 'script', cacheText: null, cacheRes: null };
+    bar.querySelectorAll('[data-tpv-tab]').forEach(function (b) {
+      b.addEventListener('click', function () { _tpvShowTab(b.getAttribute('data-tpv-tab')); });
+    });
+    var saved = '';
+    try { saved = localStorage.getItem(TPV_TAB_KEY) || ''; } catch (e) { /* storage unavailable */ }
+    if (saved !== 'script' && views.some(function (v) { return v.id === saved; })) _tpvShowTab(saved);
+  }
+
+  function _tpvShowTab(id) {
+    var st = _tpvViewState;
+    if (!st) return;
+    st.tab = id;
+    try { localStorage.setItem(TPV_TAB_KEY, id); } catch (e) { /* storage unavailable */ }
+    document.querySelectorAll('#tpvTabs [data-tpv-tab]').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tpv-tab') === id);
+    });
+    var body = document.getElementById('tpvFileBody');
+    var pane = document.getElementById('tpvViewPane');
+    body.hidden = id !== 'script';
+    pane.hidden = id === 'script';
+    if (id === 'script') {
+      if (_tpvEditor && _tpvEditor.textarea) _tpvRefreshEditor();
+      return;
+    }
+    var view = st.views.filter(function (v) { return v.id === id; })[0];
+    var text = st.getText();
+    if (st.cacheText === text && st.cacheRes) {
+      _tpvDrawView(view, st.cacheRes);
+      return;
+    }
+    pane.innerHTML = _devLoading('Asking ' + ((_tpView.data || {}).runner_name || 'the runner') + '…');
+    MM.testProjectClient.inspect(_getTestProject(), st.path, text)
+      .then(function (res) {
+        if (_tpvViewState !== st) return;
+        st.cacheText = text;
+        st.cacheRes = res;
+        if (st.tab === id) _tpvDrawView(view, res);
+      })
+      .catch(function (err) {
+        if (_tpvViewState === st && st.tab === id) {
+          pane.innerHTML = _devAlert('warning', 'No ' + view.title.toLowerCase() + ' view', err.message || err);
+        }
+      });
+  }
+
+  function _tpvDrawView(view, res) {
+    var st = _tpvViewState;
+    var pane = document.getElementById('tpvViewPane');
+    if (!pane || !st) return;
+    var unsaved = _tpvDirty() && _tpvEditor && _tpvEditor.path === st.path;
+    if (!res.ok) {
+      var links = [];
+      if (res.node) links.push('<a href="#" data-tpv-goto-node="' + _escapeHtml(res.node) + '">Show node ' + _escapeHtml(res.node) + ' in Script</a>');
+      if (res.line) links.push('<a href="#" data-tpv-goto-line="' + res.line + '">Go to line ' + res.line + '</a>');
+      if (res.missing) links.push('<a href="#" data-tpv-run-settings="1">Run settings…</a>');
+      pane.innerHTML = _devAlert(res.missing ? 'warning' : 'danger',
+        res.missing ? 'The runner’s tools are not on the project’s path' : 'The runner refuses this ' + (unsaved ? 'text' : 'file'),
+        res.error) + (links.length ? '<div class="tp-links">' + links.join('') + '</div>' : '');
+      pane.querySelectorAll('[data-tpv-goto-node]').forEach(function (a) {
+        a.addEventListener('click', function (e) { e.preventDefault(); _tpvGotoNode(a.getAttribute('data-tpv-goto-node')); });
+      });
+      pane.querySelectorAll('[data-tpv-goto-line]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          _tpvShowTab('script');
+          _tpvGotoLine(parseInt(a.getAttribute('data-tpv-goto-line'), 10));
+        });
+      });
+      pane.querySelectorAll('[data-tpv-run-settings]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          _tpvRunSettingsDialog(function () {
+            _testProjectModal.hide();
+            st.cacheText = null;
+            _tpvShowTab(view.id);
+          });
+        });
+      });
+      return;
+    }
+    var data = (res.views || {})[view.id] || {};
+    var note = unsaved ? ' Includes your unsaved changes.' : '';
+    if (view.type === 'flow-graph' && MM.flowView && data.flow) {
+      pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-diagram-3 me-1"></i>' +
+        _escapeHtml(data.flow.name || '') + ' — drawn from the runner’s own structure of the text in Script.' + note +
+        ' Click a node to find it there.</div><div class="tpv-diagram" id="tpvDiagram"></div>';
+      MM.flowView.mount(document.getElementById('tpvDiagram'), data.flow, { onNode: _tpvGotoNode });
+    } else if (view.type === 'code') {
+      pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-code-slash me-1"></i>What the runner builds from the text in Script; read-only.' + note + '</div>' +
+        '<pre class="tpv-code-view">' + (view.language === 'robot' ? _rfHighlight(data.text || '') : _escapeHtml(data.text || '')) + '</pre>';
+    } else {
+      pane.innerHTML = _devAlert('warning', 'This view cannot be shown', 'Unknown view type ' + view.type + '.');
+    }
+  }
+
+  /** Back to Script, on the line that defines node `id`. */
+  function _tpvGotoNode(id) {
+    var st = _tpvViewState;
+    if (!st) return;
+    var text = st.getText();
+    var re = new RegExp('"id"\\s*:\\s*"' + String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"');
+    var m = re.exec(text);
+    _tpvShowTab('script');
+    if (!m) return;
+    var line = text.slice(0, m.index).split('\n').length;
+    if (_tpvEditor && _tpvEditor.textarea) {
+      _tpvGotoLine(line);
+    } else {
+      var pre = document.querySelector('#tpvFileBody pre');
+      if (pre) pre.scrollTop = Math.max(0, (line - 4) * (parseFloat(getComputedStyle(pre).lineHeight) || 18));
+    }
+  }
+
+  // ---- Running tests ---------------------------------------------------------
+  // Runner-neutral: the bridge reports run_state (running | stopping | done), a
+  // verdict (pass | fail | unknown | skip | error), counts, one row per test and
+  // the files a run leaves; the console arrives in batches after a cursor. What
+  // command runs is the project runner's business (testproject.json "run").
+
+  var TPR_VERDICT = {
+    pass: 'Pass', fail: 'Fail', unknown: 'Unknown', skip: 'Skipped', error: 'Error',
+    running: 'Running', stopping: 'Stopping'
+  };
+  var TPR_TOAST = { pass: 'success', fail: 'danger', unknown: 'warning', skip: 'secondary', error: 'danger' };
+  var TPR_POLL_MS = 700;
+  var TPR_BATCH = 2000;          // lines per status call (bridge side)
+  var TPR_MAX_LINES = 5000;      // console lines kept per run in the GUI
+  var TPR_VAR_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  var _tprRuns = {};             // root|id -> { root, id, record, lines, since, polling }
+  var _tprShown = null;          // run id shown in the Runs pane
+  var _tprRenderedKey = null;    // root|id whose skeleton is in the DOM
+  var _tprHistory = [];          // last history read for the open project
+
+  function _tprKey(root, id) { return root + '|' + id; }
+
+  function _tprLiveRun(root) {
+    for (var k in _tprRuns) {
+      var e = _tprRuns[k];
+      if (e.root === root && e.record && e.record.run_state && e.record.run_state !== 'done') return e;
+    }
+    return null;
+  }
+
+  function _tprState(rec) {
+    return rec.run_state && rec.run_state !== 'done' ? rec.run_state : (rec.verdict || 'error');
+  }
+
+  function _tprBadge(rec, small) {
+    var s = _tprState(rec);
+    var live = s === 'running' || s === 'stopping';
+    return '<span class="tpr-verdict' + (small ? ' tpr-verdict-sm' : '') + ' tpr-v-' + _escapeHtml(s) + '">' +
+      (live ? '<span class="spinner-border spinner-border-sm" style="width:.7em;height:.7em;border-width:.12em"></span>' : '') +
+      _escapeHtml(TPR_VERDICT[s] || s) + '</span>';
+  }
+
+  function _tprDuration(sec) {
+    var s = Math.max(0, Math.round(sec || 0));
+    var m = Math.floor(s / 60);
+    var h = Math.floor(m / 60);
+    if (h) return h + 'h ' + (m % 60) + 'm';
+    if (m) return m + 'm ' + (s % 60) + 's';
+    return s + 's';
+  }
+
+  function _tprWhen(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).replace('T', ' ');
+    var today = new Date().toDateString() === d.toDateString();
+    return (today ? '' : d.toLocaleDateString() + ' ') + d.toLocaleTimeString();
+  }
+
+  function _tprCounts(c, compact) {
+    c = c || {};
+    var names = { pass: 'passed', fail: 'failed', unknown: 'unknown', skip: 'skipped' };
+    return ['pass', 'fail', 'unknown', 'skip'].filter(function (k) {
+      return !compact || c[k];
+    }).map(function (k) {
+      return '<span class="tpr-c-' + k + '"><b>' + (c[k] || 0) + '</b>' + names[k] + '</span>';
+    }).join('');
+  }
+
+  function _tprOptionsKey(root, path) { return 'mm_tpr_options:' + root + '|' + path; }
+
+  function _tprLoadOptions(root, path) {
+    try { return JSON.parse(localStorage.getItem(_tprOptionsKey(root, path)) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+
+  function _tprStoreOptions(root, path, opts) {
+    try { localStorage.setItem(_tprOptionsKey(root, path), JSON.stringify(opts)); }
+    catch (e) { /* storage unavailable */ }
+  }
+
+  /** "NAME=value" / "NAME:value" lines -> {vars} or {error}. ${NAME} is accepted too. */
+  function _tprParsePairs(text, what) {
+    var out = {};
+    var lines = String(text || '').split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line || line.charAt(0) === '#') continue;
+      var m = /^\$?\{?([^=:}\s]+)\}?\s*[=:]\s?(.*)$/.exec(line);
+      if (!m || !TPR_VAR_RE.test(m[1])) {
+        return { error: what + ' line ' + (i + 1) + ': write NAME=value (letters, digits and _ in the name).' };
+      }
+      out[m[1]] = m[2];
+    }
+    return { vars: out };
+  }
+
+  function _tprPairsText(obj) {
+    return Object.keys(obj || {}).map(function (k) { return k + '=' + obj[k]; }).join('\n');
+  }
+
+  function _tpvRunDialog(path) {
+    var root = _getTestProject();
+    if (!root) return;
+    var live = _tprLiveRun(root);
+    if (live) {
+      showToast('Run', 'A run is already in progress: ' + live.record.target_label + '.', 'warning');
+      _tpvGuard(function () { _showTpvRuns(live.id); });
+      return;
+    }
+    if (path && _tpvDirty() && _tpvEditor.path === path) {
+      showToast('Run', 'Save ' + path + ' first (Ctrl+S): a run uses the file as it is on disk.', 'warning');
+      return;
+    }
+    var data = _tpView.data || {};
+    var settings = data.run_settings || {};
+    var saved = _tprLoadOptions(root, path);
+    var label = path || ('every suite and flow in ' + ((data.layout || {}).suites || 'the project'));
+    var envInfo = 'Interpreter <code>' + _escapeHtml(settings.python || 'the bridge’s Python') + '</code>' +
+      ((settings.pythonpath || []).length
+        ? ' · PYTHONPATH <code>' + _escapeHtml(settings.pythonpath.join(';')) + '</code>' : '') +
+      ((settings.args || []).length ? ' · arguments <code>' + _escapeHtml(settings.args.join(' ')) + '</code>' : '');
+
+    _tpState = { action: 'run', root: root, path: path };
+    _tpShow('<i class="bi bi-play-fill me-2"></i>Run',
+      '<div class="tpr-form">' +
+      '  <p class="mb-3"><code>' + _escapeHtml(label) + '</code></p>' +
+      '  <div class="mb-3">' +
+      '    <label class="form-label small" for="tprVars">Variables</label>' +
+      '    <textarea class="form-control form-control-sm" id="tprVars" rows="3" spellcheck="false"' +
+      '              placeholder="NAME=value, one per line"></textarea>' +
+      '    <div class="form-text">Override the file’s own values for this run. Remembered per file.</div>' +
+      '  </div>' +
+      '  <div class="form-check mb-3">' +
+      '    <input class="form-check-input" type="checkbox" id="tprDry">' +
+      '    <label class="form-check-label small" for="tprDry">Dry run: check keywords and arguments, execute nothing</label>' +
+      '  </div>' +
+      '  <div class="small text-muted">' + envInfo + ' · <a href="#" id="tprOpenSettings">Run settings…</a></div>' +
+      '  <div id="tprDialogError" class="mt-2"></div>' +
+      '</div>',
+      '<i class="bi bi-play-fill me-1"></i>Run');
+    document.getElementById('tprVars').value = saved.vars || '';
+    document.getElementById('tprDry').checked = !!saved.dryrun;
+    document.getElementById('tprOpenSettings').addEventListener('click', function (e) {
+      e.preventDefault();
+      _tpvRunSettingsDialog(function () { _tpvRunDialog(path); });
+    });
+    document.getElementById('tprVars').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _applyRunDialog(); }
+    });
+  }
+
+  function _applyRunDialog() {
+    var st = _tpState;
+    var varsText = document.getElementById('tprVars').value;
+    var dryrun = document.getElementById('tprDry').checked;
+    var parsed = _tprParsePairs(varsText, 'Variables');
+    if (parsed.error) {
+      document.getElementById('tprDialogError').innerHTML = _devAlert('warning', 'Not started', parsed.error);
+      return;
+    }
+    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun });
+    st.action = 'done';
+    _afterModalHidden(function () {
+      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun });
+    });
+  }
+
+  function _tprStart(root, path, opts) {
+    return MM.testProjectClient.run(root, path, opts)
+      .then(function (rec) {
+        var e = _tprRuns[_tprKey(root, rec.id)] =
+          { root: root, id: rec.id, record: rec, lines: [], since: 0, polling: false };
+        _tprPoll(e);
+        _tpvGuard(function () { _showTpvRuns(rec.id); });
+        return rec;
+      })
+      .catch(function (err) {
+        showToast('Run not started', err.message || String(err), 'danger');
+      });
+  }
+
+  function _tpvRunSettingsDialog(then) {
+    var root = _getTestProject();
+    if (!root) return;
+    MM.testProjectClient.runSettings(root)
+      .then(function (res) {
+        var s = res.settings || {};
+        _tpState = { action: 'run-settings', root: root, then: then };
+        _tpShow('<i class="bi bi-gear me-2"></i>Run settings',
+          '<div class="tpr-form">' +
+          '  <div class="mb-3">' +
+          '    <label class="form-label small" for="tprPython">Interpreter</label>' +
+          '    <div class="input-group input-group-sm">' +
+          '      <input type="text" class="form-control" id="tprPython" spellcheck="false" placeholder="Empty: the bridge’s own Python">' +
+          (MM.canPickPath()
+            ? '<button type="button" class="btn btn-outline-secondary" id="tprPythonBrowse"><i class="bi bi-folder2-open"></i></button>'
+            : '') +
+          '    </div>' +
+          '    <div class="form-text">The Python that runs the tests. It needs the test runner, installed or on the path below.</div>' +
+          '  </div>' +
+          '  <div class="mb-3">' +
+          '    <label class="form-label small" for="tprPath">PYTHONPATH</label>' +
+          '    <textarea class="form-control form-control-sm" id="tprPath" rows="2" spellcheck="false"' +
+          '              placeholder="One folder per line; relative to the project root"></textarea>' +
+          '    <div class="form-text">Put in front of the path, e.g. the <code>src</code> folder of a Robot Framework checkout that brings <code>robot.flow</code> for flow files.</div>' +
+          '  </div>' +
+          '  <div class="mb-3">' +
+          '    <label class="form-label small" for="tprArgs">Extra arguments</label>' +
+          '    <textarea class="form-control form-control-sm" id="tprArgs" rows="2" spellcheck="false"' +
+          '              placeholder="One per line, e.g. --loglevel and then DEBUG"></textarea>' +
+          '  </div>' +
+          '  <div class="mb-2">' +
+          '    <label class="form-label small" for="tprEnv">Environment</label>' +
+          '    <textarea class="form-control form-control-sm" id="tprEnv" rows="2" spellcheck="false"' +
+          '              placeholder="NAME=value, one per line"></textarea>' +
+          '  </div>' +
+          '  <div class="form-text">Saved in <code>testproject.json</code> under <code>"run"</code>, so the project runs the same way for everyone who opens it.</div>' +
+          '  <div id="tprSettingsError" class="mt-2"></div>' +
+          '</div>',
+          '<i class="bi bi-save me-1"></i>Save');
+        document.getElementById('tprPython').value = s.python || '';
+        document.getElementById('tprPath').value = (s.pythonpath || []).join('\n');
+        document.getElementById('tprArgs').value = (s.args || []).join('\n');
+        document.getElementById('tprEnv').value = _tprPairsText(s.env);
+        MM.wirePathBrowse('tprPythonBrowse', 'tprPython', {
+          title: 'Python interpreter for test runs',
+          filters: [{ name: 'Python', extensions: ['exe', '*'] }]
+        });
+      })
+      .catch(function (err) { showToast('Run settings', err.message || String(err), 'danger'); });
+  }
+
+  function _applyRunSettings() {
+    var st = _tpState;
+    function lines(id) {
+      return document.getElementById(id).value.split(/\r?\n/).map(function (l) { return l.trim(); })
+        .filter(Boolean);
+    }
+    var env = _tprParsePairs(document.getElementById('tprEnv').value, 'Environment');
+    if (env.error) {
+      document.getElementById('tprSettingsError').innerHTML = _devAlert('warning', 'Not saved', env.error);
+      return;
+    }
+    var settings = {
+      python: document.getElementById('tprPython').value.trim(),
+      pythonpath: lines('tprPath'),
+      args: lines('tprArgs'),
+      env: env.vars
+    };
+    var apply = document.getElementById('btnTestProjectApply');
+    apply.disabled = true;
+    MM.testProjectClient.runSettings(st.root, settings)
+      .then(function (res) {
+        if (_tpView.data) _tpView.data.run_settings = res.settings;
+        showToast('Run settings', 'Saved in testproject.json.', 'success');
+        if (st.then) {
+          st.then();   // back to the Run dialog, in the same modal
+        } else {
+          st.action = 'done';
+          _testProjectModal.hide();
+        }
+      })
+      .catch(function (err) {
+        apply.disabled = false;
+        document.getElementById('tprSettingsError').innerHTML = _devAlert('danger', 'Not saved', err.message || err);
+      });
+  }
+
+  /** Poll one run until it is done and its whole console has arrived. */
+  function _tprPoll(e) {
+    if (e.polling) return;
+    e.polling = true;
+    (function tick() {
+      MM.testProjectClient.runStatus(e.root, e.id, e.since)
+        .then(function (st) {
+          var fresh = st.lines || [];
+          var wasLive = e.record.run_state && e.record.run_state !== 'done';
+          delete st.lines;
+          e.record = st;
+          e.since = st.next || e.since;
+          e.error = '';
+          if (st.dropped) fresh.unshift('… ' + st.dropped + ' earlier lines are only in console.log …');
+          Array.prototype.push.apply(e.lines, fresh);
+          if (e.lines.length > TPR_MAX_LINES) e.lines.splice(0, e.lines.length - TPR_MAX_LINES);
+          var more = fresh.length >= TPR_BATCH;
+          _tprUpdateShown(e, fresh);
+          if (st.run_state === 'done' && !more) {
+            e.polling = false;
+            if (wasLive) _tprFinished(e);
+            return;
+          }
+          setTimeout(tick, more ? 30 : TPR_POLL_MS);
+        })
+        .catch(function (err) {
+          e.polling = false;
+          e.error = err.message || String(err);
+          _tprUpdateShown(e, []);
+          // The bridge may be restarting; keep following a run we saw alive.
+          if (e.record.run_state && e.record.run_state !== 'done') {
+            setTimeout(function () { _tprPoll(e); }, 3000);
+          }
+        });
+    })();
+  }
+
+  function _tprFinished(e) {
+    var rec = e.record;
+    var verdict = rec.verdict || 'error';
+    var counts = rec.counts || {};
+    var summary = ['pass', 'fail', 'unknown', 'skip'].filter(function (k) { return counts[k]; })
+      .map(function (k) { return counts[k] + ' ' + { pass: 'passed', fail: 'failed', unknown: 'unknown', skip: 'skipped' }[k]; })
+      .join(', ');
+    showToast('Run finished: ' + (TPR_VERDICT[verdict] || verdict),
+      rec.target_label + (summary ? ' — ' + summary : '') + (rec.message && verdict === 'error' ? ' — ' + rec.message : ''),
+      TPR_TOAST[verdict] || 'info');
+    if (_currentMode === 'testproject' && _getTestProject() === e.root) {
+      if (_tpView.data) _renderTpvSidebar(_tpView.data);
+      if (_tpView.runs) _tprLoadHistory();
+      else if (!_tpView.selected) _tprFillRecent(e.root);
+    }
+  }
+
+  function _showTpvRuns(runId) {
+    _tpView.selected = null;
+    _tpView.runs = true;
+    if (runId) _tprShown = runId;
+    if (_currentMode !== 'testproject') { switchMode('testproject'); return; }
+    if (_tpView.data) _renderTpvSidebar(_tpView.data);
+    _renderTpvRuns();
+  }
+
+  function _renderTpvRuns() {
+    var content = document.getElementById('testProjectContent');
+    var data = _tpView.data || {};
+    _tpvEditor = null;
+    _tprRenderedKey = null;
+    content.innerHTML =
+      '<div class="tpv-view tpr-view">' +
+      '  <div class="svc-ov-head">' +
+      '    <h4 class="svc-ov-title"><i class="bi bi-activity me-2"></i>Runs</h4>' +
+      (data.runner_name ? '<span class="dev-tag">' + _escapeHtml(data.runner_name) + '</span>' : '') +
+      '    <div class="svc-ov-tools">' +
+      '      <button type="button" class="btn btn-sm btn-primary" id="tprRunAll"><i class="bi bi-play-fill me-1"></i>Run all…</button>' +
+      '      <button type="button" class="btn btn-sm btn-outline-secondary" id="tprSettings"><i class="bi bi-gear me-1"></i>Run settings…</button>' +
+      '      <button type="button" class="btn btn-sm btn-outline-secondary" id="tprRefresh" title="Re-read the run history"><i class="bi bi-arrow-clockwise"></i></button>' +
+      '    </div>' +
+      '  </div>' +
+      '  <section class="svc-ov-card tpr-current" id="tprCurrent"></section>' +
+      '  <section class="svc-ov-card tpr-history"><h6 class="svc-ov-card-title"><i class="bi bi-clock-history me-1"></i>History</h6>' +
+      '    <div id="tprHistory">' + _devLoading('Reading runs…') + '</div></section>' +
+      '</div>';
+    document.getElementById('tprRunAll').addEventListener('click', function () { _tpvRunDialog(''); });
+    document.getElementById('tprSettings').addEventListener('click', function () { _tpvRunSettingsDialog(); });
+    document.getElementById('tprRefresh').addEventListener('click', function () { _tprLoadHistory(); });
+    _tprRenderCurrent();
+    _tprLoadHistory();
+  }
+
+  function _tprLoadHistory() {
+    var root = _getTestProject();
+    return MM.testProjectClient.runs(root)
+      .then(function (res) {
+        if (_getTestProject() !== root) return;
+        _tprHistory = res.runs || [];
+        if (!_tprShown || !_tprHistory.some(function (r) { return r.id === _tprShown; })) {
+          if (!_tprRuns[_tprKey(root, _tprShown)]) _tprShown = _tprHistory.length ? _tprHistory[0].id : null;
+        }
+        _tprRenderHistory();
+        if (_tprRenderedKey !== _tprKey(root, _tprShown)) _tprRenderCurrent();
+      })
+      .catch(function (err) {
+        var box = document.getElementById('tprHistory');
+        if (box) box.innerHTML = _devAlert('warning', 'Could not read the runs', err.message || err);
+      });
+  }
+
+  function _tprRenderHistory() {
+    var box = document.getElementById('tprHistory');
+    if (!box) return;
+    if (!_tprHistory.length) {
+      box.innerHTML = '<div class="small text-muted">No runs yet.</div>';
+      return;
+    }
+    box.innerHTML =
+      '<div class="svc-ov-table-wrap"><table class="svc-ov-table"><thead><tr>' +
+      '<th>Verdict</th><th>What</th><th>Started</th><th>Took</th><th>Tests</th><th></th></tr></thead><tbody>' +
+      _tprHistory.map(function (r) {
+        var opts = r.options || {};
+        var vars = Object.keys(opts.variables || {});
+        return '<tr data-tpr-run="' + _escapeHtml(r.id) + '"' + (r.id === _tprShown ? ' class="tpr-shown"' : '') + '>' +
+          '<td>' + _tprBadge(r, true) + '</td>' +
+          '<td><code>' + _escapeHtml(r.target_label || r.target || '') + '</code>' +
+          (opts.dryrun ? ' <span class="dev-tag">dry run</span>' : '') +
+          (vars.length ? ' <span class="dev-tag" title="' + _escapeHtml(_tprPairsText(opts.variables)) + '">' +
+                         vars.length + ' variable' + (vars.length === 1 ? '' : 's') + '</span>' : '') + '</td>' +
+          '<td>' + _escapeHtml(_tprWhen(r.started_at)) + '</td>' +
+          '<td>' + _escapeHtml(_tprDuration(r.elapsed_s)) + '</td>' +
+          '<td class="tpr-counts">' + _tprCounts(r.counts, true) + '</td>' +
+          '<td>' + ((r.artifacts || []).some(function (a) { return a.primary; }) && r.run_state === 'done' && r.verdict !== 'error'
+            ? '<a href="#" data-tpr-open="' + _escapeHtml(r.id) + '" title="Open the log">Log</a>' : '') + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody></table></div>';
+    box.querySelectorAll('[data-tpr-run]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        _tprShown = row.getAttribute('data-tpr-run');
+        _tprRenderCurrent();
+        _tprRenderHistory();
+      });
+    });
+    box.querySelectorAll('[data-tpr-open]').forEach(function (a) {
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var r = _tprHistory.filter(function (x) { return x.id === a.getAttribute('data-tpr-open'); })[0];
+        if (r) _tprOpenArtifact(r, null);
+      });
+    });
+  }
+
+  function _tprOpenArtifact(rec, name) {
+    var arts = rec.artifacts || [];
+    var art = name ? arts.filter(function (a) { return a.name === name; })[0]
+                   : (arts.filter(function (a) { return a.primary; })[0] || arts[0]);
+    if (!art || !rec.results_url) return;
+    _openUrl(MM.testProjectClient.resultUrl(rec, art.name));
+  }
+
+  function _tprRenderCurrent() {
+    var box = document.getElementById('tprCurrent');
+    if (!box) return;
+    var root = _getTestProject();
+    if (!_tprShown) {
+      _tprRenderedKey = null;
+      box.innerHTML = '<div class="tpr-empty"><i class="bi bi-play-circle d-block fs-3 mb-2"></i>' +
+        'No runs yet. Use <i class="bi bi-play-fill"></i> next to a suite or flow, or <strong>Run all</strong>.</div>';
+      return;
+    }
+    var key = _tprKey(root, _tprShown);
+    var e = _tprRuns[key];
+    if (!e) {
+      var known = _tprHistory.filter(function (r) { return r.id === _tprShown; })[0];
+      e = _tprRuns[key] = { root: root, id: _tprShown, record: known || { id: _tprShown, run_state: 'done' },
+                            lines: [], since: 0, polling: false };
+      _tprPoll(e);
+    }
+    _tprRenderedKey = key;
+    box.innerHTML =
+      '<div class="tpr-head">' +
+      '  <span id="tprBadge"></span>' +
+      '  <div class="tpr-title"><code id="tprTarget"></code><div class="tpr-meta" id="tprMeta"></div></div>' +
+      '  <div class="tpr-tools" id="tprTools"></div>' +
+      '</div>' +
+      '<div class="tpr-counts" id="tprCounts"></div>' +
+      '<div class="tpr-message" id="tprMessage" hidden></div>' +
+      '<div class="tpr-tabs" role="tablist">' +
+      '  <button type="button" class="tpr-tab active" data-tpr-tab="console">Console</button>' +
+      '  <button type="button" class="tpr-tab" data-tpr-tab="results">Results <span id="tprResultsN"></span></button>' +
+      '</div>' +
+      '<pre class="tpr-console" id="tprConsole"></pre>' +
+      '<div class="tpr-results" id="tprResults" hidden></div>';
+    box.querySelectorAll('[data-tpr-tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () { _tprTab(tab.getAttribute('data-tpr-tab')); });
+    });
+    e.toolsState = null;
+    e.resultsShown = null;
+    document.getElementById('tprConsole').innerHTML = e.lines.map(_tprLine).join('');
+    _tprUpdateShown(e, null);
+    var con = document.getElementById('tprConsole');
+    con.scrollTop = con.scrollHeight;
+    if (e.record.run_state === 'done' && (e.record.tests || []).length) _tprTab('results');
+  }
+
+  function _tprTab(which) {
+    document.querySelectorAll('#tprCurrent [data-tpr-tab]').forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-tpr-tab') === which);
+    });
+    var con = document.getElementById('tprConsole');
+    var res = document.getElementById('tprResults');
+    if (con) con.hidden = which !== 'console';
+    if (res) res.hidden = which !== 'results';
+  }
+
+  function _tprLine(line) {
+    var cls = /\|\s*PASS\s*\|/.test(line) ? 'tpr-l-pass'
+            : /\|\s*FAIL\s*\|/.test(line) ? 'tpr-l-fail'
+            : /\|\s*UNKNOWN\s*\|/.test(line) ? 'tpr-l-unknown'
+            : /^[=\-]{20,}$/.test(line) ? 'tpr-l-rule' : '';
+    return (cls ? '<span class="' + cls + '">' + _escapeHtml(line) + '</span>' : _escapeHtml(line)) + '\n';
+  }
+
+  /** Bring the shown run's parts up to date; `fresh` lines are appended (null = none). */
+  function _tprUpdateShown(e, fresh) {
+    if (!_tpView.runs || _tprRenderedKey !== _tprKey(e.root, e.id)) return;
+    var rec = e.record;
+    var con = document.getElementById('tprConsole');
+    if (!con) return;
+    if (fresh && fresh.length) {
+      var atEnd = con.scrollTop + con.clientHeight >= con.scrollHeight - 30;
+      con.insertAdjacentHTML('beforeend', fresh.map(_tprLine).join(''));
+      if (atEnd) con.scrollTop = con.scrollHeight;
+    }
+    var state = _tprState(rec);
+    document.getElementById('tprBadge').innerHTML = _tprBadge(rec);
+    document.getElementById('tprTarget').textContent = rec.target_label || rec.target || rec.id;
+    var opts = rec.options || {};
+    var meta = [];
+    if (rec.started_at) meta.push('started ' + _tprWhen(rec.started_at));
+    if (rec.elapsed_s != null) meta.push((state === 'running' || state === 'stopping' ? 'running for ' : 'took ') + _tprDuration(rec.elapsed_s));
+    if (rec.runner_name) meta.push(rec.runner_name);
+    if (opts.dryrun) meta.push('dry run');
+    var vars = Object.keys(opts.variables || {});
+    if (vars.length) meta.push(vars.map(function (k) { return k + '=' + opts.variables[k]; }).join(', '));
+    if (e.error) meta.push('⚠ ' + e.error);
+    document.getElementById('tprMeta').textContent = meta.join(' · ');
+
+    var done = rec.run_state === 'done';
+    var toolsState = state + '|' + (rec.results_url ? 1 : 0);
+    if (e.toolsState !== toolsState) {
+      e.toolsState = toolsState;
+      var hasFiles = done && rec.verdict !== 'error' || done && (rec.tests || []).length;
+      var html = '';
+      if (!done) {
+        html += '<button type="button" class="btn btn-sm btn-outline-danger" id="tprStop" title="' +
+          (state === 'stopping' ? 'Kill it now: no teardown, no reports' : 'Stop after the running keyword; teardowns and reports still run') + '">' +
+          '<i class="bi bi-stop-fill me-1"></i>' + (state === 'stopping' ? 'Force stop' : 'Stop') + '</button>';
+      }
+      if (hasFiles) {
+        (rec.artifacts || []).forEach(function (a) {
+          if (!/\.html?$/i.test(a.name)) return;
+          html += '<button type="button" class="btn btn-sm ' + (a.primary ? 'btn-primary' : 'btn-outline-primary') + '"' +
+            ' data-tpr-artifact="' + _escapeHtml(a.name) + '"><i class="bi bi-box-arrow-up-right me-1"></i>' + _escapeHtml(a.label) + '</button>';
+        });
+      }
+      if (done) {
+        html += '<button type="button" class="btn btn-sm btn-outline-success" id="tprAgain" title="Same file, same variables">' +
+          '<i class="bi bi-arrow-repeat me-1"></i>Run again</button>';
+      }
+      html += '<button type="button" class="btn btn-sm btn-outline-secondary" id="tprCopyCmd" title="Copy the command line">' +
+        '<i class="bi bi-terminal"></i></button>';
+      var tools = document.getElementById('tprTools');
+      tools.innerHTML = html;
+      var stop = document.getElementById('tprStop');
+      if (stop) {
+        stop.addEventListener('click', function () {
+          var force = e.record.run_state === 'stopping';
+          stop.disabled = true;
+          MM.testProjectClient.stopRun(e.root, e.id, force)
+            .then(function (r) {
+              e.record.run_state = r.run_state || 'stopping';
+              e.toolsState = null;
+              _tprUpdateShown(e, null);
+            })
+            .catch(function (err) {
+              stop.disabled = false;
+              showToast('Stop', err.message || String(err), 'warning');
+            });
+        });
+      }
+      tools.querySelectorAll('[data-tpr-artifact]').forEach(function (b) {
+        b.addEventListener('click', function () { _tprOpenArtifact(e.record, b.getAttribute('data-tpr-artifact')); });
+      });
+      var again = document.getElementById('tprAgain');
+      if (again) {
+        again.addEventListener('click', function () {
+          var o = e.record.options || {};
+          _tprStart(e.root, e.record.target || '', { variables: o.variables || {}, dryrun: !!o.dryrun });
+        });
+      }
+      document.getElementById('tprCopyCmd').addEventListener('click', function () {
+        var argv = (e.record.argv || []).map(function (a) { return /[\s"]/.test(a) ? '"' + a.replace(/"/g, '\\"') + '"' : a; });
+        _copyText(argv.join(' '), 'Command');
+      });
+    }
+
+    document.getElementById('tprCounts').innerHTML = done ? _tprCounts(rec.counts, false) : '';
+    var msg = document.getElementById('tprMessage');
+    msg.hidden = !rec.message;
+    msg.textContent = rec.message || '';
+
+    var tests = rec.tests || [];
+    document.getElementById('tprResultsN').textContent = done ? '(' + tests.length + ')' : '';
+    if (done && e.resultsShown !== rec.ended_at) {
+      e.resultsShown = rec.ended_at;
+      document.getElementById('tprResults').innerHTML = tests.length
+        ? '<table class="svc-ov-table"><thead><tr><th>Status</th><th>Test</th><th>Suite</th><th>Took</th><th>Message</th></tr></thead><tbody>' +
+          tests.map(function (t) {
+            return '<tr><td>' + _tprBadge({ run_state: 'done', verdict: t.status }, true) + '</td>' +
+              '<td><strong>' + _escapeHtml(t.name) + '</strong></td>' +
+              '<td class="small">' + _escapeHtml(t.suite) + '</td>' +
+              '<td>' + _escapeHtml(_tprDuration(t.elapsed_s)) + '</td>' +
+              '<td class="tpr-msg">' + _escapeHtml(t.message || '') + '</td></tr>';
+          }).join('') + '</tbody></table>'
+        : '<div class="small text-muted p-2">No test results — see the console.</div>';
+      // Watched live to the end: show what came out of it.
+      if (fresh && tests.length && !e.resultsTabbed) {
+        e.resultsTabbed = true;
+        _tprTab('results');
+      }
+    }
+  }
+
+  /** The overview's "Recent runs" card: the last few runs, live ones first. */
+  function _tprFillRecent(root) {
+    MM.testProjectClient.runs(root)
+      .then(function (res) {
+        var box = document.getElementById('tpvRecentRuns');
+        if (!box || _getTestProject() !== root) return;
+        _tprHistory = res.runs || [];
+        var runs = _tprHistory.slice(0, 5);
+        if (!runs.length) {
+          box.innerHTML = '<div class="small text-muted">No runs yet — use <i class="bi bi-play-fill"></i> next to a suite or flow, or <strong>Run all</strong>.</div>';
+          return;
+        }
+        box.innerHTML = '<div class="svc-ov-table-wrap"><table class="svc-ov-table tpr-history"><tbody>' +
+          runs.map(function (r) {
+            return '<tr data-tpr-run="' + _escapeHtml(r.id) + '"><td>' + _tprBadge(r, true) + '</td>' +
+              '<td><code>' + _escapeHtml(r.target_label || '') + '</code></td>' +
+              '<td>' + _escapeHtml(_tprWhen(r.started_at)) + '</td>' +
+              '<td>' + _escapeHtml(_tprDuration(r.elapsed_s)) + '</td>' +
+              '<td class="tpr-counts">' + _tprCounts(r.counts, true) + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+        box.querySelectorAll('[data-tpr-run]').forEach(function (row) {
+          row.addEventListener('click', function () { _showTpvRuns(row.getAttribute('data-tpr-run')); });
+        });
+      })
+      .catch(function (err) {
+        var box = document.getElementById('tpvRecentRuns');
+        if (box) box.innerHTML = '<div class="small text-muted">' + _escapeHtml(err.message || String(err)) + '</div>';
+      });
+  }
+
+  /**
+   * JSON highlighting (flow files) for the same overlay: keys, strings,
+   * numbers and literals. Strings are matched whole, so a quoted ":" or
+   * "//" is never mistaken for structure; only spans are added.
+   */
+  function _jsonHighlight(text) {
+    return _escapeHtml(text).replace(
+      /(&quot;(?:[^&\\\n]|\\.|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g,
+      function (m, str, colon, lit, num) {
+        if (str) return colon ? '<span class="rf-name">' + str + '</span>' + colon : '<span class="rf-var">' + str + '</span>';
+        if (lit) return '<span class="rf-set">' + lit + '</span>';
+        return '<span class="rf-key">' + num + '</span>';
+      }) + '\n';
   }
 
   function _showTpvNewSuite(data) {
@@ -6571,6 +7642,58 @@
       })
       .then(function (data) { return data.files || []; });
   };
+  /**
+   * Is a native file/folder picker available? Only in Electron: a browser
+   * redacts the absolute path of an `<input type="file">`, and an absolute
+   * path is exactly what the bridge needs to hand to an agent.
+   */
+  MM.canPickPath = function () {
+    return !!(window.electronAPI && typeof window.electronAPI.showOpenDialog === 'function');
+  };
+
+  /**
+   * Ask for a file or a folder.
+   * @param {object} [opts] - { directory, title, defaultPath, filters }
+   * @returns {Promise<string>} the chosen path, or '' when cancelled or
+   *   when there is no picker.
+   */
+  MM.pickPath = function (opts) {
+    opts = opts || {};
+    if (!MM.canPickPath()) return Promise.resolve('');
+    return window.electronAPI.showOpenDialog({
+      properties: [opts.directory ? 'openDirectory' : 'openFile'],
+      title: opts.title || (opts.directory ? 'Choose a folder' : 'Choose a file'),
+      defaultPath: opts.defaultPath || undefined,
+      filters: opts.directory ? undefined
+                              : (opts.filters || [{ name: 'All files', extensions: ['*'] }])
+    }).then(function (res) {
+      return (res && res.filePaths && res.filePaths[0]) || '';
+    }).catch(function (err) {
+      console.error('[picker] open dialog failed:', err);
+      return '';
+    });
+  };
+
+  /**
+   * Wire a Browse button to a text input: the dialog opens where the input
+   * currently points, and what it returns lands in the input.
+   */
+  MM.wirePathBrowse = function (btnId, inputId, opts) {
+    var btn = document.getElementById(btnId);
+    var input = document.getElementById(inputId);
+    if (!btn || !input) return;
+    btn.addEventListener('click', function () {
+      var o = Object.assign({}, opts || {});
+      if (!o.defaultPath) o.defaultPath = (input.value || '').trim();
+      MM.pickPath(o).then(function (picked) {
+        if (!picked) return;
+        input.value = picked;
+        input.title = picked;   // the field is narrower than most paths
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+  };
+
   MM.showServiceAPIExplorer = showServiceAPIExplorer;
   MM.showServiceHelper = showServiceHelper;
   MM.switchMode = switchMode;
