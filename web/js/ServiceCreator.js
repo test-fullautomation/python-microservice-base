@@ -725,7 +725,7 @@
           '  <i class="bi bi-check-circle me-1"></i>' +
           '  <strong>Python stubs will be generated automatically</strong> by the bridge server ' +
           '  using <code>grpc_tools.protoc</code>. No additional tools required.' +
-          '  <div class="mt-1 text-muted">Output: <code>proto/*_pb2.py</code> + <code>proto/*_pb2_grpc.py</code></div>' +
+          '  <div class="mt-1 text-muted">Output: <code>generated/*_pb2.py</code> + <code>generated/*_pb2_grpc.py</code></div>' +
           '</div>';
       } else {
         stubsPanel.innerHTML =

@@ -89,11 +89,20 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
     const n = clone(monitor); n.requires.capabilities = [];
     check('a kind\'s needs are enforced (R1)', C.lintComponent(n, { schema: componentSchema, kinds })
       .some((i) => i.rule === 'R1' && /signal-strip needs signals.subscribe|reads signals/.test(i.message)));
+    const z = clone(monitor); z.tiles[0].window = '0s';
+    check('a zero window is refused by the kind schema', C.lintComponent(z, { schema: componentSchema, kinds })
+      .some((i) => i.rule === 'S' && /window/.test(i.path)));
   }
 
   // ---------- charts: series maths (ES module) ----------
   const S = await import(pathToFileURL(path.join(PLUGINS, 'charts', 'series.js')).href);
   check('parseWindow', S.parseWindow('120s') === 120000 && S.parseWindow('5m') === 300000 && S.parseWindow('x') === 60000);
+  check('a zero window falls back to the default', S.parseWindow('0s') === 60000 && S.parseWindow('0m') === 60000);
+  {
+    const z = new S.Series(0); z.push(1000, 1); z.push(1000, 2); z.push(400, 3);
+    check('a zero-window series still gives finite pixels',
+      z.toPixels(1000, 100, 50, ...z.range()).every(([x, y]) => isFinite(x) && isFinite(y)));
+  }
   {
     const s = new S.Series(10000);
     for (let t = 0; t <= 30000; t += 1000) s.push(t, t / 1000);
