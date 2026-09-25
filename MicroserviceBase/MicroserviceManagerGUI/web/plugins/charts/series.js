@@ -1,10 +1,10 @@
 // Time series for the charts plugin: pure functions, no DOM (tested in Node).
 
-/** "120s" | "5m" -> milliseconds; default 60 s. */
+/** "120s" | "5m" -> milliseconds; default 60 s, also for a zero window. */
 export function parseWindow(s) {
   const m = /^(\d+)(s|m)$/.exec(String(s || ''));
-  if (!m) return 60000;
-  return Number(m[1]) * (m[2] === 'm' ? 60000 : 1000);
+  const ms = m ? Number(m[1]) * (m[2] === 'm' ? 60000 : 1000) : 0;
+  return ms > 0 ? ms : 60000;
 }
 
 /**
@@ -13,7 +13,7 @@ export function parseWindow(s) {
  */
 export class Series {
   constructor(windowMs, maxPoints = 2000) {
-    this.windowMs = windowMs;
+    this.windowMs = windowMs > 0 ? windowMs : 60000;   // x divides by it
     this.maxPoints = maxPoints;
     this.t = [];
     this.v = [];

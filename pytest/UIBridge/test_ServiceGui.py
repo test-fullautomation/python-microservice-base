@@ -249,6 +249,53 @@ class Test_Extract:
         assert "outside the folder" in str(exc.value)
         assert not (tmp_path.parent / "escaped.txt").exists()
 
+    @staticmethod
+    def _zip(files, compression=zipfile.ZIP_DEFLATED):
+        import io
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression) as zf:
+            for name, data in files:
+                zf.writestr(name, data)
+        return buf.getvalue()
+
+    def _refused(self, blob, tmp_path, words):
+        with pytest.raises(service_gui.ServiceGuiError) as exc:
+            service_gui.extract_package(blob, "Demo1.0.0", str(tmp_path))
+        assert words in str(exc.value)
+        assert not (tmp_path / "Demo1.0.0").exists()   # nothing written
+
+    def test_zip_bomb_is_refused(self, tmp_path):
+        blob = self._zip([("bomb.bin", b"\0" * (8 * 1024 * 1024))])   # ~8 KB compressed
+        assert len(blob) < 64 * 1024
+        self._refused(blob, tmp_path, "zip bomb")
+
+    def test_too_many_files_are_refused(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(service_gui, "MAX_MEMBERS", 5)
+        self._refused(self._zip([(f"f{i}.txt", "x") for i in range(6)]), tmp_path, "6 files")
+
+    def test_an_oversized_file_is_refused(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(service_gui, "MAX_MEMBER_BYTES", 1000)
+        blob = self._zip([("big.js", os.urandom(1001))], zipfile.ZIP_STORED)
+        self._refused(blob, tmp_path, "big.js")
+
+    def test_the_total_unpacked_size_is_capped(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(service_gui, "MAX_EXTRACTED_BYTES", 2500)
+        blob = self._zip([(f"part{i}.bin", os.urandom(1000)) for i in range(3)], zipfile.ZIP_STORED)
+        self._refused(blob, tmp_path, "unpacks to more than")
+
+    def test_well_compressed_assets_within_limits_unpack(self, tmp_path):
+        # 1 MB of repetitive text: highly compressible, but below the ratio floor.
+        blob = self._zip([("app.js", "console.log('x');\n" * 55000), ("index.html", "<html></html>")])
+        assert service_gui.extract_package(blob, "Demo1.0.0", str(tmp_path)) == 2
+        assert (tmp_path / "Demo1.0.0" / "app.js").stat().st_size == len("console.log('x');\n") * 55000
+
+    def test_fetch_refuses_an_oversized_stream(self, served, monkeypatch):
+        _package, host, port = served
+        monkeypatch.setattr(service_gui, "MAX_PACKAGE_BYTES", 10)
+        with pytest.raises(service_gui.ServiceGuiError) as exc:
+            service_gui.fetch_gui_zip(host, port)
+        assert "exceeds" in str(exc.value)
+
     def test_garbage_is_not_unpacked(self, tmp_path):
         with pytest.raises(service_gui.ServiceGuiError):
             service_gui.extract_package(b"not a zip at all", "Demo1.0.0", str(tmp_path))

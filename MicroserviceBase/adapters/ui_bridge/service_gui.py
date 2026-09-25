@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import zipfile
 from typing import Optional, Tuple
 
@@ -39,6 +40,20 @@ SERVICES_DIR_ENV = "MB_GUI_SERVICES_DIR"
 
 #: Refuse a package bigger than this; a GUI folder is assets, not a dataset.
 MAX_PACKAGE_BYTES = 64 * 1024 * 1024
+
+# What a package may unpack to. The download limit above counts compressed
+# bytes, so without these a small package could expand to gigabytes (a zip
+# bomb). A GUI folder is HTML/JS/CSS and images: tens of files, a few MB.
+#: Total uncompressed size of all files.
+MAX_EXTRACTED_BYTES = 128 * 1024 * 1024
+#: Uncompressed size of one file.
+MAX_MEMBER_BYTES = 32 * 1024 * 1024
+#: Number of files.
+MAX_MEMBERS = 2000
+#: Uncompressed / compressed, checked for files above RATIO_MIN_BYTES:
+#: minified JS or JSON compresses 5-20x, bombs 1000x and more.
+MAX_RATIO = 200
+RATIO_MIN_BYTES = 1024 * 1024
 
 
 class ServiceGuiError(Exception):
@@ -177,8 +192,12 @@ def extract_package(zip_bytes: bytes, folder: str, target_root: str = "") -> int
     """
 Unpack a fetched package into ``<target_root>/<folder>/``.
 
-Members that would escape the folder are refused (zip slip), and the
-folder is left untouched when that happens.
+Members that would escape the folder are refused (zip slip), and so is a
+package that would unpack to too much (see ``MAX_EXTRACTED_BYTES``,
+``MAX_MEMBER_BYTES``, ``MAX_MEMBERS``, ``MAX_RATIO``). Everything is
+checked before the first file is written, so a refused package leaves
+the folder untouched. The sizes checked are the ones the ZIP declares;
+reading a member never yields more than that.
 
 **Returns:**
 
@@ -207,17 +226,32 @@ folder is left untouched when that happens.
     except zipfile.BadZipFile as exc:
         raise ServiceGuiError("the service sent something that is not a ZIP") from exc
 
+    mb = 1024 * 1024
     with zf:
         members = [m for m in zf.infolist() if not m.is_dir()]
+        if len(members) > MAX_MEMBERS:
+            raise ServiceGuiError(f"GUI package has {len(members)} files (limit {MAX_MEMBERS})")
+        total = 0
         for member in members:
             destination = os.path.realpath(os.path.join(target, member.filename))
             if destination != real_target and not destination.startswith(real_target + os.sep):
                 raise ServiceGuiError(f"refused path outside the folder: {member.filename!r}")
+            if member.file_size > MAX_MEMBER_BYTES:
+                raise ServiceGuiError(
+                    f"{member.filename!r} unpacks to more than {MAX_MEMBER_BYTES // mb} MB")
+            if (member.file_size > RATIO_MIN_BYTES
+                    and member.file_size > MAX_RATIO * max(member.compress_size, 1)):
+                raise ServiceGuiError(
+                    f"{member.filename!r} is compressed more than {MAX_RATIO}:1; refused as a zip bomb")
+            total += member.file_size
+            if total > MAX_EXTRACTED_BYTES:
+                raise ServiceGuiError(
+                    f"GUI package unpacks to more than {MAX_EXTRACTED_BYTES // mb} MB")
         os.makedirs(target, exist_ok=True)
         for member in members:
             destination = os.path.join(target, member.filename)
             os.makedirs(os.path.dirname(destination), exist_ok=True)
             with zf.open(member) as src, open(destination, "wb") as dst:
-                dst.write(src.read())
+                shutil.copyfileobj(src, dst, mb)   # streamed: never a whole file in memory
     logger.info("Extracted %d GUI file(s) into %s", len(members), target)
     return len(members)

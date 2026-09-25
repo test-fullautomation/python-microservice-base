@@ -51,6 +51,8 @@ _LEGACY_TESTS = {
     "test_project_run": "TestProject/test_TestProjectRun.py",
     # Scaffold emits a Manager GUI component (contract v1); lint needs node.
     "ui_component": "UIComponent/test_UIComponent.py",
+    # A scaffolded Python service imports its pre-generated stubs.
+    "scaffold_stubs": "Scaffold/test_ScaffoldStubs.py",
 }
 
 [

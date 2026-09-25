@@ -22,7 +22,7 @@
               "maxItems": 8,
               "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)+$" }
             },
-            "window": { "type": "string", "pattern": "^[0-9]+(s|m)$" },
+            "window": { "type": "string", "pattern": "^[1-9][0-9]*(s|m)$" },
             "min": { "type": "number" },
             "max": { "type": "number" },
             "digits": { "type": "integer", "minimum": 0 }

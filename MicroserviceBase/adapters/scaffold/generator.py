@@ -12,6 +12,11 @@ from typing import Any, Dict, List, Optional
 
 from . import shared, python_tmpl, cpp_tmpl
 
+#: Package of a single-layout Python service that holds its protoc output:
+#: main.py and the gRPC adapter import `from generated import ...`,
+#: BUILD.bazel globs it, scripts/generate_protos.py writes into it.
+_STUB_DIR = "generated"
+
 
 @dataclass
 class MethodParam:
@@ -314,13 +319,16 @@ def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, 
             )
             return {}
 
-        # Read generated files
+        # Read generated files. They go where the service imports them from
+        # (main.py / the gRPC adapter: `from generated import ...`), where
+        # BUILD.bazel globs them and where scripts/generate_protos.py
+        # rewrites them -- the package generated/, not proto/.
         pb2_path = os.path.join(tmpdir, f"{sn}_pb2.py")
         grpc_path = os.path.join(tmpdir, f"{sn}_pb2_grpc.py")
 
         if os.path.isfile(pb2_path):
             with open(pb2_path, "r", encoding="utf-8") as f:
-                stubs[f"proto/{sn}_pb2.py"] = f.read()
+                stubs[f"{_STUB_DIR}/{sn}_pb2.py"] = f.read()
         else:
             log.warning("protoc succeeded but %s_pb2.py was not produced.", sn)
 
@@ -333,7 +341,7 @@ def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, 
                 f"import {sn}_pb2 as {sn.replace('_', '__')}__pb2",
                 f"from . import {sn}_pb2 as {sn.replace('_', '__')}__pb2",
             )
-            stubs[f"proto/{sn}_pb2_grpc.py"] = content
+            stubs[f"{_STUB_DIR}/{sn}_pb2_grpc.py"] = content
         else:
             log.warning("protoc succeeded but %s_pb2_grpc.py was not produced.", sn)
 
