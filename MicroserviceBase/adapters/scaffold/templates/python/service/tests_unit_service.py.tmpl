@@ -1,0 +1,30 @@
+@@{header}"""
+Unit tests for the @@{svc} domain.
+
+These exercise ``core.domain.@@{sn}_service.@@{cls}`` directly -- no gRPC
+server, no Consul, no hardware. That is the payoff of keeping the core
+pure: the domain is testable with plain function calls.
+
+Adapter tests belong beside their adapter; anything needing a live
+dependency belongs in an integration suite marked ``@pytest.mark.integration``.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from core.domain.@@{sn}_service import @@{cls}
+
+
+@pytest.fixture
+def service() -> @@{cls}:
+    """A domain instance with no infrastructure attached."""
+    return @@{cls}()
+
+
+def test_service_can_be_constructed(service: @@{cls}) -> None:
+    """The domain must be usable without any adapter wiring."""
+    assert service is not None
+
+
+@@{test_methods}

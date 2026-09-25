@@ -1,0 +1,62 @@
+{
+  "component": "runner.robot-results",
+  "version": "1.1.0",
+  "layer": "runner",
+  "title": "Robot results",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": [
+      "files.project"
+    ]
+  },
+  "binds": {
+    "consul": "@self"
+  },
+  "tiles": [
+    {
+      "id": "res",
+      "size": "2x2",
+      "kind": "table",
+      "title": "Last suite: hello_api",
+      "columns": [
+        {
+          "label": "Test"
+        },
+        {
+          "label": "Result"
+        },
+        {
+          "label": "Time"
+        }
+      ],
+      "rows": [
+        [
+          "Greet Through The Generated Keyword",
+          "PASS",
+          "0.41 s"
+        ],
+        [
+          "Chamber Reaches Setpoint",
+          "PASS",
+          "412 s"
+        ],
+        [
+          "DID F190 Reads VIN",
+          "FAIL",
+          "2.1 s"
+        ],
+        [
+          "Supply Current Below Limit",
+          "PASS",
+          "0.08 s"
+        ],
+        [
+          "Wake-up Within 150 ms",
+          "PASS",
+          "0.15 s"
+        ]
+      ]
+    }
+  ],
+  "renderer": "schema"
+}

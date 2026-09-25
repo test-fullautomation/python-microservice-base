@@ -1,0 +1,96 @@
+# Current-architecture component tests (MSB_0001 - MSB_0021).
+#
+# These cover the scaffold generator, gRPC reflection, Consul
+# registration and the Robot resource generator -- i.e. everything the
+# migration introduced. Before `testpaths` was widened, a bare `pytest`
+# skipped this entire directory; putting them in the Bazel graph makes
+# that class of omission impossible.
+#
+# Sizes reflect what they actually do:
+#   small  - pure generation, no processes
+#   large  - spawns a real consul/nomad agent and waits on ports
+#
+# The L4/L5 tests shell out to `consul` and `nomad` from PATH and skip
+# themselves when those are missing. PATH is forwarded in .bazelrc, and
+# they carry `requires-network` so they can be excluded with
+#     bazel test //... --test_tag_filters=-requires-network
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# The harness the pytest wrappers drive: component_test.py plus the
+# testconfig / testfiles / testutils trees.
+py_library(
+    name = "harness_lib",
+    srcs = glob(
+        [
+            "../../*.py",
+            "../../testconfig/**/*.py",
+            "../../testfiles/**/*.py",
+            "../../testutils/**/*.py",
+        ],
+        exclude = ["**/__pycache__/**"],
+        allow_empty = True,
+    ),
+    imports = ["../.."],
+    deps = [
+        "//:microservicebase_lib",
+        "@pypi//grpcio",
+        "@pypi//grpcio-reflection",
+        "@pypi//protobuf",
+    ],
+)
+
+_SUITES = {
+    "python_goodcase": {
+        "src": "test_01_ScaffoldGenerator_Python_GOODCASE.py",
+        "size": "large",
+        "tags": ["requires-network"],
+    },
+    "cpp_goodcase": {
+        "src": "test_02_ScaffoldGenerator_Cpp_GOODCASE.py",
+        "size": "medium",
+        "tags": [],
+    },
+    "cpp_badcase": {
+        "src": "test_03_ScaffoldGenerator_Cpp_BADCASE.py",
+        "size": "small",
+        "tags": [],
+    },
+    "e2e_goodcase": {
+        "src": "test_04_ScaffoldGenerator_E2E_GOODCASE.py",
+        "size": "large",
+        "tags": ["requires-network"],
+    },
+    "python_badcase": {
+        "src": "test_05_ScaffoldGenerator_Python_BADCASE.py",
+        "size": "small",
+        "tags": [],
+    },
+}
+
+[
+    py_test(
+        name = "test_%s" % name,
+        size = cfg["size"],
+        srcs = [
+            "//tools/bazel:pytest_wrapper.py",
+            cfg["src"],
+        ],
+        imports = ["../.."],
+        main = "pytest_wrapper.py",
+        tags = ["framework:pytest"] + cfg["tags"],
+        deps = [
+            ":harness_lib",
+            "//:microservicebase_lib",
+            "@pypi//pytest",
+        ],
+    )
+    for name, cfg in _SUITES.items()
+]
+
+test_suite(
+    name = "msb_suite",
+    tests = [":test_%s" % name for name in _SUITES],
+)

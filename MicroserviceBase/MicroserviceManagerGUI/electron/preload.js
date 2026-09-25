@@ -161,6 +161,32 @@ function _isProcessAlive(pid) {
 }
 
 /**
+ * PID of the process listening on a local TCP port, or null.
+ *
+ * The installed app and `npm start` keep their bridge PID in different
+ * files (userData vs. the source tree), so a bridge started by one is
+ * invisible to the other's PID file -- yet it is still "the bridge":
+ * it answers on the bridge port. This lets Start/Stop and the LED see it.
+ */
+function _pidListeningOn(port) {
+  if (!port || !child_process) return null;
+  try {
+    if (process.platform === 'win32') {
+      const out = child_process.execSync('netstat -ano -p tcp', { encoding: 'utf8', windowsHide: true });
+      // "  TCP    127.0.0.1:1112    0.0.0.0:0    LISTENING    28208"
+      const re = new RegExp('^\\s*TCP\\s+\\S+:' + port + '\\s+\\S+\\s+LISTENING\\s+(\\d+)\\s*$', 'm');
+      const m = out.match(re);
+      return m ? parseInt(m[1], 10) : null;
+    }
+    const out = child_process.execSync('lsof -ti tcp:' + port + ' -sTCP:LISTEN', { encoding: 'utf8' });
+    const pid = parseInt(out.trim().split('\n')[0], 10);
+    return isNaN(pid) ? null : pid;
+  } catch (e) {
+    return null; // nothing listening, or the tool is unavailable
+  }
+}
+
+/**
  * Read the saved bridge PID from disk.  Returns the PID (number) or null.
  */
 function _readSavedPid() {
@@ -185,6 +211,16 @@ function _writePid(pid) {
  */
 function _removePidFile() {
   try { fs.unlinkSync(_pidFilePath); } catch (e) {}
+}
+
+/**
+ * Message for a bridge process that is alive but could not be killed.
+ * Names the PID and the manual command so the user is not stuck.
+ */
+function _unkillable(pid, reason) {
+  return 'Bridge (pid ' + pid + ') could not be stopped: ' + reason + '. ' +
+    'It was probably started by another session or with higher privileges. ' +
+    'Stop it manually with:  taskkill /PID ' + pid + ' /F';
 }
 
 /**
@@ -752,25 +788,117 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Kill the running bridge process.
    * @returns {{ killed: boolean }}
    */
-  killBridge: () => {
+  /**
+   * Stop the bridge. Looks, in order, at the process this session spawned,
+   * the PID file, and finally whatever is listening on the bridge port.
+   * @param {{port?: number}} [opts] - Bridge port, for the last fallback.
+   */
+  killBridge: (opts) => {
     // Kill via in-memory handle (current session)
     if (_bridgeProcess && !_bridgeProcess.killed) {
-      console.log('[preload] Killing bridge process (handle), pid:', _bridgeProcess.pid);
-      _bridgeProcess.kill();
+      const pid = _bridgeProcess.pid;
+      console.log('[preload] Killing bridge process (handle), pid:', pid);
+      if (!_bridgeProcess.kill()) {
+        return Promise.reject(new Error(_unkillable(pid, 'kill() returned false')));
+      }
       _bridgeProcess = null;
       _removePidFile();
       return { killed: true };
     }
-    // Kill via saved PID (previous session)
+    // Kill via saved PID (previous session).
+    //
+    // A failure here must surface, not be swallowed: a bridge started by
+    // another session (the installed app, an elevated shell) can be alive
+    // yet not killable from this process. Dropping the PID file on a failed
+    // kill left the UI saying "Bridge stopped", then "Bridge was not
+    // running" on every later click, while the LED stayed green.
     const savedPid = _readSavedPid();
     if (savedPid && _isProcessAlive(savedPid)) {
       console.log('[preload] Killing bridge process (saved PID), pid:', savedPid);
-      try { process.kill(savedPid); } catch (e) {}
+      try {
+        process.kill(savedPid);
+      } catch (e) {
+        const msg = _unkillable(savedPid, e.code || e.message);
+        console.error('[preload]', msg);
+        return Promise.reject(new Error(msg));
+      }
       _removePidFile();
-      return { killed: true };
+      return { killed: true, pid: savedPid };
+    }
+    // Kill whatever answers on the bridge port -- typically a bridge the
+    // other GUI flavour started (see _pidListeningOn).
+    const port = opts && opts.port;
+    const portPid = _pidListeningOn(port);
+    if (portPid && portPid !== process.pid) {
+      console.log('[preload] Killing bridge process (listening on port ' + port + '), pid:', portPid);
+      try {
+        process.kill(portPid);
+      } catch (e) {
+        const msg = _unkillable(portPid, e.code || e.message);
+        console.error('[preload]', msg);
+        return Promise.reject(new Error(msg));
+      }
+      _removePidFile();
+      return { killed: true, pid: portPid, via: 'port' };
     }
     _removePidFile();
     return { killed: false };
+  },
+
+  /**
+   * Open the Signal Graph Studio in its own window (Electron only).
+   *
+   * The studio is a separate renderer with its own preload and
+   * "gs:"-prefixed IPC (see graph-studio/ipc.js), so it shares nothing
+   * with this window but the main process.
+   *
+   * @param {{consulUrl?: string}} [opts] - Consul the manager is
+   *   connected to; seeds the studio's live panel.
+   * @returns {Promise<{ok: boolean}>}
+   */
+  openGraphStudio: (opts) => ipcRenderer.invoke('open-graph-studio', opts || {}),
+
+  /**
+   * Open a bundled window plugin (its own BrowserWindow), e.g. 'graph-studio'.
+   * @param {string} id - plugin id
+   * @param {object} [opts] - passed to the plugin's open()
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  openPlugin: (id, opts) => ipcRenderer.invoke('plugin-open', { id: id, opts: opts || {} }),
+
+  /**
+   * Window plugins the main process found, and whether each is on the
+   * allow-list and loaded.
+   * @returns {Promise<Array<{id, source, allowed, loaded, error}>>}
+   */
+  windowPlugins: () => ipcRenderer.invoke('plugin-window-list'),
+
+  /**
+   * Allow or block a window plugin (saved in settings.json as windowPlugins).
+   * @returns {Promise<{ok: boolean, plugins: Array}>}
+   */
+  setWindowPluginAllowed: (id, allowed) => ipcRenderer.invoke('plugin-allow', { id: id, allowed: !!allowed }),
+
+  /**
+   * Plugins installed on this PC: <userData>/plugins/<id>/plugin.json.
+   * The page imports their entries from `base` (a file:// URL ending in /).
+   * @returns {Array<{id: string, base: string, manifest?: object, error?: string}>}
+   */
+  listInstalledPlugins: () => {
+    const dir = path.join(_userDataPath, 'plugins');
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch (e) { return []; }
+    const { pathToFileURL } = require('url');
+    return names.filter((n) => /^[a-z0-9][a-z0-9-]*$/.test(n)).map((n) => {
+      const folder = path.join(dir, n);
+      const out = { id: n, base: pathToFileURL(folder + path.sep).href };
+      try {
+        out.manifest = JSON.parse(fs.readFileSync(path.join(folder, 'plugin.json'), 'utf-8').replace(/^﻿/, ''));
+      } catch (e) {
+        out.error = e.code === 'ENOENT' ? 'no plugin.json' : e.message;
+      }
+      return out;
+    });
   },
 
   /**
@@ -820,7 +948,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Check if the bridge process is running.
    * @returns {{ running: boolean, pid: number|null }}
    */
-  isBridgeRunning: () => {
+  isBridgeRunning: (opts) => {
     // Check in-memory handle (current session)
     if (_bridgeProcess && !_bridgeProcess.killed) {
       return { running: true, pid: _bridgeProcess.pid };
@@ -832,6 +960,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     // Stale PID file — clean up
     if (savedPid) _removePidFile();
+    // A bridge started by the other GUI flavour: same port, other PID file.
+    const portPid = _pidListeningOn(opts && opts.port);
+    if (portPid && portPid !== process.pid) {
+      return { running: true, pid: portPid, via: 'port' };
+    }
     return { running: false, pid: null };
   }
 });

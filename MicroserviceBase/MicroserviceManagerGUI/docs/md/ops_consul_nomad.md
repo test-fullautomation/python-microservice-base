@@ -48,15 +48,19 @@ red "Bridge down". Use the ▶ / ■ buttons to start or stop the bridge.*
 
 ---
 
-## The three top-level modes
+## The navbar: Services, Developer Tools, Administrator Tools
 
-The mode toggle in the navbar switches between:
+The navbar keeps the operator's view in front and tucks everything else
+behind two menus:
 
-| Mode | What it's for |
+| Entry | What it's for |
 |---|---|
-| **Services** | Runtime management — view registered services, send test gRPC calls, watch real-time updates. |
-| **Service Network** | Operate the infrastructure — start/stop Consul + Nomad, view jobs, view nodes. **This guide focuses here.** |
-| **Service Creator** | Generate a new service scaffold via the 4-step wizard.  See [service_creator.md](service_creator.md). |
+| **Services** (default) | Runtime view — active services and their GUIs, real-time updates. A service without a GUI is marked *No GUI* and shows an overview (health, instances and their checks, address, tags) plus an *Actions* section: one typed form per method, so operators can invoke the service without developer tooling. The app always starts here. |
+| **Developer Tools ▾** | The *Developer mode* switch docks an inspector on the right — amber accent and a *DEV* pill make the mode unmistakable — with the selected service's *API* (reflection, raw JSON calls), *Details* (instances, checks, Consul metadata) and *Code* (Python / C++ / Robot). The service stays in the main view. The menu also holds *Service Creator* (see [service_creator.md](service_creator.md)), the *Robot Resource Generator* (see [robot_generator.md](robot_generator.md)), *Code Examples* and *Download service files*. |
+| **Administrator Tools ▾** | Configure the infrastructure: *Consul agent* and *Nomad agent* open the Service Network view on that tab — start/stop agents, view jobs, view nodes. **This guide focuses here.** |
+
+Opening either menu does not touch a running service GUI; switching back
+to **Services** shows it exactly as it was left.
 
 ---
 
@@ -127,6 +131,17 @@ Existing Cluster). Dev Mode just needs Node Name and Datacenter; click
 | **Dev Mode** | Single-node, in-memory. Equivalent to `nomad agent -dev` with `raw_exec` enabled. |
 | **Config File** | Loads an `.hcl` config (`-config <file>`) |
 | **Connect to Existing Cluster** | Just point at a running Nomad HTTP URL |
+
+The **Config File** field wants an *agent* configuration, not a job file —
+a job (`.nomad`) handed to the agent makes it exit at once, and the GUI
+then shows the agent's own parse error. Submit jobs through **Submit Job**
+instead.
+
+The **Config File** and **Data Directory** fields have a 📂 button in the
+desktop app that opens the native picker, so the paths need not be typed.
+The Consul **Config Directory** and **Data directory** fields have the
+same. In a browser the button is not shown — a web page is not allowed to
+learn a file's absolute path, which is what the agent needs.
 
 Defaults:
 

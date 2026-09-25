@@ -59,6 +59,68 @@
   var loginModal = null;
   var _servicePanels = {};     // { serviceName: HTMLElement }
   var _activePanelName = null; // name of the currently visible cached panel
+  var _classicPanels = {};     // { serviceName: true } while the cached panel is a classic panel shown instead of a component
+
+  // Which kind of GUI a service opens with, when its folder ships both a
+  // component and a classic panel. Set by the "Classic panel" button of the
+  // Developer tab and by the bench dock; remembered per service.
+  var CLASSIC_PREF_KEY = 'mm_classic_panel';
+  var CLASSIC_FILE_RE = /(\.html|\.qml|\.ui|\.wasm|^gui_schema\.json)$/i;
+  var _bothKinds = {};         // { folder: Promise<boolean> } -- folder listings are stable
+  var _guiChecked = {};        // { folder: true } -- compared with its service once per window
+  var _guiFetchFailedAt = {};  // { serviceName: ms } -- a failed download is retried after a pause
+  var GUI_FETCH_RETRY_MS = 15000;
+  var _guiFetchNotified = {};  // { serviceName: true } -- the fetch already explained the failure
+
+  function _classicPrefs() {
+    try { return JSON.parse(localStorage.getItem(CLASSIC_PREF_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function _prefersClassic(name) { return !!_classicPrefs()[name]; }
+  function _setClassicPref(name, classic) {
+    var prefs = _classicPrefs();
+    if (classic) prefs[name] = true;
+    else delete prefs[name];
+    try { localStorage.setItem(CLASSIC_PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* storage unavailable */ }
+  }
+
+  /** True when the GUI folder ships a component *and* a classic panel. */
+  function _folderHasBothKinds(folder) {
+    folder = String(folder || '').replace(/^[\/\\]+|[\/\\]+$/g, '');
+    if (!folder) return Promise.resolve(false);
+    if (!_bothKinds[folder]) {
+      _bothKinds[folder] = MM.listServiceFiles(SERVICES_GUI_FOLDER + '/' + folder)
+        .then(function (files) {
+          files = files || [];
+          return files.indexOf('component.json') >= 0
+              && files.some(function (f) { return CLASSIC_FILE_RE.test(f); });
+        })
+        .catch(function () { return false; });
+    }
+    return _bothKinds[folder];
+  }
+
+  /**
+   * Enable the Developer tab's "Classic panel" button for a service whose
+   * folder ships both kinds, and show whether the classic one is on screen.
+   */
+  function _refreshClassicPanelBtn(sel) {
+    var btn = document.getElementById('btnDevClassicPanel');
+    if (!btn) return;
+    var showing = !!(sel && _classicPanels[sel.name]);
+    btn.setAttribute('aria-pressed', showing ? 'true' : 'false');
+    btn.title = showing
+      ? 'Back to the component tiles of this service'
+      : 'Show the service\'s classic panel instead of its component tiles';
+    var svc = sel && sel.consul;
+    if (!svc || !svc.gui) { btn.disabled = true; return; }
+    _folderHasBothKinds(svc.gui).then(function (both) {
+      // The user may have picked another service while the listing ran.
+      if (_selectedService !== sel) return;
+      btn.disabled = !both;
+      if (!both) btn.title = 'This service ships only one kind of GUI';
+    });
+  }
 
   /**
    * Hides the active cached service panel, calls unloadFunction,
@@ -183,8 +245,14 @@
   }
 
   /************************************************************
-   *               Session Persistence                         *
+   *               Connection Persistence                      *
    ************************************************************/
+
+  // Connections live in localStorage so they survive an application
+  // restart, not just a page refresh: sessionStorage is wiped when the
+  // renderer process ends, which is exactly what closing the app does.
+  // (Consul URLs further down already use localStorage for this reason.)
+  var CONNECTIONS_STORAGE_KEY = 'mm_connections';
 
   function persistConnections() {
     try {
@@ -192,24 +260,49 @@
         var conn = MM.connections[key];
         return { brokerUrl: conn.brokerUrl, routingKey: conn.routingKey };
       });
-      sessionStorage.setItem('mm_connections', JSON.stringify(data));
-    } catch (e) { /* sessionStorage unavailable */ }
+      localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(data));
+    } catch (e) { /* storage unavailable */ }
+  }
+
+  function _isValidSavedConnection(entry) {
+    return !!(entry && typeof entry.brokerUrl === 'string' && entry.brokerUrl.trim());
   }
 
   function loadPersistedConnections() {
     try {
-      var raw = sessionStorage.getItem('mm_connections');
+      var raw = localStorage.getItem(CONNECTIONS_STORAGE_KEY);
       if (raw) {
-        return JSON.parse(raw);
+        var parsed = JSON.parse(raw);
+        // Drop malformed entries instead of aborting the whole restore.
+        return Array.isArray(parsed) ? parsed.filter(_isValidSavedConnection) : [];
       }
-      // Legacy fallback
+
+      // Migration: earlier builds saved to sessionStorage. Move whatever
+      // is still there across once, then stop looking at it.
+      var legacy = sessionStorage.getItem(CONNECTIONS_STORAGE_KEY);
+      if (legacy) {
+        var migrated = JSON.parse(legacy);
+        migrated = Array.isArray(migrated) ? migrated.filter(_isValidSavedConnection) : [];
+        localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(migrated));
+        sessionStorage.removeItem(CONNECTIONS_STORAGE_KEY);
+        return migrated;
+      }
       var savedBrokerUrl = sessionStorage.getItem('mm_brokerUrl');
       var savedRoutingKey = sessionStorage.getItem('mm_routingKey');
       if (savedBrokerUrl) {
         return [{ brokerUrl: savedBrokerUrl, routingKey: savedRoutingKey || '' }];
       }
-    } catch (e) { /* sessionStorage unavailable */ }
+    } catch (e) { /* storage unavailable or corrupt -- start clean */ }
     return [];
+  }
+
+  function clearPersistedConnections() {
+    try {
+      localStorage.removeItem(CONNECTIONS_STORAGE_KEY);
+      sessionStorage.removeItem(CONNECTIONS_STORAGE_KEY);
+      sessionStorage.removeItem('mm_brokerUrl');
+      sessionStorage.removeItem('mm_routingKey');
+    } catch (e) { /* storage unavailable */ }
   }
 
   /************************************************************
@@ -419,13 +512,18 @@
     }
 
     var serviceInfo = MM.servicesInfor[serviceName];
+    _selectedService = { name: serviceName, infoKey: serviceName, consul: null, info: serviceInfo };
+    if (_devMode) _renderInspector(_selectedService);
+
     if (serviceInfo.gui_support === true) {
       var callBackFunc = function () {
         loadServiceContent(serviceName, DIV_NAME.SERVICE_CONTENT_DIV);
       };
       checkAndGetTheServiceGUIResources(serviceName, callBackFunc);
     } else {
-      showServiceAPIExplorer(serviceName);
+      // Runtime view: what the service is and whether it is up. The
+      // method explorer is a developer tool (Developer Tools -> API Explorer).
+      _showServiceOverview(_selectedService);
     }
   }
 
@@ -572,7 +670,7 @@
     _deactivateCurrentPanel();
     var wrapper = document.createElement('div');
     wrapper.setAttribute('data-cached-service', serviceName);
-    wrapper.style.cssText = 'height:calc(100vh - 56px - 3rem);';
+    wrapper.style.cssText = 'height:calc(100vh - var(--navbar-height) - var(--ribbon-height) - 3rem);';
     contentDiv.appendChild(wrapper);
     _servicePanels[serviceName] = wrapper;
     _activePanelName = serviceName;
@@ -608,7 +706,7 @@
     _deactivateCurrentPanel();
     var wrapper = document.createElement('div');
     wrapper.setAttribute('data-cached-service', serviceName);
-    wrapper.style.cssText = 'height:calc(100vh - 56px - 3rem);';
+    wrapper.style.cssText = 'height:calc(100vh - var(--navbar-height) - var(--ribbon-height) - 3rem);';
     contentDiv.appendChild(wrapper);
     _servicePanels[serviceName] = wrapper;
     _activePanelName = serviceName;
@@ -647,7 +745,7 @@
             var wrapper = document.createElement('div');
             wrapper.setAttribute('data-cached-service', serviceName);
             wrapper.setAttribute('data-shell-type', 'wasm');
-            wrapper.style.cssText = 'height:calc(100vh - 56px - 3rem);';
+            wrapper.style.cssText = 'height:calc(100vh - var(--navbar-height) - var(--ribbon-height) - 3rem);';
             contentDiv.appendChild(wrapper);
             _servicePanels[serviceName] = wrapper;
             _activePanelName = serviceName;
@@ -740,13 +838,24 @@
               console.log('Retrying with discovered file:', altUrl);
               _fetchAndRenderServiceGUI(serviceName, altUrl, contentDiv, callbackName);
             } else {
-              console.warn('No .html file found in', folderPath, '- showing API explorer');
-              showServiceAPIExplorer(serviceName);
+              console.warn('No .html file found in', folderPath, '- showing the service view');
+              // The service fetch already explained why, when it was tried.
+              if (!_guiFetchNotified[serviceName]) {
+                showToast('Service GUI',
+                  'No GUI files were found for ' + serviceName + ' - showing its service view instead.',
+                  'warning');
+              }
+              _showNoGuiView(serviceName);
             }
           })
-          .catch(function () {
-            console.warn('Cannot discover GUI files for', serviceName, '- showing API explorer');
-            showServiceAPIExplorer(serviceName);
+          .catch(function (discoverError) {
+            console.warn('Cannot discover GUI files for', serviceName, discoverError);
+            showToast('Service GUI',
+              'The GUI for ' + serviceName + ' could not be loaded (' +
+              ((discoverError && discoverError.message) || error.message || 'unknown error') +
+              ') - showing its service view instead.',
+              'warning');
+            _showNoGuiView(serviceName);
           });
       });
   }
@@ -854,6 +963,13 @@
     var header = document.createElement('div');
     header.classList.add('broker-header');
 
+    // Per-source connection state. A source that cannot be reached stays
+    // in the list marked offline rather than vanishing, so the user can
+    // see which machine is the problem and retry or remove it.
+    var statusDot = document.createElement('span');
+    statusDot.classList.add('broker-status');
+    statusDot.title = 'Connecting…';
+
     var labelSpan = document.createElement('span');
     labelSpan.classList.add('broker-label');
     labelSpan.textContent = brokerUrl;
@@ -861,6 +977,15 @@
     var badge = document.createElement('span');
     badge.classList.add('broker-badge');
     badge.textContent = '0';
+
+    var retryBtn = document.createElement('button');
+    retryBtn.classList.add('broker-retry-btn');
+    retryBtn.title = 'Retry connection';
+    retryBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+    retryBtn.onclick = function (e) {
+      e.stopPropagation();
+      retryBroker(brokerUrl);
+    };
 
     var disconnectBtn = document.createElement('button');
     disconnectBtn.classList.add('broker-disconnect-btn');
@@ -871,8 +996,10 @@
       confirmDisconnectBroker(brokerUrl);
     };
 
+    header.appendChild(statusDot);
     header.appendChild(labelSpan);
     header.appendChild(badge);
+    header.appendChild(retryBtn);
     header.appendChild(disconnectBtn);
 
     var accordion = document.createElement('div');
@@ -897,6 +1024,86 @@
     var items = section.querySelectorAll('.list-group-item[data-service-name]');
     var badge = section.querySelector('.broker-badge');
     if (badge) badge.textContent = items.length;
+  }
+
+  function _getBrokerSection(brokerUrl) {
+    var servicesList = document.getElementById(DIV_NAME.SERVICE_LIST_DIV);
+    return servicesList.querySelector('.broker-section[data-broker-url="' + brokerUrl + '"]');
+  }
+
+  /**
+   * Show a source's connection state on its header.
+   *
+   * @param {string} brokerUrl - The broker address.
+   * @param {string} state - 'connecting' | 'online' | 'offline'.
+   * @param {string} [detail] - Tooltip text (defaults per state).
+   */
+  function setBrokerStatus(brokerUrl, state, detail) {
+    var section = _getBrokerSection(brokerUrl);
+    if (!section) return;
+    section.classList.remove('broker-connecting', 'broker-online', 'broker-offline');
+    section.classList.add('broker-' + state);
+    var dot = section.querySelector('.broker-status');
+    if (dot) {
+      dot.title = detail || {
+        connecting: 'Connecting…',
+        online: 'Connected',
+        offline: 'Unreachable'
+      }[state] || state;
+    }
+  }
+
+  /**
+   * Mark a source unreachable without removing it: its services are
+   * greyed out, the header turns red and offers a retry, and the saved
+   * connection is kept so it is tried again on the next start.
+   *
+   * @param {string} brokerUrl - The broker address.
+   * @param {string} reason - Why it went offline (shown as tooltip).
+   */
+  function markBrokerOffline(brokerUrl, reason) {
+    var conn = MM.connections[brokerUrl];
+    if (conn) {
+      // Force a fresh subscription when the retry succeeds.
+      conn.realtimeSubscribed = false;
+    }
+    var section = _getBrokerSection(brokerUrl);
+    if (section) {
+      var activeItem = section.querySelector('.list-group-item.active');
+      if (activeItem) {
+        activeItem.classList.remove('active');
+        _deactivateCurrentPanel();
+        clearServiceContent();
+      }
+      section.querySelectorAll('.list-group-item[data-service-name]').forEach(function (listItem) {
+        listItem.classList.add('service-disabled');
+        var icon = listItem.querySelector('.icon');
+        if (icon) icon.src = IMAGE_PATH.DISABLED;
+      });
+    }
+    setBrokerStatus(brokerUrl, 'offline', reason);
+    updateBrokerHeaders();
+  }
+
+  /**
+   * Re-attempt a source that is marked offline.
+   *
+   * @param {string} brokerUrl - The broker address.
+   */
+  function retryBroker(brokerUrl) {
+    var conn = MM.connections[brokerUrl];
+    if (!conn) return;
+    // Rebuild the section from scratch; createAccordionItems appends and
+    // would otherwise duplicate the greyed-out entries.
+    var section = _getBrokerSection(brokerUrl);
+    if (section) {
+      var accordion = section.querySelector('.broker-accordion');
+      if (accordion) accordion.innerHTML = '';
+    }
+    conn.services = {};
+    rebuildMergedServicesInfor();
+    addAliasServiceForBroker(brokerUrl, conn.routingKey);
+    requestServicesInforForBroker(brokerUrl, { restored: true });
   }
 
   /**
@@ -943,31 +1150,23 @@
 
     var label = document.createTextNode(item.label);
 
-    var helperBtn = document.createElement('span');
-    helperBtn.classList.add('helper-btn');
-    helperBtn.innerHTML = '<i class="bi bi-code-slash"></i>';
-    helperBtn.title = 'Code Example';
-    helperBtn.onclick = function (e) {
-      e.stopPropagation();
-      showServiceHelper(item.serviceName);
-    };
-
     listItem.appendChild(icon);
     listItem.appendChild(label);
-    listItem.appendChild(helperBtn);
 
-    if (item.downloadable) {
-      var downloadBtn = document.createElement('span');
-      downloadBtn.classList.add('helper-btn', 'download-btn');
-      downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
-      downloadBtn.title = 'Download Service';
-      downloadBtn.onclick = function (e) {
-        e.stopPropagation();
-        downloadServiceFiles(item.serviceName);
-      };
-      listItem.appendChild(downloadBtn);
+    // A service without a GUI is still listed -- users need the full
+    // picture of what is running -- but says so up front instead of
+    // silently opening the API view on click.
+    if (!item.guiSupport) {
+      var noGuiBadge = document.createElement('span');
+      noGuiBadge.classList.add('no-gui-badge');
+      noGuiBadge.textContent = 'No GUI';
+      noGuiBadge.title = 'No GUI available - selecting this service shows its runtime info';
+      listItem.appendChild(noGuiBadge);
     }
 
+    // No per-row developer buttons (code examples, download): those are
+    // reachable from Developer Tools for the selected service, keeping the
+    // sidebar an operator's list.
     return listItem;
   }
 
@@ -1046,6 +1245,24 @@
    *
    * @param {string} serviceName - The service name key in MM.servicesInfor.
    */
+  /**
+   * Where a service lands when none of its GUI files can be shown.
+   *
+   * A registry service has `servicesInfor` (methods, methods_info) and gets
+   * the legacy explorer. A Consul service has none of that -- calling the
+   * legacy explorer for it throws -- and gets its runtime card instead,
+   * whose API view works through gRPC reflection.
+   */
+  function _showNoGuiView(serviceName) {
+    if (MM.servicesInfor && MM.servicesInfor[serviceName]) {
+      showServiceAPIExplorer(serviceName);
+    } else if (_selectedService && _selectedService.name === serviceName) {
+      _showServiceOverview(_selectedService);
+    } else {
+      _showServiceOverview({ name: serviceName, consul: null, info: null });
+    }
+  }
+
   function showServiceAPIExplorer(serviceName) {
     var serviceInfo = MM.servicesInfor[serviceName];
     var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
@@ -1655,11 +1872,18 @@
     var description = serviceInfo.description || serviceInfo.shortdesc || '';
     var displayName = serviceInfo.name || serviceName;
 
-    var titleHtml = '<h5>' + _escapeHtml(displayName) +
-      ' <span class="badge bg-secondary">' + _escapeHtml(version) + '</span></h5>';
-    if (description) {
-      titleHtml += '<p class="text-muted mb-3">' + _escapeHtml(description) + '</p>';
-    }
+    var target = (serviceInfo.address || '') + (serviceInfo.port ? ':' + serviceInfo.port : '');
+    var titleHtml =
+      '<div class="dev-modal-head">' +
+      '  <div class="dev-breadcrumb"><i class="bi bi-code-slash me-1"></i>Developer Tools' +
+      '    <span class="dev-breadcrumb-sep">/</span>Code Examples</div>' +
+      '  <div class="dev-title-row">' +
+      '    <h5 class="dev-title">' + _escapeHtml(displayName) + '</h5>' +
+      (version ? '<span class="dev-tag">' + _escapeHtml(version) + '</span>' : '') +
+      (target ? '<code class="dev-target" title="Service address">' + _escapeHtml(target) + '</code>' : '') +
+      '  </div>' +
+      (description ? '<p class="dev-subtitle">' + _escapeHtml(description) + '</p>' : '') +
+      '</div>';
 
     var spinnerHtml =
       '<div class="d-flex align-items-center text-muted small p-3">' +
@@ -1667,7 +1891,7 @@
       '  Discovering methods via gRPC reflection&hellip;' +
       '</div>';
 
-    document.getElementById('helperModalTitle').textContent = 'Helper \u2014 ' + displayName;
+    document.getElementById('helperModalTitle').textContent = 'Code Examples \u2014 ' + displayName;
     document.getElementById('helperModalBody').innerHTML = titleHtml + spinnerHtml;
 
     if (!helperModal) {
@@ -1717,42 +1941,51 @@
    * Render the Python / C++ / Robot tabs into the modal body.  Internal
    * helper called once reflection data (or an error) has arrived.
    */
-  function _renderHelperTabs(serviceInfo, refl, bridgeOrigin, headerHtml) {
+  function _renderHelperTabs(serviceInfo, refl, bridgeOrigin, headerHtml, opts) {
+    opts = opts || {};
+    var prefix = opts.idPrefix || 'helper';
     var pythonCode = _generatePythonReflect(serviceInfo, refl, bridgeOrigin);
     var cppCode    = _generateCppReflect(serviceInfo, refl);
     var robotCode  = _generateRobotReflect(serviceInfo, refl);
 
-    var tabsHtml =
-      '<ul class="nav nav-tabs helper-lang-tabs" role="tablist">' +
-        '<li class="nav-item" role="presentation">' +
-          '<button class="nav-link active" data-bs-toggle="tab" data-bs-target="#helperTabPython" ' +
-            'type="button" role="tab" aria-selected="true">' +
-            '<i class="bi bi-filetype-py me-1"></i>Python</button>' +
-        '</li>' +
-        '<li class="nav-item" role="presentation">' +
-          '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabCpp" ' +
-            'type="button" role="tab" aria-selected="false">' +
-            '<i class="bi bi-filetype-cpp me-1"></i>C++</button>' +
-        '</li>' +
-        '<li class="nav-item" role="presentation">' +
-          '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#helperTabRobot" ' +
-            'type="button" role="tab" aria-selected="false">' +
-            '<i class="bi bi-robot me-1"></i>Robot</button>' +
-        '</li>' +
-      '</ul>' +
-      '<div class="tab-content">' +
-        '<div class="tab-pane fade show active" id="helperTabPython" role="tabpanel">' +
-          '<pre class="helper-code-pre" id="helperCodePython">' + _escapeHtml(pythonCode) + '</pre>' +
-        '</div>' +
-        '<div class="tab-pane fade" id="helperTabCpp" role="tabpanel">' +
-          '<pre class="helper-code-pre" id="helperCodeCpp">' + _escapeHtml(cppCode) + '</pre>' +
-        '</div>' +
-        '<div class="tab-pane fade" id="helperTabRobot" role="tabpanel">' +
-          '<pre class="helper-code-pre" id="helperCodeRobot">' + _escapeHtml(robotCode) + '</pre>' +
-        '</div>' +
-      '</div>';
+    var base = String(serviceInfo.name || 'service').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    var tabs = [
+      { id: 'Python', icon: 'bi-filetype-py',  file: base + '_client.py',  code: pythonCode },
+      { id: 'Cpp',    icon: 'bi-filetype-cpp', file: base + '_client.cpp', code: cppCode,
+        label: 'C++' },
+      { id: 'Robot',  icon: 'bi-robot',        file: base + '.resource',   code: robotCode }
+    ];
 
-    document.getElementById('helperModalBody').innerHTML = headerHtml + tabsHtml;
+    var navHtml = '<ul class="nav nav-tabs helper-lang-tabs" role="tablist">' +
+      tabs.map(function (t, i) {
+        return '<li class="nav-item" role="presentation">' +
+               '<button class="nav-link' + (i === 0 ? ' active' : '') + '" data-bs-toggle="tab"' +
+               ' data-bs-target="#' + prefix + 'Tab' + t.id + '" type="button" role="tab"' +
+               ' aria-selected="' + (i === 0 ? 'true' : 'false') + '">' +
+               '<i class="bi ' + t.icon + ' me-1"></i>' + (t.label || t.id) +
+               '<span class="dev-file">' + _escapeHtml(t.file) + '</span></button></li>';
+      }).join('') + '</ul>';
+
+    var panesHtml = '<div class="tab-content">' +
+      tabs.map(function (t, i) {
+        return '<div class="tab-pane fade' + (i === 0 ? ' show active' : '') + '" id="' + prefix + 'Tab' + t.id + '"' +
+               ' role="tabpanel">' +
+               '<pre class="helper-code-pre" id="' + prefix + 'Code' + t.id + '">' + _numberedCode(t.code) + '</pre>' +
+               '</div>';
+      }).join('') + '</div>';
+
+    document.getElementById(opts.containerId || 'helperModalBody').innerHTML = headerHtml + navHtml + panesHtml;
+  }
+
+  /**
+   * Wrap each line in a span so CSS can draw a line-number gutter. Lines
+   * stay joined by real newlines, so `pre.textContent` (used by Copy) is
+   * still the plain code.
+   */
+  function _numberedCode(code) {
+    return _escapeHtml(code).split('\n').map(function (line) {
+      return '<span class="code-line">' + (line === '' ? ' ' : line) + '</span>';
+    }).join('\n');
   }
 
   /**
@@ -2084,6 +2317,10 @@
               address: svc.Address || '',
               port: svc.Port || 0,
               grpcServices: (svc.Meta && svc.Meta.grpc_services) || '',
+              // Plugin folder under web/services/ the service asks the
+              // Manager GUI to show (ServiceRunner registers settings.gui
+              // as Meta.gui). Empty = no GUI.
+              gui: (svc.Meta && svc.Meta.gui) || '',
               instances: instances.length,
               status: _computeServiceStatus(instances)
             };
@@ -2217,7 +2454,8 @@
           description: 'Consul ' + conn.url + ' @ ' +
                         (svc.address || '?') + ':' + (svc.port || '?'),
           methods: [],
-          gui_support: false,
+          gui_support: !!svc.gui,
+          gui: svc.gui || '',
           address: svc.address,
           port: svc.port,
           consulUrl: conn.url
@@ -2231,6 +2469,10 @@
     // user is left with a stale panel showing methods for a service that
     // no longer exists.  Also drop the cached panel so re-registration
     // picks up fresh metadata instead of resurrecting the stale element.
+    // The bench composes from the same services; it recomposes only when a
+    // name, GUI folder or address changed.
+    if (MM.endo && MM.endo.bench) MM.endo.bench.servicesChanged();
+
     if (_activePanelName && !MM.servicesInfor[_activePanelName]) {
       var goneName = _activePanelName;
       _deactivateCurrentPanel();
@@ -2312,12 +2554,18 @@
         var infoKey = svc.name + '@' + conn.url;
 
         // Wrap stacked text in a single block child of the flex row.
+        // Operator view only: no per-row developer buttons -- code
+        // snippets, method calls and generators live under Developer Tools.
+        // A service without Meta.gui is marked so up front.
         row.innerHTML =
           '<div class="svc-row">' +
           '  <div class="svc-name">' +
           '    <span class="svc-status svc-status-' + status.kind + '"' +
           '          title="' + _escapeHtml(status.label) + '"></span>' +
                  _escapeHtml(svc.name) +
+          (svc.gui
+            ? ''
+            : '    <span class="no-gui-badge" title="No GUI available - selecting this service shows its runtime info">No GUI</span>') +
           '  </div>' +
           '  <div class="svc-hint">' +
                _escapeHtml((svc.address || '?') + ':' + (svc.port || '?')) +
@@ -2325,26 +2573,17 @@
                  ? ' · ' + svc.tags.slice(0, 3).map(_escapeHtml).join(', ')
                  : '') +
           '  </div>' +
-          '</div>' +
-          '<span class="helper-btn" title="Client code examples (Python / C++ / Robot)">' +
-          '  <i class="bi bi-code-slash"></i>' +
-          '</span>';
+          '</div>';
 
         // Attach the Consul URL so the gRPC panel can route its calls
         // through the right bridge query param.
         var svcWithUrl = Object.assign({}, svc, { consulUrl: conn.url });
 
-        // Helper button: open the multi-language client-snippet modal.
-        // Stop propagation so clicking the icon doesn't also trigger
-        // the row's "show panel" handler underneath.
-        var helperBtn = row.querySelector('.helper-btn');
-        helperBtn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          showServiceHelper(infoKey);
-        });
-
         row.addEventListener('click', function () {
-          _showGrpcServicePanel(svcWithUrl);
+          _selectedService = { name: svc.name, infoKey: infoKey, consul: svcWithUrl, info: null };
+          if (svc.gui) _openConsulServiceGui(_selectedService);
+          else _showServiceOverview(_selectedService);
+          if (_devMode) _renderInspector(_selectedService);
           // Visual selection across all groups
           document
             .querySelectorAll('#servicesList .list-group-item.active')
@@ -2357,6 +2596,546 @@
     });
   }
 
+  /** Every service of every reachable Consul, with its consulUrl (the bench composes from these). */
+  function _allConnectedServices() {
+    var out = [];
+    _connectedConsuls.forEach(function (conn) {
+      if (conn.alive === false) return;
+      (conn.services || []).forEach(function (svc) {
+        out.push(Object.assign({}, svc, { consulUrl: conn.url }));
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Show a service in the Services view, as a click on its sidebar row
+   * would. opts.classic shows the classic panel of a folder that also has
+   * a component.json (the bench dock offers it).
+   */
+  function _openServiceFromBench(svc, opts) {
+    switchMode('services');
+    var infoKey = svc.name + '@' + svc.consulUrl;
+    _selectedService = { name: svc.name, infoKey: infoKey, consul: svc, info: null };
+    document.querySelectorAll('#servicesList .list-group-item.active').forEach(function (el) { el.classList.remove('active'); });
+    var row = Array.prototype.filter.call(
+      document.querySelectorAll('#servicesList .list-group-item[data-service-name]'),
+      function (el) { return el.getAttribute('data-service-name') === svc.name; })[0];
+    if (row) row.classList.add('active');
+    if (svc.gui) _openConsulServiceGui(_selectedService, opts);
+    else _showServiceOverview(_selectedService);
+    if (_devMode) _renderInspector(_selectedService);
+  }
+
+  /**
+   * Show the GUI a Consul-registered service declares through Meta.gui:
+   * the name of a plugin folder under web/services/ (e.g. HelloService1.0.0),
+   * loaded with the same tiers as registry services (schema, QML, Widget,
+   * Qt WASM, HTML). The panel is cached per service name. The plugin
+   * learns which instance it drives from MM.currentGuiService.
+   */
+  function _openConsulServiceGui(sel, opts) {
+    var svc = sel.consul;
+    var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
+    if (!contentDiv || !svc || !svc.gui) return;
+    // An explicit choice (the Classic panel button, the bench dock) is
+    // remembered; opening from the sidebar follows what was chosen last.
+    var explicit = opts && typeof opts.classic === 'boolean';
+    var classic = explicit ? !!opts.classic : _prefersClassic(svc.name);
+    if (explicit) _setClassicPref(svc.name, classic);
+
+    MM.currentGuiService = {
+      name: svc.name,
+      consulUrl: svc.consulUrl,
+      address: svc.address,
+      port: svc.port,
+      grpcServices: svc.grpcServices,
+      gui: svc.gui
+    };
+
+    // One cached panel per service: drop it when the other kind is wanted
+    // (classic panel from the bench dock <-> the component from the sidebar).
+    var cachedPanel = _servicePanels[sel.name];
+    if (cachedPanel && (classic ? !!cachedPanel.__endoHandle : _classicPanels[sel.name])) {
+      if (_activePanelName === sel.name) _deactivateCurrentPanel();
+      if (cachedPanel.__endoHandle) cachedPanel.__endoHandle.destroy();
+      try { cachedPanel.remove(); } catch (e) { /* already gone */ }
+      delete _servicePanels[sel.name];
+    }
+    _classicPanels[sel.name] = classic;
+    _refreshClassicPanelBtn(sel);
+
+    if (_servicePanels[sel.name]) {
+      // Cache hit: loadServiceContent only consults servicesInfor on a
+      // miss, so it is safe to reuse its show-cached-panel path here.
+      loadServiceContent(sel.name, DIV_NAME.SERVICE_CONTENT_DIV);
+      // A component was suspended when it was hidden (R5); start it again.
+      var cached = _servicePanels[sel.name];
+      if (cached && cached.__endoHandle) cached.__endoHandle.resume();
+      return;
+    }
+    _deactivateCurrentPanel();
+    var folder = String(svc.gui).replace(/^[\/\\]+|[\/\\]+$/g, '');
+    var folderPath = SERVICES_GUI_FOLDER + '/' + folder;
+    // A folder with component.json is a Bench Endoskeleton component
+    // (contract v1); anything else loads through the legacy tiers unchanged.
+    // Bring the folder up to date from the service first (ADR-031): it
+    // arrives when missing and is replaced when the service's copy moved
+    // on. Whichever kind is shown then reads files that are current.
+    _fetchGuiFromService(sel, svc, folder).then(function () {
+      if (classic) {
+        _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
+        return;
+      }
+      return _tryMountComponent(sel, svc, folderPath, contentDiv).then(function (mounted) {
+        if (!mounted) _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
+      });
+    });
+  }
+
+  /** The component shown in the Services view, if the open panel is one. */
+  function _activeComponentHandle() {
+    var panel = _activePanelName && _servicePanels[_activePanelName];
+    return (panel && panel.__endoHandle) || null;
+  }
+  function _suspendActiveComponent() {
+    var h = _activeComponentHandle();
+    if (h) h.suspend();
+  }
+  function _resumeActiveComponent() {
+    var h = _activeComponentHandle();
+    if (h) h.resume();
+  }
+
+  /**
+   * Mount <folder>/component.json as a component panel, if there is one.
+   * Resolves true when this function handled the service (mounted, refused
+   * or superseded by a newer selection), false to fall back to the legacy
+   * loader.
+   */
+  /**
+   * Bring a service's GUI folder up to date from the service itself.
+   *
+   * Consul-registered services serve their own files over gRPC
+   * (`microservicebase.gui.v1.ServiceGui`, ADR-031). The bridge downloads
+   * the package and either extracts it (browser mode, where the bridge
+   * serves web/) or hands it back for the desktop app to unpack -- only
+   * Electron knows whether it runs from the source tree or from %APPDATA%.
+   *
+   * - Folder missing or empty: download it. A failed attempt is remembered
+   *   for GUI_FETCH_RETRY_MS only, so a service that starts serving its
+   *   files later is picked up without reloading the window.
+   * - Folder present and it came from the service (a checksum is stored):
+   *   ask once per window whether the service's copy changed, and replace
+   *   it if so. A failure here is silent; the files on disk still work.
+   * - Folder present but put there by hand (no checksum stored): left
+   *   alone, so local edits are never overwritten.
+   *
+   * Resolves true when new files were written.
+   */
+  function _fetchGuiFromService(sel, svc, folder) {
+    if (!folder || !svc) return Promise.resolve(false);
+    var folderPath = SERVICES_GUI_FOLDER + '/' + folder;
+    return MM.listServiceFiles(folderPath)
+      .catch(function () { return []; })
+      .then(function (files) {
+        var present = (files || []).length > 0;
+        var known = _guiChecksum(folder);
+        if (present && (!known || _guiChecked[folder])) return false;
+        if (!present) {
+          var failedAt = _guiFetchFailedAt[sel.name];
+          if (failedAt && Date.now() - failedAt < GUI_FETCH_RETRY_MS) return false;
+        }
+        _guiChecked[folder] = true;
+
+        // Nothing on disk: never claim to hold a version, or the bridge
+        // would answer "unchanged" and write nothing.
+        var canExtractLocally = !!(window.electronAPI && window.electronAPI.extractGUIZip);
+        var body = {
+          consul: svc.consulUrl || '',
+          folder: folder,
+          known_checksum: present ? known : '',
+          extract: !canExtractLocally
+        };
+        function failed(msg) {
+          if (present) return false;               // what is on disk still works
+          _guiFetchFailedAt[sel.name] = Date.now();
+          _guiFetchNotified[sel.name] = true;
+          showToast('Service GUI', msg, 'warning');
+          return false;
+        }
+        return fetch(_bridgeApiUrl() + '/api/service-gui/fetch/' + encodeURIComponent(sel.name), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data || data.status !== 'ok') {
+              // "unavailable" is the ordinary case for a service that does
+              // not serve its own files; one message says all of it.
+              return failed((data && data.status === 'unavailable')
+                ? folder + ' is not in web/services, and ' + sel.name +
+                  ' does not serve its own GUI files - showing its service view.'
+                : 'Could not fetch the GUI of ' + sel.name + ': ' +
+                  ((data && (data.error || data.detail)) || 'no answer') + '.');
+            }
+            if (data.checksum) _guiChecksum(folder, data.checksum);
+            if (data.cached) return false;            // already current
+            if (!data.zip_base64) return true;        // the bridge extracted it
+            return window.electronAPI.extractGUIZip(folderPath, data.zip_base64)
+              .then(function () { return true; });
+          })
+          .then(function (wrote) {
+            if (wrote) {
+              delete _guiFetchFailedAt[sel.name];
+              delete _guiFetchNotified[sel.name];
+              showToast('Service GUI', (present ? 'Updated' : 'Loaded') + ' the GUI of ' +
+                        sel.name + ' from the service.', 'success');
+            }
+            return wrote;
+          })
+          .catch(function (err) {
+            return failed('Could not fetch the GUI of ' + sel.name + ': ' + err.message);
+          });
+      });
+  }
+
+  /**
+   * The bridge's base URL. In the desktop app the service client's apiUrl
+   * is the page's own `file://` origin -- truthy but unfetchable -- so fall
+   * back to localhost on the configured bridge port, as ServiceCreator,
+   * ConsulClient and GrpcClient do.
+   */
+  function _bridgeApiUrl() {
+    var apiUrl = (MM.serviceClient && MM.serviceClient.apiUrl) || '';
+    if (!apiUrl || apiUrl === 'null' || apiUrl.indexOf('http') !== 0) {
+      var settings = MM.getSettings ? MM.getSettings() : {};
+      apiUrl = 'http://localhost:' + (settings.bridgePort || 1112);
+    }
+    return apiUrl.replace(/\/+$/, '');
+  }
+
+  /** Read or write the cached checksum of a GUI folder. */
+  function _guiChecksum(folder, value) {
+    var key = 'mm_gui_checksum:' + folder;
+    try {
+      if (value === undefined) return localStorage.getItem(key) || '';
+      localStorage.setItem(key, value);
+    } catch (e) { /* storage unavailable */ }
+    return value || '';
+  }
+
+  function _tryMountComponent(sel, svc, folderPath, contentDiv) {
+    if (!MM.endo || !MM.endo.mountComponent) return Promise.resolve(false);
+    return fetch(folderPath + '/component.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .catch(function () { return null; })
+      .then(function (text) {
+        if (text === null) return false;
+        // The user may have picked another service while this loaded.
+        if (!MM.currentGuiService || MM.currentGuiService.name !== svc.name) return true;
+        var manifest;
+        try { manifest = JSON.parse(text); } catch (e) { manifest = { __parseError: e.message }; }
+        var wrapper = document.createElement('div');
+        wrapper.setAttribute('data-cached-service', sel.name);
+        wrapper.className = 'endo-panel';
+        contentDiv.appendChild(wrapper);
+        _servicePanels[sel.name] = wrapper;
+        _activePanelName = sel.name;
+        return MM.endo.mountComponent(manifest, wrapper, {
+          consulName: svc.name,
+          consulUrl: svc.consulUrl,
+          protoPath: _getStoredProtoPath(svc.name),
+          base: new URL(folderPath + '/', document.baseURI).href   // frame tiles' pages
+        }).then(function (handle) {
+          wrapper.__endoHandle = handle;
+          // Hiding the panel runs unload<Name>: stop polling while hidden (R5).
+          window['unload' + sel.name] = function () { handle.suspend(); };
+          unloadFunction = window['unload' + sel.name];
+          return true;
+        });
+      });
+  }
+
+  /**
+   * Operator's view of a service that has no GUI: what it is, where it
+   * runs, whether it is healthy. Calling methods, code snippets and
+   * generators are developer tools and live under the Developer Tools
+   * menu, so the runtime view stays free of them.
+   *
+   * @param {object} sel - { name, consul: <Consul svc + consulUrl> | null,
+   *                         info: <MM.servicesInfor entry> | null }
+   */
+  function _showServiceOverview(sel) {
+    var contentDiv = document.getElementById(DIV_NAME.SERVICE_CONTENT_DIV);
+    if (!contentDiv) return;
+
+    // Hide any cached GUI panel and drop previous non-cached content. The
+    // overview is itself non-cached, so the next selection replaces it.
+    _deactivateCurrentPanel();
+    _refreshClassicPanelBtn(sel);   // no GUI to switch: the button goes grey
+
+    var svc = sel.consul;
+    var info = sel.info || {};
+    var st = (svc && svc.status) || { kind: 'passing', label: 'available' };
+    var kind = st.kind || 'unknown';
+
+    var rows = [];
+    function add(label, value) {
+      if (value === undefined || value === null || value === '') return;
+      rows.push('<tr><th>' + _escapeHtml(label) + '</th><td>' + value + '</td></tr>');
+    }
+    if (svc) {
+      add('Address', '<code>' + _escapeHtml((svc.address || '?') + ':' + (svc.port || '?')) + '</code>');
+      add('Instances', _escapeHtml(String(svc.instances || 0)));
+      add('Tags', (svc.tags || []).map(function (t) {
+        return '<span class="dev-tag">' + _escapeHtml(t) + '</span>';
+      }).join(' '));
+      add('gRPC services', svc.grpcServices
+        ? svc.grpcServices.split(',').map(function (g) { return '<code>' + _escapeHtml(g) + '</code>'; }).join(' ')
+        : '');
+      add('Registry', _escapeHtml(svc.consulUrl || ''));
+    } else {
+      add('Description', _escapeHtml(info.description || info.shortdesc || ''));
+      add('Version', _escapeHtml(info.version || ''));
+      add('Group', _escapeHtml(info.group || ''));
+      add('Broker', _escapeHtml(MM.activeBrokerUrl || ''));
+    }
+
+    var wrap = document.createElement('div');
+    wrap.className = 'svc-overview';
+    wrap.setAttribute('data-runtime-card', sel.name);
+    wrap.innerHTML =
+      '<div class="svc-ov-head">' +
+      '  <span class="svc-ov-dot svc-ov-dot-' + _escapeHtml(kind) + '"></span>' +
+      '  <h4 class="svc-ov-title">' + _escapeHtml(sel.name) + '</h4>' +
+      '  <span class="svc-ov-pill svc-ov-pill-' + _escapeHtml(kind) + '">' + _escapeHtml(st.label || kind) + '</span>' +
+      '  <span class="no-gui-badge" title="This service ships no GUI; use the actions below">No GUI</span>' +
+      '  <div class="svc-ov-tools">' +
+      '    <button type="button" class="btn btn-sm btn-outline-secondary" id="svcOvRefresh" title="Refresh status and instances">' +
+      '      <i class="bi bi-arrow-clockwise"></i></button>' +
+      '  </div>' +
+      '</div>' +
+      '<div class="svc-ov-grid">' +
+      '  <section class="svc-ov-card">' +
+      '    <h6 class="svc-ov-card-title"><i class="bi bi-info-circle me-1"></i>Overview</h6>' +
+      '    <table class="svc-card-table">' + rows.join('') + '</table>' +
+      '  </section>' +
+      '  <section class="svc-ov-card">' +
+      '    <h6 class="svc-ov-card-title"><i class="bi bi-hdd-stack me-1"></i>Instances</h6>' +
+      '    <div id="svcOvInstances">' + (svc ? _devLoading('Loading instances\u2026') : '<span class="text-muted small">Not tracked for registry services.</span>') + '</div>' +
+      '  </section>' +
+      '</div>' +
+      '<section class="svc-ov-card svc-ov-actions-card">' +
+      '  <h6 class="svc-ov-card-title"><i class="bi bi-lightning-charge me-1"></i>Actions' +
+      '    <span class="svc-ov-card-hint">Invoke the service directly. Fields are derived from its API.</span></h6>' +
+      '  <div id="svcOvActions">' + (svc ? _devLoading('Discovering actions\u2026') : '') + '</div>' +
+      '</section>';
+    contentDiv.appendChild(wrap);
+
+    var refresh = document.getElementById('svcOvRefresh');
+    if (refresh) refresh.addEventListener('click', function () { _showServiceOverview(sel); });
+
+    if (!svc) {
+      var act = document.getElementById('svcOvActions');
+      if (act) {
+        act.innerHTML =
+          '<p class="text-muted small mb-2">Registry services are invoked through the legacy explorer.</p>' +
+          '<button type="button" class="btn btn-sm btn-primary" id="svcOvLegacy">' +
+          '<i class="bi bi-diagram-3 me-1"></i>Open explorer</button>';
+        var b = document.getElementById('svcOvLegacy');
+        if (b) b.addEventListener('click', function () { showServiceAPIExplorer(sel.name); });
+      }
+      return;
+    }
+
+    _renderOverviewInstances(svc);
+    _renderOverviewActions(svc);
+  }
+
+  function _worstCheck(checks) {
+    var worst = 'passing';
+    (checks || []).forEach(function (c) {
+      if (c.Status === 'critical') worst = 'critical';
+      else if (c.Status === 'warning' && worst !== 'critical') worst = 'warning';
+    });
+    return worst;
+  }
+
+  function _renderOverviewInstances(svc) {
+    var el = document.getElementById('svcOvInstances');
+    if (!el) return;
+    MM.consulClient.getServiceDetail(svc.name, svc.consulUrl)
+      .then(function (entries) {
+        if (!Array.isArray(entries) || entries.length === 0) {
+          el.innerHTML = '<span class="text-muted small">No instances registered.</span>';
+          return;
+        }
+        var rows = entries.map(function (e) {
+          var s = e.Service || {};
+          var worst = _worstCheck(e.Checks);
+          var checks = (e.Checks || []).map(function (c) {
+            return '<span class="svc-ov-check svc-ov-check-' + _escapeHtml(c.Status || 'unknown') + '"' +
+                   ' title="' + _escapeHtml((c.Name || '') + (c.Output ? ': ' + c.Output : '')) + '">' +
+                   _escapeHtml(c.Name || c.CheckID || 'check') + '</span>';
+          }).join('');
+          return '<tr>' +
+                 '<td><span class="svc-ov-dot svc-ov-dot-' + worst + '"></span>' + _escapeHtml(s.ID || '') + '</td>' +
+                 '<td><code>' + _escapeHtml((s.Address || '?') + ':' + (s.Port || '?')) + '</code></td>' +
+                 '<td>' + _escapeHtml((e.Node && e.Node.Node) || '') + '</td>' +
+                 '<td>' + checks + '</td>' +
+                 '</tr>';
+        }).join('');
+        el.innerHTML =
+          '<div class="svc-ov-table-wrap"><table class="svc-ov-table">' +
+          '<thead><tr><th>Instance</th><th>Address</th><th>Node</th><th>Checks</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>';
+      })
+      .catch(function (err) {
+        el.innerHTML = _devAlert('warning', 'Could not load instances', err.message || err);
+      });
+  }
+
+  // ---- Operator actions: typed forms generated from the service API -----
+
+  function _fieldControl(id, f) {
+    var t = String(f.type || '').toLowerCase();
+    var repeated = f.label === 'repeated';
+    if (!repeated && t === 'bool') {
+      return '<div class="form-check form-switch"><input class="form-check-input op-field" type="checkbox"' +
+             ' id="' + id + '" data-field="' + _escapeHtml(f.name) + '" data-kind="bool">' +
+             '<label class="form-check-label small" for="' + id + '">' + _escapeHtml(f.name) + '</label></div>';
+    }
+    var label = '<label class="form-label op-label" for="' + id + '">' + _escapeHtml(f.name) +
+                '<span class="op-type">' + _escapeHtml(t + (repeated ? '[]' : '')) + '</span></label>';
+    if (!repeated && /^(u?int|s?fixed|sint|float|double)/.test(t)) {
+      return '<div class="op-field-wrap">' + label +
+             '<input type="number" step="any" class="form-control form-control-sm op-field" id="' + id + '"' +
+             ' data-field="' + _escapeHtml(f.name) + '" data-kind="number"></div>';
+    }
+    if (!repeated && (t === 'string' || t === 'bytes' || t === 'enum')) {
+      return '<div class="op-field-wrap">' + label +
+             '<input type="text" class="form-control form-control-sm op-field" id="' + id + '"' +
+             ' data-field="' + _escapeHtml(f.name) + '" data-kind="string"></div>';
+    }
+    return '<div class="op-field-wrap">' + label +
+           '<textarea class="form-control form-control-sm op-field op-json" rows="3" id="' + id + '"' +
+           ' data-field="' + _escapeHtml(f.name) + '" data-kind="json" placeholder="JSON"></textarea></div>';
+  }
+
+  function _collectArgs(form) {
+    var args = {};
+    var bad = null;
+    form.querySelectorAll('.op-field').forEach(function (inp) {
+      var name = inp.getAttribute('data-field');
+      var kind = inp.getAttribute('data-kind');
+      if (kind === 'bool') { args[name] = !!inp.checked; return; }
+      var v = inp.value;
+      if (v === '' || v === null) return;
+      if (kind === 'number') { args[name] = Number(v); return; }
+      if (kind === 'json') {
+        try { args[name] = JSON.parse(v); } catch (e) { bad = name + ': ' + e.message; }
+        return;
+      }
+      args[name] = v;
+    });
+    if (bad) throw new Error('Invalid JSON in ' + bad);
+    return args;
+  }
+
+  function _renderOverviewActions(svc) {
+    var el = document.getElementById('svcOvActions');
+    if (!el) return;
+    var protoPath = _getStoredProtoPath(svc.name);
+    MM.grpcClient.getServiceMethods(svc.name, svc.consulUrl, protoPath)
+      .then(function (data) {
+        if (!data || data.error || !(data.grpc_services || []).length) {
+          el.innerHTML = _devAlert('warning', 'No actions available',
+            (data && data.error) || 'The service exposes no callable methods.');
+          return;
+        }
+        var html = '';
+        data.grpc_services.forEach(function (s, si) {
+          if (s.error) { html += _devAlert('warning', s.name, s.error); return; }
+          (s.methods || []).forEach(function (m, mi) {
+            var id = 'op_' + si + '_' + mi;
+            var clientStream = !!m.client_streaming;
+            var fields = (m.input_fields || []).map(function (f, fi) {
+              return _fieldControl(id + '_f' + fi, f);
+            }).join('');
+            html +=
+              '<form class="op-action" id="' + id + '" data-grpc-svc="' + _escapeHtml(s.name) + '"' +
+              '      data-method="' + _escapeHtml(m.name) + '" data-stream="' + (m.server_streaming ? '1' : '') + '">' +
+              '  <div class="op-action-head">' +
+              '    <span class="op-action-name">' + _escapeHtml(m.name) + '</span>' +
+              '    <span class="op-action-sig">' + _escapeHtml(m.input_type) + ' \u2192 ' + _escapeHtml(m.output_type) + '</span>' +
+              (m.server_streaming ? '<span class="dev-stream dev-stream-server">server stream</span>' : '') +
+              (clientStream ? '<span class="dev-stream dev-stream-client">client stream</span>' : '') +
+              '  </div>' +
+              (fields ? '<div class="op-fields">' + fields + '</div>' : '<div class="op-fields op-fields-empty">No input required.</div>') +
+              '  <div class="op-run-row">' +
+              '    <button type="submit" class="btn btn-sm btn-primary"' + (clientStream ? ' disabled' : '') + '>' +
+              '      <i class="bi bi-play-fill me-1"></i>' + (m.server_streaming ? 'Collect' : 'Run') + '</button>' +
+              (clientStream ? '<span class="dev-hint">Client-streaming calls need a custom client.</span>' : '') +
+              '  </div>' +
+              '  <div class="op-result" hidden></div>' +
+              '</form>';
+          });
+        });
+        el.innerHTML = html || '<span class="text-muted small">No methods.</span>';
+
+        el.querySelectorAll('.op-action').forEach(function (form) {
+          form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var result = form.querySelector('.op-result');
+            var btn = form.querySelector('button[type="submit"]');
+            var args;
+            try { args = _collectArgs(form); }
+            catch (err) {
+              result.hidden = false;
+              result.className = 'op-result op-result-error';
+              result.textContent = err.message;
+              return;
+            }
+            result.hidden = false;
+            result.className = 'op-result op-result-pending';
+            result.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Running\u2026';
+            btn.disabled = true;
+            var t0 = performance.now();
+            MM.grpcClient.callMethod({
+              consulName: svc.name,
+              consulUrl: svc.consulUrl,
+              grpcService: form.getAttribute('data-grpc-svc'),
+              method: form.getAttribute('data-method'),
+              argsJson: JSON.stringify(args),
+              protoPath: protoPath
+            }).then(function (data) {
+              var ms = Math.round(performance.now() - t0);
+              if (!data || !data.ok) {
+                result.className = 'op-result op-result-error';
+                result.textContent = (data && data.error) || 'Call failed';
+                return;
+              }
+              var payload = data.streaming ? (data.events || []) : data.result;
+              var pretty; try { pretty = JSON.stringify(payload, null, 2); } catch (e2) { pretty = String(payload); }
+              result.className = 'op-result op-result-ok';
+              result.innerHTML =
+                '<div class="op-result-meta"><span class="op-result-ok-label">Done</span> ' + ms + ' ms' +
+                (data.streaming ? ' \u00b7 ' + (data.events || []).length + ' event(s)' : '') + '</div>' +
+                '<pre class="op-result-body">' + _escapeHtml(pretty) + '</pre>';
+            }).catch(function (err) {
+              result.className = 'op-result op-result-error';
+              result.textContent = err.message || String(err);
+            }).finally(function () { btn.disabled = false; });
+          });
+        });
+      })
+      .catch(function (err) {
+        el.innerHTML = _devAlert('warning', 'Could not discover actions', err.message || err);
+      });
+  }
+
   /**
    * Render the method panel for a selected service in #serviceContent.
    *
@@ -2365,59 +3144,139 @@
    * pre-filled from the reflected schema, a Call button, and a response
    * display area below.
    */
-  function _showGrpcServicePanel(svc) {
-    var content = document.getElementById('serviceContent');
+  function _showGrpcServicePanel(svc, opts) {
+    opts = opts || {};
+    var content = document.getElementById(opts.containerId || 'serviceContent');
     if (!content) return;
 
-    content.innerHTML =
-      '<div class="p-3">' +
-      '  <div class="d-flex align-items-center mb-2">' +
-      '    <h5 class="mb-0 me-2"><i class="bi bi-box me-2"></i>' + _escapeHtml(svc.name) + '</h5>' +
-      '    <span class="badge bg-secondary me-1">' +
-           _escapeHtml((svc.address || '?') + ':' + (svc.port || '?')) +
-      '    </span>' +
-      (svc.tags && svc.tags.length
-        ? '<span class="badge bg-light text-dark">' +
-            _escapeHtml(svc.tags.join(', ')) + '</span>'
-        : '') +
-      '  </div>' +
-      '  <p class="text-muted small mb-3">' +
-      '    <i class="bi bi-diagram-3 me-1"></i>' +
-      '    Methods are discovered via gRPC server reflection ' +
-      '    (or, if the server doesn&rsquo;t ship reflection, by compiling ' +
-      '    local <code>.proto</code> files &mdash; set ' +
-      '    <code>MB_PROTO_SEARCH_PATH</code>).' +
-      '  </p>' +
-      '  <div id="grpcMethodList">' +
-      '    <div class="text-muted small">' +
-      '      <span class="spinner-border spinner-border-sm me-2"></span>' +
-      '      Loading methods from ' + _escapeHtml(svc.name) + '...' +
+    var status = svc.status || { kind: 'unknown', label: 'unknown' };
+    var target = (svc.address || '?') + ':' + (svc.port || '?');
+    var tags = (svc.tags || []).map(function (t) {
+      return '<span class="dev-tag">' + _escapeHtml(t) + '</span>';
+    }).join('');
+
+    var toolbarHtml =
+      '      <div class="dev-toolbar">' +
+      '        <button type="button" class="btn btn-sm btn-outline-secondary" id="grpcRefresh"' +
+      '                title="Re-discover methods"><i class="bi bi-arrow-clockwise"></i></button>' +
+      '        <button type="button" class="btn btn-sm btn-outline-secondary" id="grpcCodeExamples"' +
+      '                title="Client code for this service (Python / C++ / Robot)">' +
+      '          <i class="bi bi-file-earmark-code me-1"></i>Code</button>' +
+      '        <button type="button" class="btn btn-sm btn-outline-secondary" id="grpcGenRobotTop"' +
+      '                title="Generate one Robot Framework .resource per service from a .proto folder">' +
+      '          <i class="bi bi-robot me-1"></i>Robot</button>' +
+      '        <button type="button" class="btn btn-sm btn-outline-primary" id="grpcAddToProject"' +
+      '                title="Export this service\'s Robot resources, protos and a starter suite into the open test project">' +
+      '          <i class="bi bi-box-arrow-in-down me-1"></i>Add to test project</button>' +
+      '      </div>';
+
+    // Compact: inside the inspector, which already shows the service
+    // header; only the toolbar and the method list are rendered.
+    content.innerHTML = opts.compact
+      ? '<div class="dev-panel dev-panel-compact" data-dev-panel="api-explorer">' +
+        '  <div class="dev-compact-bar"><span class="dev-discovery" id="grpcDiscovery"></span>' + toolbarHtml + '</div>' +
+        '  <div id="grpcMethodList">' + _devLoading('Discovering methods\u2026') + '</div>' +
+        '</div>'
+      : '<div class="dev-panel" data-dev-panel="api-explorer">' +
+      '  <div class="dev-header">' +
+      '    <div class="dev-breadcrumb">' +
+      '      <i class="bi bi-code-slash me-1"></i>Developer Tools' +
+      '      <span class="dev-breadcrumb-sep">/</span>API Explorer' +
       '    </div>' +
+      '    <div class="dev-title-row">' +
+      '      <span class="svc-status svc-status-' + _escapeHtml(status.kind) + '"' +
+      '            title="' + _escapeHtml(status.label) + '"></span>' +
+      '      <h4 class="dev-title">' + _escapeHtml(svc.name) + '</h4>' +
+      '      <code class="dev-target" id="grpcTarget" title="Copy address">' + _escapeHtml(target) + '</code>' +
+             tags +
+      '      <span class="dev-discovery" id="grpcDiscovery"></span>' +
+             toolbarHtml +
+      '    </div>' +
+      '    <p class="dev-subtitle">' +
+      '      Methods are discovered through gRPC server reflection, or by compiling local ' +
+      '      <code>.proto</code> files when the server ships none (<code>MB_PROTO_SEARCH_PATH</code>).' +
+      '    </p>' +
+      '  </div>' +
+      '  <div id="grpcMethodList">' +
+           _devLoading('Discovering methods on ' + _escapeHtml(svc.name) + '\u2026') +
       '  </div>' +
       '</div>';
 
     // Per-service proto path (typed by the user when reflection +
     // MB_PROTO_SEARCH_PATH both fail).  Persisted in sessionStorage so
     // it survives sidebar navigation but not a full reload.
-    var protoPath = _getStoredProtoPath(svc.name);
-    svc.protoPath = protoPath;
+    svc.protoPath = _getStoredProtoPath(svc.name);
 
-    MM.grpcClient.getServiceMethods(svc.name, svc.consulUrl, protoPath)
-      .then(function (data) {
-        _renderGrpcMethods(svc, data);
-      })
+    var targetEl = document.getElementById('grpcTarget');
+    if (targetEl) targetEl.addEventListener('click', function () { _copyText(target, 'Address'); });
+    var refresh = document.getElementById('grpcRefresh');
+    if (refresh) refresh.addEventListener('click', function () { _showGrpcServicePanel(svc, opts); });
+    var examples = document.getElementById('grpcCodeExamples');
+    if (examples) {
+      examples.addEventListener('click', function () {
+        if (opts.compact) _setInspectorTab('code');
+        else showServiceHelper(svc.name + '@' + (svc.consulUrl || ''));
+      });
+    }
+    // Robot generation needs a proto folder; _runRobotGen prompts for one
+    // when svc.protoPath is unset.
+    var genTop = document.getElementById('grpcGenRobotTop');
+    if (genTop) {
+      genTop.addEventListener('click', function () { _runRobotGen(svc.protoPath || '', genTop); });
+    }
+    var addToProject = document.getElementById('grpcAddToProject');
+    if (addToProject) {
+      addToProject.addEventListener('click', function () {
+        exportToTestProject({ name: svc.name, infoKey: svc.name + '@' + (svc.consulUrl || ''),
+                              consul: svc, info: null });
+      });
+    }
+
+    MM.grpcClient.getServiceMethods(svc.name, svc.consulUrl, svc.protoPath)
+      .then(function (data) { _renderGrpcMethods(svc, data); })
       .catch(function (err) {
-        var target = document.getElementById('grpcMethodList');
-        if (target) {
-          target.innerHTML =
-            '<div class="alert alert-danger">' +
-            '  <strong>Failed to load methods:</strong> ' +
-            _escapeHtml(err.message || err) +
-            '</div>' +
+        var list = document.getElementById('grpcMethodList');
+        if (list) {
+          list.innerHTML =
+            _devAlert('danger', 'Failed to load methods', err.message || err) +
             _renderProtoPathForm(svc);
           _wireProtoPathForm(svc);
         }
       });
+  }
+
+  // ---- Developer-view helpers -------------------------------------------
+
+  function _devLoading(text) {
+    return '<div class="dev-loading"><span class="spinner-border spinner-border-sm me-2"></span>' +
+           text + '</div>';
+  }
+
+  function _devAlert(kind, title, detail) {
+    return '<div class="dev-alert dev-alert-' + kind + '">' +
+           '<strong>' + _escapeHtml(title) + '</strong>' +
+           (detail ? '<div>' + _escapeHtml(String(detail)) + '</div>' : '') +
+           '</div>';
+  }
+
+  function _copyText(text, label) {
+    function done() { showToast(label || 'Copied', 'Copied to clipboard.', 'success'); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) { /* best effort */ }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); done(); });
+    } else {
+      fallback();
+      done();
+    }
   }
 
   // ---- Proto-path override (for servers without gRPC reflection) -----
@@ -2679,14 +3538,28 @@
     var target = document.getElementById('grpcMethodList');
     if (!target) return;
 
+    var src = (data && data.discovery_source) || '';
+    var localProto = src.indexOf('local_proto:') === 0;
+    var protoDirs = localProto ? src.substring('local_proto:'.length) : '';
+
+    // Discovery source shown as a badge in the header, not as a banner.
+    var discovery = document.getElementById('grpcDiscovery');
+    if (discovery) {
+      discovery.innerHTML = localProto
+        ? '<i class="bi bi-file-earmark-text me-1"></i>local .proto'
+        : (src || (data && data.grpc_services) ? '<i class="bi bi-broadcast me-1"></i>reflection' : '');
+      discovery.title = localProto
+        ? 'Server ships no reflection; methods compiled from ' + protoDirs
+        : 'Discovered through gRPC server reflection';
+    }
+
     if (data && data.error) {
       // Reflection failed AND the bridge's local-proto fallback found
       // nothing.  Render the proto-path input so the user can point us
       // at the right folder without restarting the bridge.
-      var needsProtoPath = /Reflection unavailable|no \.proto files matched/i
-                              .test(data.error);
+      var needsProtoPath = /Reflection unavailable|no \.proto files matched/i.test(data.error);
       target.innerHTML =
-        '<div class="alert alert-danger">' + _escapeHtml(data.error) + '</div>' +
+        _devAlert('danger', 'Method discovery failed', data.error) +
         (needsProtoPath ? _renderProtoPathForm(svc) : '');
       if (needsProtoPath) _wireProtoPathForm(svc);
       return;
@@ -2694,157 +3567,120 @@
 
     var services = (data && data.grpc_services) || [];
     if (services.length === 0) {
-      target.innerHTML =
-        '<div class="alert alert-warning">No gRPC services found at ' +
-        _escapeHtml(data.target || '') + '.</div>';
+      target.innerHTML = _devAlert('warning', 'No gRPC services found',
+        'Nothing is exposed at ' + ((data && data.target) || 'the target') + '.');
       return;
     }
 
     var html = '';
-
-    // Always-visible toolbar — independent of whether methods were
-    // discovered via reflection or by compiling a local .proto folder.
-    // Lets users generate Robot resources at any time (the generator
-    // itself needs a proto folder; if svc.protoPath isn't set, the
-    // handler prompts for one).
-    html += '<div class="d-flex justify-content-end mb-2">' +
-            '  <button type="button" class="btn btn-sm btn-outline-success"' +
-            '          id="grpcGenRobotTop"' +
-            '          title="Generate one Robot Framework .resource file per service from a .proto folder. ' +
-            'Each resource exposes typed keywords (one per RPC) on top of QConnectBase.">' +
-            '    <i class="bi bi-file-earmark-code me-1"></i>Generate Robot resources' +
-            '  </button>' +
-            '</div>';
-    // Banner when the bridge fell back to compiling local .proto files
-    // because the server didn't ship gRPC reflection (e.g. vcpkg's grpc
-    // port without the reflection feature).  Calls still work — the
-    // bridge built the descriptor pool from disk.
-    var src = data && data.discovery_source;
-    if (src && src.indexOf('local_proto:') === 0) {
-      var paths = src.substring('local_proto:'.length);
-      html += '<div class="alert alert-info py-2 small mb-3">' +
+    if (localProto) {
+      html += '<div class="dev-note">' +
               '  <i class="bi bi-info-circle me-1"></i>' +
-              '  <strong>Reflection unavailable on the server.</strong>' +
-              '  Methods discovered by compiling <code>.proto</code> files from ' +
-              '  <code>' + _escapeHtml(paths) + '</code>.' +
-              '  To enable server-side reflection, rebuild with ' +
-              '  <code>grpc++_reflection</code> linked into the runtime.' +
-              '  <span class="ms-2">' +
-              '    <a href="#" id="grpcShowProtoForm">Override proto path</a>' +
-              '  </span>' +
+              '  Reflection is not available on this server; methods were compiled from ' +
+              '  <code>' + _escapeHtml(protoDirs) + '</code>. ' +
+              '  <a href="#" id="grpcShowProtoForm">Use a different .proto folder</a>' +
               '</div>' +
               '<div id="grpcProtoFormSlot"></div>';
     }
 
     services.forEach(function (s, si) {
       if (s.error) {
-        html += '<div class="alert alert-warning">' +
-                '<strong>' + _escapeHtml(s.name) + '</strong>: ' +
-                _escapeHtml(s.error) + '</div>';
+        html += _devAlert('warning', s.name, s.error);
         return;
       }
-      html += '<div class="mb-3">' +
-              '  <div class="small text-muted mb-1"><i class="bi bi-diagram-3 me-1"></i>' +
-              _escapeHtml(s.name) +
-              '  </div>' +
-              '  <div class="accordion" id="grpcAcc_' + si + '">';
+      var methods = s.methods || [];
+      html += '<section class="dev-card">' +
+              '  <header class="dev-card-header">' +
+              '    <i class="bi bi-diagram-3 me-2"></i>' +
+              '    <code class="dev-card-title">' + _escapeHtml(s.name) + '</code>' +
+              '    <span class="dev-card-count">' + methods.length + ' method' +
+                   (methods.length === 1 ? '' : 's') + '</span>' +
+              '  </header>' +
+              '  <div class="accordion dev-methods" id="grpcAcc_' + si + '">';
 
-      (s.methods || []).forEach(function (m, mi) {
+      methods.forEach(function (m, mi) {
         var itemId = 'grpcMethod_' + si + '_' + mi;
         var bodyId = itemId + '_body';
         var textareaId = itemId + '_json';
         var resultId = itemId + '_result';
-        var streaming = m.client_streaming || m.server_streaming;
 
-        var streamBadge = '';
-        if (m.client_streaming && m.server_streaming) {
-          streamBadge = '<span class="badge bg-warning text-dark ms-2">bidi stream</span>';
-        } else if (m.client_streaming) {
-          streamBadge = '<span class="badge bg-warning text-dark ms-2">client stream</span>';
-        } else if (m.server_streaming) {
-          streamBadge = '<span class="badge bg-warning text-dark ms-2">server stream</span>';
-        }
+        var streamKind = (m.client_streaming && m.server_streaming) ? 'bidi'
+                       : m.client_streaming ? 'client'
+                       : m.server_streaming ? 'server' : 'unary';
+        var streamBadge = '<span class="dev-stream dev-stream-' + streamKind + '">' +
+                          (streamKind === 'unary' ? 'unary' : streamKind + ' stream') + '</span>';
 
         var skeleton = '{}';
-        try { skeleton = JSON.stringify(m.input_skeleton || {}, null, 2); }
-        catch (e) {}
+        try { skeleton = JSON.stringify(m.input_skeleton || {}, null, 2); } catch (e) { /* keep {} */ }
+        _grpcSkeletons[textareaId] = skeleton;
 
         var fieldsHtml = (m.input_fields || []).map(function (f) {
           var repeat = (f.label === 'repeated') ? '[]' : '';
-          var t = _escapeHtml(f.type + repeat);
-          return '<span class="badge bg-light text-dark me-1 mb-1">' +
-                 _escapeHtml(f.name) + ': ' + t + '</span>';
+          return '<span class="dev-field">' +
+                 '<span class="dev-field-name">' + _escapeHtml(f.name) + '</span>' +
+                 '<span class="dev-field-type">' + _escapeHtml(f.type + repeat) + '</span>' +
+                 '</span>';
         }).join('');
 
-        // Disable Call only for client/bidi streaming.  Server streaming is
-        // collected server-side and returned when the stream ends.
-        var unsupported = m.client_streaming;
+        // Client/bidi streaming cannot be driven from a single textarea.
+        // Server streaming is collected bridge-side and returned when the
+        // stream ends.
+        var unsupported = !!m.client_streaming;
         var btnLabel = m.server_streaming ? 'Collect stream' : 'Call';
 
         html +=
-          '<div class="accordion-item">' +
+          '<div class="accordion-item dev-method">' +
           '  <h2 class="accordion-header">' +
           '    <button class="accordion-button collapsed" type="button"' +
           '            data-bs-toggle="collapse" data-bs-target="#' + bodyId + '">' +
-          '      <code class="me-2">' + _escapeHtml(m.name) + '</code>' +
-          '      <span class="small text-muted">' +
-                   _escapeHtml(m.input_type) + ' → ' + _escapeHtml(m.output_type) +
-          '      </span>' +
+          '      <code class="dev-method-name">' + _escapeHtml(m.name) + '</code>' +
+          '      <span class="dev-method-sig">' + _escapeHtml(m.input_type) +
+          '        <i class="bi bi-arrow-right mx-1"></i>' + _escapeHtml(m.output_type) + '</span>' +
                  streamBadge +
           '    </button>' +
           '  </h2>' +
-          '  <div id="' + bodyId + '" class="accordion-collapse collapse"' +
-          '       data-bs-parent="#grpcAcc_' + si + '">' +
-          '    <div class="accordion-body">' +
-          (fieldsHtml
-            ? '<div class="mb-2">' + fieldsHtml + '</div>'
-            : '') +
+          '  <div id="' + bodyId + '" class="accordion-collapse collapse" data-bs-parent="#grpcAcc_' + si + '">' +
+          '    <div class="accordion-body dev-method-body">' +
+          '      <div class="dev-block-label">Request' +
+          (fieldsHtml ? '<span class="dev-fields">' + fieldsHtml + '</span>' : '') +
+          '      </div>' +
+          '      <textarea id="' + textareaId + '" class="dev-json" rows="8" spellcheck="false">' +
+                   _escapeHtml(skeleton) + '</textarea>' +
+          '      <div class="dev-req-toolbar">' +
+          '        <button type="button" class="btn btn-sm btn-primary grpc-call-btn"' +
+          (unsupported ? ' disabled title="Client-streaming RPCs cannot be called from the explorer"' : '') +
+          '                data-svc="' + _escapeHtml(svc.name) + '"' +
+          '                data-consul-url="' + _escapeHtml(svc.consulUrl || '') + '"' +
+          '                data-grpc-svc="' + _escapeHtml(s.name) + '"' +
+          '                data-method="' + _escapeHtml(m.name) + '"' +
+          '                data-textarea="' + textareaId + '"' +
+          '                data-result="' + resultId + '">' +
+          '          <i class="bi bi-play-fill me-1"></i>' + btnLabel + '</button>' +
+          '        <button type="button" class="btn btn-sm btn-outline-secondary dev-format-btn"' +
+          '                data-textarea="' + textareaId + '" title="Pretty-print the request">Format</button>' +
+          '        <button type="button" class="btn btn-sm btn-outline-secondary dev-reset-btn"' +
+          '                data-textarea="' + textareaId + '" title="Restore the generated skeleton">Reset</button>' +
+          '        <span class="dev-hint">Ctrl+Enter to call</span>' +
           (m.server_streaming
-            ? '<div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>' +
-              'Server-streaming RPC — up to 100 events or 15 seconds are collected, ' +
-              'then the stream is cancelled.</div>'
+            ? '<span class="dev-hint">collects up to 100 events or 15 s</span>'
             : '') +
-          '      <label class="form-label small mb-1">Request JSON</label>' +
-          '      <textarea id="' + textareaId + '" class="form-control mb-2" rows="8" ' +
-          '        style="font-family:Consolas,monospace;font-size:12px;" ' +
-          '        spellcheck="false">' + _escapeHtml(skeleton) + '</textarea>' +
-          '      <button class="btn btn-sm btn-primary grpc-call-btn"' +
-          (unsupported ? ' disabled title="Client-streaming RPCs are not supported"' : '') +
-          '              data-svc="' + _escapeHtml(svc.name) + '"' +
-          '              data-consul-url="' + _escapeHtml(svc.consulUrl || '') + '"' +
-          '              data-grpc-svc="' + _escapeHtml(s.name) + '"' +
-          '              data-method="' + _escapeHtml(m.name) + '"' +
-          '              data-textarea="' + textareaId + '"' +
-          '              data-result="' + resultId + '">' +
-          '        <i class="bi bi-play-fill me-1"></i>' + btnLabel +
-          '      </button>' +
-          '      <div id="' + resultId + '" class="mt-2 small"></div>' +
+          '      </div>' +
+          '      <div id="' + resultId + '" class="dev-response" hidden></div>' +
           '    </div>' +
           '  </div>' +
           '</div>';
       });
 
       html += '  </div>' +
-              '</div>';
+              '</section>';
     });
 
     target.innerHTML = html;
 
-    // Always-visible "Generate Robot resources" toolbar button.
-    // svc.protoPath (set when the user provided one via the fallback form
-    // or by an earlier successful run) is the default — if not set, the
-    // helper prompts for it interactively.
-    var genTop = document.getElementById('grpcGenRobotTop');
-    if (genTop) {
-      genTop.addEventListener('click', function () {
-        _runRobotGen(svc && svc.protoPath ? svc.protoPath : '', genTop);
-      });
-    }
-
-    // "Override proto path" link in the local-proto fallback banner —
-    // reveals the same form that appears on hard failures.
+    // "Use a different .proto folder" in the local-proto note reveals the
+    // same form that appears on hard failures.
     var showLink = document.getElementById('grpcShowProtoForm');
-    var slot     = document.getElementById('grpcProtoFormSlot');
+    var slot = document.getElementById('grpcProtoFormSlot');
     if (showLink && slot) {
       showLink.addEventListener('click', function (e) {
         e.preventDefault();
@@ -2856,96 +3692,128 @@
       });
     }
 
-    // Wire all Call buttons.
-    target.querySelectorAll('.grpc-call-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var consulName = btn.getAttribute('data-svc');
-        var consulUrl  = btn.getAttribute('data-consul-url') || '';
-        var grpcSvc = btn.getAttribute('data-grpc-svc');
-        var method = btn.getAttribute('data-method');
-        var textarea = document.getElementById(btn.getAttribute('data-textarea'));
-        var resultEl = document.getElementById(btn.getAttribute('data-result'));
-
-        var argsJson = textarea ? textarea.value : '{}';
-
-        if (resultEl) {
-          resultEl.className = 'mt-2 small alert alert-info py-2';
-          resultEl.innerHTML =
-            '<span class="spinner-border spinner-border-sm me-1"></span>Calling...';
+    target.querySelectorAll('.dev-format-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var ta = document.getElementById(b.getAttribute('data-textarea'));
+        if (!ta) return;
+        try {
+          ta.value = JSON.stringify(JSON.parse(ta.value || '{}'), null, 2);
+          ta.classList.remove('is-invalid');
+        } catch (e) {
+          ta.classList.add('is-invalid');
+          showToast('Request', 'Not valid JSON: ' + e.message, 'warning');
         }
-        btn.disabled = true;
-
-        MM.grpcClient.callMethod({
-          consulName: consulName,
-          consulUrl:  consulUrl,
-          grpcService: grpcSvc,
-          method: method,
-          argsJson: argsJson,
-          // svc.protoPath is set by _showGrpcServicePanel from
-          // sessionStorage; falsy when reflection works server-side.
-          protoPath: svc && svc.protoPath ? svc.protoPath : ''
-        }).then(function (data) {
-          if (!resultEl) return;
-          if (data.ok) {
-            if (data.streaming) {
-              var events = data.events || [];
-              var count = events.length;
-              var header =
-                '<strong>Stream collected ' + count + ' event' +
-                (count === 1 ? '' : 's') +
-                (data.truncated ? ' (truncated)' : '') + ':</strong>';
-
-              if (count === 0) {
-                resultEl.className = 'mt-2 small alert alert-warning py-2';
-                resultEl.innerHTML = header + ' (no events received)';
-                return;
-              }
-
-              // Render each event as an indexed JSON block.
-              var body = events.map(function (ev, i) {
-                var pretty = '';
-                try { pretty = JSON.stringify(ev, null, 2); }
-                catch (e) { pretty = String(ev); }
-                return '<div class="small text-muted mt-1">#' + i + '</div>' +
-                       '<pre class="mb-0" style="white-space:pre-wrap;">' +
-                       _escapeHtml(pretty) + '</pre>';
-              }).join('');
-
-              var errNote = data.error
-                ? '<div class="mt-2 text-danger"><strong>Stream error:</strong> ' +
-                  _escapeHtml(data.error) + '</div>'
-                : '';
-
-              resultEl.className = 'mt-2 small alert alert-success py-2';
-              resultEl.innerHTML =
-                header +
-                '<div style="max-height:320px;overflow:auto;">' + body + '</div>' +
-                errNote;
-            } else {
-              var pretty = '';
-              try { pretty = JSON.stringify(data.result, null, 2); }
-              catch (e) { pretty = String(data.result); }
-              resultEl.className = 'mt-2 small alert alert-success py-2';
-              resultEl.innerHTML =
-                '<strong>Response:</strong>' +
-                '<pre class="mb-0 mt-1" style="white-space:pre-wrap;">' +
-                _escapeHtml(pretty) + '</pre>';
-            }
-          } else {
-            resultEl.className = 'mt-2 small alert alert-danger py-2';
-            resultEl.innerHTML =
-              '<strong>Error:</strong> ' + _escapeHtml(data.error || 'Unknown');
-          }
-        }).catch(function (err) {
-          if (!resultEl) return;
-          resultEl.className = 'mt-2 small alert alert-danger py-2';
-          resultEl.innerHTML =
-            '<strong>Error:</strong> ' + _escapeHtml(err.message || err);
-        }).finally(function () {
-          btn.disabled = false;
-        });
       });
     });
+    target.querySelectorAll('.dev-reset-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var ta = document.getElementById(b.getAttribute('data-textarea'));
+        if (!ta) return;
+        ta.value = _grpcSkeletons[ta.id] || '{}';
+        ta.classList.remove('is-invalid');
+      });
+    });
+    target.querySelectorAll('.dev-json').forEach(function (ta) {
+      ta.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          var btn = target.querySelector('.grpc-call-btn[data-textarea="' + ta.id + '"]');
+          if (btn && !btn.disabled) btn.click();
+        }
+      });
+    });
+    target.querySelectorAll('.grpc-call-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { _invokeGrpcMethod(svc, btn); });
+    });
+  }
+
+  // Generated request skeletons, keyed by textarea id, for the Reset button.
+  var _grpcSkeletons = {};
+
+  function _invokeGrpcMethod(svc, btn) {
+    var textarea = document.getElementById(btn.getAttribute('data-textarea'));
+    var resultEl = document.getElementById(btn.getAttribute('data-result'));
+    var method = btn.getAttribute('data-method');
+    var argsJson = textarea ? textarea.value : '{}';
+
+    // Validate locally: a malformed request should not cost a round trip.
+    try {
+      JSON.parse(argsJson || '{}');
+      if (textarea) textarea.classList.remove('is-invalid');
+    } catch (e) {
+      if (textarea) textarea.classList.add('is-invalid');
+      _renderGrpcResult(resultEl, { ok: false, error: 'Request is not valid JSON: ' + e.message }, method, 0);
+      return;
+    }
+
+    if (resultEl) {
+      resultEl.hidden = false;
+      resultEl.className = 'dev-response dev-response-pending';
+      resultEl.innerHTML =
+        '<div class="dev-response-head"><span class="spinner-border spinner-border-sm me-2"></span>' +
+        'Calling ' + _escapeHtml(method) + '\u2026</div>';
+    }
+    btn.disabled = true;
+    var t0 = performance.now();
+
+    MM.grpcClient.callMethod({
+      consulName: btn.getAttribute('data-svc'),
+      consulUrl: btn.getAttribute('data-consul-url') || '',
+      grpcService: btn.getAttribute('data-grpc-svc'),
+      method: method,
+      argsJson: argsJson,
+      // svc.protoPath is set by _showGrpcServicePanel from sessionStorage;
+      // falsy when reflection works server-side.
+      protoPath: svc && svc.protoPath ? svc.protoPath : ''
+    }).then(function (data) {
+      _renderGrpcResult(resultEl, data, method, performance.now() - t0);
+    }).catch(function (err) {
+      _renderGrpcResult(resultEl, { ok: false, error: err.message || String(err) }, method, performance.now() - t0);
+    }).finally(function () {
+      btn.disabled = false;
+    });
+  }
+
+  function _renderGrpcResult(resultEl, data, method, elapsedMs) {
+    if (!resultEl) return;
+    var ok = !!(data && data.ok);
+    var kind = ok ? 'ok' : 'error';
+    var bodyText = '';
+    var extra = '';
+
+    if (ok && data.streaming) {
+      var events = data.events || [];
+      if (events.length === 0) kind = 'warn';
+      bodyText = events.map(function (ev, i) {
+        var pretty;
+        try { pretty = JSON.stringify(ev, null, 2); } catch (e) { pretty = String(ev); }
+        return '// event #' + i + '\n' + pretty;
+      }).join('\n');
+      extra = events.length + ' event' + (events.length === 1 ? '' : 's') +
+              (data.truncated ? ' (truncated)' : '');
+      if (data.error) extra += ' \u00b7 stream error: ' + data.error;
+    } else if (ok) {
+      try { bodyText = JSON.stringify(data.result, null, 2); } catch (e) { bodyText = String(data.result); }
+    } else {
+      bodyText = (data && data.error) || 'Unknown error';
+    }
+
+    var meta = _escapeHtml(method) + ' \u00b7 ' + Math.round(elapsedMs) + ' ms \u00b7 ' +
+               _escapeHtml(new Date().toLocaleTimeString()) +
+               (extra ? ' \u00b7 ' + _escapeHtml(extra) : '');
+
+    resultEl.hidden = false;
+    resultEl.className = 'dev-response dev-response-' + kind;
+    resultEl.innerHTML =
+      '<div class="dev-response-head">' +
+      '  <span class="dev-response-status">' + (ok ? 'OK' : 'ERROR') + '</span>' +
+      '  <span class="dev-response-meta">' + meta + '</span>' +
+      '  <button type="button" class="btn btn-sm btn-link dev-copy-btn" title="Copy response">' +
+      '    <i class="bi bi-clipboard"></i></button>' +
+      '</div>' +
+      '<pre class="dev-response-body">' + _escapeHtml(bodyText) + '</pre>';
+    var copy = resultEl.querySelector('.dev-copy-btn');
+    if (copy) copy.addEventListener('click', function () { _copyText(bodyText, 'Response'); });
   }
 
   function _escapeHtml(s) {
@@ -3141,20 +4009,22 @@
     });
   });
 
-  // Auto-reconnect from sessionStorage on page refresh
+  // Restore saved connections on startup. Each source is attempted
+  // independently: one that is down is shown offline and does not stop
+  // the others from coming up.
   try {
     var savedConnections = loadPersistedConnections();
     if (savedConnections.length > 0) {
-      console.log('[app] Auto-reconnecting', savedConnections.length, 'broker(s) from saved session...');
+      console.log('[app] Restoring', savedConnections.length, 'saved connection(s)...');
       savedConnections.forEach(function (saved) {
         if (MM.connections[saved.brokerUrl]) return; // skip duplicates
         addConnection(saved.brokerUrl, saved.routingKey);
         addAliasServiceForBroker(saved.brokerUrl, saved.routingKey);
-        requestServicesInforForBroker(saved.brokerUrl);
+        requestServicesInforForBroker(saved.brokerUrl, { restored: true });
       });
       updateBrokerHeaders();
     }
-  } catch (e) { /* sessionStorage unavailable */ }
+  } catch (e) { /* storage unavailable */ }
 
   /************************************************************
    *          Functions: Logic and Interaction with Services   *
@@ -3228,7 +4098,8 @@
           {
             label: 'Alias',
             iconSrc: IMAGE_PATH.READY,
-            serviceName: 'ServiceAlias'
+            serviceName: 'ServiceAlias',
+            guiSupport: true
           }
         ]
       }
@@ -3304,11 +4175,7 @@
     unloadFunction = null;
     clearServiceList();
     clearServiceContent();
-    try {
-      sessionStorage.removeItem('mm_connections');
-      sessionStorage.removeItem('mm_brokerUrl');
-      sessionStorage.removeItem('mm_routingKey');
-    } catch (e) { /* sessionStorage unavailable */ }
+    clearPersistedConnections();
   }
 
   /**
@@ -3337,7 +4204,8 @@
         label: service.name,
         iconSrc: IMAGE_PATH.READY,
         serviceName: service.name,
-        downloadable: !!service.downloadable
+        downloadable: !!service.downloadable,
+        guiSupport: service.gui_support === true
       };
 
       if (!existingItem) {
@@ -3638,10 +4506,11 @@
       console.warn('[app] Registry shutdown detected for broker:', brokerUrl);
       showToast(
         'Registry Disconnected',
-        'The Service Registry on ' + brokerUrl + ' has shut down.',
+        'The Service Registry on ' + brokerUrl + ' has shut down. ' +
+        'It stays listed so you can retry or remove it.',
         'warning'
       );
-      disconnectBroker(brokerUrl);
+      markBrokerOffline(brokerUrl, 'Service Registry has shut down');
       return;
     }
 
@@ -3756,7 +4625,16 @@
    *
    * @param {string} brokerUrl - The broker to query.
    */
-  function requestServicesInforForBroker(brokerUrl) {
+  /**
+   * @param {string} brokerUrl - The broker to query.
+   * @param {object} [opts]
+   * @param {boolean} [opts.restored] - True when re-attaching a saved
+   *   connection (startup restore or manual retry). A failure then keeps
+   *   the source listed as offline instead of discarding it: the user
+   *   chose it once, and it may simply not be up yet.
+   */
+  function requestServicesInforForBroker(brokerUrl, opts) {
+    opts = opts || {};
     var conn = MM.connections[brokerUrl];
     if (!conn) return;
 
@@ -3768,6 +4646,9 @@
     // Set active broker context for the request
     setRegistryServiceInfo({ brokerUrl: brokerUrl, routingKey: conn.routingKey });
 
+    createBrokerSection(brokerUrl);
+    setBrokerStatus(brokerUrl, 'connecting');
+
     requestService(requestData, SERVICES_EXCHANGE_NAME, conn.routingKey)
       .then(function (data) {
         console.log('Received service infor from', brokerUrl, ':', data);
@@ -3776,16 +4657,28 @@
         rebuildMergedServicesInfor();
         var serviceItems = extractServicesInformation(servicesInfor);
         createAccordionItems(serviceItems, brokerUrl);
+        setBrokerStatus(brokerUrl, 'online');
         updateConnectionBadge();
-        showToast('Connected', 'Successfully connected to ' + brokerUrl, 'success');
+        showToast('Connected',
+          (opts.restored ? 'Restored connection to ' : 'Successfully connected to ') + brokerUrl,
+          'success');
 
         // Subscribe to realtime updates from this broker's Registry
         subscribeToRealtimeUpdatesForBroker(brokerUrl);
       })
       .catch(function (error) {
         console.error('Error loading data from', brokerUrl, ':', error);
-        disconnectBroker(brokerUrl);
-        showToast('Connection Failed', 'Could not connect to ' + brokerUrl + ': ' + (error.message || error), 'danger');
+        var reason = error.message || String(error);
+        if (opts.restored) {
+          markBrokerOffline(brokerUrl, 'Could not connect: ' + reason);
+          showToast('Connection Failed',
+            'Could not restore ' + brokerUrl + ': ' + reason +
+            '. Use the retry button on its header, or remove it.',
+            'warning');
+        } else {
+          disconnectBroker(brokerUrl);
+          showToast('Connection Failed', 'Could not connect to ' + brokerUrl + ': ' + reason, 'danger');
+        }
       });
   }
 
@@ -3926,8 +4819,11 @@
     } else if (_currentMode === 'creator') {
       deactivateCreatorMode();
     }
+    // Leaving the Services view hides the open component: stop its polling (R5).
+    if (_currentMode === 'services' && mode !== 'services') _suspendActiveComponent();
 
     _currentMode = mode;
+    _syncInspector();
 
     // Toggle sidebar panels
     var sidebarServices = document.getElementById('sidebarServices');
@@ -3936,6 +4832,18 @@
     if (sidebarServices) sidebarServices.classList.toggle('active', mode === 'services');
     if (sidebarFleet) sidebarFleet.classList.toggle('active', mode === 'fleet');
     if (sidebarCreator) sidebarCreator.classList.toggle('active', mode === 'creator');
+    var sidebarTestProject = document.getElementById('sidebarTestProject');
+    if (sidebarTestProject) sidebarTestProject.classList.toggle('active', mode === 'testproject');
+    var sidebarBench = document.getElementById('sidebarBench');
+    if (sidebarBench) sidebarBench.classList.toggle('active', mode === 'bench');
+    var benchContent = document.getElementById('benchContent');
+    if (benchContent) benchContent.style.display = mode === 'bench' ? '' : 'none';
+    // Plugin views (navigators and stage views with their own containers).
+    document.querySelectorAll('[data-endo-mode]').forEach(function (el) {
+      var on = el.getAttribute('data-endo-mode') === mode;
+      if (el.classList.contains('sidebar-mode')) el.classList.toggle('active', on);
+      else el.style.display = on ? '' : 'none';
+    });
 
     // Toggle content panels
     var serviceContent = document.getElementById('serviceContent');
@@ -3944,20 +4852,37 @@
     if (serviceContent) serviceContent.style.display = mode === 'services' ? '' : 'none';
     if (fleetContent) fleetContent.style.display = mode === 'fleet' ? '' : 'none';
     if (creatorContent) creatorContent.style.display = mode === 'creator' ? '' : 'none';
+    var testProjectContent = document.getElementById('testProjectContent');
+    if (testProjectContent) testProjectContent.style.display = mode === 'testproject' ? '' : 'none';
 
-    // Toggle nav buttons
+    // Toggle nav buttons. Developer / Administrator Tools are menus; the
+    // menu button lights up while one of its views is active so the user
+    // can tell where they are.
     var btnServices = document.getElementById('btnModeServices');
-    var btnFleet = document.getElementById('btnModeFleet');
-    var btnCreator = document.getElementById('btnModeCreator');
-    if (btnServices) btnServices.classList.toggle('active', mode === 'services');
-    if (btnFleet) btnFleet.classList.toggle('active', mode === 'fleet');
-    if (btnCreator) btnCreator.classList.toggle('active', mode === 'creator');
+    var btnDevTools = document.getElementById('btnDevTools');
+    var btnAdminTools = document.getElementById('btnAdminTools');
+    if (btnServices) btnServices.classList.toggle('active', mode === 'services' || mode === 'bench');
+    var btnBench = document.getElementById('btnModeBench');
+    if (btnBench) btnBench.classList.toggle('active', mode === 'bench');
+    if (btnDevTools) btnDevTools.classList.toggle('active', mode === 'creator' || mode === 'testproject');
+    if (btnAdminTools) btnAdminTools.classList.toggle('active', mode === 'fleet');
+    _syncSidebarSwitch();
+    _setRibbonTab(_ribbonTabForMode(mode), { fromMode: true });
+    // The bench's tiles poll only while it is on screen (R5). After the
+    // ribbon tab: a composition may open on its own role's tab.
+    if (MM.endo && MM.endo.bench) MM.endo.bench.setActive(mode === 'bench');
+    if (MM.endo && MM.endo.plugins) MM.endo.plugins.modeChanged(mode);
 
     // Activate new mode
     if (mode === 'fleet') {
       activateFleetMode();
     } else if (mode === 'creator') {
       activateCreatorMode();
+    } else if (mode === 'testproject') {
+      renderTestProjectView();
+    } else if (mode === 'services') {
+      if (_reopenOnServices) _reopenSelectedService();
+      else _resumeActiveComponent();
     }
   }
 
@@ -4033,19 +4958,2641 @@
     if (MM.serviceCreator) MM.serviceCreator.deactivate();
   }
 
-  // Wire mode toggle buttons
-  var btnModeServices = document.getElementById('btnModeServices');
-  var btnModeFleet = document.getElementById('btnModeFleet');
-  if (btnModeServices) {
-    btnModeServices.addEventListener('click', function () { switchMode('services'); });
+  // Wire the navbar. Services is the default runtime view; everything
+  // else lives behind the Developer Tools / Administrator Tools menus so
+  // it is reachable without being in the operator's way.
+  function _wire(id, handler) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', handler);
   }
-  if (btnModeFleet) {
-    btnModeFleet.addEventListener('click', function () { switchMode('fleet'); });
+  // btnModeServices (the User tab) is wired with the ribbon tabs below: it
+  // opens Services, or keeps the bench when that is showing.
+
+  // Developer Tools -- generate and test
+  _wire('btnModeCreator', function () { switchMode('creator'); });
+  _wire('btnDevApiExplorer', function () {
+    // The explorer lives in the inspector so the service stays in view.
+    switchMode('services');
+    setDevMode(true, { tab: 'api', silent: true });
+  });
+  // Switch the selected service between its component tiles and the
+  // classic panel its folder also ships. The choice sticks for that
+  // service until it is switched back.
+  _wire('btnDevClassicPanel', function () {
+    _withSelectedService('Classic panel', function (sel) {
+      var svc = sel.consul;
+      if (!svc || !svc.gui) {
+        showToast('Classic panel', sel.name + ' does not declare a GUI.', 'info');
+        return;
+      }
+      _folderHasBothKinds(svc.gui).then(function (both) {
+        if (!both) {
+          showToast('Classic panel', svc.gui + ' ships only one kind of GUI.', 'info');
+          _refreshClassicPanelBtn(sel);
+          return;
+        }
+        switchMode('services');
+        _openConsulServiceGui(sel, { classic: !_classicPanels[sel.name] });
+      });
+    });
+  });
+  _wire('btnDevCodeExamples', function () {
+    _withSelectedService('Code Examples', function (sel) {
+      switchMode('services');
+      showServiceHelper(sel.infoKey);
+    });
+  });
+  // Robot resources and test projects are reached through plugins
+  // (web/plugins/robot-gen, web/plugins/test-project); their commands call
+  // these shell actions (see the plugins init below).
+  function _testProjectView() {
+    if (_getTestProject()) switchMode('testproject');
+    else openTestProject();   // lands in the view once a project is open
   }
-  var btnModeCreator = document.getElementById('btnModeCreator');
-  if (btnModeCreator) {
-    btnModeCreator.addEventListener('click', function () { switchMode('creator'); });
+  _wire('btnDevExportToProject', function () {
+    _withSelectedService('Add to test project', function (sel) { exportToTestProject(sel); });
+  });
+  (function () {
+    var apply = document.getElementById('btnTestProjectApply');
+    if (!apply) return;
+    apply.addEventListener('click', function () {
+      if (!_tpState) return;
+      if (_tpState.action === 'init') _applyInit();
+      else if (_tpState.action === 'export') _applyExport();
+      else if (_tpState.action === 'run') _applyRunDialog();
+      else if (_tpState.action === 'run-settings') _applyRunSettings();
+    });
+  })();
+
+  /************************************************************
+   *                      Test projects                        *
+   ************************************************************/
+
+  // The open project is a folder path on the bridge's machine; the bridge
+  // does all file I/O, so this also works in browser mode.
+  var TEST_PROJECT_KEY = 'mm_test_project';
+  var _testProjectModal = null;
+  var _tpState = null;   // { action: 'init' | 'export' | 'done', ... }
+
+  var TP_STATUS = {
+    create:    ['new', 'Will be created'],
+    update:    ['update', 'Generated earlier and not edited since: will be regenerated'],
+    unchanged: ['unchanged', 'Already up to date'],
+    modified:  ['edited locally', 'Differs from what this tool last wrote, or was not written by it: left alone unless you allow overwriting'],
+    keep:      ['kept', 'Yours to edit: never overwritten']
+  };
+
+  function _getTestProject() {
+    try { return localStorage.getItem(TEST_PROJECT_KEY) || ''; } catch (e) { return ''; }
   }
+
+  function _setTestProject(root) {
+    try {
+      if (root) localStorage.setItem(TEST_PROJECT_KEY, root);
+      else localStorage.removeItem(TEST_PROJECT_KEY);
+    } catch (e) { /* storage unavailable */ }
+    _inspectorKey = null;
+    _syncSidebarSwitch();
+    if (_devMode) _renderInspector(_selectedService);
+  }
+
+  function _projectLabel(root) {
+    var parts = String(root || '').replace(/[\\\/]+$/, '').split(/[\\\/]/);
+    return parts[parts.length - 1] || String(root || '');
+  }
+
+  function _pickFolder(title, current) {
+    if (window.electronAPI && window.electronAPI.showOpenDialog) {
+      return window.electronAPI.showOpenDialog({
+        title: title,
+        defaultPath: current || undefined,
+        properties: ['openDirectory', 'createDirectory']
+      }).then(function (res) {
+        return ((res && res.filePaths && res.filePaths[0]) || '').trim();
+      });
+    }
+    return Promise.resolve((window.prompt(title + ' — folder path:', current || '') || '').trim());
+  }
+
+  function _tpBody(html) {
+    document.getElementById('testProjectModalBody').innerHTML = html;
+  }
+
+  function _tpSetApply(html) {
+    var apply = document.getElementById('btnTestProjectApply');
+    var cancel = document.getElementById('btnTestProjectCancel');
+    apply.hidden = !html;
+    apply.disabled = false;
+    if (html) apply.innerHTML = html;
+    cancel.textContent = html ? 'Cancel' : 'Close';
+  }
+
+  function _tpShow(titleHtml, bodyHtml, applyHtml) {
+    document.getElementById('testProjectModalTitle').innerHTML = titleHtml;
+    _tpBody(bodyHtml);
+    _tpSetApply(applyHtml);
+    if (!_testProjectModal) {
+      _testProjectModal = new bootstrap.Modal(document.getElementById('testProjectModal'));
+    }
+    _testProjectModal.show();
+  }
+
+  /** Run fn once the modal has finished hiding (Bootstrap cannot re-show mid-transition). */
+  function _afterModalHidden(fn) {
+    var el = document.getElementById('testProjectModal');
+    if (!el.classList.contains('show')) { fn(); return; }
+    el.addEventListener('hidden.bs.modal', function handler() {
+      el.removeEventListener('hidden.bs.modal', handler);
+      fn();
+    });
+    _testProjectModal.hide();
+  }
+
+  function openTestProject(onReady) {
+    return _pickFolder('Open test project', _getTestProject())
+      .then(function (root) {
+        if (!root) return null;
+        return MM.testProjectClient.describe(root).then(function (d) {
+          if (!d.exists) throw new Error('Folder does not exist: ' + root);
+          if (d.initialized) {
+            _setTestProject(d.root);
+            showToast('Test project', 'Opened ' + d.name + ' (' + d.runner_name + ', ' +
+              d.services.length + ' exported service' + (d.services.length === 1 ? '' : 's') + ').',
+              'success');
+            if (onReady) onReady(d);
+            else _showTestProjectView();
+          } else {
+            _showInitDialog(d, onReady);
+          }
+          return d;
+        });
+      })
+      .catch(function (err) {
+        showToast('Test project', err.message || String(err), 'danger');
+      });
+  }
+
+  function _showInitDialog(d, onReady) {
+    var runners = (d.runners || []).map(function (r) {
+      return '<option value="' + _escapeHtml(r.id) + '">' + _escapeHtml(r.name) + '</option>';
+    }).join('');
+    var detected = d.detected || {};
+    var existing = detected.robot_suites
+      ? '<div class="dev-note"><i class="bi bi-info-circle me-1"></i>The folder already holds ' +
+        detected.robot_suites + ' .robot file' + (detected.robot_suites === 1 ? '' : 's') +
+        '. Existing files are never moved or changed.</div>'
+      : '';
+    var tree =
+      _escapeHtml(d.name) + '/\n' +
+      '├─ testproject.json                     manifest: runner, layout, what was exported\n' +
+      '├─ testsuites/\n' +
+      '│  ├─ config/robot_config.jsonp         RF AIO config (level 3), CONSUL_ADDR in params.global\n' +
+      '│  └─ &lt;service&gt;_smoke.robot            starter suite per service — yours to edit\n' +
+      '├─ resources/&lt;service&gt;/*.resource       generated keywords — refreshed on export\n' +
+      '└─ proto/&lt;service&gt;/*.proto              copied protos, when available';
+
+    _tpState = { action: 'init', root: d.root, onReady: onReady };
+    _tpShow('<i class="bi bi-folder-plus me-2"></i>Initialize test project',
+      '<p class="mb-2"><code>' + _escapeHtml(d.root) + '</code> is not a test project yet.</p>' +
+      existing +
+      '<div class="mb-3">' +
+      '  <label class="form-label small" for="tpRunner">Test runner</label>' +
+      '  <select class="form-select form-select-sm tp-runner" id="tpRunner">' + runners + '</select>' +
+      '  <div class="form-text">The runner adapter decides layout and generated files; other runners can be added without changing projects that already exist.</div>' +
+      '</div>' +
+      '<div class="tp-layout"><div class="small text-muted mb-1">Structure exports will use</div><pre>' + tree + '</pre></div>',
+      '<i class="bi bi-check2 me-1"></i>Initialize');
+  }
+
+  function _applyInit() {
+    var st = _tpState;
+    var runner = (document.getElementById('tpRunner') || {}).value || 'robotframework-aio';
+    var consul = _connectedConsuls.length ? _connectedConsuls[0].url : '';
+    var apply = document.getElementById('btnTestProjectApply');
+    apply.disabled = true;
+    apply.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Initializing…';
+    MM.testProjectClient.init(st.root, runner, consul)
+      .then(function (d) {
+        _setTestProject(d.root);
+        st.action = 'done';
+        showToast('Test project', 'Initialized ' + d.name + ' (' + d.runner_name + ').', 'success');
+        _afterModalHidden(function () {
+          if (st.onReady) st.onReady(d);
+          else _showTestProjectView();
+        });
+      })
+      .catch(function (err) {
+        _tpBody(_devAlert('danger', 'Initialization failed', err.message || err));
+        _tpSetApply(null);
+      });
+  }
+
+  function exportToTestProject(sel) {
+    if (!sel || !sel.consul) {
+      showToast('Add to test project',
+        'Only Consul-registered gRPC services can be exported — select one in the Services view.', 'info');
+      return;
+    }
+    var root = _getTestProject();
+    if (!root) {
+      openTestProject(function () { exportToTestProject(sel); });
+      return;
+    }
+    _tpState = {
+      action: 'export',
+      sel: sel,
+      opts: {
+        root: root,
+        consul_name: sel.consul.name,
+        consul: sel.consul.consulUrl || '',
+        proto_path: _getStoredProtoPath(sel.consul.name),
+        prefer_reflection: false,
+        create_starter: true,
+        overwrite_modified: false
+      }
+    };
+    _tpShow('<i class="bi bi-box-arrow-in-down me-2"></i>Add <code>' + _escapeHtml(sel.consul.name) +
+            '</code> to test project <code>' + _escapeHtml(_projectLabel(root)) + '</code>',
+            '', null);
+    _planExport();
+  }
+
+  function _planExport() {
+    var st = _tpState;
+    _tpBody(_devLoading('Planning the export…'));
+    _tpSetApply(null);
+    MM.testProjectClient.exportService(Object.assign({}, st.opts, { apply: false }))
+      .then(function (plan) {
+        if (_tpState !== st) return;
+        st.plan = plan;
+        _renderExportPlan(plan);
+      })
+      .catch(function (err) {
+        if (_tpState !== st) return;
+        _tpBody(_devAlert('danger', 'The export could not be planned', err.message || err) +
+          '<div class="tp-links"><a href="#" id="tpPickProto">Use a .proto folder…</a>' +
+          '<a href="#" id="tpOpenOther">Open another test project…</a></div>');
+        _wirePickProto(st);
+        var other = document.getElementById('tpOpenOther');
+        if (other) {
+          other.addEventListener('click', function (e) {
+            e.preventDefault();
+            _afterModalHidden(function () {
+              openTestProject(function () { exportToTestProject(st.sel); });
+            });
+          });
+        }
+      });
+  }
+
+  function _wirePickProto(st) {
+    var pick = document.getElementById('tpPickProto');
+    if (!pick) return;
+    pick.addEventListener('click', function (e) {
+      e.preventDefault();
+      _pickFolder('Folder holding the .proto of ' + st.opts.consul_name, st.opts.proto_path)
+        .then(function (dir) {
+          if (!dir) return;
+          st.opts.proto_path = dir;
+          st.opts.prefer_reflection = false;
+          _setStoredProtoPath(st.opts.consul_name, dir);
+          _planExport();
+        });
+    });
+  }
+
+  function _tpWrites(plan, overwrite) {
+    return plan.files.filter(function (f) {
+      return f.status === 'create' || f.status === 'update' || (overwrite && f.status === 'modified');
+    }).length;
+  }
+
+  function _renderExportPlan(plan) {
+    var st = _tpState;
+    var src = plan.source || {};
+    var modified = plan.files.filter(function (f) { return f.status === 'modified'; }).length;
+
+    var sourceHtml = src.kind === 'proto'
+      ? '<i class="bi bi-file-earmark-code me-1"></i>Generated from <code>' + _escapeHtml(src.path) +
+        '</code>; that proto and its local imports are copied into the project.'
+      : '<i class="bi bi-broadcast me-1"></i>Generated from the server reflection of <code>' +
+        _escapeHtml(src.path || '') + '</code>. No proto is copied; the suite reaches the service through reflection.';
+    var links = '<a href="#" id="tpPickProto">Use a .proto folder…</a>' +
+      (src.kind === 'proto' ? '<a href="#" id="tpUseReflection">Generate from server reflection instead</a>' : '');
+
+    var rows = plan.files.map(function (f) {
+      var meta = TP_STATUS[f.status] || [f.status, ''];
+      return '<tr>' +
+        '<td><span class="tp-status tp-status-' + _escapeHtml(f.status) + '" title="' + _escapeHtml(meta[1]) + '">' +
+        _escapeHtml(meta[0]) + '</span></td>' +
+        '<td><code>' + _escapeHtml(f.path) + '</code>' +
+        (f.diff ? '<details class="tp-diff"><summary>Show diff</summary><pre>' + _escapeHtml(f.diff) + '</pre></details>' : '') +
+        '</td>' +
+        '<td class="tp-role">' + (f.role === 'starter' ? 'starter' : 'generated') + '</td>' +
+        '</tr>';
+    }).join('');
+
+    var notes = (plan.warnings || []).concat(plan.advisories || []).map(function (a) {
+      return '<div class="dev-note"><i class="bi bi-exclamation-circle me-1"></i>' + _escapeHtml(a) + '</div>';
+    }).join('');
+
+    _tpBody(
+      '<div class="tp-source">' + sourceHtml + '<div class="tp-links">' + links + '</div></div>' +
+      notes +
+      '<div class="dev-note" id="tpUpToDate" hidden><i class="bi bi-check2-circle me-1"></i>Nothing to write — the project is up to date.</div>' +
+      '<div class="tp-options">' +
+      '  <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="tpStarter"' +
+      (st.opts.create_starter ? ' checked' : '') + '>' +
+      '    <label class="form-check-label small" for="tpStarter">Create a starter suite and RF AIO config when missing</label></div>' +
+      (modified
+        ? '  <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="tpOverwrite"' +
+          (st.opts.overwrite_modified ? ' checked' : '') + '>' +
+          '    <label class="form-check-label small" for="tpOverwrite">Overwrite ' + modified + ' locally edited file' +
+          (modified === 1 ? '' : 's') + '</label></div>'
+        : '') +
+      '</div>' +
+      '<table class="tp-table"><thead><tr><th>Status</th><th>File</th><th>Kind</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div class="tp-hint"><span class="small text-muted">Run it from the project root</span>' +
+      '<code id="tpRunHint" title="Copy">' + _escapeHtml(plan.run_hint || '') + '</code></div>'
+    );
+
+    function refreshApply() {
+      var n = _tpWrites(plan, st.opts.overwrite_modified);
+      document.getElementById('tpUpToDate').hidden = n > 0;
+      _tpSetApply(n ? '<i class="bi bi-check2 me-1"></i>Write ' + n + ' file' + (n === 1 ? '' : 's') : null);
+    }
+
+    var starter = document.getElementById('tpStarter');
+    if (starter) {
+      starter.addEventListener('change', function () {
+        st.opts.create_starter = starter.checked;
+        _planExport();
+      });
+    }
+    var overwrite = document.getElementById('tpOverwrite');
+    if (overwrite) {
+      overwrite.addEventListener('change', function () {
+        st.opts.overwrite_modified = overwrite.checked;
+        refreshApply();
+      });
+    }
+    _wirePickProto(st);
+    var refl = document.getElementById('tpUseReflection');
+    if (refl) {
+      refl.addEventListener('click', function (e) {
+        e.preventDefault();
+        st.opts.prefer_reflection = true;
+        _planExport();
+      });
+    }
+    var hint = document.getElementById('tpRunHint');
+    if (hint) hint.addEventListener('click', function () { _copyText(plan.run_hint, 'Command'); });
+    refreshApply();
+  }
+
+  function _applyExport() {
+    var st = _tpState;
+    var apply = document.getElementById('btnTestProjectApply');
+    apply.disabled = true;
+    apply.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Writing…';
+    MM.testProjectClient.exportService(Object.assign({}, st.opts, { apply: true }))
+      .then(function (res) {
+        if (_tpState !== st) return;
+        st.action = 'done';
+        _renderExportResult(res);
+      })
+      .catch(function (err) {
+        if (_tpState !== st) return;
+        _tpBody(_devAlert('danger', 'Export failed', err.message || err));
+        _tpSetApply(null);
+      });
+  }
+
+  function _renderExportResult(res) {
+    var written = res.written || [];
+    var skipped = res.skipped || [];
+    function list(paths) {
+      return '<ul class="tp-list">' + paths.map(function (p) {
+        return '<li><code>' + _escapeHtml(p) + '</code></li>';
+      }).join('') + '</ul>';
+    }
+    _tpBody(
+      '<div class="dev-alert dev-alert-ok"><strong>' + written.length + ' file' + (written.length === 1 ? '' : 's') +
+      ' written to <code>' + _escapeHtml(res.root) + '</code></strong></div>' +
+      (written.length ? list(written) : '') +
+      (skipped.length
+        ? '<div class="dev-note"><i class="bi bi-shield-check me-1"></i>Left alone because they were edited locally:</div>' + list(skipped)
+        : '') +
+      '<div class="tp-hint"><span class="small text-muted">Run it from the project root</span>' +
+      '<code id="tpRunHint" title="Copy">' + _escapeHtml(res.run_hint || '') + '</code></div>'
+    );
+    var hint = document.getElementById('tpRunHint');
+    if (hint) hint.addEventListener('click', function () { _copyText(res.run_hint, 'Command'); });
+    _tpSetApply(null);
+    showToast('Test project', written.length + ' file(s) written' +
+      (skipped.length ? ', ' + skipped.length + ' left alone' : '') + '.', 'success');
+    if (_currentMode === 'testproject') renderTestProjectView();
+  }
+
+  /************************************************************
+   *                   Test project view                       *
+   ************************************************************/
+
+  // Sidebar: the project's files grouped by kind, with role and sync state.
+  // Content: an overview (exported services, re-export, add a running
+  // service) or a read-only preview of the selected file.
+  // `runs`: the Runs pane is shown (then `selected` is null).
+  var _tpView = { selected: null, data: null, runs: false };
+
+  var TPV_GROUPS = [
+    { kind: 'suite', title: 'Suites', icon: 'bi-play-circle' },
+    { kind: 'flow', title: 'Flows', icon: 'bi-diagram-3' },
+    { kind: 'resource', title: 'Resources', icon: 'bi-puzzle' },
+    { kind: 'proto', title: 'Protos', icon: 'bi-file-earmark-code' },
+    { kind: 'config', title: 'Configuration', icon: 'bi-sliders' },
+    { kind: 'other', title: 'Other files', icon: 'bi-file-earmark' }
+  ];
+
+  var TPV_ROLE = {
+    manifest:  ['manifest', 'Written by the tool: runner, layout and what was exported'],
+    generated: ['gen', 'Generated: refreshed by exports; do not edit'],
+    starter:   ['starter', 'Created once by an export, then yours'],
+    yours:     ['yours', 'Not written by an export']
+  };
+
+  function _showTestProjectView() {
+    _tpView.selected = null;
+    _tpView.runs = false;
+    if (_currentMode === 'testproject') renderTestProjectView();
+    else switchMode('testproject');
+  }
+
+  function _tpvGroupOf(f) {
+    return (f.kind === 'suite' || f.kind === 'flow' || f.kind === 'resource' || f.kind === 'proto' ||
+            f.kind === 'config')
+      ? f.kind : 'other';
+  }
+
+  function _tpvLabel(data, f) {
+    var layout = data.layout || {};
+    var prefixes = [layout.suites, layout.resources, layout.proto].filter(Boolean);
+    for (var i = 0; i < prefixes.length; i++) {
+      if (f.path.indexOf(prefixes[i] + '/') === 0) return f.path.slice(prefixes[i].length + 1);
+    }
+    return f.path;
+  }
+
+  function _tpvNote(text) {
+    return '<div class="dev-note"><i class="bi bi-info-circle me-1"></i>' + _escapeHtml(text) + '</div>';
+  }
+
+  /** A running (Consul-discovered) service as a selection object, or null. */
+  function _findDiscoveredService(name) {
+    for (var i = 0; i < _connectedConsuls.length; i++) {
+      var conn = _connectedConsuls[i];
+      var svc = (conn.services || []).filter(function (s) { return s.name === name; })[0];
+      if (svc) {
+        return { name: svc.name, infoKey: svc.name + '@' + conn.url,
+                 consul: Object.assign({}, svc, { consulUrl: conn.url }), info: null };
+      }
+    }
+    return null;
+  }
+
+  function _tpvWireOpen() {
+    var open = document.getElementById('tpvOpen');
+    if (open) open.addEventListener('click', function (e) { e.preventDefault(); openTestProject(); });
+  }
+
+  function renderTestProjectView() {
+    var sidebar = document.getElementById('testProjectTree');
+    var content = document.getElementById('testProjectContent');
+    if (!sidebar || !content) return;
+    var root = _getTestProject();
+    if (!root) {
+      _tpvEditor = null;
+      sidebar.innerHTML = '<div class="tpv-empty">No test project open.</div>';
+      content.innerHTML =
+        '<div class="content-placeholder"><span><i class="bi bi-folder2-open me-2"></i>' +
+        'No test project is open. <a href="#" id="tpvOpen">Open one\u2026</a></span></div>';
+      _tpvWireOpen();
+      return;
+    }
+    sidebar.innerHTML = '<div class="tpv-empty">Reading the project\u2026</div>';
+    MM.testProjectClient.tree(root)
+      .then(function (data) {
+        if (_getTestProject() !== root) return;
+        _tpView.data = data;
+        // Never throw away unsaved edits because the view was re-entered.
+        if (_tpvDirty() && _tpView.selected === _tpvEditor.path) {
+          _renderTpvSidebar(data);
+          return;
+        }
+        var keep = _tpView.selected && data.files.some(function (f) { return f.path === _tpView.selected; });
+        if (!keep) _tpView.selected = null;
+        _renderTpvSidebar(data);
+        if (_tpView.selected) _showTpvFile(_tpView.selected);
+        else if (_tpView.runs) _renderTpvRuns();
+        else _renderTpvOverview(data);
+      })
+      .catch(function (err) {
+        sidebar.innerHTML = '';
+        content.innerHTML =
+          _devAlert('danger', 'Could not read the test project', err.message || err) +
+          '<div class="tp-links"><a href="#" id="tpvOpen">Open another test project\u2026</a></div>';
+        _tpvWireOpen();
+      });
+  }
+
+  function _renderTpvSidebar(data) {
+    var sidebar = document.getElementById('testProjectTree');
+    var html =
+      '<div class="tpv-project">' +
+      '  <div class="tpv-project-name"><i class="bi bi-folder2-open me-1"></i>' + _escapeHtml(data.name) + '</div>' +
+      '  <div class="tpv-project-meta">' + _escapeHtml(data.runner_name) + '</div>' +
+      '</div>' +
+      '<button type="button" class="tpv-item' + (_tpView.selected || _tpView.runs ? '' : ' active') + '" data-tpv-overview="1">' +
+      '  <i class="bi bi-grid-1x2"></i><span class="tpv-item-label">Overview</span></button>' +
+      (data.can_run
+        ? '<button type="button" class="tpv-item' + (_tpView.runs ? ' active' : '') + '" data-tpv-runs="1">' +
+          '  <i class="bi bi-activity"></i><span class="tpv-item-label">Runs</span>' +
+          (_tprLiveRun(data.root) ? '<span class="tpv-live" title="A run is in progress"></span>' : '') +
+          '</button>'
+        : '');
+
+    TPV_GROUPS.forEach(function (g) {
+      var files = data.files.filter(function (f) { return _tpvGroupOf(f) === g.kind; });
+      if (!files.length) return;
+      html += '<div class="tpv-group"><div class="tpv-group-title"><span><i class="bi ' + g.icon + ' me-1"></i>' +
+              g.title + '</span><span>' +
+              (g.kind === 'suite'
+                ? '<button type="button" class="tpv-add" data-tpv-new-suite="1" title="New suite">' +
+                  '<i class="bi bi-plus-lg"></i></button>'
+                : '') +
+              files.length + '</span></div>';
+      files.forEach(function (f) {
+        var role = TPV_ROLE[f.role] || [f.role, ''];
+        var state = f.state === 'edited' ? ' \u2014 edited since the last export'
+                  : f.state === 'missing' ? ' \u2014 deleted since the last export' : '';
+        var open = _tpView.selected === f.path;
+        html +=
+          '<button type="button" class="tpv-item' + (open ? ' active' : '') + '"' +
+          ' data-tpv-path="' + _escapeHtml(f.path) + '" title="' + _escapeHtml(f.path + state) + '">' +
+          '  <span class="tpv-dot tpv-state-' + _escapeHtml(f.state) + '"></span>' +
+          '  <span class="tpv-item-label">' + _escapeHtml(_tpvLabel(data, f)) +
+          (open && _tpvDirty() ? ' <span class="tpv-unsaved" title="Unsaved changes">\u25cf</span>' : '') + '</span>' +
+          (f.runnable
+            ? '  <span class="tpv-play" role="button" tabindex="0" data-tpv-run="' + _escapeHtml(f.path) + '"' +
+              ' title="Run ' + _escapeHtml(f.path) + '…"><i class="bi bi-play-fill"></i></span>'
+            : '') +
+          '  <span class="tpv-role tpv-role-' + _escapeHtml(f.role) + '" title="' + _escapeHtml(role[1]) + '">' +
+               _escapeHtml(role[0]) + '</span>' +
+          '</button>';
+      });
+      html += '</div>';
+    });
+    if (data.truncated) html += '<div class="tpv-empty">Only the first 2000 files are listed.</div>';
+    sidebar.innerHTML = html;
+
+    sidebar.querySelectorAll('[data-tpv-overview]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        _tpvGuard(function () {
+          _tpView.selected = null;
+          _tpView.runs = false;
+          _renderTpvSidebar(data);
+          _renderTpvOverview(data);
+        });
+      });
+    });
+    sidebar.querySelectorAll('[data-tpv-runs]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        _tpvGuard(function () { _showTpvRuns(); });
+      });
+    });
+    sidebar.querySelectorAll('[data-tpv-run]').forEach(function (b) {
+      function go(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        _tpvRunDialog(b.getAttribute('data-tpv-run'));
+      }
+      b.addEventListener('click', go);
+      b.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') go(e); });
+    });
+    sidebar.querySelectorAll('[data-tpv-path]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var path = b.getAttribute('data-tpv-path');
+        if (path === _tpView.selected && _tpvEditor) return;
+        _tpvGuard(function () {
+          _tpView.runs = false;
+          _tpView.selected = path;
+          _renderTpvSidebar(data);
+          _showTpvFile(path);
+        });
+      });
+    });
+    sidebar.querySelectorAll('[data-tpv-new-suite]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        _tpvGuard(function () { _showTpvNewSuite(data); });
+      });
+    });
+  }
+
+  function _renderTpvOverview(data) {
+    var content = document.getElementById('testProjectContent');
+    function count(kind) {
+      return data.files.filter(function (f) { return f.kind === kind && f.state !== 'missing'; }).length;
+    }
+    function stat(value, label) {
+      return '<div><div class="tpv-stat-value">' + value + '</div><div class="tpv-stat-label">' + label + '</div></div>';
+    }
+
+    var rows = data.services.map(function (s) {
+      var c = s.files || {};
+      var parts = ['<span class="tpv-files-ok">' + (c.ok || 0) + ' ok</span>'];
+      if (c.edited) parts.push('<span class="tpv-files-edited">' + c.edited + ' edited locally</span>');
+      if (c.missing) parts.push('<span class="tpv-files-missing">' + c.missing + ' missing</span>');
+      var src = s.source || {};
+      var running = _findDiscoveredService(s.name);
+      return '<tr>' +
+        '<td><strong>' + _escapeHtml(s.name) + '</strong></td>' +
+        '<td>' + (s.grpc_services || []).map(function (g) { return '<code>' + _escapeHtml(g) + '</code>'; }).join('<br>') + '</td>' +
+        '<td>' + (src.kind === 'proto' ? '<i class="bi bi-file-earmark-code me-1"></i>proto'
+                 : src.kind === 'reflection' ? '<i class="bi bi-broadcast me-1"></i>reflection' : '—') + '</td>' +
+        '<td>' + _escapeHtml(String(s.exported_at || '').replace('T', ' ')) + '</td>' +
+        '<td>' + parts.join(' · ') + '</td>' +
+        '<td><button type="button" class="btn btn-sm btn-outline-primary" data-tpv-reexport="' + _escapeHtml(s.name) + '"' +
+        (running ? ' title="Plan a fresh export from the running service"' : ' disabled title="Not running in a connected Consul"') +
+        '><i class="bi bi-arrow-repeat me-1"></i>Re-export</button></td>' +
+        '</tr>';
+    }).join('');
+
+    var exported = {};
+    data.services.forEach(function (s) { exported[s.name] = true; });
+    var discovered = [];
+    _connectedConsuls.forEach(function (conn) {
+      (conn.services || []).forEach(function (svc) {
+        if (discovered.indexOf(svc.name) < 0) discovered.push(svc.name);
+      });
+    });
+    discovered.sort(function (a, b) { return (exported[a] ? 1 : 0) - (exported[b] ? 1 : 0) || a.localeCompare(b); });
+    var addHtml = discovered.length
+      ? '<div class="tpv-add-row"><select class="form-select form-select-sm" id="tpvAddSelect">' +
+          discovered.map(function (n) {
+            return '<option value="' + _escapeHtml(n) + '">' + _escapeHtml(n) + (exported[n] ? ' (exported)' : '') + '</option>';
+          }).join('') +
+        '</select><button type="button" class="btn btn-sm btn-primary" id="tpvAddButton">' +
+        '<i class="bi bi-box-arrow-in-down me-1"></i>Export…</button></div>' +
+        '<div class="small text-muted mt-2">Services running in the connected Consul' +
+        (_connectedConsuls.length === 1 ? ' (' + _escapeHtml(_connectedConsuls[0].url) + ')' : 's') + '.</div>'
+      : '<div class="small text-muted">No running services — connect to a Consul in the Services view first.</div>';
+
+    content.innerHTML =
+      '<div class="tpv-view">' +
+      '  <div class="svc-ov-head">' +
+      '    <h4 class="svc-ov-title"><i class="bi bi-kanban me-2"></i>' + _escapeHtml(data.name) + '</h4>' +
+      '    <span class="dev-tag">' + _escapeHtml(data.runner_name) + '</span>' +
+      '    <code class="dev-target" id="tpvRoot" title="Copy path">' + _escapeHtml(data.root) + '</code>' +
+      '    <div class="svc-ov-tools">' +
+      '      <button type="button" class="btn btn-sm btn-outline-secondary" id="tpvRefresh" title="Re-read the project">' +
+      '        <i class="bi bi-arrow-clockwise"></i></button>' +
+      '      <button type="button" class="btn btn-sm btn-outline-secondary" id="tpvChange">' +
+      '        <i class="bi bi-folder2-open me-1"></i>Change project…</button>' +
+      '    </div>' +
+      '  </div>' +
+      '  <div class="svc-ov-grid">' +
+      '    <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-bar-chart me-1"></i>Project</h6>' +
+      '      <div class="tpv-stats">' + stat(count('suite'), 'suites') + stat(count('resource'), 'resources') +
+               stat(count('proto'), 'protos') + stat(data.services.length, 'services') + '</div>' +
+      (data.run_hint
+        ? '<div class="tp-hint"><span class="small text-muted">Run all suites from the project root</span>' +
+          '<code id="tpvRunHint" title="Copy">' + _escapeHtml(data.run_hint) + '</code></div>'
+        : '') +
+      '      <div class="mt-3 d-flex flex-wrap gap-2">' +
+      (data.can_run
+        ? '<button type="button" class="btn btn-sm btn-primary" id="tpvRunAll" title="Run every suite and flow of the project">' +
+          '<i class="bi bi-play-fill me-1"></i>Run all\u2026</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvRunSettings" title="Interpreter, PYTHONPATH and arguments for every run">' +
+          '<i class="bi bi-gear me-1"></i>Run settings\u2026</button>'
+        : '') +
+      '        <button type="button" class="btn btn-sm btn-outline-primary" id="tpvNewSuite">' +
+      '        <i class="bi bi-file-earmark-plus me-1"></i>New suite\u2026</button></div>' +
+      '    </section>' +
+      '    <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-plus-circle me-1"></i>Add a service</h6>' +
+             addHtml + '</section>' +
+      '  </div>' +
+      '  <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-hdd-stack me-1"></i>Exported services</h6>' +
+      (data.services.length
+        ? '<div class="svc-ov-table-wrap"><table class="svc-ov-table"><thead><tr><th>Service</th><th>gRPC services</th>' +
+          '<th>Source</th><th>Exported</th><th>Files</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<div class="small text-muted">Nothing exported yet — pick a running service above.</div>') +
+      '  </section>' +
+      (data.can_run
+        ? '  <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-activity me-1"></i>Recent runs' +
+          '    <a href="#" class="ms-2 small fw-normal" id="tpvAllRuns">All runs →</a></h6>' +
+          '    <div id="tpvRecentRuns">' + _devLoading('Reading runs…') + '</div></section>'
+        : '') +
+      '</div>';
+
+    function on(id, fn) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('click', fn);
+    }
+    on('tpvRefresh', function () { renderTestProjectView(); });
+    on('tpvChange', function () { openTestProject(); });
+    on('tpvRoot', function () { _copyText(data.root, 'Path'); });
+    on('tpvRunHint', function () { _copyText(data.run_hint, 'Command'); });
+    on('tpvNewSuite', function () { _showTpvNewSuite(data); });
+    on('tpvRunAll', function () { _tpvRunDialog(''); });
+    on('tpvRunSettings', function () { _tpvRunSettingsDialog(); });
+    on('tpvAllRuns', function (e) { e.preventDefault(); _showTpvRuns(); });
+    if (data.can_run) _tprFillRecent(data.root);
+    on('tpvAddButton', function () {
+      var name = document.getElementById('tpvAddSelect').value;
+      exportToTestProject(_findDiscoveredService(name));
+    });
+    content.querySelectorAll('[data-tpv-reexport]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        exportToTestProject(_findDiscoveredService(b.getAttribute('data-tpv-reexport')));
+      });
+    });
+  }
+
+  function _showTpvFile(path) {
+    var content = document.getElementById('testProjectContent');
+    var data = _tpView.data || { files: [] };
+    var f = data.files.filter(function (x) { return x.path === path; })[0] ||
+            { path: path, role: 'yours', state: 'yours', kind: 'other' };
+    var role = TPV_ROLE[f.role] || [f.role, ''];
+    _tpvEditor = null;
+    _tpvViewState = null;
+
+    var head =
+      '<div class="tpv-file-head">' +
+      '  <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
+      '  <code>' + _escapeHtml(path) + '</code>' +
+      '  <span class="tp-status tp-status-' + (f.role === 'generated' ? 'update' : f.role === 'starter' ? 'create' : 'unchanged') +
+      '" title="' + _escapeHtml(role[1]) + '">' + _escapeHtml(f.role) + '</span>' +
+      (f.state === 'edited' ? '<span class="tp-status tp-status-modified">edited locally</span>' : '') +
+      (f.state === 'missing' ? '<span class="tp-status tp-status-modified">missing</span>' : '') +
+      (f.service ? '<span class="dev-tag">' + _escapeHtml(f.service) + '</span>' : '') +
+      '  <span class="tpv-edit-status" id="tpvEditStatus"></span>' +
+      '  <div class="tpv-file-tools" id="tpvTools"></div>' +
+      '</div>';
+
+    var note = '';
+    if (f.role === 'generated' && f.state === 'edited') {
+      note = _tpvNote('Edited locally since the last export. An export leaves it alone unless you allow overwriting \u2014 ' +
+                      'keep your own keywords in a hand-written resource instead.');
+    } else if (f.role === 'generated') {
+      note = _tpvNote('Generated by an export and refreshed by the next one, so it is read-only here \u2014 ' +
+                      'put your own keywords in a separate file.');
+    } else if (f.role === 'manifest') {
+      note = _tpvNote('Maintained by the tool; read-only.');
+    }
+
+    if (f.state === 'missing') {
+      content.innerHTML = '<div class="tpv-view">' + head +
+        _devAlert('warning', 'Missing', 'An export wrote this file and it has been deleted since. Re-export ' +
+                  (f.service || 'the service') + ' to restore it.') + '</div>';
+      _tpvWireBack(data);
+      return;
+    }
+
+    // Views the project's runner offers besides the text (a flow: Diagram, Robot).
+    var views = f.views || [];
+    var tabs = views.length
+      ? '<div class="tpr-tabs tpv-tabs" id="tpvTabs" role="tablist">' +
+        '<button type="button" class="tpr-tab active" data-tpv-tab="script">Script</button>' +
+        views.map(function (v) {
+          return '<button type="button" class="tpr-tab" data-tpv-tab="' + _escapeHtml(v.id) + '">' + _escapeHtml(v.title) + '</button>';
+        }).join('') + '</div>'
+      : '';
+    content.innerHTML = '<div class="tpv-view">' + head + note +
+      '<div id="tpvBanner"></div>' + tabs + '<div id="tpvFileBody">' + _devLoading('Loading\u2026') + '</div>' +
+      (views.length ? '<div class="tpv-view-pane" id="tpvViewPane" hidden></div>' : '') + '</div>';
+    _tpvWireBack(data);
+
+    MM.testProjectClient.file(_getTestProject(), path)
+      .then(function (res) {
+        if (_tpView.selected !== path) return;
+        if (res.editable) _tpvOpenEditor(f, res);
+        else _tpvShowPreview(f, res);
+      })
+      .catch(function (err) {
+        if (_tpView.selected !== path) return;
+        document.getElementById('tpvFileBody').innerHTML = _devAlert('warning', 'No preview', err.message || err);
+      });
+  }
+
+  // ---- Editing ---------------------------------------------------------------
+
+  // The file open for editing: { root, path, sha, original, textarea, lines, savedAt }.
+  // `sha` is the hash of what is on disk as last read or saved; a save sends
+  // it so the bridge can refuse to overwrite a change made meanwhile.
+  var _tpvEditor = null;
+  var _tpvDraftTimer = null;
+
+  function _tpvDirty() {
+    return !!(_tpvEditor && _tpvEditor.textarea && _tpvEditor.textarea.value !== _tpvEditor.original);
+  }
+
+  /** Run proceed(), after confirming when the open file has unsaved changes. */
+  function _tpvGuard(proceed) {
+    if (!_tpvDirty()) {
+      _tpvEditor = null;
+      proceed();
+      return;
+    }
+    var ed = _tpvEditor;
+    showConfirm('Discard your unsaved changes to ' + ed.path + '?', function () {
+      _tpvClearDraft(ed.root, ed.path);
+      _tpvEditor = null;
+      proceed();
+    });
+  }
+
+  function _tpvWireBack(data) {
+    var back = document.getElementById('tpvBack');
+    if (!back) return;
+    back.addEventListener('click', function (e) {
+      e.preventDefault();
+      _tpvGuard(function () {
+        _tpView.selected = null;
+        _tpView.runs = false;
+        _renderTpvSidebar(data);
+        _renderTpvOverview(data);
+      });
+    });
+  }
+
+  // Run (runner-neutral: offered for whatever the project's runner can run)
+  // and, for Robot suites, the command line to copy.
+  function _tpvCopyRunButton(f) {
+    return (f.runnable
+      ? '<button type="button" class="btn btn-sm btn-success" id="tpvRunFile" title="Run it here and follow the console">' +
+        '<i class="bi bi-play-fill me-1"></i>Run…</button>'
+      : '') +
+      (f.kind === 'suite'
+      ? '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyRun" title="Copy the command that runs this suite">' +
+        '<i class="bi bi-terminal me-1"></i>Run command</button>'
+      : '');
+  }
+
+  function _tpvWireCopyRun(path) {
+    var copyRun = document.getElementById('tpvCopyRun');
+    if (copyRun) {
+      copyRun.addEventListener('click', function () {
+        _copyText('python -m robot -d results ' + path, 'Command');
+      });
+    }
+    var run = document.getElementById('tpvRunFile');
+    if (run) run.addEventListener('click', function () { _tpvRunDialog(path); });
+  }
+
+  function _tpvShowPreview(f, res) {
+    document.getElementById('tpvTools').innerHTML = _tpvCopyRunButton(f) +
+      '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyFile">' +
+      '<i class="bi bi-clipboard me-1"></i>Copy</button>';
+    document.getElementById('tpvFileBody').innerHTML =
+      '<pre class="helper-code-pre tpv-preview">' + _numberedCode(res.content) + '</pre>';
+    _tpvWireCopyRun(res.path);
+    document.getElementById('tpvCopyFile').addEventListener('click', function () { _copyText(res.content, 'File'); });
+    _tpvWireViews(f, function () { return res.content; });
+  }
+
+  function _tpvOpenEditor(f, res) {
+    var root = _getTestProject();
+    document.getElementById('tpvTools').innerHTML =
+      '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCheck" title="Check the syntax">' +
+      '<i class="bi bi-check2-square me-1"></i>Check</button>' +
+      _tpvCopyRunButton(f) +
+      '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvRevert" disabled title="Back to the saved version">' +
+      '<i class="bi bi-arrow-counterclockwise me-1"></i>Revert</button>' +
+      '<button type="button" class="btn btn-sm btn-primary" id="tpvSave" disabled title="Save (Ctrl+S)">' +
+      '<i class="bi bi-save me-1"></i>Save</button>';
+
+    document.getElementById('tpvFileBody').innerHTML =
+      '<div class="tpv-editor">' +
+      '  <div class="tpv-gutter"><div id="tpvGutter"></div></div>' +
+      '  <div class="tpv-code">' +
+      '    <pre class="tpv-hl" id="tpvHl" aria-hidden="true"></pre>' +
+      '    <textarea class="tpv-input" id="tpvInput" spellcheck="false" wrap="off" autocomplete="off"' +
+      '              autocapitalize="off" aria-label="' + _escapeHtml(res.path) + '"></textarea>' +
+      '  </div>' +
+      '</div>' +
+      '<div class="tpv-problems" id="tpvProblems" hidden></div>';
+
+    var ta = document.getElementById('tpvInput');
+    ta.value = res.content;
+    var ed = _tpvEditor = { root: root, path: res.path, sha: res.sha256, original: res.content,
+                            textarea: ta, lines: -1, savedAt: '' };
+    _tpvRefreshEditor();
+
+    ta.addEventListener('input', function () {
+      if (_tpvEditor !== ed) return;
+      _tpvRefreshEditor();
+      _tpvStoreDraft(ed);
+    });
+    ta.addEventListener('scroll', _tpvSyncScroll);
+    ta.addEventListener('keydown', _tpvKeydown);
+    document.getElementById('tpvSave').addEventListener('click', function () { _tpvSave(false); });
+    document.getElementById('tpvCheck').addEventListener('click', _tpvCheck);
+    document.getElementById('tpvRevert').addEventListener('click', function () {
+      showConfirm('Revert ' + ed.path + ' to the saved version? Your changes are lost.', function () {
+        if (_tpvEditor !== ed) return;
+        ta.value = ed.original;
+        _tpvClearDraft(ed.root, ed.path);
+        _tpvRefreshEditor();
+        _tpvShowProblems([], false);
+      });
+    });
+    _tpvWireCopyRun(res.path);
+    _tpvWireViews(f, function () { return ta.value; });
+
+    // Offer unsaved changes left over from an earlier session.
+    var draft = _tpvLoadDraft(root, res.path);
+    if (draft && typeof draft.content === 'string' && draft.content !== res.content) {
+      var changed = draft.base && draft.base !== res.sha256;
+      var banner = document.getElementById('tpvBanner');
+      banner.innerHTML =
+        '<div class="dev-note"><i class="bi bi-clock-history me-1"></i>You have unsaved changes to this file from ' +
+        'an earlier session' + (changed ? ', and the file has changed on disk since \u2014 restoring and saving would replace that change' : '') +
+        '. <span class="tp-links d-inline-flex ms-1"><a href="#" id="tpvRestoreDraft">Restore them</a>' +
+        '<a href="#" id="tpvDropDraft">Discard them</a></span></div>';
+      document.getElementById('tpvRestoreDraft').addEventListener('click', function (e) {
+        e.preventDefault();
+        if (_tpvEditor !== ed) return;
+        ta.value = draft.content;
+        banner.innerHTML = '';
+        _tpvRefreshEditor();
+      });
+      document.getElementById('tpvDropDraft').addEventListener('click', function (e) {
+        e.preventDefault();
+        _tpvClearDraft(root, res.path);
+        banner.innerHTML = '';
+      });
+    }
+  }
+
+  function _tpvRefreshEditor() {
+    var ed = _tpvEditor;
+    if (!ed || !ed.textarea) return;
+    var hl = document.getElementById('tpvHl');
+    if (!hl) return;
+    var value = ed.textarea.value;
+    hl.innerHTML = /\.json$/i.test(ed.path) ? _jsonHighlight(value) : _rfHighlight(value);
+    var lines = value.split('\n').length;
+    if (lines !== ed.lines) {
+      ed.lines = lines;
+      var nums = [];
+      for (var i = 1; i <= lines; i++) nums.push(i);
+      document.getElementById('tpvGutter').textContent = nums.join('\n');
+    }
+    _tpvSyncScroll();
+    var dirty = value !== ed.original;
+    var save = document.getElementById('tpvSave');
+    var revert = document.getElementById('tpvRevert');
+    if (save) save.disabled = !dirty;
+    if (revert) revert.disabled = !dirty;
+    _tpvStatus(dirty ? '\u25cf Unsaved changes' : (ed.savedAt ? 'Saved at ' + ed.savedAt : ''), dirty);
+    var item = document.querySelector('#testProjectTree [data-tpv-path="' + ed.path.replace(/"/g, '\\"') + '"] .tpv-item-label');
+    if (item) {
+      var dot = item.querySelector('.tpv-unsaved');
+      if (dirty && !dot) item.insertAdjacentHTML('beforeend', ' <span class="tpv-unsaved" title="Unsaved changes">\u25cf</span>');
+      if (!dirty && dot) dot.remove();
+    }
+  }
+
+  function _tpvStatus(text, dirty) {
+    var el = document.getElementById('tpvEditStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle('dirty', !!dirty);
+  }
+
+  function _tpvSyncScroll() {
+    var ed = _tpvEditor;
+    if (!ed || !ed.textarea) return;
+    var hl = document.getElementById('tpvHl');
+    var gutter = document.getElementById('tpvGutter');
+    if (hl) hl.style.transform = 'translate(' + (-ed.textarea.scrollLeft) + 'px,' + (-ed.textarea.scrollTop) + 'px)';
+    if (gutter) gutter.style.transform = 'translateY(' + (-ed.textarea.scrollTop) + 'px)';
+  }
+
+  function _tpvKeydown(e) {
+    var ta = e.target;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      _tpvSave(false);
+      return;
+    }
+    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      if (!e.shiftKey) {
+        // Robot separates cells with 2+ spaces; 4 keeps columns readable.
+        document.execCommand('insertText', false, '    ');
+        return;
+      }
+      var s = ta.selectionStart;
+      var lineStart = ta.value.lastIndexOf('\n', s - 1) + 1;
+      var lead = /^ {1,4}/.exec(ta.value.slice(lineStart));
+      if (lead) {
+        ta.setSelectionRange(lineStart, lineStart + lead[0].length);
+        document.execCommand('delete');
+        var pos = Math.max(lineStart, s - lead[0].length);
+        ta.setSelectionRange(pos, pos);
+      }
+      return;
+    }
+    if (e.key === 'Enter' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+      var start = ta.selectionStart;
+      var ls = ta.value.lastIndexOf('\n', start - 1) + 1;
+      var indent = /^[ \t]*/.exec(ta.value.slice(ls, start))[0];
+      if (indent) {
+        e.preventDefault();
+        document.execCommand('insertText', false, '\n' + indent);
+      }
+    }
+  }
+
+  function _tpvSave(force) {
+    var ed = _tpvEditor;
+    if (!ed || !ed.textarea) return;
+    var content = ed.textarea.value;
+    if (content === ed.original && !force) return;
+    var save = document.getElementById('tpvSave');
+    if (save) save.disabled = true;
+    _tpvStatus('Saving\u2026', false);
+    MM.testProjectClient.saveFile(ed.root, ed.path, content, ed.sha, force)
+      .then(function (res) {
+        if (_tpvEditor !== ed) return;
+        ed.sha = res.sha256;
+        ed.original = content;
+        ed.savedAt = new Date().toLocaleTimeString();
+        _tpvClearDraft(ed.root, ed.path);
+        document.getElementById('tpvBanner').innerHTML = '';
+        _tpvRefreshEditor();
+        var problems = res.problems || [];
+        _tpvShowProblems(problems, false);
+        showToast('Saved', ed.path + (problems.length
+          ? ' \u2014 ' + problems.length + ' syntax problem' + (problems.length === 1 ? '' : 's')
+          : ''), problems.length ? 'warning' : 'success');
+        _tpvRefreshTree();
+      })
+      .catch(function (err) {
+        if (_tpvEditor !== ed) return;
+        _tpvRefreshEditor();
+        if (err.code === 'conflict') {
+          var banner = document.getElementById('tpvBanner');
+          banner.innerHTML =
+            '<div class="dev-alert dev-alert-warning"><strong>Changed on disk</strong>' +
+            '<div>' + _escapeHtml(err.message || '') + '</div>' +
+            '<div class="tp-links"><a href="#" id="tpvOverwrite">Overwrite with my version</a>' +
+            '<a href="#" id="tpvReloadDisk">Reload from disk (drops my changes)</a></div></div>';
+          document.getElementById('tpvOverwrite').addEventListener('click', function (e) {
+            e.preventDefault();
+            _tpvSave(true);
+          });
+          document.getElementById('tpvReloadDisk').addEventListener('click', function (e) {
+            e.preventDefault();
+            _tpvClearDraft(ed.root, ed.path);
+            _tpvEditor = null;
+            _showTpvFile(ed.path);
+          });
+          _tpvStatus('Not saved \u2014 changed on disk', true);
+        } else {
+          _tpvStatus('Not saved', true);
+          showToast('Save failed', err.message || String(err), 'danger');
+        }
+      });
+  }
+
+  function _tpvCheck() {
+    var ed = _tpvEditor;
+    if (!ed || !ed.textarea) return;
+    MM.testProjectClient.checkFile(ed.path, ed.textarea.value)
+      .then(function (res) {
+        if (_tpvEditor === ed) _tpvShowProblems(res.problems || [], true);
+      })
+      .catch(function (err) {
+        showToast('Check', err.message || String(err), 'danger');
+      });
+  }
+
+  function _tpvShowProblems(problems, announceClean) {
+    var box = document.getElementById('tpvProblems');
+    if (!box) return;
+    if (!problems.length) {
+      box.hidden = !announceClean;
+      box.className = 'tpv-problems tpv-problems-ok';
+      box.innerHTML = '<i class="bi bi-check2-circle me-1"></i>No syntax problems.';
+      return;
+    }
+    box.hidden = false;
+    box.className = 'tpv-problems';
+    box.innerHTML =
+      '<div class="tpv-problems-title"><i class="bi bi-exclamation-triangle me-1"></i>' + problems.length +
+      ' syntax problem' + (problems.length === 1 ? '' : 's') + '</div>' +
+      problems.map(function (p) {
+        return '<div class="tpv-problem" data-line="' + (p.line || 1) + '">Line ' + (p.line || '?') + ': ' +
+               _escapeHtml(p.message || '') + '</div>';
+      }).join('');
+    box.querySelectorAll('.tpv-problem').forEach(function (el) {
+      el.addEventListener('click', function () { _tpvGotoLine(parseInt(el.getAttribute('data-line'), 10)); });
+    });
+  }
+
+  function _tpvGotoLine(line) {
+    var ed = _tpvEditor;
+    if (!ed || !ed.textarea) return;
+    var ta = ed.textarea;
+    var idx = 0;
+    for (var i = 1; i < line; i++) {
+      var next = ta.value.indexOf('\n', idx);
+      if (next < 0) break;
+      idx = next + 1;
+    }
+    ta.focus();
+    var end = ta.value.indexOf('\n', idx);
+    ta.setSelectionRange(idx, end < 0 ? ta.value.length : end);
+    var lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+    ta.scrollTop = Math.max(0, (line - 4) * lineHeight);
+    _tpvSyncScroll();
+  }
+
+  function _tpvRefreshTree() {
+    var root = _getTestProject();
+    MM.testProjectClient.tree(root)
+      .then(function (data) {
+        if (_getTestProject() !== root) return;
+        _tpView.data = data;
+        _renderTpvSidebar(data);
+      })
+      .catch(function () { /* the sidebar keeps its last state */ });
+  }
+
+  // Drafts: unsaved text survives a reload (localStorage, per project + file).
+  function _tpvDraftKey(root, path) {
+    return 'mm_tpv_draft:' + root + '|' + path;
+  }
+
+  function _tpvStoreDraft(ed) {
+    clearTimeout(_tpvDraftTimer);
+    _tpvDraftTimer = setTimeout(function () {
+      try {
+        var key = _tpvDraftKey(ed.root, ed.path);
+        if (ed.textarea.value === ed.original) localStorage.removeItem(key);
+        else localStorage.setItem(key, JSON.stringify({ base: ed.sha, content: ed.textarea.value, at: Date.now() }));
+      } catch (e) { /* storage unavailable or full */ }
+    }, 400);
+  }
+
+  function _tpvLoadDraft(root, path) {
+    try {
+      var raw = localStorage.getItem(_tpvDraftKey(root, path));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function _tpvClearDraft(root, path) {
+    clearTimeout(_tpvDraftTimer);
+    try { localStorage.removeItem(_tpvDraftKey(root, path)); } catch (e) { /* storage unavailable */ }
+  }
+
+  /**
+   * Robot Framework highlighting for the editor overlay: sections, comments,
+   * settings, test/keyword names, [settings], variables and continuations.
+   * Output must stay character-for-character aligned with the textarea, so
+   * only spans are added -- never text.
+   */
+  function _rfHighlight(text) {
+    var section = '';
+    return text.split('\n').map(function (line) {
+      var head = /^\s*\*{3}\s*([^*]+?)\s*\*{3}/.exec(line);
+      if (head) {
+        section = head[1].toLowerCase();
+        return '<span class="rf-sec">' + _escapeHtml(line) + '</span>';
+      }
+      if (/^\s*#/.test(line)) return '<span class="rf-com">' + _escapeHtml(line) + '</span>';
+
+      var code = line;
+      var comment = '';
+      var cm = /(?: {2,}|\t)#/.exec(line);
+      if (cm) {
+        code = line.slice(0, cm.index);
+        comment = '<span class="rf-com">' + _escapeHtml(line.slice(cm.index)) + '</span>';
+      }
+      var out = _escapeHtml(code)
+        .replace(/((?:[$@%]|&amp;)\{[^}\n]*\})/g, '<span class="rf-var">$1</span>')
+        // [Tags] etc. are settings only at the start of a cell; ${d}[key] is item access.
+        .replace(/(^\s+|\t| {2,})(\[[A-Za-z][A-Za-z ]*\])/g, '$1<span class="rf-set">$2</span>')
+        .replace(/^(\s*)(\.\.\.)/, '$1<span class="rf-cont">$2</span>');
+
+      if (code.trim() && !/^\s/.test(code) && !/^\.\.\./.test(code)) {
+        if (section.indexOf('setting') === 0) {
+          out = out.replace(/^(\S(?:.*?\S)?)( {2,}|\t|$)/, '<span class="rf-key">$1</span>$2');
+        } else if (section.indexOf('test case') === 0 || section.indexOf('task') === 0 ||
+                   section.indexOf('keyword') === 0) {
+          out = '<span class="rf-name">' + out + '</span>';
+        }
+      }
+      return out + comment;
+    }).join('\n') + '\n';
+  }
+
+  // ---- Extra views of a file ---------------------------------------------------
+  // The project's runner lists them per file (tree entry `views`) and supplies
+  // their data (/api/test-project/inspect) from the text in Script -- unsaved
+  // edits included. Types drawn here: "flow-graph" and "code".
+
+  var TPV_TAB_KEY = 'mm_tpv_tab';
+  var _tpvViewState = null;   // { path, views, getText, tab, cacheText, cacheRes }
+
+  function _tpvWireViews(f, getText) {
+    var views = f.views || [];
+    var bar = document.getElementById('tpvTabs');
+    if (!views.length || !bar) { _tpvViewState = null; return; }
+    _tpvViewState = { path: f.path, views: views, getText: getText, tab: 'script', cacheText: null, cacheRes: null };
+    bar.querySelectorAll('[data-tpv-tab]').forEach(function (b) {
+      b.addEventListener('click', function () { _tpvShowTab(b.getAttribute('data-tpv-tab')); });
+    });
+    var saved = '';
+    try { saved = localStorage.getItem(TPV_TAB_KEY) || ''; } catch (e) { /* storage unavailable */ }
+    if (saved !== 'script' && views.some(function (v) { return v.id === saved; })) _tpvShowTab(saved);
+  }
+
+  function _tpvShowTab(id) {
+    var st = _tpvViewState;
+    if (!st) return;
+    st.tab = id;
+    try { localStorage.setItem(TPV_TAB_KEY, id); } catch (e) { /* storage unavailable */ }
+    document.querySelectorAll('#tpvTabs [data-tpv-tab]').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tpv-tab') === id);
+    });
+    var body = document.getElementById('tpvFileBody');
+    var pane = document.getElementById('tpvViewPane');
+    body.hidden = id !== 'script';
+    pane.hidden = id === 'script';
+    if (id === 'script') {
+      if (_tpvEditor && _tpvEditor.textarea) _tpvRefreshEditor();
+      return;
+    }
+    var view = st.views.filter(function (v) { return v.id === id; })[0];
+    var text = st.getText();
+    if (st.cacheText === text && st.cacheRes) {
+      _tpvDrawView(view, st.cacheRes);
+      return;
+    }
+    pane.innerHTML = _devLoading('Asking ' + ((_tpView.data || {}).runner_name || 'the runner') + '…');
+    MM.testProjectClient.inspect(_getTestProject(), st.path, text)
+      .then(function (res) {
+        if (_tpvViewState !== st) return;
+        st.cacheText = text;
+        st.cacheRes = res;
+        if (st.tab === id) _tpvDrawView(view, res);
+      })
+      .catch(function (err) {
+        if (_tpvViewState === st && st.tab === id) {
+          pane.innerHTML = _devAlert('warning', 'No ' + view.title.toLowerCase() + ' view', err.message || err);
+        }
+      });
+  }
+
+  function _tpvDrawView(view, res) {
+    var st = _tpvViewState;
+    var pane = document.getElementById('tpvViewPane');
+    if (!pane || !st) return;
+    var unsaved = _tpvDirty() && _tpvEditor && _tpvEditor.path === st.path;
+    if (!res.ok) {
+      var links = [];
+      if (res.node) links.push('<a href="#" data-tpv-goto-node="' + _escapeHtml(res.node) + '">Show node ' + _escapeHtml(res.node) + ' in Script</a>');
+      if (res.line) links.push('<a href="#" data-tpv-goto-line="' + res.line + '">Go to line ' + res.line + '</a>');
+      if (res.missing) links.push('<a href="#" data-tpv-run-settings="1">Run settings…</a>');
+      pane.innerHTML = _devAlert(res.missing ? 'warning' : 'danger',
+        res.missing ? 'The runner’s tools are not on the project’s path' : 'The runner refuses this ' + (unsaved ? 'text' : 'file'),
+        res.error) + (links.length ? '<div class="tp-links">' + links.join('') + '</div>' : '');
+      pane.querySelectorAll('[data-tpv-goto-node]').forEach(function (a) {
+        a.addEventListener('click', function (e) { e.preventDefault(); _tpvGotoNode(a.getAttribute('data-tpv-goto-node')); });
+      });
+      pane.querySelectorAll('[data-tpv-goto-line]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          _tpvShowTab('script');
+          _tpvGotoLine(parseInt(a.getAttribute('data-tpv-goto-line'), 10));
+        });
+      });
+      pane.querySelectorAll('[data-tpv-run-settings]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          _tpvRunSettingsDialog(function () {
+            _testProjectModal.hide();
+            st.cacheText = null;
+            _tpvShowTab(view.id);
+          });
+        });
+      });
+      return;
+    }
+    var data = (res.views || {})[view.id] || {};
+    var note = unsaved ? ' Includes your unsaved changes.' : '';
+    if (view.type === 'flow-graph' && MM.flowView && data.flow) {
+      pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-diagram-3 me-1"></i>' +
+        _escapeHtml(data.flow.name || '') + ' — drawn from the runner’s own structure of the text in Script.' + note +
+        ' Click a node to find it there.</div><div class="tpv-diagram" id="tpvDiagram"></div>';
+      MM.flowView.mount(document.getElementById('tpvDiagram'), data.flow, { onNode: _tpvGotoNode });
+    } else if (view.type === 'code') {
+      pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-code-slash me-1"></i>What the runner builds from the text in Script; read-only.' + note + '</div>' +
+        '<pre class="tpv-code-view">' + (view.language === 'robot' ? _rfHighlight(data.text || '') : _escapeHtml(data.text || '')) + '</pre>';
+    } else {
+      pane.innerHTML = _devAlert('warning', 'This view cannot be shown', 'Unknown view type ' + view.type + '.');
+    }
+  }
+
+  /** Back to Script, on the line that defines node `id`. */
+  function _tpvGotoNode(id) {
+    var st = _tpvViewState;
+    if (!st) return;
+    var text = st.getText();
+    var re = new RegExp('"id"\\s*:\\s*"' + String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"');
+    var m = re.exec(text);
+    _tpvShowTab('script');
+    if (!m) return;
+    var line = text.slice(0, m.index).split('\n').length;
+    if (_tpvEditor && _tpvEditor.textarea) {
+      _tpvGotoLine(line);
+    } else {
+      var pre = document.querySelector('#tpvFileBody pre');
+      if (pre) pre.scrollTop = Math.max(0, (line - 4) * (parseFloat(getComputedStyle(pre).lineHeight) || 18));
+    }
+  }
+
+  // ---- Running tests ---------------------------------------------------------
+  // Runner-neutral: the bridge reports run_state (running | stopping | done), a
+  // verdict (pass | fail | unknown | skip | error), counts, one row per test and
+  // the files a run leaves; the console arrives in batches after a cursor. What
+  // command runs is the project runner's business (testproject.json "run").
+
+  var TPR_VERDICT = {
+    pass: 'Pass', fail: 'Fail', unknown: 'Unknown', skip: 'Skipped', error: 'Error',
+    running: 'Running', stopping: 'Stopping'
+  };
+  var TPR_TOAST = { pass: 'success', fail: 'danger', unknown: 'warning', skip: 'secondary', error: 'danger' };
+  var TPR_POLL_MS = 700;
+  var TPR_BATCH = 2000;          // lines per status call (bridge side)
+  var TPR_MAX_LINES = 5000;      // console lines kept per run in the GUI
+  var TPR_VAR_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  var _tprRuns = {};             // root|id -> { root, id, record, lines, since, polling }
+  var _tprShown = null;          // run id shown in the Runs pane
+  var _tprRenderedKey = null;    // root|id whose skeleton is in the DOM
+  var _tprHistory = [];          // last history read for the open project
+
+  function _tprKey(root, id) { return root + '|' + id; }
+
+  function _tprLiveRun(root) {
+    for (var k in _tprRuns) {
+      var e = _tprRuns[k];
+      if (e.root === root && e.record && e.record.run_state && e.record.run_state !== 'done') return e;
+    }
+    return null;
+  }
+
+  function _tprState(rec) {
+    return rec.run_state && rec.run_state !== 'done' ? rec.run_state : (rec.verdict || 'error');
+  }
+
+  function _tprBadge(rec, small) {
+    var s = _tprState(rec);
+    var live = s === 'running' || s === 'stopping';
+    return '<span class="tpr-verdict' + (small ? ' tpr-verdict-sm' : '') + ' tpr-v-' + _escapeHtml(s) + '">' +
+      (live ? '<span class="spinner-border spinner-border-sm" style="width:.7em;height:.7em;border-width:.12em"></span>' : '') +
+      _escapeHtml(TPR_VERDICT[s] || s) + '</span>';
+  }
+
+  function _tprDuration(sec) {
+    var s = Math.max(0, Math.round(sec || 0));
+    var m = Math.floor(s / 60);
+    var h = Math.floor(m / 60);
+    if (h) return h + 'h ' + (m % 60) + 'm';
+    if (m) return m + 'm ' + (s % 60) + 's';
+    return s + 's';
+  }
+
+  function _tprWhen(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).replace('T', ' ');
+    var today = new Date().toDateString() === d.toDateString();
+    return (today ? '' : d.toLocaleDateString() + ' ') + d.toLocaleTimeString();
+  }
+
+  function _tprCounts(c, compact) {
+    c = c || {};
+    var names = { pass: 'passed', fail: 'failed', unknown: 'unknown', skip: 'skipped' };
+    return ['pass', 'fail', 'unknown', 'skip'].filter(function (k) {
+      return !compact || c[k];
+    }).map(function (k) {
+      return '<span class="tpr-c-' + k + '"><b>' + (c[k] || 0) + '</b>' + names[k] + '</span>';
+    }).join('');
+  }
+
+  function _tprOptionsKey(root, path) { return 'mm_tpr_options:' + root + '|' + path; }
+
+  function _tprLoadOptions(root, path) {
+    try { return JSON.parse(localStorage.getItem(_tprOptionsKey(root, path)) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+
+  function _tprStoreOptions(root, path, opts) {
+    try { localStorage.setItem(_tprOptionsKey(root, path), JSON.stringify(opts)); }
+    catch (e) { /* storage unavailable */ }
+  }
+
+  /** "NAME=value" / "NAME:value" lines -> {vars} or {error}. ${NAME} is accepted too. */
+  function _tprParsePairs(text, what) {
+    var out = {};
+    var lines = String(text || '').split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line || line.charAt(0) === '#') continue;
+      var m = /^\$?\{?([^=:}\s]+)\}?\s*[=:]\s?(.*)$/.exec(line);
+      if (!m || !TPR_VAR_RE.test(m[1])) {
+        return { error: what + ' line ' + (i + 1) + ': write NAME=value (letters, digits and _ in the name).' };
+      }
+      out[m[1]] = m[2];
+    }
+    return { vars: out };
+  }
+
+  function _tprPairsText(obj) {
+    return Object.keys(obj || {}).map(function (k) { return k + '=' + obj[k]; }).join('\n');
+  }
+
+  function _tpvRunDialog(path) {
+    var root = _getTestProject();
+    if (!root) return;
+    var live = _tprLiveRun(root);
+    if (live) {
+      showToast('Run', 'A run is already in progress: ' + live.record.target_label + '.', 'warning');
+      _tpvGuard(function () { _showTpvRuns(live.id); });
+      return;
+    }
+    if (path && _tpvDirty() && _tpvEditor.path === path) {
+      showToast('Run', 'Save ' + path + ' first (Ctrl+S): a run uses the file as it is on disk.', 'warning');
+      return;
+    }
+    var data = _tpView.data || {};
+    var settings = data.run_settings || {};
+    var saved = _tprLoadOptions(root, path);
+    var label = path || ('every suite and flow in ' + ((data.layout || {}).suites || 'the project'));
+    var envInfo = 'Interpreter <code>' + _escapeHtml(settings.python || 'the bridge’s Python') + '</code>' +
+      ((settings.pythonpath || []).length
+        ? ' · PYTHONPATH <code>' + _escapeHtml(settings.pythonpath.join(';')) + '</code>' : '') +
+      ((settings.args || []).length ? ' · arguments <code>' + _escapeHtml(settings.args.join(' ')) + '</code>' : '');
+
+    _tpState = { action: 'run', root: root, path: path };
+    _tpShow('<i class="bi bi-play-fill me-2"></i>Run',
+      '<div class="tpr-form">' +
+      '  <p class="mb-3"><code>' + _escapeHtml(label) + '</code></p>' +
+      '  <div class="mb-3">' +
+      '    <label class="form-label small" for="tprVars">Variables</label>' +
+      '    <textarea class="form-control form-control-sm" id="tprVars" rows="3" spellcheck="false"' +
+      '              placeholder="NAME=value, one per line"></textarea>' +
+      '    <div class="form-text">Override the file’s own values for this run. Remembered per file.</div>' +
+      '  </div>' +
+      '  <div class="form-check mb-3">' +
+      '    <input class="form-check-input" type="checkbox" id="tprDry">' +
+      '    <label class="form-check-label small" for="tprDry">Dry run: check keywords and arguments, execute nothing</label>' +
+      '  </div>' +
+      '  <div class="small text-muted">' + envInfo + ' · <a href="#" id="tprOpenSettings">Run settings…</a></div>' +
+      '  <div id="tprDialogError" class="mt-2"></div>' +
+      '</div>',
+      '<i class="bi bi-play-fill me-1"></i>Run');
+    document.getElementById('tprVars').value = saved.vars || '';
+    document.getElementById('tprDry').checked = !!saved.dryrun;
+    document.getElementById('tprOpenSettings').addEventListener('click', function (e) {
+      e.preventDefault();
+      _tpvRunSettingsDialog(function () { _tpvRunDialog(path); });
+    });
+    document.getElementById('tprVars').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _applyRunDialog(); }
+    });
+  }
+
+  function _applyRunDialog() {
+    var st = _tpState;
+    var varsText = document.getElementById('tprVars').value;
+    var dryrun = document.getElementById('tprDry').checked;
+    var parsed = _tprParsePairs(varsText, 'Variables');
+    if (parsed.error) {
+      document.getElementById('tprDialogError').innerHTML = _devAlert('warning', 'Not started', parsed.error);
+      return;
+    }
+    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun });
+    st.action = 'done';
+    _afterModalHidden(function () {
+      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun });
+    });
+  }
+
+  function _tprStart(root, path, opts) {
+    return MM.testProjectClient.run(root, path, opts)
+      .then(function (rec) {
+        var e = _tprRuns[_tprKey(root, rec.id)] =
+          { root: root, id: rec.id, record: rec, lines: [], since: 0, polling: false };
+        _tprPoll(e);
+        _tpvGuard(function () { _showTpvRuns(rec.id); });
+        return rec;
+      })
+      .catch(function (err) {
+        showToast('Run not started', err.message || String(err), 'danger');
+      });
+  }
+
+  function _tpvRunSettingsDialog(then) {
+    var root = _getTestProject();
+    if (!root) return;
+    MM.testProjectClient.runSettings(root)
+      .then(function (res) {
+        var s = res.settings || {};
+        _tpState = { action: 'run-settings', root: root, then: then };
+        _tpShow('<i class="bi bi-gear me-2"></i>Run settings',
+          '<div class="tpr-form">' +
+          '  <div class="mb-3">' +
+          '    <label class="form-label small" for="tprPython">Interpreter</label>' +
+          '    <div class="input-group input-group-sm">' +
+          '      <input type="text" class="form-control" id="tprPython" spellcheck="false" placeholder="Empty: the bridge’s own Python">' +
+          (MM.canPickPath()
+            ? '<button type="button" class="btn btn-outline-secondary" id="tprPythonBrowse"><i class="bi bi-folder2-open"></i></button>'
+            : '') +
+          '    </div>' +
+          '    <div class="form-text">The Python that runs the tests. It needs the test runner, installed or on the path below.</div>' +
+          '  </div>' +
+          '  <div class="mb-3">' +
+          '    <label class="form-label small" for="tprPath">PYTHONPATH</label>' +
+          '    <textarea class="form-control form-control-sm" id="tprPath" rows="2" spellcheck="false"' +
+          '              placeholder="One folder per line; relative to the project root"></textarea>' +
+          '    <div class="form-text">Put in front of the path, e.g. the <code>src</code> folder of a Robot Framework checkout that brings <code>robot.flow</code> for flow files.</div>' +
+          '  </div>' +
+          '  <div class="mb-3">' +
+          '    <label class="form-label small" for="tprArgs">Extra arguments</label>' +
+          '    <textarea class="form-control form-control-sm" id="tprArgs" rows="2" spellcheck="false"' +
+          '              placeholder="One per line, e.g. --loglevel and then DEBUG"></textarea>' +
+          '  </div>' +
+          '  <div class="mb-2">' +
+          '    <label class="form-label small" for="tprEnv">Environment</label>' +
+          '    <textarea class="form-control form-control-sm" id="tprEnv" rows="2" spellcheck="false"' +
+          '              placeholder="NAME=value, one per line"></textarea>' +
+          '  </div>' +
+          '  <div class="form-text">Saved in <code>testproject.json</code> under <code>"run"</code>, so the project runs the same way for everyone who opens it.</div>' +
+          '  <div id="tprSettingsError" class="mt-2"></div>' +
+          '</div>',
+          '<i class="bi bi-save me-1"></i>Save');
+        document.getElementById('tprPython').value = s.python || '';
+        document.getElementById('tprPath').value = (s.pythonpath || []).join('\n');
+        document.getElementById('tprArgs').value = (s.args || []).join('\n');
+        document.getElementById('tprEnv').value = _tprPairsText(s.env);
+        MM.wirePathBrowse('tprPythonBrowse', 'tprPython', {
+          title: 'Python interpreter for test runs',
+          filters: [{ name: 'Python', extensions: ['exe', '*'] }]
+        });
+      })
+      .catch(function (err) { showToast('Run settings', err.message || String(err), 'danger'); });
+  }
+
+  function _applyRunSettings() {
+    var st = _tpState;
+    function lines(id) {
+      return document.getElementById(id).value.split(/\r?\n/).map(function (l) { return l.trim(); })
+        .filter(Boolean);
+    }
+    var env = _tprParsePairs(document.getElementById('tprEnv').value, 'Environment');
+    if (env.error) {
+      document.getElementById('tprSettingsError').innerHTML = _devAlert('warning', 'Not saved', env.error);
+      return;
+    }
+    var settings = {
+      python: document.getElementById('tprPython').value.trim(),
+      pythonpath: lines('tprPath'),
+      args: lines('tprArgs'),
+      env: env.vars
+    };
+    var apply = document.getElementById('btnTestProjectApply');
+    apply.disabled = true;
+    MM.testProjectClient.runSettings(st.root, settings)
+      .then(function (res) {
+        if (_tpView.data) _tpView.data.run_settings = res.settings;
+        showToast('Run settings', 'Saved in testproject.json.', 'success');
+        if (st.then) {
+          st.then();   // back to the Run dialog, in the same modal
+        } else {
+          st.action = 'done';
+          _testProjectModal.hide();
+        }
+      })
+      .catch(function (err) {
+        apply.disabled = false;
+        document.getElementById('tprSettingsError').innerHTML = _devAlert('danger', 'Not saved', err.message || err);
+      });
+  }
+
+  /** Poll one run until it is done and its whole console has arrived. */
+  function _tprPoll(e) {
+    if (e.polling) return;
+    e.polling = true;
+    (function tick() {
+      MM.testProjectClient.runStatus(e.root, e.id, e.since)
+        .then(function (st) {
+          var fresh = st.lines || [];
+          var wasLive = e.record.run_state && e.record.run_state !== 'done';
+          delete st.lines;
+          e.record = st;
+          e.since = st.next || e.since;
+          e.error = '';
+          if (st.dropped) fresh.unshift('… ' + st.dropped + ' earlier lines are only in console.log …');
+          Array.prototype.push.apply(e.lines, fresh);
+          if (e.lines.length > TPR_MAX_LINES) e.lines.splice(0, e.lines.length - TPR_MAX_LINES);
+          var more = fresh.length >= TPR_BATCH;
+          _tprUpdateShown(e, fresh);
+          if (st.run_state === 'done' && !more) {
+            e.polling = false;
+            if (wasLive) _tprFinished(e);
+            return;
+          }
+          setTimeout(tick, more ? 30 : TPR_POLL_MS);
+        })
+        .catch(function (err) {
+          e.polling = false;
+          e.error = err.message || String(err);
+          _tprUpdateShown(e, []);
+          // The bridge may be restarting; keep following a run we saw alive.
+          if (e.record.run_state && e.record.run_state !== 'done') {
+            setTimeout(function () { _tprPoll(e); }, 3000);
+          }
+        });
+    })();
+  }
+
+  function _tprFinished(e) {
+    var rec = e.record;
+    var verdict = rec.verdict || 'error';
+    var counts = rec.counts || {};
+    var summary = ['pass', 'fail', 'unknown', 'skip'].filter(function (k) { return counts[k]; })
+      .map(function (k) { return counts[k] + ' ' + { pass: 'passed', fail: 'failed', unknown: 'unknown', skip: 'skipped' }[k]; })
+      .join(', ');
+    showToast('Run finished: ' + (TPR_VERDICT[verdict] || verdict),
+      rec.target_label + (summary ? ' — ' + summary : '') + (rec.message && verdict === 'error' ? ' — ' + rec.message : ''),
+      TPR_TOAST[verdict] || 'info');
+    if (_currentMode === 'testproject' && _getTestProject() === e.root) {
+      if (_tpView.data) _renderTpvSidebar(_tpView.data);
+      if (_tpView.runs) _tprLoadHistory();
+      else if (!_tpView.selected) _tprFillRecent(e.root);
+    }
+  }
+
+  function _showTpvRuns(runId) {
+    _tpView.selected = null;
+    _tpView.runs = true;
+    if (runId) _tprShown = runId;
+    if (_currentMode !== 'testproject') { switchMode('testproject'); return; }
+    if (_tpView.data) _renderTpvSidebar(_tpView.data);
+    _renderTpvRuns();
+  }
+
+  function _renderTpvRuns() {
+    var content = document.getElementById('testProjectContent');
+    var data = _tpView.data || {};
+    _tpvEditor = null;
+    _tprRenderedKey = null;
+    content.innerHTML =
+      '<div class="tpv-view tpr-view">' +
+      '  <div class="svc-ov-head">' +
+      '    <h4 class="svc-ov-title"><i class="bi bi-activity me-2"></i>Runs</h4>' +
+      (data.runner_name ? '<span class="dev-tag">' + _escapeHtml(data.runner_name) + '</span>' : '') +
+      '    <div class="svc-ov-tools">' +
+      '      <button type="button" class="btn btn-sm btn-primary" id="tprRunAll"><i class="bi bi-play-fill me-1"></i>Run all…</button>' +
+      '      <button type="button" class="btn btn-sm btn-outline-secondary" id="tprSettings"><i class="bi bi-gear me-1"></i>Run settings…</button>' +
+      '      <button type="button" class="btn btn-sm btn-outline-secondary" id="tprRefresh" title="Re-read the run history"><i class="bi bi-arrow-clockwise"></i></button>' +
+      '    </div>' +
+      '  </div>' +
+      '  <section class="svc-ov-card tpr-current" id="tprCurrent"></section>' +
+      '  <section class="svc-ov-card tpr-history"><h6 class="svc-ov-card-title"><i class="bi bi-clock-history me-1"></i>History</h6>' +
+      '    <div id="tprHistory">' + _devLoading('Reading runs…') + '</div></section>' +
+      '</div>';
+    document.getElementById('tprRunAll').addEventListener('click', function () { _tpvRunDialog(''); });
+    document.getElementById('tprSettings').addEventListener('click', function () { _tpvRunSettingsDialog(); });
+    document.getElementById('tprRefresh').addEventListener('click', function () { _tprLoadHistory(); });
+    _tprRenderCurrent();
+    _tprLoadHistory();
+  }
+
+  function _tprLoadHistory() {
+    var root = _getTestProject();
+    return MM.testProjectClient.runs(root)
+      .then(function (res) {
+        if (_getTestProject() !== root) return;
+        _tprHistory = res.runs || [];
+        if (!_tprShown || !_tprHistory.some(function (r) { return r.id === _tprShown; })) {
+          if (!_tprRuns[_tprKey(root, _tprShown)]) _tprShown = _tprHistory.length ? _tprHistory[0].id : null;
+        }
+        _tprRenderHistory();
+        if (_tprRenderedKey !== _tprKey(root, _tprShown)) _tprRenderCurrent();
+      })
+      .catch(function (err) {
+        var box = document.getElementById('tprHistory');
+        if (box) box.innerHTML = _devAlert('warning', 'Could not read the runs', err.message || err);
+      });
+  }
+
+  function _tprRenderHistory() {
+    var box = document.getElementById('tprHistory');
+    if (!box) return;
+    if (!_tprHistory.length) {
+      box.innerHTML = '<div class="small text-muted">No runs yet.</div>';
+      return;
+    }
+    box.innerHTML =
+      '<div class="svc-ov-table-wrap"><table class="svc-ov-table"><thead><tr>' +
+      '<th>Verdict</th><th>What</th><th>Started</th><th>Took</th><th>Tests</th><th></th></tr></thead><tbody>' +
+      _tprHistory.map(function (r) {
+        var opts = r.options || {};
+        var vars = Object.keys(opts.variables || {});
+        return '<tr data-tpr-run="' + _escapeHtml(r.id) + '"' + (r.id === _tprShown ? ' class="tpr-shown"' : '') + '>' +
+          '<td>' + _tprBadge(r, true) + '</td>' +
+          '<td><code>' + _escapeHtml(r.target_label || r.target || '') + '</code>' +
+          (opts.dryrun ? ' <span class="dev-tag">dry run</span>' : '') +
+          (vars.length ? ' <span class="dev-tag" title="' + _escapeHtml(_tprPairsText(opts.variables)) + '">' +
+                         vars.length + ' variable' + (vars.length === 1 ? '' : 's') + '</span>' : '') + '</td>' +
+          '<td>' + _escapeHtml(_tprWhen(r.started_at)) + '</td>' +
+          '<td>' + _escapeHtml(_tprDuration(r.elapsed_s)) + '</td>' +
+          '<td class="tpr-counts">' + _tprCounts(r.counts, true) + '</td>' +
+          '<td>' + ((r.artifacts || []).some(function (a) { return a.primary; }) && r.run_state === 'done' && r.verdict !== 'error'
+            ? '<a href="#" data-tpr-open="' + _escapeHtml(r.id) + '" title="Open the log">Log</a>' : '') + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody></table></div>';
+    box.querySelectorAll('[data-tpr-run]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        _tprShown = row.getAttribute('data-tpr-run');
+        _tprRenderCurrent();
+        _tprRenderHistory();
+      });
+    });
+    box.querySelectorAll('[data-tpr-open]').forEach(function (a) {
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var r = _tprHistory.filter(function (x) { return x.id === a.getAttribute('data-tpr-open'); })[0];
+        if (r) _tprOpenArtifact(r, null);
+      });
+    });
+  }
+
+  function _tprOpenArtifact(rec, name) {
+    var arts = rec.artifacts || [];
+    var art = name ? arts.filter(function (a) { return a.name === name; })[0]
+                   : (arts.filter(function (a) { return a.primary; })[0] || arts[0]);
+    if (!art || !rec.results_url) return;
+    _openUrl(MM.testProjectClient.resultUrl(rec, art.name));
+  }
+
+  function _tprRenderCurrent() {
+    var box = document.getElementById('tprCurrent');
+    if (!box) return;
+    var root = _getTestProject();
+    if (!_tprShown) {
+      _tprRenderedKey = null;
+      box.innerHTML = '<div class="tpr-empty"><i class="bi bi-play-circle d-block fs-3 mb-2"></i>' +
+        'No runs yet. Use <i class="bi bi-play-fill"></i> next to a suite or flow, or <strong>Run all</strong>.</div>';
+      return;
+    }
+    var key = _tprKey(root, _tprShown);
+    var e = _tprRuns[key];
+    if (!e) {
+      var known = _tprHistory.filter(function (r) { return r.id === _tprShown; })[0];
+      e = _tprRuns[key] = { root: root, id: _tprShown, record: known || { id: _tprShown, run_state: 'done' },
+                            lines: [], since: 0, polling: false };
+      _tprPoll(e);
+    }
+    _tprRenderedKey = key;
+    box.innerHTML =
+      '<div class="tpr-head">' +
+      '  <span id="tprBadge"></span>' +
+      '  <div class="tpr-title"><code id="tprTarget"></code><div class="tpr-meta" id="tprMeta"></div></div>' +
+      '  <div class="tpr-tools" id="tprTools"></div>' +
+      '</div>' +
+      '<div class="tpr-counts" id="tprCounts"></div>' +
+      '<div class="tpr-message" id="tprMessage" hidden></div>' +
+      '<div class="tpr-tabs" role="tablist">' +
+      '  <button type="button" class="tpr-tab active" data-tpr-tab="console">Console</button>' +
+      '  <button type="button" class="tpr-tab" data-tpr-tab="results">Results <span id="tprResultsN"></span></button>' +
+      '</div>' +
+      '<pre class="tpr-console" id="tprConsole"></pre>' +
+      '<div class="tpr-results" id="tprResults" hidden></div>';
+    box.querySelectorAll('[data-tpr-tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () { _tprTab(tab.getAttribute('data-tpr-tab')); });
+    });
+    e.toolsState = null;
+    e.resultsShown = null;
+    document.getElementById('tprConsole').innerHTML = e.lines.map(_tprLine).join('');
+    _tprUpdateShown(e, null);
+    var con = document.getElementById('tprConsole');
+    con.scrollTop = con.scrollHeight;
+    if (e.record.run_state === 'done' && (e.record.tests || []).length) _tprTab('results');
+  }
+
+  function _tprTab(which) {
+    document.querySelectorAll('#tprCurrent [data-tpr-tab]').forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-tpr-tab') === which);
+    });
+    var con = document.getElementById('tprConsole');
+    var res = document.getElementById('tprResults');
+    if (con) con.hidden = which !== 'console';
+    if (res) res.hidden = which !== 'results';
+  }
+
+  function _tprLine(line) {
+    var cls = /\|\s*PASS\s*\|/.test(line) ? 'tpr-l-pass'
+            : /\|\s*FAIL\s*\|/.test(line) ? 'tpr-l-fail'
+            : /\|\s*UNKNOWN\s*\|/.test(line) ? 'tpr-l-unknown'
+            : /^[=\-]{20,}$/.test(line) ? 'tpr-l-rule' : '';
+    return (cls ? '<span class="' + cls + '">' + _escapeHtml(line) + '</span>' : _escapeHtml(line)) + '\n';
+  }
+
+  /** Bring the shown run's parts up to date; `fresh` lines are appended (null = none). */
+  function _tprUpdateShown(e, fresh) {
+    if (!_tpView.runs || _tprRenderedKey !== _tprKey(e.root, e.id)) return;
+    var rec = e.record;
+    var con = document.getElementById('tprConsole');
+    if (!con) return;
+    if (fresh && fresh.length) {
+      var atEnd = con.scrollTop + con.clientHeight >= con.scrollHeight - 30;
+      con.insertAdjacentHTML('beforeend', fresh.map(_tprLine).join(''));
+      if (atEnd) con.scrollTop = con.scrollHeight;
+    }
+    var state = _tprState(rec);
+    document.getElementById('tprBadge').innerHTML = _tprBadge(rec);
+    document.getElementById('tprTarget').textContent = rec.target_label || rec.target || rec.id;
+    var opts = rec.options || {};
+    var meta = [];
+    if (rec.started_at) meta.push('started ' + _tprWhen(rec.started_at));
+    if (rec.elapsed_s != null) meta.push((state === 'running' || state === 'stopping' ? 'running for ' : 'took ') + _tprDuration(rec.elapsed_s));
+    if (rec.runner_name) meta.push(rec.runner_name);
+    if (opts.dryrun) meta.push('dry run');
+    var vars = Object.keys(opts.variables || {});
+    if (vars.length) meta.push(vars.map(function (k) { return k + '=' + opts.variables[k]; }).join(', '));
+    if (e.error) meta.push('⚠ ' + e.error);
+    document.getElementById('tprMeta').textContent = meta.join(' · ');
+
+    var done = rec.run_state === 'done';
+    var toolsState = state + '|' + (rec.results_url ? 1 : 0);
+    if (e.toolsState !== toolsState) {
+      e.toolsState = toolsState;
+      var hasFiles = done && rec.verdict !== 'error' || done && (rec.tests || []).length;
+      var html = '';
+      if (!done) {
+        html += '<button type="button" class="btn btn-sm btn-outline-danger" id="tprStop" title="' +
+          (state === 'stopping' ? 'Kill it now: no teardown, no reports' : 'Stop after the running keyword; teardowns and reports still run') + '">' +
+          '<i class="bi bi-stop-fill me-1"></i>' + (state === 'stopping' ? 'Force stop' : 'Stop') + '</button>';
+      }
+      if (hasFiles) {
+        (rec.artifacts || []).forEach(function (a) {
+          if (!/\.html?$/i.test(a.name)) return;
+          html += '<button type="button" class="btn btn-sm ' + (a.primary ? 'btn-primary' : 'btn-outline-primary') + '"' +
+            ' data-tpr-artifact="' + _escapeHtml(a.name) + '"><i class="bi bi-box-arrow-up-right me-1"></i>' + _escapeHtml(a.label) + '</button>';
+        });
+      }
+      if (done) {
+        html += '<button type="button" class="btn btn-sm btn-outline-success" id="tprAgain" title="Same file, same variables">' +
+          '<i class="bi bi-arrow-repeat me-1"></i>Run again</button>';
+      }
+      html += '<button type="button" class="btn btn-sm btn-outline-secondary" id="tprCopyCmd" title="Copy the command line">' +
+        '<i class="bi bi-terminal"></i></button>';
+      var tools = document.getElementById('tprTools');
+      tools.innerHTML = html;
+      var stop = document.getElementById('tprStop');
+      if (stop) {
+        stop.addEventListener('click', function () {
+          var force = e.record.run_state === 'stopping';
+          stop.disabled = true;
+          MM.testProjectClient.stopRun(e.root, e.id, force)
+            .then(function (r) {
+              e.record.run_state = r.run_state || 'stopping';
+              e.toolsState = null;
+              _tprUpdateShown(e, null);
+            })
+            .catch(function (err) {
+              stop.disabled = false;
+              showToast('Stop', err.message || String(err), 'warning');
+            });
+        });
+      }
+      tools.querySelectorAll('[data-tpr-artifact]').forEach(function (b) {
+        b.addEventListener('click', function () { _tprOpenArtifact(e.record, b.getAttribute('data-tpr-artifact')); });
+      });
+      var again = document.getElementById('tprAgain');
+      if (again) {
+        again.addEventListener('click', function () {
+          var o = e.record.options || {};
+          _tprStart(e.root, e.record.target || '', { variables: o.variables || {}, dryrun: !!o.dryrun });
+        });
+      }
+      document.getElementById('tprCopyCmd').addEventListener('click', function () {
+        var argv = (e.record.argv || []).map(function (a) { return /[\s"]/.test(a) ? '"' + a.replace(/"/g, '\\"') + '"' : a; });
+        _copyText(argv.join(' '), 'Command');
+      });
+    }
+
+    document.getElementById('tprCounts').innerHTML = done ? _tprCounts(rec.counts, false) : '';
+    var msg = document.getElementById('tprMessage');
+    msg.hidden = !rec.message;
+    msg.textContent = rec.message || '';
+
+    var tests = rec.tests || [];
+    document.getElementById('tprResultsN').textContent = done ? '(' + tests.length + ')' : '';
+    if (done && e.resultsShown !== rec.ended_at) {
+      e.resultsShown = rec.ended_at;
+      document.getElementById('tprResults').innerHTML = tests.length
+        ? '<table class="svc-ov-table"><thead><tr><th>Status</th><th>Test</th><th>Suite</th><th>Took</th><th>Message</th></tr></thead><tbody>' +
+          tests.map(function (t) {
+            return '<tr><td>' + _tprBadge({ run_state: 'done', verdict: t.status }, true) + '</td>' +
+              '<td><strong>' + _escapeHtml(t.name) + '</strong></td>' +
+              '<td class="small">' + _escapeHtml(t.suite) + '</td>' +
+              '<td>' + _escapeHtml(_tprDuration(t.elapsed_s)) + '</td>' +
+              '<td class="tpr-msg">' + _escapeHtml(t.message || '') + '</td></tr>';
+          }).join('') + '</tbody></table>'
+        : '<div class="small text-muted p-2">No test results — see the console.</div>';
+      // Watched live to the end: show what came out of it.
+      if (fresh && tests.length && !e.resultsTabbed) {
+        e.resultsTabbed = true;
+        _tprTab('results');
+      }
+    }
+  }
+
+  /** The overview's "Recent runs" card: the last few runs, live ones first. */
+  function _tprFillRecent(root) {
+    MM.testProjectClient.runs(root)
+      .then(function (res) {
+        var box = document.getElementById('tpvRecentRuns');
+        if (!box || _getTestProject() !== root) return;
+        _tprHistory = res.runs || [];
+        var runs = _tprHistory.slice(0, 5);
+        if (!runs.length) {
+          box.innerHTML = '<div class="small text-muted">No runs yet — use <i class="bi bi-play-fill"></i> next to a suite or flow, or <strong>Run all</strong>.</div>';
+          return;
+        }
+        box.innerHTML = '<div class="svc-ov-table-wrap"><table class="svc-ov-table tpr-history"><tbody>' +
+          runs.map(function (r) {
+            return '<tr data-tpr-run="' + _escapeHtml(r.id) + '"><td>' + _tprBadge(r, true) + '</td>' +
+              '<td><code>' + _escapeHtml(r.target_label || '') + '</code></td>' +
+              '<td>' + _escapeHtml(_tprWhen(r.started_at)) + '</td>' +
+              '<td>' + _escapeHtml(_tprDuration(r.elapsed_s)) + '</td>' +
+              '<td class="tpr-counts">' + _tprCounts(r.counts, true) + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+        box.querySelectorAll('[data-tpr-run]').forEach(function (row) {
+          row.addEventListener('click', function () { _showTpvRuns(row.getAttribute('data-tpr-run')); });
+        });
+      })
+      .catch(function (err) {
+        var box = document.getElementById('tpvRecentRuns');
+        if (box) box.innerHTML = '<div class="small text-muted">' + _escapeHtml(err.message || String(err)) + '</div>';
+      });
+  }
+
+  /**
+   * JSON highlighting (flow files) for the same overlay: keys, strings,
+   * numbers and literals. Strings are matched whole, so a quoted ":" or
+   * "//" is never mistaken for structure; only spans are added.
+   */
+  function _jsonHighlight(text) {
+    return _escapeHtml(text).replace(
+      /(&quot;(?:[^&\\\n]|\\.|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|(-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g,
+      function (m, str, colon, lit, num) {
+        if (str) return colon ? '<span class="rf-name">' + str + '</span>' + colon : '<span class="rf-var">' + str + '</span>';
+        if (lit) return '<span class="rf-set">' + lit + '</span>';
+        return '<span class="rf-key">' + num + '</span>';
+      }) + '\n';
+  }
+
+  function _showTpvNewSuite(data) {
+    _tpView.selected = null;
+    _tpvEditor = null;
+    _renderTpvSidebar(data);
+    var content = document.getElementById('testProjectContent');
+    var layout = data.layout || {};
+    var options = data.services.map(function (s) {
+      return '<option value="' + _escapeHtml(s.name) + '">' + _escapeHtml(s.name) + '</option>';
+    }).join('');
+
+    content.innerHTML =
+      '<div class="tpv-view">' +
+      '  <div class="tpv-file-head">' +
+      '    <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
+      '    <strong>New suite</strong>' +
+      '  </div>' +
+      '  <section class="svc-ov-card tpv-new-suite">' +
+      '    <div class="mb-3">' +
+      '      <label class="form-label small" for="tpvSuiteName">Name</label>' +
+      '      <div class="input-group input-group-sm">' +
+      '        <input type="text" class="form-control" id="tpvSuiteName" placeholder="e.g. greeting_checks" spellcheck="false">' +
+      '        <span class="input-group-text">.robot</span>' +
+      '      </div>' +
+      '      <div class="form-text">Created in <code>' + _escapeHtml(layout.suites || '') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
+      '    </div>' +
+      '    <div class="mb-3">' +
+      '      <label class="form-label small" for="tpvSuiteService">Service</label>' +
+      '      <select class="form-select form-select-sm" id="tpvSuiteService">' +
+      '        <option value="">None \u2014 an empty suite</option>' + options +
+      '      </select>' +
+      '      <div class="form-text">Imports the service\'s generated keywords and opens its connection in the suite setup.</div>' +
+      '    </div>' +
+      '    <div id="tpvSuiteError"></div>' +
+      '    <button type="button" class="btn btn-sm btn-primary" id="tpvSuiteCreate">' +
+      '      <i class="bi bi-file-earmark-plus me-1"></i>Create and edit</button>' +
+      '  </section>' +
+      '</div>';
+
+    if (data.services.length) document.getElementById('tpvSuiteService').value = data.services[0].name;
+    _tpvWireBack(data);
+    var name = document.getElementById('tpvSuiteName');
+    var create = document.getElementById('tpvSuiteCreate');
+    function submit() {
+      create.disabled = true;
+      document.getElementById('tpvSuiteError').innerHTML = '';
+      MM.testProjectClient.newSuite(_getTestProject(), name.value.trim(), document.getElementById('tpvSuiteService').value)
+        .then(function (res) {
+          showToast('New suite', res.path + ' created.', 'success');
+          _tpView.selected = res.path;
+          renderTestProjectView();
+        })
+        .catch(function (err) {
+          create.disabled = false;
+          document.getElementById('tpvSuiteError').innerHTML = _devAlert('warning', 'Not created', err.message || err);
+        });
+    }
+    create.addEventListener('click', submit);
+    name.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+    name.focus();
+  }
+  // Signal Graph Studio: its own window (own preload + "gs:" IPC), so it
+  // is Electron-only. Seed its live panel with the Consul we are on and the
+  // interpreter from Settings — the studio runs Python for "Run cluster"
+  // and "Regenerate catalog", and a bare "python" is often a stub.
+  // Reached through the graph-studio plugin's command (shell action).
+  function _openGraphStudio() {
+    if (!window.electronAPI || !window.electronAPI.openGraphStudio) {
+      showToast('Signal Graph Studio',
+        'Available in the Electron app only — it opens a separate window.', 'warning');
+      return;
+    }
+    var consul = _connectedConsuls.length ? _connectedConsuls[0].url : '';
+    var python = (_settings && _settings.pythonPath) || '';
+    window.electronAPI.openGraphStudio({ consulUrl: consul, python: python })
+      .then(function () {
+        showToast('Signal Graph Studio', 'Opened in a separate window.', 'info');
+      })
+      .catch(function (err) {
+        showToast('Signal Graph Studio', 'Could not open: ' + (err.message || err), 'danger');
+      });
+  }
+  _wire('btnDevDownload', function () {
+    _withSelectedService('Download service files', function (sel) {
+      if (!sel.info || !sel.info.downloadable) {
+        showToast('Download service files',
+          sel.name + ' does not offer downloadable files (only registry services with a GUI package do).',
+          'info');
+        return;
+      }
+      downloadServiceFiles(sel.name);
+    });
+  });
+
+  // Administrator Tools -- configure infrastructure
+  _wire('btnAdminConsul', function () { switchToFleetSubTab('tabConsul'); });
+  _wire('btnAdminNomad', function () { switchToFleetSubTab('tabNomad'); });
+
+  /**
+   * Footer tabs at the bottom of the left pane. Services and the test
+   * project are the two things the pane can show, so they switch here
+   * instead of only through the Developer Tools menu. Neither tab is
+   * highlighted in the Service Network / Creator views; clicking one
+   * leaves those views the same way the navbar does.
+   */
+  function _syncSidebarSwitch() {
+    // Built-in tabs and plugin navigators alike carry data-mode.
+    document.querySelectorAll('#sidebarSwitch .sidebar-switch-tab[data-mode]').forEach(function (btn) {
+      var on = _currentMode === btn.getAttribute('data-mode');
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    var project = document.querySelector('#sidebarSwitch .sidebar-switch-tab[data-mode="testproject"]');
+    if (project) {
+      var root = _getTestProject();
+      // The tab works either way: with no project open the view offers to
+      // open one, so say that instead of looking broken.
+      project.title = root ? 'Test project: ' + root
+                           : 'No test project open — click to choose a folder';
+    }
+  }
+
+  _wire('sidebarSwitchServices', function () { switchMode('services'); });
+  _wire('sidebarSwitchBench', function () { switchMode('bench'); });
+  _wire('btnModeBench', function () { switchMode('bench'); });
+  _syncSidebarSwitch();
+
+  /************************************************************
+   *                         Ribbon                            *
+   ************************************************************/
+  // Three tabs name the command groups; the band below shows the selected
+  // group. User and Administrator also open their view. Developer does
+  // not: its "selected service" commands act on the service selected in
+  // the Services view, so switching away would break them.
+
+  var RIBBON_PIN_KEY = 'mm_ribbon_pinned';
+  var _ribbonTab = 'user';
+  var _ribbonOpenTab = null;   // tab whose band is dropped down (auto-hide)
+
+  var RIBBON_TABS = {
+    user:  { btn: 'btnModeServices', panel: 'ribbonUser' },
+    dev:   { btn: 'btnDevTools',     panel: 'ribbonDev' },
+    admin: { btn: 'btnAdminTools',   panel: 'ribbonAdmin' }
+  };
+
+  function _ribbonTabForMode(mode) {
+    if (mode === 'fleet') return 'admin';
+    if (mode === 'creator' || mode === 'testproject') return 'dev';
+    if (mode === 'services' || mode === 'bench') return 'user';
+    return _ribbonTab;
+  }
+
+  /**
+   * Show one group's commands.
+   *
+   * @param {string} tab - 'user' | 'dev' | 'admin'
+   * @param {{fromMode?: boolean}} [opts] - set when called by switchMode,
+   *   so a view change moves the ribbon without re-entering switchMode.
+   */
+  function _setRibbonTab(tab, opts) {
+    if (!RIBBON_TABS[tab]) return;
+    _ribbonTab = tab;
+    Object.keys(RIBBON_TABS).forEach(function (key) {
+      var on = key === tab;
+      var btn = document.getElementById(RIBBON_TABS[key].btn);
+      var panel = document.getElementById(RIBBON_TABS[key].panel);
+      if (btn) {
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      }
+      if (panel) {
+        panel.classList.toggle('active', on);
+        panel.hidden = !on;
+      }
+    });
+  }
+
+  function _ribbonPinned() {
+    return document.body.classList.contains('ribbon-pinned');
+  }
+
+  function _ribbonIsOpen() {
+    var ribbon = document.getElementById('ribbon');
+    return !!ribbon && ribbon.classList.contains('peek');
+  }
+
+  // Auto-hide (default): drop the band down over the content for one tab.
+  function _openRibbon(tab) {
+    if (_ribbonPinned()) return;
+    var ribbon = document.getElementById('ribbon');
+    if (ribbon) ribbon.classList.add('peek');
+    _ribbonOpenTab = tab;
+  }
+
+  function _closeRibbon() {
+    var ribbon = document.getElementById('ribbon');
+    if (ribbon) ribbon.classList.remove('peek');
+    _ribbonOpenTab = null;
+  }
+
+  // Pinned: the band stays open and the layout makes room for it.
+  function _setRibbonPinned(on) {
+    on = !!on;
+    document.body.classList.toggle('ribbon-pinned', on);
+    _closeRibbon();
+    try { localStorage.setItem(RIBBON_PIN_KEY, on ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    var btn = document.getElementById('btnRibbonToggle');
+    if (btn) {
+      btn.title = on ? 'Unpin the ribbon (hide it after each use)' : 'Pin the ribbon open';
+      var icon = btn.querySelector('i');
+      if (icon) icon.className = on ? 'bi bi-pin-angle-fill' : 'bi bi-pin-angle';
+    }
+    if (MM._alignInspector) MM._alignInspector();
+  }
+
+  Object.keys(RIBBON_TABS).forEach(function (key) {
+    var btn = document.getElementById(RIBBON_TABS[key].btn);
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      // Decide open/close from the band's state before this click, not from
+      // _ribbonTab.
+      var closeIt = _ribbonIsOpen() && _ribbonOpenTab === key;
+      // Always select the tab here. Relying on switchMode alone left a tab
+      // dead whenever its view was already showing (switchMode returns
+      // early for the current mode), e.g. Developer -> User on Services.
+      _setRibbonTab(key);
+      // User keeps the bench when it is showing: its components' commands are on this tab.
+      if (key === 'user' && _currentMode !== 'bench') switchMode('services');
+      else if (key === 'admin') switchToFleetSubTab('tabConsul');
+      if (closeIt) _closeRibbon(); else _openRibbon(key);
+    });
+  });
+
+  _wire('btnRibbonToggle', function () { _setRibbonPinned(!_ribbonPinned()); });
+
+  // Hide the dropped-down band after a command, a click anywhere else, Esc,
+  // or focus leaving the window (clicks into an embedded GUI's iframe never
+  // reach this document). Toggles and bridge buttons keep it open, since
+  // their feedback is in the band itself.
+  var _ribbonEl = document.getElementById('ribbon');
+  if (_ribbonEl) {
+    _ribbonEl.addEventListener('click', function (ev) {
+      if (ev.target.closest('.ribbon-btn, .btn-connect, .infra-pill')) _closeRibbon();
+    });
+  }
+  document.addEventListener('mousedown', function (ev) {
+    if (!_ribbonIsOpen()) return;
+    if (ev.target.closest('#ribbon, .ribbon-tab, #btnRibbonToggle')) return;
+    _closeRibbon();
+  }, true);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && _ribbonIsOpen()) _closeRibbon();
+  });
+  window.addEventListener('blur', function () { if (_ribbonIsOpen()) _closeRibbon(); });
+
+  try {
+    localStorage.removeItem('mm_ribbon_collapsed');   // superseded by the pin
+    _setRibbonPinned(localStorage.getItem(RIBBON_PIN_KEY) === '1');
+  } catch (e) { _setRibbonPinned(false); }
+  _setRibbonTab(_ribbonTabForMode(_currentMode), { fromMode: true });
+
+  // Live signals: without an explicit discovery address the bridge looks
+  // signal-discovery up in the first reachable Consul this window uses.
+  if (MM.endo && MM.endo.bus) {
+    MM.endo.bus.configure({
+      getConsul: function () {
+        var c = _connectedConsuls.filter(function (x) { return x.alive !== false; })[0];
+        return c ? c.url : '';
+      }
+    });
+  }
+
+  var _reopenOnServices = false;
+  function _reopenSelectedService() {
+    _reopenOnServices = false;
+    if (_selectedService && _selectedService.consul && _selectedService.consul.gui) _openConsulServiceGui(_selectedService);
+  }
+
+  // Plugins (js/endo/plugins.js): the shell actions and views their
+  // commands and navigators may name, and nothing else.
+  if (MM.endo && MM.endo.plugins) {
+    MM.endo.plugins.init({
+      actions: {
+        robotGen: function () { _runRobotGen('', null); },
+        openGraphStudio: _openGraphStudio,
+        testProjectView: _testProjectView,
+        openTestProject: function () { return openTestProject(); }
+      },
+      views: {
+        testproject: { sidebar: 'sidebarTestProject', content: 'testProjectContent' }
+      },
+      switchMode: function (mode) { switchMode(mode); },
+      currentMode: function () { return _currentMode; }
+    });
+    MM.endo.plugins.onChange(function (ev) {
+      _syncSidebarSwitch();
+      if (ev && ev.ready) return;
+      // A kind came or went: component panels in the Services view are
+      // mounted again so their tiles pick it up (or show the placeholder).
+      var dropActive = false;
+      Object.keys(_servicePanels).forEach(function (name) {
+        var panel = _servicePanels[name];
+        if (!panel || !panel.__endoHandle) return;
+        if (_activePanelName === name) { _deactivateCurrentPanel(); dropActive = true; }
+        panel.__endoHandle.destroy();
+        try { panel.remove(); } catch (e) { /* already gone */ }
+        delete _servicePanels[name];
+      });
+      // Remount the shown one now, or when the Services view comes back
+      // (mounting it hidden would start polling off-screen, R5).
+      if (dropActive) {
+        if (_currentMode === 'services') _reopenSelectedService();
+        else _reopenOnServices = true;
+      }
+      if (MM.endo.bench) MM.endo.bench.pluginsChanged();
+    });
+  }
+
+  // The bench view (js/endo/bench.js) composes components of the services
+  // this window is connected to; it reaches the rest of the GUI only here.
+  if (MM.endo && MM.endo.bench) {
+    MM.endo.bench.init({
+      getServices: _allConnectedServices,
+      openService: _openServiceFromBench,
+      openInspector: function (svc, tab) {
+        _openServiceFromBench(svc);
+        setDevMode(true, { tab: tab, silent: true });
+      },
+      showApi: function (svc, containerId) {
+        // The explorer wires its controls by id: keep one copy in the DOM.
+        var box = document.getElementById(containerId);
+        document.querySelectorAll('[data-dev-panel="api-explorer"]').forEach(function (p) {
+          if (!box || !box.contains(p)) p.remove();
+        });
+        _inspectorKey = null;   // the inspector re-renders when shown again
+        _showGrpcServicePanel(svc, { containerId: containerId, compact: true });
+        // The dock has its own Code tab; this button targets the inspector.
+        var code = box && box.querySelector('#grpcCodeExamples');
+        if (code) code.hidden = true;
+      },
+      protoPathFor: _getStoredProtoPath,
+      setRibbonTab: function (tab) { _setRibbonTab(tab); }
+    });
+  }
+
+  /**
+   * The service currently highlighted in the sidebar, recorded by both
+   * click paths. Consul-discovered rows and legacy registry items key
+   * MM.servicesInfor differently (name@consulUrl vs. name) and open
+   * different explorers, so the menu tools read this instead of guessing.
+   *   { name, infoKey, consul: <svc object with consulUrl> | null }
+   */
+  var _selectedService = null;
+
+  /************************************************************
+   *                Developer mode + inspector                 *
+   ************************************************************/
+
+  // Developer mode is a persistent switch, like a browser's devtools:
+  // the runtime view stays exactly as it is and an inspector docks on
+  // the right showing the selected service's API, details and client
+  // code. Turning it off removes the inspector and nothing else.
+  var DEV_MODE_KEY = 'mm_dev_mode';
+  var _devMode = false;
+  var _inspectorTab = 'api';
+  var _inspectorKey = null;   // what the inspector currently shows
+
+  function setDevMode(on, opts) {
+    opts = opts || {};
+    on = !!on;
+    _devMode = on;
+    try { localStorage.setItem(DEV_MODE_KEY, on ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    document.body.classList.toggle('dev-mode', on);
+    var sw = document.getElementById('devModeSwitch');
+    if (sw) sw.checked = on;
+    var pill = document.getElementById('devModePill');
+    if (pill) pill.hidden = !on;
+    var btn = document.getElementById('btnDevTools');
+    if (btn) btn.classList.toggle('dev-on', on);
+    if (opts.tab) _inspectorTab = opts.tab;
+    _syncInspector();
+    if (!opts.silent) {
+      showToast('Developer mode', on
+        ? 'On \u2014 the inspector shows the API, details and client code of the selected service.'
+        : 'Off', 'info');
+    }
+  }
+  MM.setDevMode = setDevMode;
+  MM.isDevMode = function () { return _devMode; };
+
+  function _syncInspector() {
+    var el = document.getElementById('devInspector');
+    var layout = document.querySelector('.app-layout');
+    if (!el || !layout) return;
+    var show = _devMode && _currentMode === 'services';
+    el.hidden = !show;
+    layout.classList.toggle('with-inspector', show);
+    if (show) {
+      if (MM._alignInspector) MM._alignInspector();
+      _renderInspector(_selectedService);
+    }
+  }
+
+  function _setInspectorTab(tab) {
+    _inspectorTab = tab;
+    _inspectorKey = null;
+    _renderInspector(_selectedService);
+  }
+
+  function _renderInspector(sel) {
+    var el = document.getElementById('devInspector');
+    if (!el || el.hidden) return;
+    var key = (sel ? sel.infoKey : '') + '|' + _inspectorTab;
+    if (key === _inspectorKey) return;
+    _inspectorKey = key;
+
+    var testProject = _getTestProject();
+    var head =
+      '<div class="dev-inspector-head">' +
+      '  <div class="dev-inspector-crumb"><i class="bi bi-code-slash me-1"></i>Developer</div>' +
+      '  <div class="dev-inspector-title">' + (sel ? _escapeHtml(sel.name) : 'Inspector') + '</div>' +
+      (sel && sel.consul
+        ? '<code class="dev-inspector-target">' + _escapeHtml((sel.consul.address || '?') + ':' + (sel.consul.port || '?')) + '</code>'
+        : '') +
+      '  <button type="button" class="dev-project-chip" id="devProjectChip"' +
+      '          title="' + (testProject ? 'Test project: ' + _escapeHtml(testProject) + ' (click to change)' : 'Open a test project') + '">' +
+      '    <i class="bi bi-folder2' + (testProject ? '-open' : '') + ' me-1"></i>' +
+             (testProject ? _escapeHtml(_projectLabel(testProject)) : 'No test project') + '</button>' +
+      '  <button type="button" class="dev-inspector-close" id="devInspectorClose" title="Turn developer mode off">' +
+      '    <i class="bi bi-x-lg"></i></button>' +
+      '</div>';
+
+    if (!sel) {
+      el.innerHTML = head +
+        '<div class="dev-inspector-empty">' +
+        '  <i class="bi bi-cursor"></i>' +
+        '  <div>Select a service in the sidebar to inspect its API, details and client code.</div>' +
+        '</div>';
+      _wireInspectorClose();
+      return;
+    }
+
+    var tabs = [['api', 'bi-diagram-3', 'API'], ['details', 'bi-list-ul', 'Details'], ['code', 'bi-file-earmark-code', 'Code']];
+    el.innerHTML = head +
+      '<div class="dev-inspector-tabs">' +
+      tabs.map(function (t) {
+        return '<button type="button" class="dev-inspector-tab' + (t[0] === _inspectorTab ? ' active' : '') + '"' +
+               ' data-tab="' + t[0] + '"><i class="bi ' + t[1] + ' me-1"></i>' + t[2] + '</button>';
+      }).join('') +
+      '</div>' +
+      '<div class="dev-inspector-body" id="devInspectorBody"></div>';
+    _wireInspectorClose();
+    el.querySelectorAll('.dev-inspector-tab').forEach(function (b) {
+      b.addEventListener('click', function () { _setInspectorTab(b.getAttribute('data-tab')); });
+    });
+
+    var body = document.getElementById('devInspectorBody');
+    if (_inspectorTab === 'api') {
+      if (sel.consul) _showGrpcServicePanel(sel.consul, { containerId: 'devInspectorBody', compact: true });
+      else body.innerHTML = _devAlert('warning', 'Registry service',
+        'Reflection-based exploration needs a Consul-registered gRPC service. Use Code Examples for this one.');
+    } else if (_inspectorTab === 'details') {
+      _renderInspectorDetails(sel, body);
+    } else {
+      _renderInspectorCode(sel, body);
+    }
+  }
+
+  function _wireInspectorClose() {
+    var c = document.getElementById('devInspectorClose');
+    if (c) c.addEventListener('click', function () { setDevMode(false); });
+    var chip = document.getElementById('devProjectChip');
+    if (chip) chip.addEventListener('click', function () { openTestProject(); });
+  }
+
+  function _renderInspectorDetails(sel, body) {
+    var svc = sel.consul;
+    var info = sel.info || MM.servicesInfor[sel.infoKey] || {};
+    function table(rows) {
+      return '<table class="svc-card-table">' + rows.map(function (r) {
+        return '<tr><th>' + _escapeHtml(r[0]) + '</th><td>' + r[1] + '</td></tr>';
+      }).join('') + '</table>';
+    }
+    if (!svc) {
+      body.innerHTML = '<div class="dev-inspector-section"><h6>Registry entry</h6>' +
+        table(Object.keys(info).map(function (k) {
+          return [k, '<code>' + _escapeHtml(typeof info[k] === 'object' ? JSON.stringify(info[k]) : String(info[k])) + '</code>'];
+        })) + '</div>';
+      return;
+    }
+    body.innerHTML =
+      '<div class="dev-inspector-section"><h6>Service</h6>' +
+      table([
+        ['Name', _escapeHtml(svc.name)],
+        ['Registry', '<code>' + _escapeHtml(svc.consulUrl || '') + '</code>'],
+        ['Tags', (svc.tags || []).map(function (t) { return '<span class="dev-tag">' + _escapeHtml(t) + '</span>'; }).join(' ') || '<span class="text-muted">none</span>'],
+        ['gRPC services', svc.grpcServices ? '<code>' + _escapeHtml(svc.grpcServices) + '</code>' : '<span class="text-muted">unknown</span>'],
+        ['GUI plugin', svc.gui ? '<code>' + _escapeHtml(svc.gui) + '</code>' : '<span class="text-muted">none</span>']
+      ]) + '</div>' +
+      '<div class="dev-inspector-section"><h6>Instances</h6><div id="devInspInstances">' + _devLoading('Loading\u2026') + '</div></div>';
+
+    MM.consulClient.getServiceDetail(svc.name, svc.consulUrl)
+      .then(function (entries) {
+        var el = document.getElementById('devInspInstances');
+        if (!el) return;
+        if (!Array.isArray(entries) || !entries.length) { el.innerHTML = '<span class="text-muted small">None registered.</span>'; return; }
+        el.innerHTML = entries.map(function (e) {
+          var s = e.Service || {};
+          var meta = s.Meta || {};
+          return '<div class="dev-inst">' +
+            '<div class="dev-inst-head"><span class="svc-ov-dot svc-ov-dot-' + _worstCheck(e.Checks) + '"></span>' +
+            '<code>' + _escapeHtml(s.ID || '') + '</code><span class="dev-inst-addr">' + _escapeHtml((s.Address || '?') + ':' + (s.Port || '?')) + '</span></div>' +
+            (Object.keys(meta).length
+              ? '<div class="dev-inst-meta">' + Object.keys(meta).map(function (k) {
+                  return '<span><b>' + _escapeHtml(k) + '</b> ' + _escapeHtml(String(meta[k])) + '</span>';
+                }).join('') + '</div>'
+              : '') +
+            '<div class="dev-inst-checks">' + (e.Checks || []).map(function (c) {
+              return '<span class="svc-ov-check svc-ov-check-' + _escapeHtml(c.Status || 'unknown') + '" title="' + _escapeHtml(c.Output || '') + '">' + _escapeHtml(c.Name || c.CheckID || 'check') + '</span>';
+            }).join('') + '</div>' +
+            '</div>';
+        }).join('');
+      })
+      .catch(function (err) {
+        var el = document.getElementById('devInspInstances');
+        if (el) el.innerHTML = _devAlert('warning', 'Could not load instances', err.message || err);
+      });
+  }
+
+  function _renderInspectorCode(sel, body) {
+    var serviceInfo = MM.servicesInfor[sel.infoKey];
+    if (!serviceInfo) {
+      body.innerHTML = _devAlert('warning', 'No service information', 'Nothing known about ' + sel.name + '.');
+      return;
+    }
+    body.innerHTML =
+      '<div class="dev-inspector-codebar">' +
+      '  <span class="text-muted small">Client snippets generated from the live API.</span>' +
+      '  <button type="button" class="btn btn-sm btn-outline-secondary" id="devInspCopy" title="Copy the active tab">' +
+      '    <i class="bi bi-clipboard me-1"></i>Copy</button>' +
+      '</div>' +
+      '<div id="devInspCode">' + _devLoading('Discovering methods\u2026') + '</div>';
+    var copy = document.getElementById('devInspCopy');
+    if (copy) {
+      copy.addEventListener('click', function () {
+        var pane = body.querySelector('#devInspCode .tab-pane.active pre');
+        if (pane) _copyText(pane.textContent, 'Code');
+      });
+    }
+    var bridgeOrigin = (MM.serviceClient && MM.serviceClient.apiUrl) || window.location.origin;
+    MM.grpcClient.getServiceMethods(serviceInfo.name, serviceInfo.consulUrl, _getStoredProtoPath(serviceInfo.name))
+      .then(function (refl) {
+        var note = (refl.error && (!refl.grpc_services || !refl.grpc_services.length))
+          ? _devAlert('warning', 'Reflection failed', String(refl.error) + ' \u2014 snippets use empty request schemas.')
+          : '';
+        _renderHelperTabs(serviceInfo, refl, bridgeOrigin, note, { containerId: 'devInspCode', idPrefix: 'devInsp' });
+      })
+      .catch(function (err) {
+        var el = document.getElementById('devInspCode');
+        if (el) el.innerHTML = _devAlert('danger', 'Could not reach the bridge', err.message || err);
+      });
+  }
+
+  // The inspector covers the content pane, so its left edge must follow
+  // the sidebar, which the user can resize.
+  (function () {
+    var panel = document.getElementById('devInspector');
+    var sidebar = document.querySelector('.app-sidebar');
+    if (!panel || !sidebar) return;
+    function align() {
+      panel.style.left = Math.round(sidebar.getBoundingClientRect().right) + 'px';
+    }
+    align();
+    if (window.ResizeObserver) new ResizeObserver(align).observe(sidebar);
+    window.addEventListener('resize', align);
+    MM._alignInspector = align;
+  })();
+
+  var devSwitch = document.getElementById('devModeSwitch');
+  if (devSwitch) {
+    devSwitch.addEventListener('change', function () { setDevMode(devSwitch.checked); });
+    // Keep the dropdown open when toggling the switch.
+    devSwitch.closest('.dropdown-item') && devSwitch.closest('.dropdown-item').addEventListener('click', function (e) { e.stopPropagation(); });
+  }
+  try {
+    if (localStorage.getItem(DEV_MODE_KEY) === '1') setDevMode(true, { silent: true });
+  } catch (e) { /* storage unavailable */ }
+
+  /**
+   * Run a per-service developer tool against the service selected in the
+   * sidebar, or say why nothing happened.
+   */
+  function _withSelectedService(toolName, fn) {
+    var active = document.querySelector('#servicesList .list-group-item.active[data-service-name]');
+    var name = active && active.getAttribute('data-service-name');
+    if (!name || !_selectedService || _selectedService.name !== name) {
+      showToast(toolName, 'Select a service in the Services view first.', 'info');
+      return;
+    }
+    fn(_selectedService);
+  }
+
+  /**
+   * Open the Service Network view on a given sub-tab (Consul / Nomad).
+   * Also used by the infra status pills in the navbar.
+   */
+  function switchToFleetSubTab(tabId) {
+    switchMode('fleet');
+    var tab = document.getElementById(tabId);
+    if (tab && window.bootstrap && window.bootstrap.Tab) {
+      window.bootstrap.Tab.getOrCreateInstance(tab).show();
+    } else if (tab) {
+      tab.click();
+    }
+  }
+  MM.switchToFleetSubTab = switchToFleetSubTab;
 
   // Restore fleet URL from localStorage on page load
   try {
@@ -4095,6 +7642,58 @@
       })
       .then(function (data) { return data.files || []; });
   };
+  /**
+   * Is a native file/folder picker available? Only in Electron: a browser
+   * redacts the absolute path of an `<input type="file">`, and an absolute
+   * path is exactly what the bridge needs to hand to an agent.
+   */
+  MM.canPickPath = function () {
+    return !!(window.electronAPI && typeof window.electronAPI.showOpenDialog === 'function');
+  };
+
+  /**
+   * Ask for a file or a folder.
+   * @param {object} [opts] - { directory, title, defaultPath, filters }
+   * @returns {Promise<string>} the chosen path, or '' when cancelled or
+   *   when there is no picker.
+   */
+  MM.pickPath = function (opts) {
+    opts = opts || {};
+    if (!MM.canPickPath()) return Promise.resolve('');
+    return window.electronAPI.showOpenDialog({
+      properties: [opts.directory ? 'openDirectory' : 'openFile'],
+      title: opts.title || (opts.directory ? 'Choose a folder' : 'Choose a file'),
+      defaultPath: opts.defaultPath || undefined,
+      filters: opts.directory ? undefined
+                              : (opts.filters || [{ name: 'All files', extensions: ['*'] }])
+    }).then(function (res) {
+      return (res && res.filePaths && res.filePaths[0]) || '';
+    }).catch(function (err) {
+      console.error('[picker] open dialog failed:', err);
+      return '';
+    });
+  };
+
+  /**
+   * Wire a Browse button to a text input: the dialog opens where the input
+   * currently points, and what it returns lands in the input.
+   */
+  MM.wirePathBrowse = function (btnId, inputId, opts) {
+    var btn = document.getElementById(btnId);
+    var input = document.getElementById(inputId);
+    if (!btn || !input) return;
+    btn.addEventListener('click', function () {
+      var o = Object.assign({}, opts || {});
+      if (!o.defaultPath) o.defaultPath = (input.value || '').trim();
+      MM.pickPath(o).then(function (picked) {
+        if (!picked) return;
+        input.value = picked;
+        input.title = picked;   // the field is narrower than most paths
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+  };
+
   MM.showServiceAPIExplorer = showServiceAPIExplorer;
   MM.showServiceHelper = showServiceHelper;
   MM.switchMode = switchMode;
@@ -4109,20 +7708,29 @@
     _currentMode = '__help__';
     _helpVisible = true;
 
-    // Hide sidebar and all content panels
+    // Hide sidebar, the ribbon and all content panels. The ribbon goes too:
+    // its commands act on the views help is covering. A component behind
+    // help stops polling (R5); closeHelp -> switchMode resumes it.
+    _suspendActiveComponent();
+    if (MM.endo && MM.endo.bench) MM.endo.bench.setActive(false);
     var sidebar = document.querySelector('.app-sidebar');
     if (sidebar) sidebar.style.display = 'none';
 
-    var serviceContent = document.getElementById('serviceContent');
-    var fleetContent = document.getElementById('fleetContent');
-    var creatorContent = document.getElementById('creatorContent');
-    if (serviceContent) serviceContent.style.display = 'none';
-    if (fleetContent) fleetContent.style.display = 'none';
-    if (creatorContent) creatorContent.style.display = 'none';
+    var ribbon = document.getElementById('ribbon');
+    if (ribbon) { ribbon.style.display = 'none'; ribbon.classList.remove('peek'); }
 
-    // Remove active from mode buttons
-    var modeButtons = document.querySelectorAll('.mode-btn');
-    modeButtons.forEach(function (btn) { btn.classList.remove('active'); });
+    ['serviceContent', 'fleetContent', 'creatorContent', 'testProjectContent', 'benchContent'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    document.querySelectorAll('.app-content > [data-endo-mode]').forEach(function (el) { el.style.display = 'none'; });
+    if (MM.endo && MM.endo.plugins) MM.endo.plugins.modeChanged('__help__');
+
+    // Unlight the ribbon tabs while help is on screen (closeHelp restores
+    // them through switchMode).
+    document.querySelectorAll('.ribbon-tab').forEach(function (btn) {
+      btn.classList.remove('active');
+    });
 
     // Highlight help button
     var btnHelp = document.getElementById('btnHelp');
@@ -4167,9 +7775,12 @@
     var helpContent = document.getElementById('helpContent');
     if (helpContent) helpContent.style.display = 'none';
 
-    // Restore sidebar
+    // Restore sidebar and ribbon
     var sidebar = document.querySelector('.app-sidebar');
     if (sidebar) sidebar.style.display = '';
+
+    var ribbon = document.getElementById('ribbon');
+    if (ribbon) ribbon.style.display = '';
   }
 
   function closeHelp() {

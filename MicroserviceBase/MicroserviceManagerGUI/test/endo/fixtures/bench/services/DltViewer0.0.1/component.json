@@ -1,0 +1,30 @@
+{
+  "component": "bits.dlt-viewer",
+  "version": "0.0.1",
+  "layer": "bits",
+  "title": "DLT",
+  "description": "Planned: no DLT service exists yet; the lines are sample data.",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": []
+  },
+  "binds": {
+    "consul": "@self"
+  },
+  "tiles": [
+    {
+      "id": "log",
+      "size": "2x2",
+      "kind": "log",
+      "title": "DLT (sample lines)",
+      "lines": [
+        "12:04:17.221 ECU1 APP1 CTX1 INFO  wake-up source=CAN",
+        "12:04:17.268 ECU1 DIAG SESS INFO  session 0x03 entered",
+        "12:04:17.301 ECU1 DIAG DID  INFO  read F190 len=17",
+        "12:04:18.002 ECU1 PWR  MON  WARN  vbat dip 10.9 V",
+        "12:04:19.114 ECU1 APP1 CTX1 INFO  heartbeat 142"
+      ]
+    }
+  ],
+  "renderer": "schema"
+}

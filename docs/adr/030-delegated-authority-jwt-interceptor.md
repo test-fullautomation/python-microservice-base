@@ -11,7 +11,7 @@ Proposed
 ## Author
 
 Architecture analysis follow-up.  Reviewed against the
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+`taf_repo_proposal`
 reference.
 
 Companion design docs (offline-readable, with diagrams + Gantt):

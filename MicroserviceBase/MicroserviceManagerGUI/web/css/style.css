@@ -10,6 +10,11 @@
   --content-bg: #f8f9fa;
   --navbar-bg: #1a252f;
   --navbar-height: 56px;
+  /* Space the ribbon band reserves under the navbar. 0 by default: the band
+     drops down over the content when a tab is clicked and hides again.
+     Pinned (body.ribbon-pinned) it reserves its full height. Every
+     fixed-position panel offsets by navbar + ribbon. */
+  --ribbon-height: 0px;
   --sidebar-width: 320px;
   --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
@@ -61,6 +66,224 @@ html, body {
   gap: 0.75rem;
 }
 
+/* ---------- Ribbon ---------- */
+/* Word-style: the tabs sit in the title bar and the band below shows the
+   selected group's commands. The band is dark and in the navbar's colour
+   family, because the controls it hosts (bridge, infra pills, Connect)
+   are styled for a dark chrome. */
+
+.ribbon-tabs {
+  display: inline-flex;
+  align-items: flex-end;
+  align-self: stretch;
+  gap: 2px;
+  margin-left: 1.5rem;
+  padding-bottom: 0;
+}
+
+.ribbon-tab {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.4rem 1rem;
+  margin-bottom: -1px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.ribbon-tab:hover {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* The active tab merges into the band below it. */
+.ribbon-tab.active {
+  color: #fff;
+  background: var(--ribbon-bg, #1B2520);
+}
+
+/* Developer mode tints its own tab (was .nav-mode-toggle .mode-btn.dev-on). */
+.ribbon-tab.dev-on {
+  color: #f6c453;
+}
+
+.ribbon {
+  --ribbon-bg: #1B2520;
+  position: fixed;
+  top: var(--navbar-height);
+  left: 0;
+  right: 0;
+  height: var(--ribbon-height);
+  background: var(--ribbon-bg);
+  display: flex;
+  align-items: stretch;
+  padding: 0 0.75rem;
+  z-index: 1029;
+  overflow-x: auto;
+  overflow-y: hidden;
+  transition: height 0.15s ease;
+}
+
+.ribbon::-webkit-scrollbar { height: 4px; }
+.ribbon::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+
+.ribbon-panel {
+  display: none;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+}
+
+.ribbon-panel.active {
+  display: flex;
+}
+
+/* Components on the bench add groups to a tab; when the band is full it
+   scrolls sideways instead of cutting the last groups off. */
+.ribbon-panel {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.ribbon-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem 0.2rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+
+/* The last group in a panel absorbs the free space, so groups stay left.
+   Its label follows the buttons instead of centring in the empty space. */
+.ribbon-group-grow {
+  border-right: none;
+  flex: 1 1 auto;
+}
+
+.ribbon-group-grow > .ribbon-group-label {
+  text-align: left;
+}
+
+.ribbon-group-items {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.ribbon-group-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.38);
+  text-align: center;
+  padding-top: 0.2rem;
+  white-space: nowrap;
+}
+
+.ribbon-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  width: 74px;
+  padding: 0.3rem 0.25rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.68rem;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.ribbon-btn i {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.ribbon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.ribbon-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* A ribbon button that toggles something already on screen. */
+.ribbon-btn[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+.ribbon-btn:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.ribbon-btn:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.ribbon-switch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  width: 84px;
+  padding: 0.3rem 0.25rem;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.68rem;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.ribbon-switch:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Auto-hide (default): clicking a tab drops the band down over the content
+   (.peek); a click elsewhere, Esc or a command hides it again. It sits
+   above the docked inspector but below Bootstrap modals (1050+). */
+.ribbon.peek {
+  height: 86px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.35);
+  z-index: 1040;
+}
+
+/* Pinned: the band stays open and the layout makes room for it. */
+body.ribbon-pinned {
+  --ribbon-height: 86px;
+}
+
+body.ribbon-pinned .ribbon {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.ribbon-pinned #btnRibbonToggle {
+  color: #fff;
+}
+
 .connection-badge {
   display: inline-flex;
   align-items: center;
@@ -70,7 +293,7 @@ html, body {
   font-size: 0.8rem;
   font-weight: 500;
   background-color: rgba(255, 255, 255, 0.1);
-  color: #ecf0f1;
+  color: var(--sidebar-text);
 }
 
 .connection-dot {
@@ -293,7 +516,7 @@ html, body {
 }
 
 .btn-connect:hover {
-  background-color: #2980b9;
+  background-color: var(--accent-hover);
   color: #fff;
 }
 
@@ -354,7 +577,7 @@ html, body {
 .app-layout {
   display: flex;
   position: fixed;
-  top: var(--navbar-height);
+  top: calc(var(--navbar-height) + var(--ribbon-height));
   left: 0;
   right: 0;
   bottom: 0;
@@ -372,7 +595,7 @@ html, body {
   display: flex;
   flex-direction: column;
   resize: horizontal;
-  border-right: 1px solid #1a252f;
+  border-right: 1px solid var(--navbar-bg);
 }
 
 .sidebar-header {
@@ -383,7 +606,7 @@ html, body {
 .sidebar-search {
   background-color: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #ecf0f1;
+  color: var(--sidebar-text);
   border-radius: 4px;
   padding: 0.5rem 0.75rem;
   width: 100%;
@@ -397,7 +620,7 @@ html, body {
 .sidebar-search:focus {
   outline: none;
   border-color: var(--sidebar-active);
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .sidebar-content {
@@ -424,7 +647,7 @@ html, body {
 }
 
 .sidebar-content .accordion-button:not(.collapsed) {
-  background-color: rgba(52, 152, 219, 0.2);
+  background-color: color-mix(in srgb, var(--accent) 20%, transparent);
   color: #fff;
 }
 
@@ -829,12 +1052,12 @@ html, body {
 
 .api-arg-field label code {
   font-size: 0.9em;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
 }
 
 .api-response-pre {
-  background-color: #1a252f;
-  color: #ecf0f1;
+  background-color: var(--navbar-bg);
+  color: var(--sidebar-text);
   padding: 1rem;
   border-radius: 6px;
   font-size: 0.85rem;
@@ -895,19 +1118,19 @@ html, body {
 }
 
 .helper-lang-tabs .nav-link:hover {
-  color: #ecf0f1;
-  background-color: rgba(26, 37, 47, 0.5);
+  color: var(--sidebar-text);
+  background-color: color-mix(in srgb, var(--navbar-bg) 50%, transparent);
 }
 
 .helper-lang-tabs .nav-link.active {
-  color: #ecf0f1;
-  background-color: #1a252f;
-  border-color: #1a252f;
+  color: var(--sidebar-text);
+  background-color: var(--navbar-bg);
+  border-color: var(--navbar-bg);
 }
 
 .helper-code-pre {
-  background-color: #1a252f;
-  color: #ecf0f1;
+  background-color: var(--navbar-bg);
+  color: var(--sidebar-text);
   padding: 1rem;
   border-radius: 0 6px 6px 6px;
   font-size: 0.82rem;
@@ -938,7 +1161,10 @@ html, body {
   display: none;
 }
 
-#servicesList.multi-broker .broker-header {
+/* Headers are hidden in single-broker mode -- except for a source that is
+   unreachable, which must stay visible so the user can see it and retry. */
+#servicesList.multi-broker .broker-header,
+#servicesList .broker-section.broker-offline .broker-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -984,4 +1210,1837 @@ html, body {
 .broker-disconnect-btn:hover {
   color: #e74c3c;
   background-color: rgba(231, 76, 60, 0.15);
+}
+
+/* Per-source connection state (see setBrokerStatus in app.js) */
+.broker-header .broker-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.broker-section.broker-connecting .broker-status {
+  background-color: #f1c40f;
+}
+
+.broker-section.broker-online .broker-status {
+  background-color: #2ecc71;
+}
+
+.broker-section.broker-offline .broker-status {
+  background-color: #e74c3c;
+}
+
+.broker-section.broker-offline .broker-label {
+  color: #e74c3c;
+}
+
+.broker-retry-btn {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+  padding: 0 0.3rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.15s, background-color 0.15s;
+  flex-shrink: 0;
+}
+
+.broker-section.broker-offline .broker-retry-btn {
+  display: inline-block;
+}
+
+/* Retry sits in the "margin-left: auto" slot when shown; the disconnect
+   button then no longer needs to push itself right. */
+.broker-section.broker-offline .broker-disconnect-btn {
+  margin-left: 0;
+}
+
+.broker-retry-btn:hover {
+  color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+/* Services that expose no GUI are listed but say so (story: the absence
+   of a GUI must not hide a service). */
+.sidebar-content .list-group-item .no-gui-badge,
+.svc-card .no-gui-badge {
+  margin-left: 0.4rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+/* Runtime card: the operator's view of a service without a GUI
+   (see _showServiceRuntimeCard in app.js). */
+.svc-card {
+  max-width: 640px;
+  padding: 1.25rem 1.5rem;
+}
+
+.svc-card .svc-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.svc-card .svc-card-header .svc-status {
+  width: 10px;
+  height: 10px;
+}
+
+.svc-card .no-gui-badge {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.svc-card-table {
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.svc-card-table th {
+  text-align: left;
+  font-weight: 600;
+  color: #6c757d;
+  padding: 0.25rem 1.25rem 0.25rem 0;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.svc-card-table td {
+  padding: 0.25rem 0;
+  word-break: break-all;
+}
+
+/* ---------- Developer view: API Explorer + Code Examples ---------- */
+/* One visual language for every developer surface: breadcrumb, title row
+   with status / target / tags, a right-aligned toolbar, then cards. */
+.dev-panel {
+  max-width: 1100px;
+}
+
+.dev-header {
+  margin-bottom: 1rem;
+}
+
+.dev-breadcrumb {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a94a0;
+  margin-bottom: 0.35rem;
+}
+
+.dev-breadcrumb-sep {
+  margin: 0 0.4rem;
+  opacity: 0.6;
+}
+
+.dev-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dev-title-row .svc-status {
+  width: 10px;
+  height: 10px;
+}
+
+.dev-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.25rem;
+  color: var(--navbar-bg);
+}
+
+.dev-target {
+  font-size: 0.8rem;
+  background: #eef1f4;
+  color: var(--sidebar-hover);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dev-target:hover {
+  background: #e2e7ec;
+}
+
+.dev-tag {
+  font-size: 0.7rem;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.dev-discovery {
+  font-size: 0.72rem;
+  color: #6c757d;
+  border: 1px dashed #c8cfd6;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+}
+
+.dev-discovery:empty {
+  display: none;
+}
+
+.dev-toolbar {
+  margin-left: auto;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.dev-subtitle {
+  color: #6c757d;
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0;
+}
+
+.dev-note {
+  font-size: 0.82rem;
+  background: #EEF5F2;
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  color: var(--sidebar-bg);
+}
+
+.dev-loading {
+  color: #6c757d;
+  font-size: 0.85rem;
+  padding: 1rem 0;
+}
+
+.dev-alert {
+  background: #fff;
+  border: 1px solid #e3e7eb;
+  border-left: 3px solid;
+  border-radius: 4px;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.dev-alert div {
+  color: #555;
+  margin-top: 0.2rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dev-alert-danger  { border-left-color: #e74c3c; }
+.dev-alert-warning { border-left-color: #f39c12; }
+
+/* Cards: one per gRPC service */
+.dev-card {
+  background: #fff;
+  border: 1px solid #e3e7eb;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.dev-card-header {
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.9rem;
+  background: #f6f8fa;
+  border-bottom: 1px solid #e3e7eb;
+  font-size: 0.85rem;
+  color: var(--sidebar-bg);
+}
+
+.dev-card-title {
+  color: var(--sidebar-bg);
+  background: none;
+  font-size: 0.85rem;
+}
+
+.dev-card-count {
+  margin-left: auto;
+  color: #6c757d;
+  font-size: 0.75rem;
+}
+
+/* Methods: flat accordion rows */
+.dev-methods .accordion-item {
+  border: none;
+  border-bottom: 1px solid #eef1f4;
+  border-radius: 0;
+}
+
+.dev-methods .accordion-item:last-child {
+  border-bottom: none;
+}
+
+.dev-methods .accordion-button {
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+  gap: 0.6rem;
+  box-shadow: none;
+}
+
+.dev-methods .accordion-button:not(.collapsed) {
+  background: #fbfcfd;
+  color: inherit;
+}
+
+.dev-method-name {
+  color: var(--navbar-bg);
+  background: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.dev-method-sig {
+  color: #6c757d;
+  font-size: 0.78rem;
+}
+
+.dev-stream {
+  margin-left: auto;
+  margin-right: 0.5rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.dev-stream-unary  { background: #eef1f4; color: #6c757d; }
+.dev-stream-server { background: #fff4e0; color: #b9770e; }
+.dev-stream-client,
+.dev-stream-bidi   { background: #fdecea; color: #c0392b; }
+
+.dev-method-body {
+  padding: 0.75rem 0.9rem 0.9rem;
+  background: #fbfcfd;
+}
+
+.dev-block-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a94a0;
+  margin-bottom: 0.35rem;
+}
+
+.dev-fields {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-left: 0.5rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.dev-field {
+  display: inline-flex;
+  font-size: 0.72rem;
+  border: 1px solid #dfe4e8;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dev-field-name {
+  padding: 0.05rem 0.4rem;
+  background: #fff;
+  color: var(--sidebar-bg);
+}
+
+.dev-field-type {
+  padding: 0.05rem 0.4rem;
+  background: #eef1f4;
+  color: #6c757d;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+/* Request editor */
+.dev-json {
+  width: 100%;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  background: var(--navbar-bg);
+  color: var(--sidebar-text);
+  border: 1px solid var(--navbar-bg);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.dev-json:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.dev-json.is-invalid {
+  border-color: #e74c3c;
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3);
+}
+
+.dev-req-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.dev-hint {
+  font-size: 0.72rem;
+  color: #95a5a6;
+  margin-left: 0.5rem;
+}
+
+/* Response */
+.dev-response {
+  margin-top: 0.75rem;
+  border: 1px solid #e3e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.dev-response-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  background: #f6f8fa;
+  border-bottom: 1px solid #e3e7eb;
+}
+
+.dev-response-pending .dev-response-head {
+  border-bottom: none;
+}
+
+.dev-response-status {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 4px;
+}
+
+.dev-response-ok    .dev-response-status { background: #e6f6ec; color: #1e8449; }
+.dev-response-error .dev-response-status { background: #fdecea; color: #c0392b; }
+.dev-response-warn  .dev-response-status { background: #fff4e0; color: #b9770e; }
+
+.dev-response-meta {
+  color: #6c757d;
+}
+
+.dev-copy-btn {
+  margin-left: auto;
+  padding: 0 0.3rem;
+  color: #6c757d;
+}
+
+.dev-response-body {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 12px;
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Code Examples modal */
+.dev-modal-head {
+  margin-bottom: 0.75rem;
+}
+
+.helper-lang-tabs .dev-file {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.helper-code-pre {
+  counter-reset: line;
+  line-height: 1.5;
+}
+
+/* Line-number gutter drawn from a pseudo-element, so pre.textContent
+   (what Copy reads) stays the plain code. */
+.helper-code-pre .code-line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2.6em;
+  margin-right: 1em;
+  text-align: right;
+  color: rgba(236, 240, 241, 0.35);
+  user-select: none;
+}
+
+/* ---------- Developer mode ---------- */
+/* Distinct from the runtime view the way browser devtools are: an amber
+   accent on the chrome, a DEV pill, and an inspector docked on the right.
+   The runtime content itself is never restyled. */
+body.dev-mode .app-navbar {
+  box-shadow: inset 0 -3px 0 #f39c12, 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.nav-mode-toggle .mode-btn.dev-on {
+  color: #f6c453;
+}
+
+.dev-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(243, 156, 18, 0.18);
+  border: 1px solid rgba(243, 156, 18, 0.6);
+  color: #f6c453;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.nav-tools-dropdown .dev-mode-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  cursor: pointer;
+}
+
+.nav-tools-dropdown .dev-mode-item .form-check-input {
+  cursor: pointer;
+}
+
+.nav-tools-dropdown .dev-mode-item .dev-menu-desc {
+  margin-left: 0;
+}
+
+/* Inspector pane: covers the whole content area beside the sidebar, so
+   developer mode is sidebar + inspector -- the same two regions as the
+   runtime view, with the inspector standing in for the content pane.
+   It is fixed, not a flex column, so the content underneath keeps its
+   size (Qt WASM canvases must never collapse to 0x0). `left` follows
+   the sidebar's actual width; app.js keeps it in sync. */
+.dev-inspector {
+  position: fixed;
+  top: calc(var(--navbar-height) + var(--ribbon-height));
+  right: 0;
+  bottom: 0;
+  left: var(--sidebar-width);
+  z-index: 1020;   /* above content, below the navbar (1030) and modals */
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-left: 1px solid var(--navbar-bg);
+  overflow: hidden;
+}
+
+.dev-inspector[hidden] {
+  display: none;
+}
+
+.dev-inspector-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--navbar-bg);
+  color: var(--sidebar-text);
+  border-bottom: 3px solid #f39c12;
+}
+
+.dev-inspector-crumb {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f6c453;
+  width: 100%;
+}
+
+.dev-inspector-title {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.dev-inspector-target {
+  font-size: 0.75rem;
+  color: rgba(236, 240, 241, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.dev-inspector-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dev-inspector-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dev-inspector-tabs {
+  display: flex;
+  border-bottom: 1px solid #e3e7eb;
+  background: #f6f8fa;
+}
+
+.dev-inspector-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  color: #6c757d;
+  cursor: pointer;
+}
+
+.dev-inspector-tab:hover {
+  color: var(--sidebar-bg);
+}
+
+.dev-inspector-tab.active {
+  color: var(--navbar-bg);
+  font-weight: 600;
+  border-bottom-color: #f39c12;
+  background: #fff;
+}
+
+.dev-inspector-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0.9rem;
+}
+
+.dev-inspector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: #8a94a0;
+  font-size: 0.88rem;
+}
+
+.dev-inspector-empty .bi {
+  font-size: 2rem;
+  color: #c8cfd6;
+}
+
+.dev-inspector-section {
+  margin-bottom: 1.25rem;
+}
+
+.dev-inspector-section h6 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a94a0;
+  margin-bottom: 0.5rem;
+}
+
+.dev-inspector-codebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.dev-inst {
+  border: 1px solid #e3e7eb;
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.dev-inst-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dev-inst-addr {
+  margin-left: auto;
+  color: #6c757d;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.dev-inst-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  margin-top: 0.35rem;
+  color: #6c757d;
+  font-size: 0.75rem;
+}
+
+.dev-inst-checks {
+  margin-top: 0.35rem;
+}
+
+/* Compact explorer inside the inspector */
+.dev-panel-compact .dev-compact-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.dev-panel-compact .dev-toolbar {
+  margin-left: auto;
+}
+
+.dev-panel-compact .dev-card {
+  border-radius: 6px;
+}
+
+/* The inspector is as wide as the content pane, so the compact explorer
+   can afford the same padding as the full-page one. */
+.dev-inspector-body {
+  padding: 1.25rem 1.5rem;
+}
+
+.dev-inspector-body .dev-panel {
+  max-width: 1100px;
+}
+
+/* ---------- Operator overview (runtime view of a non-GUI service) ---------- */
+.svc-overview {
+  max-width: 1100px;
+}
+
+.svc-ov-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.svc-ov-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--navbar-bg);
+}
+
+.svc-ov-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #9e9e9e;
+  flex-shrink: 0;
+  margin-right: 0.35rem;
+}
+
+.svc-ov-dot-passing  { background: #2ecc71; box-shadow: 0 0 5px rgba(46, 204, 113, 0.7); }
+.svc-ov-dot-warning  { background: #f1c40f; box-shadow: 0 0 5px rgba(241, 196, 15, 0.7); }
+.svc-ov-dot-critical { background: #e74c3c; box-shadow: 0 0 5px rgba(231, 76, 60, 0.7); }
+
+.svc-ov-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+}
+
+.svc-ov-pill-passing  { background: rgba(46, 204, 113, 0.15); color: #1e8449; }
+.svc-ov-pill-warning  { background: rgba(241, 196, 15, 0.18); color: #b9770e; }
+.svc-ov-pill-critical { background: rgba(231, 76, 60, 0.15); color: #c0392b; }
+.svc-ov-pill-unknown  { background: #eef1f4; color: #6c757d; }
+
+.svc-ov-head .no-gui-badge {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.svc-ov-tools {
+  margin-left: auto;
+}
+
+/* Cards sit side by side when the pane is wide and stack when it is
+   not (e.g. next to the developer inspector) -- never overflow. */
+.svc-ov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.svc-ov-card {
+  min-width: 0;
+}
+
+.svc-ov-table-wrap {
+  overflow-x: auto;
+}
+
+.svc-ov-check {
+  white-space: nowrap;
+}
+
+.svc-ov-card {
+  background: #fff;
+  border: 1px solid #e3e7eb;
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+}
+
+.svc-ov-card-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a94a0;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.svc-ov-card-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: #95a5a6;
+}
+
+.svc-ov-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.svc-ov-table th {
+  text-align: left;
+  font-weight: 600;
+  color: #6c757d;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.5rem 0.35rem 0;
+  border-bottom: 1px solid #eef1f4;
+}
+
+.svc-ov-table td {
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid #f3f5f7;
+  vertical-align: middle;
+  white-space: nowrap;   /* narrow pane: scroll the card, never wrap ids */
+}
+
+.svc-ov-check {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  margin: 0 0.25rem 0.2rem 0;
+  background: #eef1f4;
+  color: #6c757d;
+}
+
+.svc-ov-check-passing  { background: rgba(46, 204, 113, 0.15); color: #1e8449; }
+.svc-ov-check-warning  { background: rgba(241, 196, 15, 0.18); color: #b9770e; }
+.svc-ov-check-critical { background: rgba(231, 76, 60, 0.15); color: #c0392b; }
+
+/* Actions: one form per method, fields typed from the API */
+.op-action {
+  border: 1px solid #e3e7eb;
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.7rem;
+  background: #fbfcfd;
+}
+
+.op-action-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.op-action-name {
+  font-weight: 600;
+  color: var(--navbar-bg);
+}
+
+.op-action-sig {
+  font-size: 0.75rem;
+  color: #8a94a0;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.op-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem 0.9rem;
+  margin-bottom: 0.6rem;
+}
+
+.op-fields-empty {
+  display: block;
+  color: #95a5a6;
+  font-size: 0.8rem;
+}
+
+.op-label {
+  font-size: 0.75rem;
+  color: var(--sidebar-bg);
+  margin-bottom: 0.15rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.op-type {
+  font-size: 0.68rem;
+  color: #95a5a6;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.op-json {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+.op-run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.op-result {
+  margin-top: 0.6rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.op-result-pending { background: #f6f8fa; color: #6c757d; }
+.op-result-ok      { background: #f2faf5; border: 1px solid #cfe9d8; }
+.op-result-error   { background: #fdecea; border: 1px solid #f5c6c2; color: #c0392b; }
+
+.op-result-meta {
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-bottom: 0.3rem;
+}
+
+.op-result-ok-label {
+  font-weight: 700;
+  color: #1e8449;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  margin-right: 0.3rem;
+}
+
+.op-result-body {
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+}
+
+/* ---------- Test projects ---------- */
+.dev-project-chip {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(236, 240, 241, 0.85);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.dev-project-chip:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.dev-project-chip + .dev-inspector-close {
+  margin-left: 0.35rem;
+}
+
+.dev-alert-ok {
+  border-left-color: #2ecc71;
+}
+
+.tp-runner {
+  max-width: 320px;
+}
+
+.tp-layout pre,
+.tp-diff pre {
+  background: var(--navbar-bg);
+  color: var(--sidebar-text);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  margin: 0;
+  overflow: auto;
+}
+
+.tp-diff pre {
+  max-height: 320px;
+  margin-top: 0.35rem;
+}
+
+.tp-diff summary {
+  font-size: 0.75rem;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.tp-source {
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.tp-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.tp-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.tp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.tp-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8a94a0;
+  padding: 0.3rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid #e3e7eb;
+}
+
+.tp-table td {
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid #f1f3f5;
+  vertical-align: top;
+}
+
+.tp-role {
+  color: #8a94a0;
+  white-space: nowrap;
+}
+
+.tp-status {
+  display: inline-block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.tp-status-create    { background: #e6f6ec; color: #1e8449; }
+.tp-status-update    { background: var(--accent-soft); color: var(--accent-hover); }
+.tp-status-unchanged { background: #eef1f4; color: #6c757d; }
+.tp-status-modified  { background: #fff4e0; color: #b9770e; }
+.tp-status-keep      { background: #eef1f4; color: #6c757d; }
+
+.tp-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.tp-hint code {
+  background: #eef1f4;
+  color: var(--sidebar-bg);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tp-list {
+  font-size: 0.82rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ---------- Test project view ---------- */
+.tpv-tree {
+  padding: 0.5rem 0.5rem 1rem;
+  color: var(--sidebar-text);
+  font-size: 0.82rem;
+  overflow-y: auto;
+}
+
+.tpv-project {
+  padding: 0.4rem 0.5rem 0.7rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 0.4rem;
+}
+
+.tpv-project-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.tpv-project-meta {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  word-break: break-all;
+}
+
+.tpv-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tpv-item:hover {
+  background: var(--sidebar-hover);
+}
+
+.tpv-item.active {
+  background: var(--sidebar-active);
+  color: #fff;
+}
+
+.tpv-item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tpv-group {
+  margin-top: 0.6rem;
+}
+
+.tpv-group-title {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 0.2rem 0.5rem;
+}
+
+.tpv-role {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.02rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.tpv-role-generated { background: color-mix(in srgb, var(--accent) 25%, transparent); color: #8FDCCB; }
+.tpv-role-starter   { background: rgba(46, 204, 113, 0.18); color: #8fe0b0; }
+
+.tpv-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.tpv-dot.tpv-state-edited  { background: #f39c12; }
+.tpv-dot.tpv-state-missing { background: #e74c3c; }
+
+.tpv-empty {
+  padding: 1rem 0.5rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ---------- Sidebar footer: Services / Project switch ---------- */
+
+/* The mode panels ask for height:100% (fleet.css), which would push the
+   footer below the fold. Inside the sidebar they flex instead, so the
+   panel scrolls on its own and the footer keeps its place. */
+.app-sidebar > .sidebar-mode {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#sidebarTestProject > .tpv-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Same segmented-pill idiom as the navbar's mode toggle (.nav-mode-toggle),
+   because this is the same kind of control: pick the view. The sidebar is
+   resizable and the browser draws its grip in the bottom-right corner —
+   which is now this bar — so the right padding keeps that corner clear of
+   the Project tab. */
+.sidebar-switch {
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  background-color: var(--sidebar-bg);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem 0.5rem 0.6rem;
+}
+
+.sidebar-switch-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+
+.sidebar-switch-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.3rem 0.55rem;
+  min-width: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.sidebar-switch-tab:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.sidebar-switch-tab.active {
+  background-color: var(--sidebar-active);
+  color: #fff;
+}
+
+.sidebar-switch-tab i {
+  font-size: 0.85rem;
+}
+
+/* Three tabs: in a narrow pane the icons carry them (titles still name them). */
+.sidebar-switch {
+  container-type: inline-size;
+}
+
+@container (max-width: 290px) {
+  .sidebar-switch-tab span {
+    display: none;
+  }
+}
+
+/* Uses the whole content area: an editor, a console or a results table
+   capped at a fixed width left the rest of a wide window empty. */
+.tpv-view {
+  min-width: 0;
+}
+
+.tpv-view .svc-ov-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+}
+
+.tpv-files-ok      { color: #1e8449; }
+.tpv-files-edited  { color: #b9770e; font-weight: 600; }
+.tpv-files-missing { color: #c0392b; font-weight: 600; }
+
+.tpv-stats {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.tpv-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sidebar-bg);
+  line-height: 1.1;
+}
+
+.tpv-stat-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8a94a0;
+}
+
+.tpv-add-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.tpv-add-row select {
+  max-width: 280px;
+}
+
+.tpv-file-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.tpv-file-head code {
+  font-size: 0.9rem;
+  color: var(--navbar-bg);
+  background: none;
+}
+
+.tpv-back {
+  font-size: 0.8rem;
+  margin-right: 0.5rem;
+}
+
+.tpv-file-tools {
+  margin-left: auto;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.tpv-preview {
+  max-height: calc(100vh - 230px);
+  border-radius: 6px;
+}
+
+/* ---------- Test project view: editor ---------- */
+/* A textarea over a highlighted <pre>: both must share exactly the same
+   font, line height, padding and white-space handling, or the caret drifts
+   away from the coloured text. */
+.tpv-editor {
+  display: flex;
+  height: calc(100vh - 270px);
+  min-height: 260px;
+  border: 1px solid var(--navbar-bg);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--navbar-bg);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.tpv-gutter {
+  flex: 0 0 auto;
+  min-width: 3.4em;
+  padding: 0.6rem 0.6rem 0.6rem 0.4rem;
+  background: #16202a;
+  color: rgba(236, 240, 241, 0.35);
+  text-align: right;
+  overflow: hidden;
+  user-select: none;
+}
+
+.tpv-gutter > div {
+  white-space: pre;
+}
+
+.tpv-code {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tpv-hl,
+.tpv-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: normal;
+  white-space: pre;
+  tab-size: 4;
+  overflow-wrap: normal;
+}
+
+.tpv-hl {
+  min-width: 100%;
+  min-height: 100%;
+  color: var(--sidebar-text);
+  background: transparent;
+  pointer-events: none;
+}
+
+.tpv-input {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: #ffffff;
+  resize: none;
+  outline: none;
+  overflow: auto;
+}
+
+.tpv-input::selection {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: transparent;
+}
+
+.rf-sec  { color: #f6c453; font-weight: 700; }
+.rf-com  { color: #7f8c8d; font-style: italic; }
+.rf-var  { color: #76d7c4; }
+.rf-set  { color: #c39bd3; }
+.rf-name { color: #85c1e9; font-weight: 600; }
+.rf-key  { color: #f5b7b1; }
+.rf-cont { color: #95a5a6; }
+
+.tpv-edit-status {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.tpv-edit-status.dirty {
+  color: #b9770e;
+  font-weight: 600;
+}
+
+.tpv-unsaved {
+  color: #f39c12;
+  font-size: 0.7rem;
+}
+
+.tpv-problems {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #f5c6c2;
+  border-radius: 6px;
+  background: #fdecea;
+  color: #922b21;
+  font-size: 0.8rem;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.tpv-problems-ok {
+  border-color: #cfe9d8;
+  background: #f2faf5;
+  color: #1e8449;
+}
+
+.tpv-problems-title {
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.tpv-problem {
+  cursor: pointer;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.78rem;
+}
+
+.tpv-problem:hover {
+  text-decoration: underline;
+}
+
+.tpv-add {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 0 0.3rem;
+  margin-right: 0.2rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tpv-add:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tpv-new-suite {
+  max-width: 560px;
+}
+
+/* ---------- Test project view: extra file views (flow Diagram, Robot) ---------- */
+
+.tpv-tabs {
+  margin-bottom: 0.5rem;
+}
+
+.tpv-tabs + #tpvFileBody .tpv-editor {
+  height: calc(100vh - 310px);
+}
+
+.tpv-view-pane {
+  height: calc(100vh - 310px);
+  min-height: 260px;
+  overflow: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 0.6rem 0.75rem;
+}
+
+.tpv-view-note {
+  font-size: 0.78rem;
+  color: #6c757d;
+  margin-bottom: 0.5rem;
+}
+
+.tpv-code-view {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: var(--navbar-bg);
+  color: var(--sidebar-text);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+}
+
+/* Flow diagram (web/js/FlowView.js): light, like the rest of the content area. */
+.flow-view {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  font-family: var(--font-family);
+}
+
+.flow-view .fv-lane { fill: #f3f6f8; stroke: #dfe6ea; }
+.flow-view .fv-lane-title { font: 600 11px Consolas, "Courier New", monospace; letter-spacing: 0.06em; fill: #1a9c83; }
+
+.flow-view .fv-node rect,
+.flow-view .fv-node polygon { fill: #ffffff; stroke: #b8c4cc; stroke-width: 1.3; }
+.flow-view .fv-node { cursor: pointer; outline: none; }
+.flow-view .fv-node:hover rect,
+.flow-view .fv-node:hover polygon,
+.flow-view .fv-node:focus-visible rect,
+.flow-view .fv-node:focus-visible polygon { stroke: var(--sidebar-active); stroke-width: 2.2; }
+
+.flow-view .fv-title { font-size: 13px; font-weight: 600; fill: #1a252f; text-anchor: middle; }
+.flow-view .fv-sub { font-size: 11px; fill: #6c7a86; text-anchor: middle; }
+
+.flow-view .fv-gate polygon { fill: #effaf7; stroke: #1a9c83; stroke-width: 1.8; }
+.flow-view .fv-sleep rect { stroke-dasharray: 4 3; }
+.flow-view .fv-decision polygon { fill: #fff8e6; stroke: #c9a227; stroke-width: 1.6; }
+.flow-view .fv-loop rect { fill: #f4effb; stroke: #7d5ba6; stroke-width: 1.8; }
+.flow-view .fv-try rect { fill: #eef2f5; stroke: #5d6d7e; stroke-width: 1.8; }
+.flow-view .fv-in-recovery rect,
+.flow-view .fv-in-recovery polygon { fill: #fff6e6; stroke: #c77c0e; }
+.flow-view .fv-error rect,
+.flow-view .fv-error polygon { stroke: #e74c3c; stroke-width: 2.6; }
+
+.flow-view .fv-frame { fill: none; stroke-width: 1.3; stroke-dasharray: 6 4; }
+.flow-view .fv-frame-loop { stroke: #b9a3d6; }
+.flow-view .fv-frame-try { stroke: #aab7c4; }
+.flow-view .fv-rec-zone { fill: #fffaf0; stroke: #e8c690; stroke-dasharray: 4 4; }
+
+.flow-view .fv-pill rect { fill: #ffffff; stroke: #1a252f; stroke-width: 1.3; }
+
+.flow-view .fv-edge { fill: none; stroke: #8a99a6; stroke-width: 1.5; }
+.flow-view .fv-edge-next { stroke: #7d5ba6; }
+.flow-view .fv-edge-fail { stroke: #c77c0e; stroke-width: 1.7; }
+.flow-view .fv-edge-cont { stroke: #c77c0e; stroke-width: 1.5; stroke-dasharray: 6 4; }
+
+.flow-view .fv-label { font-size: 11px; fill: #6c7a86; }
+.flow-view .fv-label-next { fill: #7d5ba6; }
+.flow-view .fv-label-fail,
+.flow-view .fv-label-cont { fill: #c77c0e; }
+
+/* ---------- Test project view: running tests ---------- */
+/* Verdict words are the runner-neutral ones the bridge reports
+   (pass | fail | unknown | skip | error); running is the live state. */
+
+.tpv-play {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 0 0.15rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  border-radius: 3px;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.tpv-item:hover .tpv-play,
+.tpv-item.active .tpv-play,
+.tpv-play:focus-visible {
+  visibility: visible;
+}
+
+.tpv-play:hover {
+  color: #7ee2a8;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tpv-live {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f1c40f;
+  animation: tpr-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tpr-pulse {
+  50% { opacity: 0.35; }
+}
+
+.tpr-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  min-width: 4.8rem;
+  justify-content: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: #eef1f4;
+  color: #5d6d7e;
+}
+
+.tpr-verdict-sm {
+  min-width: 4.2rem;
+  font-size: 0.64rem;
+  padding: 0.08rem 0.4rem;
+}
+
+.tpr-v-pass     { background: #e3f5ea; color: #1e8449; }
+.tpr-v-fail     { background: #fdecea; color: #c0392b; }
+.tpr-v-unknown  { background: #fff4e0; color: #b9770e; }
+.tpr-v-skip     { background: #eef1f4; color: #6c757d; }
+.tpr-v-error    { background: #f4e6f7; color: #7d3c98; }
+.tpr-v-running,
+.tpr-v-stopping { background: #fdf6d8; color: #9a7d0a; }
+
+.tpr-current {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.tpr-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tpr-head .tpr-verdict {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+  min-width: 6rem;
+}
+
+.tpr-title {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.tpr-title code {
+  font-size: 0.95rem;
+  color: var(--navbar-bg);
+  background: none;
+  word-break: break-all;
+}
+
+.tpr-meta {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-variant-numeric: tabular-nums;
+}
+
+.tpr-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tpr-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tpr-counts b { font-size: 1.05rem; margin-right: 0.2rem; }
+.tpr-c-pass b    { color: #1e8449; }
+.tpr-c-fail b    { color: #c0392b; }
+.tpr-c-unknown b { color: #b9770e; }
+.tpr-c-skip b    { color: #6c757d; }
+
+.tpr-message {
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  background: #f4f6f8;
+  color: #34495e;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tpr-console {
+  margin: 0;
+  height: calc(100vh - 420px);
+  min-height: 220px;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: var(--navbar-bg);
+  color: #d5dde3;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.tpr-console .tpr-l-pass    { color: #7ee2a8; }
+.tpr-console .tpr-l-fail    { color: #f1948a; }
+.tpr-console .tpr-l-unknown { color: #f8c471; }
+.tpr-console .tpr-l-rule    { color: #5d6d7e; }
+
+.tpr-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.tpr-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  color: #6c757d;
+  cursor: pointer;
+}
+
+.tpr-tab.active {
+  color: var(--navbar-bg);
+  border-bottom-color: var(--sidebar-active);
+  font-weight: 600;
+}
+
+.tpr-results {
+  max-height: calc(100vh - 420px);
+  min-height: 220px;
+  overflow: auto;
+}
+
+.tpr-results td.tpr-msg {
+  font-size: 0.75rem;
+  color: #6c757d;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 480px;
+}
+
+.tpr-history tr[data-tpr-run] {
+  cursor: pointer;
+}
+
+.tpr-history tr[data-tpr-run]:hover td {
+  background: #f4f8fb;
+}
+
+.tpr-history tr.tpr-shown td {
+  background: #eaf3fb;
+}
+
+.tpr-history td {
+  font-variant-numeric: tabular-nums;
+}
+
+.tpr-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: #6c757d;
+}
+
+.tpr-form textarea {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.8rem;
 }

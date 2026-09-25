@@ -11,7 +11,7 @@ Proposed
 ## Author
 
 Audit follow-up.  Aligns with the TA reference at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+`taf_repo_proposal`.
 
 ## Reviewer
 
@@ -136,7 +136,7 @@ Kafka is structurally different and doesn't have those issues.
 ## References
 
 - Reference architecture:
-  [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+  `taf_repo_proposal`
 - [`docs/diagrams/00_canonical_architecture.puml`](../diagrams/00_canonical_architecture.puml) —
   shows Kafka in the canonical topology
 - [ADR-028 gRPC + reflection as the primary RPC layer](028-grpc-reflection-primary-rpc.md) — sibling decision for the sync substrate

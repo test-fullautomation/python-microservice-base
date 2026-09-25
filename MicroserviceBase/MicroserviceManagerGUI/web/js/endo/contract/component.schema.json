@@ -1,0 +1,205 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "endo/component.schema.json",
+  "title": "Bench Endoskeleton component, contract v1",
+  "description": "One module of the bench UI: tiles, ribbon commands and dock sections for one service in one layer. Structure only; the semantic rules (R1-R10) are checked by lint.js.",
+  "type": "object",
+  "required": ["component", "version", "layer", "title", "requires", "binds", "renderer"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z0-9][a-z0-9-]*$",
+      "description": "<layer>.<name>, lower case"
+    },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.-]+)?$" },
+    "layer": { "type": "string", "description": "operator | session | config | execution | runner | signals | bits" },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "requires": {
+      "type": "object",
+      "required": ["shell", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "shell": { "type": "string", "minLength": 1 },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "binds": {
+      "type": "object",
+      "required": ["consul"],
+      "description": "Service identities, never addresses. consul may be \"@self\": the service that declared this component through Meta.gui.",
+      "properties": {
+        "consul": { "type": "string", "minLength": 1 },
+        "grpc": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$" }
+      }
+    },
+    "tiles": { "type": "array", "items": { "$ref": "#/definitions/tile" } },
+    "ribbon": { "type": "array", "items": { "$ref": "#/definitions/ribbonGroup" } },
+    "dock": { "type": "array", "items": { "type": "string", "enum": ["api", "details", "code"] } },
+    "renderer": { "type": "string", "enum": ["schema", "html", "wasm", "qml", "widget"] }
+  },
+  "definitions": {
+    "tile": {
+      "type": "object",
+      "required": ["id", "size", "kind"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "size": { "type": "string" },
+        "kind": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" }
+      }
+    },
+    "ribbonGroup": {
+      "type": "object",
+      "required": ["tab", "group", "commands"],
+      "additionalProperties": false,
+      "properties": {
+        "tab": { "type": "string", "enum": ["user", "dev", "admin"] },
+        "group": { "type": "string", "minLength": 1 },
+        "commands": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/command" } }
+      }
+    },
+    "command": {
+      "type": "object",
+      "required": ["label", "call"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "icon": { "type": "string" },
+        "call": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "args": { "type": "object" },
+        "form": { "$ref": "#/definitions/form" },
+        "confirm": { "type": "string" }
+      }
+    },
+    "form": {
+      "type": "object",
+      "description": "field name -> type name, or { type, label, min, max, default }",
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string", "enum": ["string", "int", "float", "bool", "json"] },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string", "enum": ["string", "int", "float", "bool", "json"] },
+              "label": { "type": "string" },
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "default": {}
+            }
+          }
+        ]
+      }
+    },
+    "refresh": { "type": "string", "pattern": "^[0-9]+(ms|s|m)$" },
+    "field": {
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "signal": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)+$" },
+        "rpc": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "args": { "type": "object" },
+        "path": { "type": "string" },
+        "unit": { "type": "string" },
+        "digits": { "type": "integer", "minimum": 0 },
+        "warnAbove": { "type": "number" },
+        "warnBelow": { "type": "number" }
+      }
+    },
+    "kinds": {
+      "text": {
+        "type": "object",
+        "anyOf": [{ "required": ["text"] }, { "required": ["rpc", "path"] }],
+        "properties": {
+          "text": { "type": "string" },
+          "rpc": { "type": "string" },
+          "args": { "type": "object" },
+          "path": { "type": "string" },
+          "refresh": { "$ref": "#/definitions/refresh" }
+        }
+      },
+      "live-status": {
+        "type": "object",
+        "required": ["fields"],
+        "properties": {
+          "fields": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/definitions/field" } },
+          "refresh": { "$ref": "#/definitions/refresh" }
+        }
+      },
+      "command-form": {
+        "type": "object",
+        "required": ["call"],
+        "properties": {
+          "call": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "args": { "type": "object" },
+          "form": { "$ref": "#/definitions/form" },
+          "submitLabel": { "type": "string" },
+          "confirm": { "type": "string" },
+          "resultPath": { "type": "string" }
+        }
+      },
+      "table": {
+        "type": "object",
+        "description": "Rows from an RPC (rpc + path + columns, each column with a path), or static rows (arrays read by column position).",
+        "anyOf": [{ "required": ["rpc", "path", "columns"] }, { "required": ["rows"] }],
+        "properties": {
+          "rpc": { "type": "string" },
+          "args": { "type": "object" },
+          "path": { "type": "string" },
+          "rows": { "type": "array", "items": { "type": ["array", "object"] } },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["label"],
+              "properties": {
+                "label": { "type": "string" },
+                "path": { "type": "string" },
+                "digits": { "type": "integer", "minimum": 0 }
+              }
+            }
+          },
+          "refresh": { "$ref": "#/definitions/refresh" }
+        }
+      },
+      "log": {
+        "type": "object",
+        "anyOf": [{ "required": ["rpc"] }, { "required": ["lines"] }],
+        "properties": {
+          "rpc": { "type": "string" },
+          "args": { "type": "object" },
+          "path": { "type": "string" },
+          "lines": { "type": "array", "items": { "type": "string" } },
+          "maxLines": { "type": "integer", "minimum": 1 },
+          "refresh": { "$ref": "#/definitions/refresh" }
+        }
+      },
+      "frame": {
+        "type": "object",
+        "description": "An HTML page of the component folder, run in a sandboxed frame; its scripts use window.endo.ctx (the component's capabilities).",
+        "required": ["entry"],
+        "properties": {
+          "entry": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.html?$" }
+        }
+      },
+      "run-status": {
+        "type": "object",
+        "anyOf": [{ "required": ["rpc", "path"] }, { "required": ["steps"] }],
+        "properties": {
+          "rpc": { "type": "string" },
+          "args": { "type": "object" },
+          "path": { "type": "string" },
+          "flow": { "type": "string" },
+          "steps": { "type": "array", "items": { "type": "string" } },
+          "current": { "type": "integer", "minimum": 0 },
+          "refresh": { "$ref": "#/definitions/refresh" }
+        }
+      }
+    }
+  }
+}

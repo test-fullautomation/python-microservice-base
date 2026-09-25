@@ -16,6 +16,7 @@ walkthroughs, and the Service Creator wizard, see
 |---|---|
 | 🚀 I want to build my **first service** in C++ | [`cpp_hello_service/`](cpp_hello_service/README.md) — single service, ~150 lines, hexagonal layout, all the wiring you need to copy |
 | 🐍 Same but in **Python** | [`hello_service/`](hello_service/README.md) — async gRPC + ServiceRunner, three RPC flavours (unary, server-streaming) |
+| 🧪 I want to **test a service** with Robot Framework | [`hello_test_project/`](hello_test_project/README.md) — RF AIO test project exported by the Manager GUI: generated keywords + a hand-written API suite |
 | 🛰 I want a **client** that talks to a service | [`cpp_hello_client/`](cpp_hello_client/README.md) — typed C++ client with generated stubs + `ServiceClient<T>` for Consul lookup |
 | 🏭 I want to see a **multi-service** real-world project | [`PowerDeviceService/`](PowerDeviceService/README.md) — 6 services in one C++ monorepo with vcpkg toolchain, Qt client, prebuilt zip workflow — **canonical reference** |
 | 📚 I want to learn the toolchain choices | [`docs/`](docs/README.md) — MSYS2 / Qt6::Grpc / vcpkg + Qt MinGW setup guides |
@@ -28,6 +29,7 @@ walkthroughs, and the Service Creator wizard, see
 | `cpp_hello_service/` | C++ | ✅ | (paired with cpp_hello_client) | vcpkg or MSYS2 | First C++ service from scratch |
 | `cpp_hello_client/` | C++ | – | ✅ console | vcpkg or MSYS2 | Learning the client-side flow + generated stubs |
 | `hello_service/` | Python | ✅ | – | pip | First Python service from scratch |
+| `hello_test_project/` | Robot Framework | – | ✅ tests | RF AIO | Testing a service with generated keywords |
 | `PowerDeviceService/` | C++ | ✅ × 6 | ✅ Qt-Widget + qt_client_grpcpp | vcpkg + Qt MinGW (canonical) | Real-world multi-service architecture |
 
 `cpp_hello_service` + `cpp_hello_client` work as a pair — start the
@@ -45,6 +47,7 @@ examples/
 ├── cpp_hello_service/                   ← single C++ service
 ├── cpp_hello_client/                    ← matching console client
 ├── hello_service/                       ← single Python service
+├── hello_test_project/                  ← Robot Framework AIO tests for hello_service
 └── _legacy/                             ← pre-gRPC-migration examples (RabbitMQ-era)
                                           kept for reference / fork maintainers
 ```

@@ -15,9 +15,16 @@ MicroserviceBase/MicroserviceManagerGUI/python/hub_processes.json
 MicroserviceBase/MicroserviceManagerGUI/python/services/
 nul
 MicroserviceBase/MicroserviceManagerGUI/node_modules
-MicroserviceBase/MicroserviceManagerGUI/tools/
+MicroserviceBase/MicroserviceManagerGUI/tools/*
+# Component linter for service CI (node tools/endo-lint.js <component.json>)
+!MicroserviceBase/MicroserviceManagerGUI/tools/endo-lint.js
 MicroserviceBase/MicroserviceManagerGUI/web/services/*
 !MicroserviceBase/MicroserviceManagerGUI/web/services/ServiceAlias*/
+# Reference GUI plugin for examples/hello_service (see examples/demo_gui.nomad.hcl).
+!MicroserviceBase/MicroserviceManagerGUI/web/services/HelloService1.0.0/
+
+# Robot Framework output of the sample test project
+examples/hello_test_project/results/
 MicroserviceBase/MicroserviceManagerGUI/electron/alias.json
 
 # Editor temporary/backup files
@@ -109,3 +116,8 @@ ui_*.h
 htmlcov/
 *.pyc
 *.pyo
+
+# Network-specific Bazel settings and CA material stay local
+# (template: tools/bazel/bazelrc.user.template)
+.bazelrc.user
+certs/

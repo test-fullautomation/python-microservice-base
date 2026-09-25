@@ -39,8 +39,189 @@ import threading
 import zipfile
 
 from ...ports.ui_bridge import UIBridgePort
+from . import service_gui as _service_gui
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Origin allow-list
+# ---------------------------------------------------------------------------
+#
+# Browser requests carry an ``Origin`` header; the bridge only serves the
+# origins on this list. The list comes from (highest priority first) the
+# ``allowed_origins`` constructor argument, the environment variable below,
+# or :func:`default_allowed_origins`.
+
+#: Comma-separated origins, e.g. ``http://localhost:1112,http://10.0.0.5:1112``.
+ALLOWED_ORIGINS_ENV = "MB_BRIDGE_ALLOWED_ORIGINS"
+
+#: What a browser sends for a page loaded from ``file://`` -- i.e. the
+#: Electron GUI. Listing it admits the desktop app.
+NULL_ORIGIN = "null"
+
+#: The same page's WebSocket handshakes carry this instead of ``null``
+#: (Chromium sends the scheme for file:// pages), so a bridge that admits
+#: the desktop app has to admit both spellings or live signals never
+#: connect from Electron.
+FILE_ORIGIN = "file://"
+
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
+_UNSPECIFIED_HOSTS = ("0.0.0.0", "::")
+
+
+def _looks_like_origin(value):
+   """True for ``scheme://host[:port]`` with nothing after the authority."""
+   from urllib.parse import urlsplit
+   parts = urlsplit(value)
+   return (parts.scheme in ("http", "https")
+           and bool(parts.netloc)
+           and not parts.path and not parts.query and not parts.fragment)
+
+
+def parse_allowed_origins(value):
+   """
+Validate an allow-list given as a list or a comma-separated string.
+
+Returns the de-duplicated list in the order given; ``['*']`` when the
+check is switched off. Raises ``ValueError`` with a message that names
+the offending entry and shows what a valid one looks like.
+   """
+   if isinstance(value, str):
+      items = value.split(",")
+   else:
+      items = [str(v) for v in value]
+   items = [v.strip() for v in items]
+   items = [v for v in items if v]
+
+   if not items:
+      raise ValueError(
+         "the origin allow-list is empty. Give at least one origin such as "
+         "http://localhost:1112 (or '*' to accept any origin)."
+      )
+   if "*" in items:
+      if len(items) > 1:
+         raise ValueError(
+            "'*' accepts every origin and cannot be combined with other "
+            f"entries; got {items!r}."
+         )
+      return ["*"]
+
+   bad = [v for v in items
+          if v not in (NULL_ORIGIN, FILE_ORIGIN) and not _looks_like_origin(v)]
+   if bad:
+      raise ValueError(
+         f"invalid origin(s) {bad!r}. An origin is scheme://host[:port] with "
+         "no path or trailing slash, e.g. http://localhost:1112 -- or the "
+         f"literal '{NULL_ORIGIN}' / '{FILE_ORIGIN}' for the Electron GUI."
+      )
+   return list(dict.fromkeys(items))
+
+
+def default_allowed_origins(host, port):
+   """
+Origins the Manager GUI legitimately uses when nothing is configured.
+
+Always the bridge's own address and the loopback spellings of it. The
+Electron origins (``null`` and ``file://``) are included only when the
+bridge is bound to loopback: on a machine-wide bind they would admit any
+local page.
+   """
+   origins = []
+   for h in dict.fromkeys([host, "localhost", "127.0.0.1"]):
+      if h in _UNSPECIFIED_HOSTS:
+         continue   # no browser ever sends "0.0.0.0" as an origin
+      if ":" in h and not h.startswith("["):
+         h = f"[{h}]"   # bare IPv6 literal
+      origins.append(f"http://{h}:{port}")
+   if host in _LOOPBACK_HOSTS:
+      # Both spellings the desktop app sends: "null" on its HTTP requests,
+      # "file://" on its WebSocket handshakes.
+      origins.append(NULL_ORIGIN)
+      origins.append(FILE_ORIGIN)
+   return origins
+
+
+def _port_open(host, port, timeout=0.3):
+   """True when something already listens on ``host:port``."""
+   import socket
+
+   probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+   s.settimeout(timeout)
+   try:
+      return s.connect_ex((probe_host, int(port))) == 0
+   except Exception:   # noqa: BLE001 - an unresolvable host is simply "closed"
+      return False
+   finally:
+      s.close()
+
+
+def _agent_start_failure(label, proc, log_lines, port_open, timeout=6.0, poll=0.15):
+   """
+Watch a just-spawned agent long enough to tell *running* from *exited*.
+
+A bad configuration file makes an agent exit within a second. Reporting
+"started" then sends the GUI off waiting for a port that never opens, and
+the user is told the agent is unreachable instead of what was wrong with
+it -- so wait here until one of the two is known.
+
+**Arguments:**
+
+* ``label``
+
+  / *Condition*: required / *Type*: str /
+
+  What to call the agent in the message, e.g. ``"Nomad agent"``.
+
+* ``proc``
+
+  / *Condition*: required / *Type*: subprocess.Popen /
+
+  The agent process.
+
+* ``log_lines``
+
+  / *Condition*: required / *Type*: list /
+
+  The bridge's in-memory log buffer for this agent; its last lines carry
+  the agent's own error message.
+
+* ``port_open``
+
+  / *Condition*: required / *Type*: Callable[[], bool] /
+
+  Probe that answers True once the agent's HTTP port listens.
+
+**Returns:**
+
+* ``failure``
+
+  / *Type*: Optional[dict] /
+
+  ``None`` when the agent is up, or still alive when the window passes;
+  otherwise an error response carrying the exit code and the agent's
+  last output.
+   """
+   import time
+
+   deadline = time.time() + timeout
+   while time.time() < deadline:
+      if proc.poll() is not None:
+         time.sleep(0.3)   # let the log reader drain the pipe
+         tail = [l.rstrip() for l in list(log_lines)[-25:] if l.strip()]
+         errors = [l for l in tail
+                   if "error" in l.lower() or "failed" in l.lower()]
+         reason = (errors or tail or ["no output"])[0]
+         return {"success": False,
+                 "exit_code": proc.returncode,
+                 "message": "%s exited immediately (code %s): %s"
+                            % (label, proc.returncode, reason.lstrip("=> ").strip()),
+                 "log_tail": tail[-12:]}
+      if port_open():
+         return None
+      time.sleep(poll)
+   return None
 
 
 def _open_agent_log_file(agent_name):
@@ -192,7 +373,7 @@ Endpoints:
 Requires ``fastapi`` and ``uvicorn`` (optional dependencies).
    """
 
-   def __init__(self, host='localhost', port=8000):
+   def __init__(self, host='localhost', port=8000, allowed_origins=None):
       """
 Initialize the FastAPI bridge.
 
@@ -209,9 +390,20 @@ Initialize the FastAPI bridge.
   / *Condition*: optional / *Type*: int / *Default*: 8000 /
 
   Port to bind the server to.
+
+* ``allowed_origins``
+
+  / *Condition*: optional / *Type*: list[str] | str / *Default*: None /
+
+  Browser origins the bridge answers. ``None`` reads
+  ``MB_BRIDGE_ALLOWED_ORIGINS`` and, failing that, uses
+  :func:`default_allowed_origins`. ``['*']`` disables the check.
+  Invalid values raise ``ValueError`` here, at startup, not on the
+  first request.
       """
       self._host = host
       self._port = port
+      self._allowed_origins = self._resolve_allowed_origins(allowed_origins)
       self._request_handler = None
       self._services_info_provider = None
       self._app = None
@@ -222,38 +414,84 @@ Initialize the FastAPI bridge.
       self._server_loop = None
       self._fleet_api_url = None
 
+   def _resolve_allowed_origins(self, explicit):
+      if explicit is not None:
+         return parse_allowed_origins(explicit)
+      from_env = os.environ.get(ALLOWED_ORIGINS_ENV)
+      if from_env is not None:
+         try:
+            return parse_allowed_origins(from_env)
+         except ValueError as exc:
+            raise ValueError(f"{ALLOWED_ORIGINS_ENV}: {exc}") from None
+      return default_allowed_origins(self._host, self._port)
+
+   @property
+   def allowed_origins(self):
+      """The resolved origin allow-list (``['*']`` when the check is off)."""
+      return list(self._allowed_origins)
+
    def _build_app(self):
       """
 Build the FastAPI application with all routes.
       """
-      from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+      from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
       from fastapi.middleware.cors import CORSMiddleware
+      from fastapi.responses import JSONResponse
       from pydantic import BaseModel
-      from typing import Any, Optional, List
+      from typing import Any, Dict, Optional, List
 
       app = FastAPI(title="MicroserviceBase UI Bridge")
 
-      # NOTE on allow_credentials: it is deliberately False (the default).
-      #
-      # `allow_origins=["*"]` together with `allow_credentials=True` is
-      # invalid per the CORS spec -- a browser refuses to honour
-      # `Access-Control-Allow-Origin: *` on a credentialed request -- so
-      # the credentialed path never actually worked. It also made every
-      # origin on the machine able to drive an API that starts/stops
-      # Consul and Nomad agents and writes files via the scaffold
-      # generator (CodeQL: overly permissive CORS, CWE-942).
-      #
-      # The bridge has no cookie/session/bearer auth and the GUI never
-      # sends `credentials:` on fetch(), so dropping the flag changes no
-      # working behaviour. The wildcard origin is kept because the GUI
-      # legitimately calls in from `file://` (Electron, which sends
-      # `Origin: null`) as well as from the bridge's own HTTP origin.
+      allowed = list(self._allowed_origins)
+      allowed_set = set(allowed)
+      allow_all = allowed == ["*"]
+      if allow_all:
+         logger.warning(
+            "UI bridge accepts requests from ANY origin (%s='*'). Any page "
+            "that can reach this port may drive the bridge.", ALLOWED_ORIGINS_ENV)
+      else:
+         logger.info("UI bridge allowed origins: %s", ", ".join(allowed))
+
+      # allow_credentials stays False (the default): the bridge has no
+      # cookie/session/bearer auth and the GUI never sends `credentials:`
+      # on fetch(), and a wildcard origin with credentials is invalid per
+      # the CORS spec anyway (CodeQL CWE-942).
       app.add_middleware(
          CORSMiddleware,
-         allow_origins=["*"],
+         allow_origins=allowed,
          allow_methods=["*"],
          allow_headers=["*"],
       )
+
+      # CORSMiddleware only decides which response HEADERS a browser gets;
+      # the request itself still reaches the route handler. This rejects a
+      # disallowed origin before any handler runs, and logs it, which CORS
+      # on its own never does.
+      #
+      # Requests WITHOUT an Origin header (curl, Python clients, health
+      # probes) are not browser requests and pass through: an origin check
+      # cannot authenticate non-browser callers -- that is what bridge
+      # authentication is for, not this.
+      def _origin_rejected(origin, what):
+         logger.warning(
+            "Rejected %s from origin %r (allowed: %s). Add it to %s to permit it.",
+            what, origin, ", ".join(allowed), ALLOWED_ORIGINS_ENV)
+
+      if not allow_all:
+         @app.middleware("http")
+         async def reject_disallowed_origins(request: Request, call_next):
+            origin = request.headers.get("origin")
+            if origin is not None and origin not in allowed_set:
+               _origin_rejected(origin, f"{request.method} {request.url.path}")
+               return JSONResponse(
+                  status_code=403,
+                  content={
+                     "error": "origin_not_allowed",
+                     "origin": origin,
+                     "detail": ("This origin is not in the bridge allow-list. "
+                                f"Set {ALLOWED_ORIGINS_ENV} to permit it."),
+                  })
+            return await call_next(request)
 
       bridge = self
 
@@ -399,6 +637,14 @@ Return current services information.
          """
 WebSocket endpoint for real-time service update push.
          """
+         # HTTP middleware does not see WebSocket handshakes, so the
+         # origin check is repeated here. Closing before accept() answers
+         # the handshake with HTTP 403.
+         origin = websocket.headers.get("origin")
+         if not allow_all and origin is not None and origin not in allowed_set:
+            _origin_rejected(origin, "WebSocket /ws/updates")
+            await websocket.close(code=1008)   # policy violation
+            return
          await websocket.accept()
          with bridge._ws_clients_lock:
             bridge._ws_clients.add(websocket)
@@ -871,7 +1117,17 @@ Forward a request to the FleetWebAPI.
 
       class NomadAgentStartBody(BaseModel):
          mode: str = "dev"              # "dev" or "config"
-         bind_addr: str = "0.0.0.0"
+         # Empty = let `nomad agent -dev` bind and advertise loopback.
+         #
+         # This used to default to 0.0.0.0, which made Nomad advertise the
+         # machine's LAN IP (e.g. the Wi-Fi address). The dev client then
+         # heartbeats its own server via that IP, and on Windows the
+         # firewall commonly refuses that connection (WinError 10013). The
+         # node registers once through loopback, misses every heartbeat,
+         # is marked "down", and every job fails placement with
+         # "No nodes were eligible for evaluation". Remote clients need
+         # a specific NIC here *and* an inbound rule for TCP 4646-4648.
+         bind_addr: str = ""
          http_port: int = 4646
          datacenter: str = "dc1"
          node_name: str = ""
@@ -1081,6 +1337,19 @@ Forward a request to the FleetWebAPI.
          # Auto-configure client after brief startup delay
          import time
          nomad_url = 'http://127.0.0.1:%d' % body.http_port
+
+         # Did it survive? A config file the agent rejects (a job file,
+         # say) kills it in under a second, and the reason is in its own
+         # output -- report that instead of a healthy-looking "started".
+         failure = _agent_start_failure(
+            "Nomad agent", proc, bridge._nomad_agent_log,
+            lambda: _probe("127.0.0.1", body.http_port))
+         if failure is not None:
+            bridge._nomad_agent_proc = None
+            _remove_agent_pid('nomad')
+            failure["log_file"] = nomad_log_path
+            logger.warning("Nomad agent start failed: %s", failure["message"])
+            return failure
 
          def _auto_configure():
             time.sleep(2)
@@ -1620,20 +1889,20 @@ Forward a request to the FleetWebAPI.
          threading.Thread(target=_read_output, daemon=True,
                           name='consul-agent-log').start()
 
-         # Give the agent a moment to either bind the port or fail.  If it
-         # already exited, surface the captured log tail as the error — much
-         # friendlier than letting the GUI retry for 12 seconds.
-         time.sleep(1.0)
-         if proc.poll() is not None:
+         # Wait until the agent either binds its port or exits. An agent
+         # that exited says why in its own output -- much friendlier than
+         # letting the GUI retry for 12 seconds and then call it
+         # unreachable.
+         failure = _agent_start_failure(
+            "Consul agent", proc, bridge._consul_agent_log,
+            lambda: _port_open("127.0.0.1", body.http_port))
+         if failure is not None:
             bridge._consul_agent_proc = None
-            log_tail = '\n'.join(bridge._consul_agent_log[-15:])
-            return {"success": False,
-                    "message": (
-                        "Consul agent exited immediately (code %d). "
-                        "Last log lines:\n%s"
-                    ) % (proc.returncode, log_tail or "(no output)"),
-                    "log": log_tail,
-                    "log_file": consul_log_path}
+            _remove_agent_pid('consul')
+            failure["log"] = '\n'.join(failure.get("log_tail") or [])
+            failure["log_file"] = consul_log_path
+            logger.warning("Consul agent start failed: %s", failure["message"])
+            return failure
 
          consul_url = 'http://127.0.0.1:%d' % body.http_port
          bridge._consul_url = consul_url
@@ -1923,6 +2192,79 @@ Forward a request to the FleetWebAPI.
          meta = svc.get('Meta') or {}
          return host, port, meta
 
+      class ServiceGuiFetchBody(BaseModel):
+         """What to fetch, and what the caller already has."""
+         consul: str = ""            # which Consul to resolve the service in
+         folder: str = ""            # override Meta.gui / what the service says
+         known_checksum: str = ""    # skip the download when it still matches
+         extract: bool = True        # False: return the ZIP, caller unpacks it
+
+      @app.get("/api/service-gui/info/{service_name}")
+      def service_gui_info(service_name: str, consul: str = ""):
+         """
+What GUI files a service offers, without downloading them.
+
+Answers ``{status, available, folder, checksum, size_bytes, file_count}``,
+or ``status: "unavailable"`` with a reason for a service that does not
+serve the ``ServiceGui`` contract.
+         """
+         target = _find_service_target(service_name, consul)
+         if not target:
+            return {"status": "error", "error": f"{service_name} is not registered (or not passing)"}
+         host, port, meta = target
+         try:
+            info = _service_gui.gui_info(host, port)
+         except _service_gui.ServiceGuiError as exc:
+            return {"status": "unavailable" if exc.unavailable else "error",
+                    "error": str(exc), "folder": (meta or {}).get("gui", "")}
+         if not info.get("folder"):
+            info["folder"] = (meta or {}).get("gui", "")
+         return dict(info, status="ok")
+
+      @app.post("/api/service-gui/fetch/{service_name}")
+      def service_gui_fetch(service_name: str, body: ServiceGuiFetchBody = None):
+         """
+Fetch a service's GUI folder and, by default, extract it.
+
+The desktop app sends ``extract: false`` and unpacks the ZIP itself --
+only it knows whether it runs from the source tree or from
+``%APPDATA%``. The browser-hosted GUI lets the bridge extract, because
+the bridge is what serves ``web/``.
+         """
+         body = body or ServiceGuiFetchBody()
+         target = _find_service_target(service_name, body.consul)
+         if not target:
+            return {"status": "error", "error": f"{service_name} is not registered (or not passing)"}
+         host, port, meta = target
+         folder = (body.folder or (meta or {}).get("gui", "") or "").strip()
+
+         try:
+            info = _service_gui.gui_info(host, port)
+            if not info.get("available"):
+               return {"status": "unavailable",
+                       "error": f"{service_name} serves no GUI files", "folder": folder}
+            folder = folder or info.get("folder", "")
+            if not folder:
+               return {"status": "error", "error": "the service named no GUI folder"}
+            if body.known_checksum and body.known_checksum == info.get("checksum"):
+               return {"status": "ok", "cached": True, "folder": folder,
+                       "checksum": info["checksum"]}
+
+            zip_bytes, checksum = _service_gui.fetch_gui_zip(host, port, body.known_checksum)
+            if zip_bytes is None:
+               return {"status": "ok", "cached": True, "folder": folder, "checksum": checksum}
+            if not body.extract:
+               return {"status": "ok", "folder": folder, "checksum": checksum,
+                       "size_bytes": len(zip_bytes),
+                       "zip_base64": base64.b64encode(zip_bytes).decode("ascii")}
+            count = _service_gui.extract_package(zip_bytes, folder)
+         except _service_gui.ServiceGuiError as exc:
+            return {"status": "unavailable" if exc.unavailable else "error",
+                    "error": str(exc), "folder": folder}
+
+         return {"status": "ok", "folder": folder, "checksum": checksum,
+                 "files": count, "dir": os.path.join(_service_gui.services_dir(), folder)}
+
       def _proto_search_paths(extra: list = None) -> list:
          """Resolve the search paths used to find .proto files when the
          server doesn't ship reflection.
@@ -2080,6 +2422,12 @@ Forward a request to the FleetWebAPI.
                   out.append({"name": name, "methods": methods})
                except GrpcReflectError as e:
                   out.append({"name": name, "error": str(e)})
+               except Exception as e:   # noqa: BLE001
+                  # A service reflection lists but cannot describe (a
+                  # KeyError from the descriptor pool, say) must cost its
+                  # own entry, never the whole listing.
+                  logger.warning("Cannot describe %s on %s: %s", name, target, e)
+                  out.append({"name": name, "error": "cannot be described: %s" % e})
 
          return {"target": target, "discovery_source": source,
                  "grpc_services": out}
@@ -2580,6 +2928,7 @@ Generate scaffolding for a new microservice project.
                                             # proto_file + proto_content.
          services: List[ScaffoldV2Service] = []  # for monorepo / multi_proto
          proto_package: str = ""            # real .proto `package X;` when importing
+         ui_layer: str = "bits"             # layer of the generated component.json
 
       class ParseProtoRequest(BaseModel):
          proto_content: str
@@ -2774,6 +3123,321 @@ Generate scaffolding for a new microservice project.
          return {"status": "ok", "written": written, "skipped": skipped,
                  "out_dir": out_abs}
 
+      # ---- Test projects: export services into a test project ----
+      #
+      # The GUI opens a folder as a test project and exports a Consul-
+      # registered service into it. Layout and generated files are the
+      # project's runner adapter's business (adapters/test_project); this
+      # layer resolves the service and where its API description comes
+      # from: a local .proto when one declares the service, otherwise the
+      # running service's reflection.
+
+      class TestProjectRootBody(BaseModel):
+         root: str
+
+      class TestProjectInitBody(BaseModel):
+         root: str
+         runner: str = "robotframework-aio"
+         consul_addr: str = ""
+
+      class TestProjectExportBody(BaseModel):
+         root: str
+         consul_name: str
+         consul: str = ""
+         proto_path: str = ""           # explicit .proto folder (GUI)
+         prefer_reflection: bool = False
+         create_starter: bool = True
+         apply: bool = False            # False = plan only
+         overwrite_modified: bool = False
+
+      def _tp_error(exc):
+         from ..test_project import TestProjectConflict
+         out = {"status": "error", "error": str(exc)}
+         if isinstance(exc, TestProjectConflict):
+            out["code"] = "conflict"   # the GUI offers reload / overwrite
+         return out
+
+      @app.post("/api/test-project/describe")
+      def test_project_describe(body: TestProjectRootBody):
+         from ..test_project import TestProjectError, describe
+         try:
+            return describe(body.root)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/init")
+      def test_project_init(body: TestProjectInitBody):
+         from ..test_project import TestProjectError, init_project
+         try:
+            return init_project(body.root, body.runner, consul_addr=body.consul_addr)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectFileBody(BaseModel):
+         root: str
+         path: str
+
+      @app.post("/api/test-project/tree")
+      def test_project_tree(body: TestProjectRootBody):
+         """Files of a test project with role and sync state (read-only)."""
+         from ..test_project import TestProjectError, project_tree
+         try:
+            return project_tree(body.root)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/file")
+      def test_project_file(body: TestProjectFileBody):
+         """Text of one file inside a test project, for a read-only preview."""
+         from ..test_project import TestProjectError, read_project_file
+         try:
+            return read_project_file(body.root, body.path)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectSaveBody(BaseModel):
+         root: str
+         path: str
+         content: str
+         expected_sha256: str = ""      # hash from the read; empty = no check
+         force: bool = False            # overwrite a concurrent change
+
+      class TestProjectCheckBody(BaseModel):
+         path: str
+         content: str
+
+      class TestProjectNewSuiteBody(BaseModel):
+         root: str
+         name: str
+         service: str = ""
+
+      @app.post("/api/test-project/file/save")
+      def test_project_file_save(body: TestProjectSaveBody):
+         """Save a user-owned project file; generated files and the manifest are refused."""
+         from ..test_project import TestProjectError, write_project_file
+         try:
+            return write_project_file(
+               body.root, body.path, body.content,
+               expected_sha256=body.expected_sha256 or None, force=body.force)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/file/check")
+      def test_project_file_check(body: TestProjectCheckBody):
+         """Robot Framework syntax problems of unsaved text (nothing is written)."""
+         from ..test_project import check_syntax
+         return {"status": "ok", "problems": check_syntax(body.path, body.content)}
+
+      @app.post("/api/test-project/suite")
+      def test_project_new_suite(body: TestProjectNewSuiteBody):
+         """Create a suite from the runner's template, optionally wired to a service."""
+         from ..test_project import TestProjectError, create_suite
+         try:
+            return create_suite(body.root, body.name, service=body.service or None)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      # ---- running tests (runner-neutral; see adapters/test_project/runs.py)
+
+      class TestProjectRunBody(BaseModel):
+         root: str
+         path: str = ""                 # project-relative; "" = the whole project
+         variables: Dict[str, str] = {}
+         dryrun: bool = False
+
+      class TestProjectRunRefBody(BaseModel):
+         root: str
+         run_id: str
+         since: int = 0                 # console cursor (status)
+         force: bool = False            # kill at once (stop)
+
+      class TestProjectRunSettingsBody(BaseModel):
+         root: str
+         settings: Optional[Dict[str, Any]] = None   # None = read only
+
+      def _tp_results_url(root, run_id):
+         import base64
+         token = base64.urlsafe_b64encode(root.encode("utf-8")).decode("ascii").rstrip("=")
+         return "/api/test-project/results/%s/%s/" % (token, run_id)
+
+      def _tp_with_url(run):
+         if run.get("status") == "ok" and run.get("id"):
+            run["results_url"] = _tp_results_url(run.get("root") or "", run["id"])
+         return run
+
+      @app.post("/api/test-project/run")
+      def test_project_run(body: TestProjectRunBody):
+         """Start a run of one file (or the whole project) in the background."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.start(body.root, body.path, variables=body.variables, dryrun=body.dryrun)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/status")
+      def test_project_run_status(body: TestProjectRunRefBody):
+         """A run's state, outcome and the console lines after ``since``."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.status(body.root, body.run_id, body.since)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/stop")
+      def test_project_run_stop(body: TestProjectRunRefBody):
+         """Stop a run: gracefully first (teardowns, reports), ``force`` kills."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            return RUNS.stop(body.root, body.run_id, force=body.force)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/runs")
+      def test_project_runs(body: TestProjectRootBody):
+         """The project's recent runs, newest first."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            out = RUNS.list(body.root)
+            for run in out["runs"]:
+               run["root"] = out["root"]
+               _tp_with_url(run)
+            return out
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectInspectBody(BaseModel):
+         root: str
+         path: str
+         content: Optional[str] = None  # the editor's text; None = the file on disk
+
+      @app.post("/api/test-project/inspect")
+      def test_project_inspect(body: TestProjectInspectBody):
+         """A file's extra views from its runner (a flow's diagram and Robot text)."""
+         from ..test_project import TestProjectError, inspect_file
+         try:
+            return inspect_file(body.root, body.path, body.content)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run-settings")
+      def test_project_run_settings(body: TestProjectRunSettingsBody):
+         """Read (``settings`` omitted) or replace a project's run settings."""
+         from ..test_project import TestProjectError, get_run_settings, set_run_settings
+         try:
+            if body.settings is None:
+               return get_run_settings(body.root)
+            return set_run_settings(body.root, body.settings)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.get("/api/test-project/results/{token}/{run_id}/{name}")
+      def test_project_result_file(token: str, run_id: str, name: str):
+         """A file a run left behind (log.html, report.html, ...), for the browser.
+
+         The project is in the path, not the query, so the relative links
+         between log.html and report.html keep working.
+         """
+         import base64
+         from fastapi.responses import FileResponse, PlainTextResponse
+         from ..test_project import RUNS, TestProjectError
+         try:
+            root = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode("utf-8")
+            path = RUNS.artifact_path(root, run_id, name)
+         except (ValueError, UnicodeDecodeError, TestProjectError) as exc:
+            return PlainTextResponse(str(exc) or "Invalid run file.", status_code=404)
+         return FileResponse(path)
+
+      @app.post("/api/test-project/export")
+      def test_project_export(body: TestProjectExportBody):
+         """Plan (``apply=false``) or write one service's files into a test project.
+
+         Protos are copied when a local ``.proto`` declares every gRPC
+         service the instance advertises (explicit ``proto_path`` first,
+         then ``MB_PROTO_SEARCH_PATH`` + defaults); otherwise resources are
+         generated from server reflection and no protos are copied.
+         """
+         from ..grpc_bridge import GrpcReflectClient, GrpcReflectError, LocalProtoClient
+         from ..test_project import (
+            TestProjectError, collect_proto_set, export_service,
+            find_service_protos, validate_name,
+         )
+         try:
+            validate_name(body.consul_name, "service name")
+            target_info = _find_service_target(body.consul_name, consul=body.consul)
+            if target_info is None:
+               raise TestProjectError(
+                  "Service '%s' has no passing instance in Consul." % body.consul_name)
+            host, port, meta = target_info
+            target = "%s:%d" % (host, port)
+            grpc_services = [s.strip() for s in
+                             (meta.get("grpc_services") or "").split(",") if s.strip()]
+
+            proto_files = None
+            descriptors = None
+            warnings = []
+            search_paths = _proto_search_paths(
+               extra=[body.proto_path] if body.proto_path else [])
+            candidates = []
+            if grpc_services and not body.prefer_reflection:
+               candidates = find_service_protos(
+                  grpc_services, search_paths, is_excluded=LocalProtoClient._is_excluded)
+            located = candidates[0] if candidates else None
+
+            if located:
+               proto_files, warnings = collect_proto_set(located)
+               source = {"kind": "proto", "path": located}
+               if len(candidates) > 1:
+                  # Copies are common (service + client examples); say which
+                  # one was used instead of guessing silently.
+                  others = candidates[1:]
+                  warnings.insert(0,
+                     "%d .proto files declare %s; using the first one found. Others: %s%s. "
+                     "Pick a .proto folder to use a different copy."
+                     % (len(candidates), ", ".join(grpc_services),
+                        "; ".join(others[:4]),
+                        " (+%d more)" % (len(others) - 4) if len(others) > 4 else ""))
+            else:
+               try:
+                  with GrpcReflectClient(target) as client:
+                     if not grpc_services:
+                        grpc_services = client.list_services()
+                     descriptors, seen = [], set()
+                     for name in grpc_services:
+                        for fd in client.file_descriptors(name):
+                           if fd.name not in seen:
+                              seen.add(fd.name)
+                              descriptors.append(fd)
+               except GrpcReflectError as exc:
+                  raise TestProjectError(
+                     "No .proto declaring %s was found in %s, and server reflection on "
+                     "%s failed (%s). Point the export at the folder holding the "
+                     "service's .proto file."
+                     % (", ".join(grpc_services) or body.consul_name,
+                        search_paths or "<no search paths>", target, exc))
+               source = {"kind": "reflection", "path": target}
+
+            return export_service(
+               body.root, body.consul_name,
+               consul_addr=body.consul or "http://127.0.0.1:8500",
+               grpc_services=grpc_services,
+               proto_files=proto_files,
+               file_descriptors=descriptors,
+               source=source,
+               create_starter=body.create_starter,
+               apply=body.apply,
+               overwrite_modified=body.overwrite_modified,
+               warnings=warnings,
+            )
+         except TestProjectError as exc:
+            return _tp_error(exc)
+         except Exception as exc:    # noqa: BLE001
+            logger.exception("[test-project] export failed: %s", exc)
+            return _tp_error("Unexpected failure: %s: %s" % (type(exc).__name__, exc))
+
       @app.post("/api/scaffold/generate-v2")
       def scaffold_generate_v2(body: ScaffoldV2Request):
          """Generate scaffolding for a new microservice (v2 — Python/C++, multi-GUI)."""
@@ -2864,6 +3528,7 @@ Generate scaffolding for a new microservice project.
             ],
             proto_content_override=body.proto_content_override,
             proto_package_override=body.proto_package,
+            ui_layer=body.ui_layer,
             services=mono_services,
             layout=effective_layout or "monorepo",
          )
@@ -2910,6 +3575,24 @@ Generate scaffolding for a new microservice project.
                "file_count": len(file_map),
                "files": sorted(file_map.keys()),
             }
+
+      # ---- Bench compositions (Manager GUI stage) ----
+      from .compositions import register_routes as _register_composition_routes
+      _register_composition_routes(app)
+
+      # ---- Live signals (Manager GUI host bus) ----
+      def _ws_origin_allowed(websocket, what):
+         origin = websocket.headers.get("origin")
+         if not allow_all and origin is not None and origin not in allowed_set:
+            _origin_rejected(origin, what)
+            return False
+         return True
+
+      try:
+         from .signal_routes import register_routes as _register_signal_routes
+         self._signal_hubs = _register_signal_routes(app, _ws_origin_allowed)
+      except ImportError as exc:   # grpc missing: the rest of the bridge still works
+         logger.warning("Live signals disabled: %s", exc)
 
       # Mount static files for the GUI web application
       gui_path = os.path.join(

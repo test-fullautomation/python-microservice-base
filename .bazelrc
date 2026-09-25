@@ -1,0 +1,61 @@
+# Bazel configuration for MicroserviceBase.
+#
+# Only settings that hold on every machine live here. Anything tied to a
+# network -- a module registry mirror, a proxy, a CA truststore, a remote
+# cache -- goes into .bazelrc.user next to this file (not committed, see
+# .gitignore). tools/bazel/bazelrc.user.template shows the shape of such a
+# file; copy it to .bazelrc.user and fill in your own values.
+
+try-import %workspace%/.bazelrc.user
+
+common --experimental_ui_max_stdouterr_bytes=-1
+common --show_timestamps
+
+# --- Windows ---------------------------------------------------------
+# NOTE: `startup` flags cannot be config-scoped (`startup:windows` is
+# rejected by Bazel 9 with "invalid command name").
+#
+# Short output paths matter on Windows -- Bazel plus MSVC blow past the
+# 260-character path limit under the default output root. Put these in a
+# USER .bazelrc instead, where they apply only on that machine:
+#
+#   # %USERPROFILE%\.bazelrc
+#   startup --output_user_root=C:/_bzl
+#   startup --output_base=C:/bazel/out
+#
+common:windows --repository_cache=C:/bazel/repository_cache
+common:windows --repo_env=BAZEL_SH=C:/Program\ Files/Git/bin/bash.exe
+common:windows --shell_executable=C:/Program\ Files/Git/bin/bash.exe
+
+# --- Linux -----------------------------------------------------------
+common:linux --repository_cache=~/bazel/repository_cache
+build:linux --action_env=PATH
+
+# --- Tests -----------------------------------------------------------
+# Env the suites need is forwarded HERE, not declared in BUILD files, so
+# a test target does not have to know about the machine it runs on.
+#
+# PATH matters more than usual for this repo: MSB_0004/0011/0017 shell out
+# to the real `consul` and `nomad` binaries and skip themselves when those
+# are absent.
+test --test_env=PATH
+test --test_env=MB_PROTO_SEARCH_PATH
+test --test_env=MB_FLOW_SRC
+test:windows --test_env=ProgramW6432
+test:windows --test_env=LOCALAPPDATA
+test:windows --test_env=TEMP
+test --test_verbose_timeout_warnings
+test --test_output=errors
+
+# The component tests spawn Consul/Nomad agents and wait on ports; the
+# default 60s "short" budget is not enough for the L4/L5 cases.
+test --test_timeout=60,300,900,3600
+
+# --- Build -----------------------------------------------------------
+build --jobs=auto
+build --verbose_failures
+build --disk_cache=~/.cache/bazel-disk-cache
+
+# CI that relies on a remote cache (configured in its .bazelrc.user) runs
+# with --config=ci: no local disk cache that would not survive the runner.
+build:ci --disk_cache=

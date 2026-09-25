@@ -1,0 +1,66 @@
+{
+  "$schema": "../../js/endo/contract/component.schema.json",
+  "component": "operator.hello",
+  "version": "1.0.0",
+  "layer": "operator",
+  "title": "Hello service",
+  "description": "Reference component for examples/hello_service: live polling, typed command forms, a server stream and an HTML panel in a sandboxed frame.",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": ["grpc.call"]
+  },
+  "binds": {
+    "consul": "@self",
+    "grpc": "hello.v1.HelloService"
+  },
+  "tiles": [
+    {
+      "id": "greeting",
+      "size": "2x1",
+      "kind": "live-status",
+      "title": "Greeting",
+      "fields": [
+        { "label": "Answers with", "rpc": "Greet", "args": { "name": "bench" }, "path": "message" }
+      ],
+      "refresh": "5s"
+    },
+    {
+      "id": "greet",
+      "size": "1x1",
+      "kind": "command-form",
+      "title": "Greet",
+      "call": "Greet",
+      "form": { "name": { "type": "string", "label": "Name", "default": "PO" } },
+      "submitLabel": "Greet",
+      "resultPath": "message"
+    },
+    {
+      "id": "echo",
+      "size": "1x1",
+      "kind": "command-form",
+      "title": "Echo",
+      "call": "Echo",
+      "submitLabel": "Echo",
+      "resultPath": "payload"
+    },
+    {
+      "id": "ticks",
+      "size": "4x1",
+      "kind": "log",
+      "title": "Tick stream (5 ticks)",
+      "rpc": "Tick",
+      "args": { "count": 5, "interval_ms": 150 },
+      "path": "message",
+      "maxLines": 50
+    },
+    {
+      "id": "panel",
+      "size": "2x2",
+      "kind": "frame",
+      "title": "Hello panel (framed)",
+      "entry": "panel.html"
+    }
+  ],
+  "dock": ["api", "details"],
+  "renderer": "html"
+}

@@ -67,10 +67,25 @@
   function _saveUrl(url) { try { localStorage.setItem(STORAGE_KEY, url); } catch (e) {} }
   function _getSavedUrl() { try { return localStorage.getItem(STORAGE_KEY); } catch (e) { return null; } }
 
+  /**
+   * The Consul this tab talks to, for the ``?consul=`` override on every
+   * bridge call. Without it the bridge falls back to its own in-memory
+   * default (http://127.0.0.1:8500), so an agent on any other port — a
+   * second dev agent, a cluster member, anything the Detect button finds —
+   * answered "connection refused" no matter which URL was entered here.
+   *
+   * @returns {string} Saved URL, or '' to let the bridge use its default.
+   */
+  function _activeUrl() { return _getSavedUrl() || ''; }
+
   function _wireBtn(id, handler) {
     var btn = document.getElementById(id);
     if (btn) btn.onclick = handler;
   }
+
+  // The Browse buttons only exist where a native picker does (Electron);
+  // in a browser the field stays a plain path input.
+  function _canBrowse() { return !!(MM.canPickPath && MM.canPickPath()); }
 
   /**
    * Populate the bind-address datalist with the host's actual NICs by
@@ -173,9 +188,21 @@
       '          Start an agent using configuration files from a directory.' +
       '        </p>' +
       '        <div class="mb-2"><label class="form-label small">Config directory</label>' +
-      '          <input class="form-control form-control-sm" id="consulConfigDir" placeholder="/etc/consul.d"></div>' +
+      '          <div class="input-group input-group-sm">' +
+      '            <input class="form-control form-control-sm" id="consulConfigDir" placeholder="/etc/consul.d">' +
+      (_canBrowse()
+        ? '            <button class="btn btn-outline-secondary" type="button" id="consulBtnBrowseConfig" ' +
+          'title="Pick the directory the agent reads its configuration from"><i class="bi bi-folder2-open"></i></button>'
+        : '') +
+      '          </div></div>' +
       '        <div class="mb-2"><label class="form-label small">Data directory</label>' +
-      '          <input class="form-control form-control-sm" id="consulDataDir" placeholder="/opt/consul"></div>' +
+      '          <div class="input-group input-group-sm">' +
+      '            <input class="form-control form-control-sm" id="consulDataDir" placeholder="/opt/consul">' +
+      (_canBrowse()
+        ? '            <button class="btn btn-outline-secondary" type="button" id="consulBtnBrowseData" ' +
+          'title="Pick the directory the agent stores its state in"><i class="bi bi-folder2-open"></i></button>'
+        : '') +
+      '          </div></div>' +
       '        <div class="mb-2"><label class="form-label small">Bind address</label>' +
       '          <input class="form-control form-control-sm" id="consulBindAddr" value="0.0.0.0"></div>' +
       '        <div class="mb-2"><label class="form-label small">Node name</label>' +
@@ -229,6 +256,16 @@
     // Falls back to the static defaults already in the datalist if the
     // bridge endpoint isn't reachable (older bridge, network glitch).
     _populateBindAddrOptions();
+
+    // Wire the Browse buttons of the Config mode panel
+    if (MM.wirePathBrowse) {
+      MM.wirePathBrowse('consulBtnBrowseConfig', 'consulConfigDir', {
+        directory: true, title: 'Choose the Consul configuration directory'
+      });
+      MM.wirePathBrowse('consulBtnBrowseData', 'consulDataDir', {
+        directory: true, title: 'Choose the Consul data directory'
+      });
+    }
 
     // Wire tab switching
     var mode = 'dev';
@@ -523,7 +560,9 @@
   function _waitAndConnect(url, btn, attempt) {
     attempt = attempt || 1;
     var maxAttempts = 6;   // ~12 s
-    MM.consulClient.testConnection()
+    // Explicit URL: an agent started on a non-default HTTP port (Advanced ->
+    // HTTP port) is otherwise probed at 8500 and never reported as ready.
+    MM.consulClient.testConnection(url)
       .then(function (data) {
         if (!data.ok) throw new Error(data.error || 'not ready');
         _saveUrl(url);
@@ -552,11 +591,15 @@
   }
 
   function _connectTo(url, btn) {
-    MM.consulClient.testConnection()
+    // Probe the URL the user actually chose, not the bridge's default.
+    MM.consulClient.testConnection(url)
       .then(function (data) {
         if (!data.ok) throw new Error(data.error || 'not reachable');
         _saveUrl(url);
         _connected = true;
+        // Align the bridge's in-memory default with the connected agent so
+        // callers that pass no URL (navbar health pill) agree with this tab.
+        MM.consulClient.configure(url).catch(function () { /* best-effort */ });
         _reevaluateManagedOwnership(url);
         MM.showToast('Consul', 'Connected — leader ' + (data.leader || 'unknown'), 'success');
         renderDashboard();
@@ -671,10 +714,11 @@
   var _consecutiveFailures = 0;
 
   function _fetchAndRender() {
+    var url = _activeUrl();
     Promise.all([
-      MM.consulClient.testConnection(),
-      MM.consulClient.getServices(),
-      MM.consulClient.getNodes()
+      MM.consulClient.testConnection(url),
+      MM.consulClient.getServices(url),
+      MM.consulClient.getNodes(url)
     ]).then(function (results) {
       var health = results[0];
       var services = results[1];
@@ -728,7 +772,7 @@
 
       // For each service, fetch healthy instance count.
       Promise.all(serviceNames.map(function (name) {
-        return MM.consulClient.getServiceDetail(name).catch(function () { return []; });
+        return MM.consulClient.getServiceDetail(name, url).catch(function () { return []; });
       })).then(function (details) {
         tbody.innerHTML = serviceNames.map(function (name, idx) {
           var instances = Array.isArray(details[idx]) ? details[idx] : [];
@@ -820,6 +864,11 @@
           MM.getConnectedConsuls().length > 0) {
         probeUrl = MM.getConnectedConsuls()[0].url;
         MM.consulClient.configure(probeUrl).catch(function () {});
+      } else {
+        // Nothing in the toolbar: fall back to the agent this tab last
+        // connected to, so re-opening the tab does not silently probe the
+        // bridge default (8500) and report a healthy agent as unreachable.
+        probeUrl = _activeUrl();
       }
 
       var settled = false;
@@ -830,7 +879,7 @@
         _checkAgentAndRenderSetup();
       }, 4000);
 
-      MM.consulClient.testConnection()
+      MM.consulClient.testConnection(probeUrl)
         .then(function (data) {
           if (settled || !_active) return;
           settled = true;

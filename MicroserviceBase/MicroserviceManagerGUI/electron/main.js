@@ -8,6 +8,16 @@
 const { app, BrowserWindow, dialog, ipcMain, protocol, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+// Window plugins (Graph Studio, allow-listed installed ones): plugin.json + main module.
+const windowPlugins = require('./plugins-main');
+
+// Component and plugin code runs in sandboxed frames (web/js/endo/frame-host.js).
+// These put EACH sandboxed frame in its own process ("per-document"; the
+// default groups all frames of the page into one, so one hang froze them
+// all): a module that hangs or crashes cannot freeze the window or its
+// neighbours, and the frame watchdog removes it.
+app.commandLine.appendSwitch('site-per-process');
+app.commandLine.appendSwitch('enable-features', 'IsolateSandboxedIframes:grouping/per-document');
 
 let mainWindow = null;
 let tray = null;
@@ -137,6 +147,19 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+  // Same settings.json as the preload's: userData when packaged, electron/ in dev.
+  windowPlugins.registerWindowPlugins({
+    settingsPath: app.isPackaged ? path.join(app.getPath('userData'), 'settings.json') : path.join(__dirname, 'settings.json'),
+    userData: app.getPath('userData'),
+  });
+});
+
+// Window plugins: list / allow-list / open (its own BrowserWindow), e.g. Graph Studio.
+windowPlugins.registerIpc(ipcMain, { iconPath });
+
+// Kept for callers of electronAPI.openGraphStudio: the graph-studio plugin.
+ipcMain.handle('open-graph-studio', async (_event, opts) => {
+  return windowPlugins.openWindowPlugin('graph-studio', opts, { iconPath });
 });
 
 // Safety net: ensure bridge process cleanup on quit
@@ -147,6 +170,9 @@ app.on('before-quit', () => {
     tray = null;
   }
   console.log('[main] before-quit: bridge cleanup delegated to preload');
+  // Window plugins may hold child processes (Graph Studio: a local cluster,
+  // one grpcurl per monitored endpoint); they are not ours to leak.
+  windowPlugins.shutdownWindowPlugins();
 });
 
 // IPC handler for bridge cleanup (registered for completeness)

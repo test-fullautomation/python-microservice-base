@@ -128,6 +128,11 @@ class ScaffoldSpec:
     # Empty string = fall back to the computed `<snake_name>.v1`.
     proto_package_override: str = ""
 
+    # Layer of the TAG layer chart the service's Manager GUI component
+    # declares (ui/<Service><version>/component.json). One of
+    # operator | session | config | execution | runner | signals | bits.
+    ui_layer: str = "bits"
+
     # Multi-service mode: when non-empty, emit a single project folder
     # holding N gRPC services.  ``service_name`` then acts as the
     # *project* folder name.  How they're laid out depends on ``layout``:
@@ -218,6 +223,9 @@ def generate_scaffold(spec: ScaffoldSpec) -> Dict[str, str]:
         files[f"{spec.snake_name}.nomad.hcl"] = shared.gen_nomad(spec)
 
     files["service_config.json"] = shared.gen_service_config(spec)
+
+    # Manager GUI component: language-neutral, so Python and C++ get the same.
+    files.update(shared.gen_ui_component(spec, files[f"proto/{spec.snake_name}.proto"]))
 
     # ---- Language-specific files ----------------------------------------
     if spec.language == "python":

@@ -1,0 +1,32 @@
+<!doctype html>
+<!--
+  Hello service panel, run in a sandboxed frame (a "frame" tile of
+  component.json). It cannot touch the Manager GUI or the network: every
+  call goes through window.endo.ctx, which the shell answers with this
+  component's capabilities (grpc.call on hello.v1.HelloService).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hello panel</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <main class="hello">
+    <div class="row">
+      <label for="name">Name</label>
+      <input id="name" name="name" value="bench" autocomplete="off">
+      <button type="button" id="greet" class="primary">Greet</button>
+    </div>
+    <p class="answer" id="answer" aria-live="polite">—</p>
+
+    <div class="row">
+      <button type="button" id="ticks">Tick × 5</button>
+      <span class="muted" id="tickState"></span>
+    </div>
+    <ol class="ticks" id="tickList"></ol>
+    <p class="muted foot">Framed panel · calls go through the shell</p>
+  </main>
+  <script src="panel.js"></script>
+</body>
+</html>

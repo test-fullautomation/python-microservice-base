@@ -1,0 +1,85 @@
+# Legacy transport / registry unit tests.
+#
+# These cover the RabbitMQ + AMQP path, which ADR-028 superseded but did
+# NOT delete -- the adapters still ship and these tests still pass. They
+# are kept in the graph so a change to the legacy path cannot break
+# unnoticed.
+#
+# One py_test per test file: a failure then names the file, and Bazel can
+# cache and re-run each independently instead of invalidating the suite.
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# conftest.py supplies the RabbitMQ fixtures every test here depends on.
+py_library(
+    name = "conftest_lib",
+    srcs = ["conftest.py"],
+    imports = [".."],
+    deps = [
+        "//:microservicebase_lib",
+        "@pypi//pika",
+        "@pypi//pytest",
+    ],
+)
+
+_LEGACY_TESTS = {
+    "factory": "Factory/test_Factory.py",
+    "end_to_end": "Integration/test_EndToEnd.py",
+    "registry_adapter": "Integration/test_RegistryAdapter.py",
+    "transport_adapter": "Integration/test_TransportAdapter.py",
+    "messages": "Messages/test_Messages.py",
+    "models": "Models/test_Models.py",
+    "security": "Security/test_Security.py",
+    "service_base": "ServiceBase/test_ServiceBase.py",
+    "service_registry": "ServiceRegistry/test_ServiceRegistry.py",
+    "versioning": "Versioning/test_Versioning.py",
+    # Not legacy: exercises the FastAPI bridge's origin allow-list in-process.
+    "bridge_origins": "UIBridge/test_BridgeOrigins.py",
+    # Bench compositions: the per-user store and /api/ui/compositions.
+    "compositions": "UIBridge/test_Compositions.py",
+    # Managed agents: a start that exits must report the agent's own error.
+    "agent_start": "UIBridge/test_AgentStart.py",
+    # Service-delivered GUI folders over gRPC (ADR-031), end to end.
+    "service_gui": "UIBridge/test_ServiceGui.py",
+    # Live signals: the hub and /api/signals/* against a fake gRPC cluster.
+    "signal_hub": "Signals/test_SignalHub.py",
+    # Test projects: engine + Robot Framework AIO adapter + bridge endpoints.
+    "test_project": "TestProject/test_TestProject.py",
+    # Running a test project: live console, results, stop, history, flows.
+    "test_project_run": "TestProject/test_TestProjectRun.py",
+    # Scaffold emits a Manager GUI component (contract v1); lint needs node.
+    "ui_component": "UIComponent/test_UIComponent.py",
+}
+
+[
+    py_test(
+        name = "test_%s" % name,
+        size = "small",
+        srcs = [
+            "//tools/bazel:pytest_wrapper.py",
+            src,
+        ],
+        imports = [".."],
+        main = "pytest_wrapper.py",
+        tags = [
+            "framework:pytest",
+            "legacy",
+        ],
+        deps = [
+            ":conftest_lib",
+            "//:microservicebase_lib",
+            "@pypi//fastapi",
+            "@pypi//httpx",
+            "@pypi//pytest",
+            "@pypi//pytest-mock",
+        ],
+    )
+    for name, src in _LEGACY_TESTS.items()
+]
+
+test_suite(
+    name = "legacy_suite",
+    tests = [":test_%s" % name for name in _LEGACY_TESTS],
+)

@@ -1,0 +1,71 @@
+{
+  "component": "bits.climate-chamber",
+  "version": "1.3.0",
+  "layer": "bits",
+  "title": "Climate chamber",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": [
+      "grpc.call",
+      "signals.subscribe"
+    ]
+  },
+  "binds": {
+    "consul": "@self",
+    "grpc": "climate.v1.ChamberService"
+  },
+  "tiles": [
+    {
+      "id": "state",
+      "size": "1x1",
+      "kind": "live-status",
+      "title": "Chamber",
+      "fields": [
+        {
+          "label": "Set",
+          "signal": "bench.chamber.setpoint.degC",
+          "unit": "°C"
+        },
+        {
+          "label": "Actual",
+          "signal": "bench.chamber.temp.degC",
+          "unit": "°C",
+          "warnAbove": 85
+        }
+      ]
+    }
+  ],
+  "ribbon": [
+    {
+      "tab": "user",
+      "group": "Chamber",
+      "commands": [
+        {
+          "label": "Set temperature",
+          "icon": "thermometer-half",
+          "call": "SetTemperature",
+          "form": {
+            "degC": {
+              "type": "float",
+              "label": "Setpoint (°C)",
+              "min": -40,
+              "max": 180,
+              "default": 23
+            }
+          },
+          "confirm": "Move the chamber to the new setpoint?"
+        },
+        {
+          "label": "Start profile",
+          "icon": "play-circle",
+          "call": "StartProfile"
+        }
+      ]
+    }
+  ],
+  "dock": [
+    "api",
+    "details"
+  ],
+  "renderer": "schema"
+}

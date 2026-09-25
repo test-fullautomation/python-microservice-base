@@ -150,11 +150,39 @@ parses the JSON request into a dynamic protobuf — common mistakes:
 `nomad job status <name>` and look at the placement failure
 message. Most common in dev mode:
 
+- Node `down` — see the next entry.
 - Driver mismatch — generated jobs use `raw_exec`. Dev mode enables
   this automatically; if you're using a custom config, add the
   `raw_exec` plugin block.
 - Memory / CPU limits in the job exceed what the dev-mode client
   reports.
+
+### Placement failure: "No nodes were eligible for evaluation"
+
+`nomad node status` shows the only node as `down`, even though the
+agent process is running and `nomad agent` reports both client and
+server as ok. Cause: the agent was started with `-bind 0.0.0.0`, so
+it advertises the machine's LAN IP (Wi-Fi, VPN, VirtualBox...) and the
+dev client heartbeats its own server through that IP. On Windows the
+firewall usually refuses that connection — the node registers once via
+loopback, then misses every heartbeat (`Node heartbeat missed` in the
+node events) and is marked down. To confirm:
+
+```cmd
+curl http://127.0.0.1:4646/v1/agent/servers      :: shows e.g. ["192.168.68.110:4647"]
+```
+
+If connecting to that address fails with `WinError 10013` while
+`127.0.0.1:4647` works, this is it. Fix for a single-machine setup:
+
+```cmd
+nomad agent -dev                                 :: binds and advertises 127.0.0.1
+```
+
+The Manager GUI's Nomad form does this by default now. If remote
+clients must join, bind a specific interface **and** add an inbound
+firewall rule for TCP 4646–4648. Dev-mode state is in memory, so
+re-submit your jobs after the restart.
 
 ### `nomad job run` succeeds but service never starts
 

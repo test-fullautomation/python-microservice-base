@@ -80,6 +80,23 @@ The folder ships a `hello.nomad.hcl`:
 nomad job run hello.nomad.hcl
 ```
 
+For a demo, `../demo.nomad.hcl` runs the same service as **two instances**
+on Nomad-assigned ports and takes the machine-specific paths as variables
+instead of hard-coding them:
+
+```bash
+# from the repo root; repo = where this repository is checked out
+nomad job run -var repo=<path-to-this-repository> examples/demo.nomad.hcl
+nomad job run -var repo=<path-to-this-repository> -var count=1 -var consul_addr=http://127.0.0.1:8501 examples/demo.nomad.hcl
+nomad job stop -purge demo
+```
+
+`../demo_gui.nomad.hcl` runs the same service as `hello-gui` **with a GUI**:
+it sets `HELLO_GUI=HelloService1.0.0`, which the service registers in Consul
+as `Meta.gui`, and the Manager GUI then shows
+`MicroserviceManagerGUI/web/services/HelloService1.0.0/` when the service is
+selected.
+
 Or **Submit Job** in the Manager GUI's Nomad tab. See
 [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
 

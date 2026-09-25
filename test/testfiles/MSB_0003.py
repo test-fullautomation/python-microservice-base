@@ -35,13 +35,24 @@ def test():
                     tail = fh.read()[-400:]
             return f"FAIL: generate_protos.py exit {code}; log tail: {tail!r}"
 
-        proto_dir = os.path.join(out_dir, "proto")
-        produced = sorted(os.listdir(proto_dir)) if os.path.isdir(proto_dir) else []
+        # Single-service layout separates authored sources (proto/) from
+        # emitted stubs (generated/) -- the latter is what the Bazel
+        # generated_lib target globs. The monorepo layout still keeps
+        # both in proto/; see MSB_0010.
+        stub_dir = os.path.join(out_dir, "generated")
+        produced = sorted(os.listdir(stub_dir)) if os.path.isdir(stub_dir) else []
         for required in ("calculator_pb2.py", "calculator_pb2_grpc.py"):
             if required not in produced:
-                return f"FAIL: {required} not in proto/ after generate_protos.py (got {produced})"
+                return f"FAIL: {required} not in generated/ after generate_protos.py (got {produced})"
 
-        return "OK: generate_protos.py exit 0; calculator_pb2.py + calculator_pb2_grpc.py present in proto/"
+        # .proto sources must NOT have been polluted with stubs.
+        proto_dir = os.path.join(out_dir, "proto")
+        stray = [f for f in (os.listdir(proto_dir) if os.path.isdir(proto_dir) else [])
+                 if f.endswith("_pb2.py") or f.endswith("_pb2_grpc.py")]
+        if stray:
+            return f"FAIL: stubs leaked into proto/: {stray}"
+
+        return "OK: generate_protos.py exit 0; calculator_pb2.py + calculator_pb2_grpc.py present in generated/"
 
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)

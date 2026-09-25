@@ -1,0 +1,42 @@
+{
+  "component": "signals.graph-view",
+  "version": "0.3.0",
+  "layer": "signals",
+  "title": "Graph",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": [
+      "signals.subscribe"
+    ]
+  },
+  "binds": {
+    "consul": "@self"
+  },
+  "tiles": [
+    {
+      "id": "g",
+      "size": "2x2",
+      "kind": "graph",
+      "title": "signal-in",
+      "blocks": [
+        [
+          "adc",
+          "src"
+        ],
+        [
+          "scale",
+          "fn"
+        ],
+        [
+          "clamp",
+          "fn"
+        ],
+        [
+          "record",
+          "sink"
+        ]
+      ]
+    }
+  ],
+  "renderer": "schema"
+}

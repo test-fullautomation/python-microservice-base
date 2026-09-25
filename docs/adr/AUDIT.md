@@ -5,7 +5,7 @@ files themselves.  Edit this file (or override individual rows) before
 the follow-up rewrite pass touches the actual ADRs.
 
 **Reference architecture**: the canonical TA architecture lives at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+`taf_repo_proposal`
 (Bosch internal GitHub).  Key shifts vs. the ADRs below:
 
 - **Multi-node Nomad cluster**: server + N clients (was: single dev agent)

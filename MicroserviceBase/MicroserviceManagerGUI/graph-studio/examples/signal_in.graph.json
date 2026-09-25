@@ -1,0 +1,17 @@
+{
+  "service": { "name": "signal-in", "grpc_port": 50200, "rate_hz": 20.0, "flow_mode": "push" },
+  "device_services": { "nidaq_dev0": "testbench-device-ai-mock" },
+  "blocks": [
+    { "id": "adc_ch0", "type": "AdcBlock", "params": { "device": "nidaq_dev0", "channel": 0, "unit": "V" } },
+    { "id": "conv_ch0", "type": "LinearScaleBlock", "params": { "gain": 10.0, "offset": -5.0, "out_unit": "degC" } },
+    { "id": "rec0", "type": "RecordSignalBlock", "params": { "signal_name": "bench.dut.temp.degC" } }
+  ],
+  "signals": [
+    { "from": "adc_ch0.out", "to": "conv_ch0.in" },
+    { "from": "conv_ch0.out", "to": "rec0.in" }
+  ],
+  "observe": [
+    { "name": "bench.dut.temp.degC", "port": "conv_ch0.out" }
+  ],
+  "setpoints": []
+}

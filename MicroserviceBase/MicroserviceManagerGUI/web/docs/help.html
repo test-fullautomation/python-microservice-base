@@ -22,10 +22,8 @@
   <div class="docs-body" id="docsBody">
 
     <!-- Modernisation banner kept as a top-of-page pointer to long-form docs -->
-    <div class="docs-callout" style="background: rgba(56,189,248,0.08);
-         border-left: 4px solid #38bdf8; padding: 14px 18px;
-         border-radius: 6px; margin: 0 0 18px 0;">
-      <div style="font-weight: 600; color: #38bdf8; margin-bottom: 6px;">
+    <div class="docs-callout info" style="padding: 14px 18px; margin: 0 0 18px 0;">
+      <div class="docs-callout-title" style="margin-bottom: 6px;">
         <i class="bi bi-info-circle me-1"></i>For the long-form guides, see <code>docs/</code>
       </div>
       <p style="margin: 0;">
@@ -35,7 +33,7 @@
       </p>
       <ul style="margin: 8px 0 0 18px;">
         <li>
-          <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/MicroserviceBase/MicroserviceManagerGUI/build-resources/README-install.html"
+          <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/build-resources/README-install.html"
              target="_blank"
              onclick="if (window.electronAPI && window.electronAPI.openInstallReadme) { event.preventDefault(); window.electronAPI.openInstallReadme(); }">
             <i class="bi bi-file-earmark-text me-1"></i>Installed README
@@ -47,6 +45,8 @@
         <li><a href="../docs/html/index.html" target="_blank">Manager GUI doc index</a></li>
         <li><a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; full Service Network walkthrough with screenshots</li>
         <li><a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; per-step screenshots + YAML config schema</li>
+        <li><a href="../docs/html/bench_demo.html" target="_blank">Bench demo</a> &mdash; a ten-minute walkthrough of the bench on live services</li>
+        <li><a href="../docs/html/tour.html" target="_blank">Guided tour</a> &mdash; the 55-minute tour program: the GUI, its configuration, and what a service must provide</li>
       </ul>
     </div>
 
@@ -127,7 +127,8 @@
         Microservice Manager is a graphical interface for operating and
         building MicroserviceBase services.  It runs in two modes
         (Electron desktop or browser), connects to the same FastAPI
-        bridge, and gives you three top-level workspaces.
+        bridge, and keeps the Services view in front with developer and
+        administrator functions behind two menus.
       </p>
       <figure class="docs-figure">
         <img src="docs/img/gui_overview.png" alt="Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar">
@@ -144,13 +145,14 @@
       </ul>
       <p>Both modes share the same web front-end and connect to the same FastAPI bridge.</p>
 
-      <h3>Three Modes</h3>
-      <p>Use the mode toggle buttons in the top navigation bar:</p>
+      <h3>Navigation</h3>
+      <p>The navbar keeps the runtime view in front; developer and administrator functions sit behind two menus:</p>
       <ul>
-        <li><strong>Services</strong> &mdash; browse Consul-registered services, invoke gRPC methods via reflection.</li>
-        <li><strong>Service Network</strong> &mdash; start / stop / inspect Consul and Nomad agents; browse jobs; submit new <code>.nomad.hcl</code> files.</li>
-        <li><strong>Service Creator</strong> &mdash; 4-step wizard to scaffold a new service project (proto + domain + adapter + clients + Nomad HCL).</li>
+        <li><strong>Services</strong> (default) &mdash; active services and their GUIs. A service without a GUI shows an overview (health, instances with their checks, address, tags) and an <em>Actions</em> section with a typed form per method, so operators can invoke it without any developer tooling. It is marked <em>No GUI</em>. The app always starts here.</li>
+        <li><strong>Developer Tools &#9662;</strong> &mdash; the <em>Developer mode</em> switch docks an inspector on the right (amber accent + <em>DEV</em> pill in the navbar) showing the selected service's <em>API</em> (reflection, raw JSON calls), <em>Details</em> (instances, checks, Consul metadata) and <em>Code</em> (Python / C++ / Robot). The service itself stays in the main view. The menu also holds <em>Service Creator</em>, the <em>Robot Resource Generator</em>, <em>Signal Graph Studio</em> (the Signals &amp; Blocks graph editor, in its own window: draw a graph, generate a deployable graph service, watch live signal values and strip charts while it runs, set a setpoint into the running service, and scaffold new block types), <em>Code Examples</em> and <em>Download service files</em>. <em>Open test project&hellip;</em> picks a Robot Framework AIO test project and <em>Test project view</em> shows its files (generated, starter or yours, with locally edited ones flagged), the exported services, and lets you edit suites and your own files in place (Robot highlighting, Ctrl+S, syntax check, New suite&hellip;) while generated files stay read-only, and runs them. A flow file opens with <em>Script</em>, <em>Diagram</em> (the flow drawn from the text, click a node to find it) and <em>Robot</em> (the suite it becomes) tabs. &#9654; next to a suite or flow file (or <em>Run all&hellip;</em>) asks for variables and dry run, then <em>Runs</em> shows the live console, the verdict (Pass, Fail, Unknown, Skipped, Error), one row per test, Log and Report, Stop and the run history; <em>Run settings&hellip;</em> keeps the interpreter, PYTHONPATH and extra arguments in the project; <em>Add to test project</em> exports the selected service into it (generated resources, copied protos when available, a starter suite) after showing a plan of every file it would write.</li>
+        <li><strong>Administrator Tools &#9662;</strong> &mdash; <em>Consul agent</em> / <em>Nomad agent</em>: open the Service Network view to start / stop / inspect the agents, browse jobs, submit <code>.nomad.hcl</code> files.</li>
       </ul>
+      <p>Opening a menu never interrupts a running service GUI; switching back to <strong>Services</strong> shows it exactly as you left it.</p>
 
       <h3>Status pills in the navbar</h3>
       <p>To the right of the mode toggle, three small pills show live infrastructure health:</p>
@@ -338,7 +340,7 @@
     <!-- Troubleshooting -->
     <section class="docs-section" id="troubleshooting">
       <h2><i class="bi bi-wrench"></i>Troubleshooting</h2>
-      <p>Quick lookups.  For the full symptom-indexed reference see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/troubleshooting.html" target="_blank">repo: docs/troubleshooting.html</a>.</p>
+      <p>Quick lookups.  For the full symptom-indexed reference see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/troubleshooting.html" target="_blank">repo: docs/troubleshooting.html</a>.</p>
 
       <h3>Bridge LED stays red</h3>
       <p>Bridge process didn't start.  In Electron mode click ▶ next to the LED.  If port 1112 is taken, free it (<code>netstat -ano | findstr :1112</code>) or set <code>MB_BRIDGE_URL</code> to a different port.</p>
@@ -366,11 +368,13 @@
         <li><a href="../docs/html/index.html" target="_blank">Manager GUI doc index</a> &mdash; canonical reference, broken into focused guides</li>
         <li><a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a> &mdash; the long-form Service Network walkthrough</li>
         <li><a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a> &mdash; step-by-step with screenshots</li>
+        <li><a href="../docs/html/bench_demo.html" target="_blank">Bench demo</a> &mdash; the bench on live services, beat by beat</li>
+        <li><a href="../docs/html/tour.html" target="_blank">Guided tour</a> &mdash; for presenting the GUI to a room</li>
         <li><a href="../docs/html/robot_generator.html" target="_blank">Generate Robot Framework resources</a> &mdash; typed keywords on top of QConnectBase, one <code>.resource</code> per service</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/architecture.html" target="_blank">Architecture</a> &mdash; hexagonal layers, Consul, Nomad, gRPC reflection</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/runtime_model.html" target="_blank">Runtime model</a> &mdash; <code>ServiceRunner</code> lifecycle and dynamic invocation flow</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/docs/changelog.html" target="_blank">Changelog</a> &mdash; what changed (RabbitMQ → gRPC, ProcessHub → Nomad, etc.)</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/PowerDeviceService/README.html" target="_blank">PowerDeviceService example</a> &mdash; canonical multi-service C++ monorepo with Qt client</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/architecture.html" target="_blank">Architecture</a> &mdash; hexagonal layers, Consul, Nomad, gRPC reflection</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/runtime_model.html" target="_blank">Runtime model</a> &mdash; <code>ServiceRunner</code> lifecycle and dynamic invocation flow</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/changelog.html" target="_blank">Changelog</a> &mdash; what changed (RabbitMQ → gRPC, ProcessHub → Nomad, etc.)</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/PowerDeviceService/README.html" target="_blank">PowerDeviceService example</a> &mdash; canonical multi-service C++ monorepo with Qt client</li>
       </ul>
     </section>
 

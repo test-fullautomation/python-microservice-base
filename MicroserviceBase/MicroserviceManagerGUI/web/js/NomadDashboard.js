@@ -18,6 +18,11 @@
   var MM = window.MicroserviceManager;
 
   var PANE_ID = 'nomadPane';
+
+  // The Browse buttons only exist where a native picker does (Electron);
+  // in a browser the field stays a plain path input.
+  function _canBrowse() { return !!(MM.canPickPath && MM.canPickPath()); }
+
   var _active = false;
   var _currentUrl = null;
   var _pollTimer = null;
@@ -129,16 +134,30 @@
           '<div id="nomadConfigFields" style="display:none;">' +
             '<div class="mb-3">' +
               '<label for="nomadConfigFile" class="form-label">Config File (.hcl)</label>' +
-              '<input type="text" class="form-control" id="nomadConfigFile" placeholder="/etc/nomad.d/nomad.hcl">' +
+              '<div class="input-group">' +
+                '<input type="text" class="form-control" id="nomadConfigFile" placeholder="/etc/nomad.d/nomad.hcl">' +
+                (_canBrowse()
+                  ? '<button class="btn btn-outline-secondary" type="button" id="nomadBtnBrowseConfig" ' +
+                    'title="Pick the agent\'s configuration file"><i class="bi bi-folder2-open"></i></button>'
+                  : '') +
+              '</div>' +
             '</div>' +
             '<div class="row mb-3">' +
               '<div class="col">' +
                 '<label for="nomadDataDir" class="form-label">Data Directory</label>' +
-                '<input type="text" class="form-control" id="nomadDataDir" placeholder="/opt/nomad/data">' +
+                '<div class="input-group">' +
+                  '<input type="text" class="form-control" id="nomadDataDir" placeholder="/opt/nomad/data">' +
+                  (_canBrowse()
+                    ? '<button class="btn btn-outline-secondary" type="button" id="nomadBtnBrowseData" ' +
+                      'title="Pick the agent\'s data directory"><i class="bi bi-folder2-open"></i></button>'
+                    : '') +
+                '</div>' +
               '</div>' +
               '<div class="col">' +
                 '<label for="nomadBindAddr" class="form-label">Bind Address</label>' +
-                '<input type="text" class="form-control" id="nomadBindAddr" value="0.0.0.0">' +
+                '<input type="text" class="form-control" id="nomadBindAddr" value="127.0.0.1"' +
+                '       title="127.0.0.1 for a local cluster. A LAN IP lets remote clients join but needs an ' +
+                'inbound firewall rule for TCP 4646-4648, otherwise the node shows as down.">' +
               '</div>' +
             '</div>' +
             '<div class="row mb-3">' +
@@ -223,8 +242,34 @@
         devFields.style.display = selected === 'dev' ? '' : 'none';
         configFields.style.display = selected === 'config' ? '' : 'none';
         externalFields.style.display = selected === 'external' ? '' : 'none';
+        _labelConnectButton();
       });
     });
+
+    // With an agent of ours running, the action button connects -- to that
+    // agent, or, in "Connect to Existing Cluster" mode, to the URL given
+    // (e.g. a cluster the agent runs as a job, on another port).
+    function _labelConnectButton() {
+      var btn = document.getElementById('nomadBtnConnect');
+      if (!btn || btn.disabled) return;
+      var external = pane.querySelector('input[name="nomadMode"]:checked').value === 'external';
+      btn.innerHTML = '<i class="bi bi-plug me-1"></i>' + (external ? 'Connect' : 'Connect to Running Agent');
+    }
+
+    // Wire the Browse buttons of the Config mode fields
+    if (MM.wirePathBrowse) {
+      MM.wirePathBrowse('nomadBtnBrowseConfig', 'nomadConfigFile', {
+        title: 'Choose the Nomad configuration file',
+        filters: [
+          { name: 'Nomad configuration', extensions: ['hcl', 'json'] },
+          { name: 'All files', extensions: ['*'] }
+        ]
+      });
+      MM.wirePathBrowse('nomadBtnBrowseData', 'nomadDataDir', {
+        directory: true,
+        title: 'Choose the Nomad data directory'
+      });
+    }
 
     // Wire stop agent button
     var stopAgentBtn = document.getElementById('nomadBtnStopAgent');
@@ -282,7 +327,8 @@
         } else if (mode === 'config') {
           options.config_file = (document.getElementById('nomadConfigFile').value || '').trim();
           options.data_dir = (document.getElementById('nomadDataDir').value || '').trim();
-          options.bind_addr = (document.getElementById('nomadBindAddr').value || '').trim() || '0.0.0.0';
+          // Never fall back to 0.0.0.0: see NomadAgentStartBody in the bridge.
+          options.bind_addr = (document.getElementById('nomadBindAddr').value || '').trim() || '127.0.0.1';
           options.node_name = (document.getElementById('nomadCfgNodeName').value || '').trim();
           options.datacenter = (document.getElementById('nomadCfgDc').value || '').trim() || 'dc1';
         }
@@ -294,6 +340,12 @@
           .then(function (data) {
             if (!data.success) {
               MM.showToast('Nomad', data.message || 'Failed to start', 'danger');
+              // An agent that exited leaves its reason in the log: the
+              // toast carries the first line, the panel has the rest.
+              if (data.log_tail && data.log_tail.length &&
+                  !document.getElementById('nomadAgentLogPanel')) {
+                _showAgentLog();
+              }
               startBtn.disabled = false;
               startBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Start Agent';
               return;
@@ -314,8 +366,12 @@
 
     if (connectBtn) {
       connectBtn.onclick = function () {
+        var mode = pane.querySelector('input[name="nomadMode"]:checked').value;
         var httpPort = parseInt(document.getElementById('nomadHttpPort').value) || 4646;
         var url = 'http://127.0.0.1:' + httpPort;
+        if (mode === 'external') {
+          url = ((document.getElementById('nomadExternalUrl').value || '').trim() || url).replace(/\/+$/, '');
+        }
         connectBtn.disabled = true;
         connectBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Connecting...';
         _connectToUrl(url, connectBtn);
@@ -399,9 +455,10 @@
                 results.querySelectorAll('.nomad-detect-row.active')
                        .forEach(function (el) { el.classList.remove('active'); });
                 row.classList.add('active');
-                // One-click connect
-                var startBtn2 = document.getElementById('nomadBtnStart');
-                if (startBtn2) startBtn2.click();
+                // One-click connect (Start in external mode just connects;
+                // with an agent of ours running the button is Connect).
+                var go = document.getElementById('nomadBtnStart') || document.getElementById('nomadBtnConnect');
+                if (go) go.click();
               });
             });
           })
@@ -524,7 +581,12 @@
           }
           setTimeout(function () { _waitAndConnect(url, btn, attempt + 1); }, 2000);
         } else {
-          MM.showToast('Nomad', 'Agent started but not reachable at ' + url + '. Check agent log.', 'warning');
+          // The bridge already reports an agent that exited, with its own
+          // error; reaching here means the process is alive but its HTTP
+          // port stayed silent -- a bind address or port it cannot use.
+          MM.showToast('Nomad', 'The agent is running but nothing answers at ' + url +
+            '. Check its bind address and port in the log below.', 'warning');
+          if (!document.getElementById('nomadAgentLogPanel')) _showAgentLog();
           if (btn) {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Start Agent';
@@ -660,7 +722,7 @@
       '    <div class="fleet-stat-label">Dead</div>' +
       '  </div>' +
       '  <div class="fleet-stat-card">' +
-      '    <div class="fleet-stat-value" style="color:#3498db">' + readyNodes + '/' + nodes.length + '</div>' +
+      '    <div class="fleet-stat-value" style="color:var(--accent)">' + readyNodes + '/' + nodes.length + '</div>' +
       '    <div class="fleet-stat-label">Nodes Ready</div>' +
       '  </div>' +
       '</div>' +
@@ -795,7 +857,7 @@
       '<div class="col-md-3 col-sm-6">' +
       '  <div class="fleet-hub-card nomad-quick-link" data-path="' + _esc(path) + '" style="cursor:pointer">' +
       '    <div class="fleet-hub-card-body text-center py-3">' +
-      '      <i class="bi ' + icon + '" style="font-size:1.8rem;color:#3498db"></i>' +
+      '      <i class="bi ' + icon + '" style="font-size:1.8rem;color:var(--accent)"></i>' +
       '      <div class="fw-bold mt-1">' + _esc(title) + '</div>' +
       '      <div style="font-size:0.78rem;color:#7f8c8d" class="mt-1">' + _esc(desc) + '</div>' +
       '    </div>' +

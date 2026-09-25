@@ -1,0 +1,42 @@
+"""Bazel module for MicroserviceBase.
+
+Bazel is used here as an ORCHESTRATION GRAPH, not as a C/C++ compiler:
+it sequences and caches steps that already exist as scripts (wheel build,
+docs build, installer packaging) and runs the test suites as individually
+cacheable targets.
+
+Deliberately NOT in the graph: the Qt / vcpkg C++ builds under examples/.
+Those depend on 12 custom vcpkg triplets and patched gRPC ports, which
+fight Bazel's dependency model. They stay on build_qt.sh / CMake.
+
+Layout mirrors taf_repo_proposal so both repos share one mental model.
+A registry mirror or remote cache, where a network needs one, is set in
+.bazelrc.user (see tools/bazel/bazelrc.user.template).
+"""
+
+module(
+    name = "microservice_base",
+    version = "2.2.0",
+)
+
+bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+
+# Hermetic interpreter: what Bazel runs is independent of whatever Python
+# happens to be on PATH, which is the point -- it decouples CI from the
+# ambient environment (the class of problem behind the AIO protobuf
+# conflict).
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.13",
+    is_default = True,
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.13",
+    requirements_lock = "//:requirements_lock.txt",
+)
+
+use_repo(pip, "pypi")

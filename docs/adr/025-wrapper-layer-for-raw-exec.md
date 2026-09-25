@@ -11,7 +11,7 @@ Proposed
 ## Author
 
 Audit follow-up.  Aligns with the TA reference at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+`taf_repo_proposal`.
 
 ## Reviewer
 
@@ -157,7 +157,7 @@ Layering systemd underneath fights it.
 ## References
 
 - Reference architecture:
-  [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+  `taf_repo_proposal`
 - [`docs/diagrams/sequence_registration.puml`](../diagrams/sequence_registration.puml) —
   shows the wrapper in the spawn phase
 - [ADR-022 Nomad orchestrator integration](022-nomad-orchestrator-integration.md)

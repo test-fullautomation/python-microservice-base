@@ -1,0 +1,18 @@
+{
+  "service": { "name": "signal-proc-demo", "grpc_port": 50202, "rate_hz": 10.0, "flow_mode": "push" },
+  "device_services": {},
+  "blocks": [
+    { "id": "sub_temp", "type": "SubscriberSourceBlock", "params": { "signal_name": "bench.dut.temp.degC", "unit": "degC" } },
+    { "id": "overtemp", "type": "ThresholdBlock", "params": { "threshold": 40.0, "unit": "bool" } },
+    { "id": "rec", "type": "RecordSignalBlock", "params": { "signal_name": "bench.dut.overtemp.flag", "batch_size": 20 } }
+  ],
+  "signals": [
+    { "from": "sub_temp.out", "to": "overtemp.in" },
+    { "from": "overtemp.out", "to": "rec.in" }
+  ],
+  "observe": [
+    { "name": "bench.dut.temp.mirror.degC", "port": "sub_temp.out" },
+    { "name": "bench.dut.overtemp.flag", "port": "overtemp.out" }
+  ],
+  "setpoints": []
+}

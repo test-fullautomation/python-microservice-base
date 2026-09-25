@@ -92,6 +92,64 @@ class RobotGenError(RuntimeError):
     """Raised when proto parsing or emit fails."""
 
 
+def _services_from_file_descriptor(file_desc, proto_file: str) -> List[_Service]:
+    """Services declared in one ``FileDescriptorProto``.
+
+    Shared by the ``.proto`` folder path (descriptors produced by protoc)
+    and the server-reflection path (descriptors returned by the running
+    service), so both emit identical keywords.
+    """
+    services: List[_Service] = []
+    msgs = {m.name: m for m in file_desc.message_type}
+
+    def _extract_fields(msg_short_name: str) -> List[_RpcParam]:
+        msg = msgs.get(msg_short_name)
+        if msg is None:
+            return []
+        out = []
+        for fld in msg.field:
+            if fld.type in (_TYPE_MESSAGE, _TYPE_ENUM):
+                # Nested / enum types: fall back to "string" for the
+                # Robot keyword signature.  Caller passes the field
+                # value as JSON; QConnectBase serialises it as-is.
+                t = "string"
+            else:
+                t = _SCALAR.get(fld.type, "string")
+            out.append(_RpcParam(name=fld.name, type=t))
+        return out
+
+    def _first_field_type(msg_short_name: str) -> str:
+        msg = msgs.get(msg_short_name)
+        if not msg or not msg.field:
+            return "string"
+        f0 = msg.field[0]
+        if f0.type in (_TYPE_MESSAGE, _TYPE_ENUM):
+            return "message" if f0.type == _TYPE_MESSAGE else "enum"
+        return _SCALAR.get(f0.type, "string")
+
+    def _strip_pkg(qualified: str) -> str:
+        return qualified.rsplit(".", 1)[-1]
+
+    for svc_desc in file_desc.service:
+        rpcs: List[_Rpc] = []
+        for m in svc_desc.method:
+            input_short = _strip_pkg(m.input_type)
+            output_short = _strip_pkg(m.output_type)
+            rpcs.append(_Rpc(
+                name=m.name,
+                params=_extract_fields(input_short),
+                return_type=_first_field_type(output_short),
+                server_streaming=bool(m.server_streaming),
+            ))
+        services.append(_Service(
+            name=svc_desc.name,
+            package=file_desc.package,
+            proto_file=proto_file,
+            methods=rpcs,
+        ))
+    return services
+
+
 def parse_proto_folder(proto_dir: str) -> List[_Service]:
     """Walk ``proto_dir`` for ``.proto`` files and return discovered services.
 
@@ -203,53 +261,7 @@ def parse_proto_folder(proto_dir: str) -> List[_Service]:
             if not file_desc.name.endswith(os.path.basename(proto_path)):
                 continue
 
-            msgs = {m.name: m for m in file_desc.message_type}
-
-            def _extract_fields(msg_short_name: str) -> List[_RpcParam]:
-                msg = msgs.get(msg_short_name)
-                if msg is None:
-                    return []
-                out = []
-                for fld in msg.field:
-                    if fld.type in (_TYPE_MESSAGE, _TYPE_ENUM):
-                        # Nested / enum types: fall back to "string" for the
-                        # Robot keyword signature.  Caller passes the field
-                        # value as JSON; QConnectBase serialises it as-is.
-                        t = "string"
-                    else:
-                        t = _SCALAR.get(fld.type, "string")
-                    out.append(_RpcParam(name=fld.name, type=t))
-                return out
-
-            def _first_field_type(msg_short_name: str) -> str:
-                msg = msgs.get(msg_short_name)
-                if not msg or not msg.field:
-                    return "string"
-                f0 = msg.field[0]
-                if f0.type in (_TYPE_MESSAGE, _TYPE_ENUM):
-                    return "message" if f0.type == _TYPE_MESSAGE else "enum"
-                return _SCALAR.get(f0.type, "string")
-
-            def _strip_pkg(qualified: str) -> str:
-                return qualified.rsplit(".", 1)[-1]
-
-            for svc_desc in file_desc.service:
-                rpcs: List[_Rpc] = []
-                for m in svc_desc.method:
-                    input_short = _strip_pkg(m.input_type)
-                    output_short = _strip_pkg(m.output_type)
-                    rpcs.append(_Rpc(
-                        name=m.name,
-                        params=_extract_fields(input_short),
-                        return_type=_first_field_type(output_short),
-                        server_streaming=bool(m.server_streaming),
-                    ))
-                services.append(_Service(
-                    name=svc_desc.name,
-                    package=file_desc.package,
-                    proto_file=proto_path,
-                    methods=rpcs,
-                ))
+            services.extend(_services_from_file_descriptor(file_desc, proto_path))
 
     return services
 
@@ -389,8 +401,40 @@ def generate_robot_resources(
                 f"No services in {proto_dir} matched filter {service_filter}"
             )
 
-    files: Dict[str, str] = {}
-    for svc in services:
-        path = f"{_snake(svc.name)}.resource"
-        files[path] = _emit_service_resource(svc)
-    return files
+    return emit_resources(services)
+
+
+def services_from_file_descriptors(
+    file_descriptors,
+    *,
+    source_label: str = "server reflection",
+) -> List[_Service]:
+    """Services declared in ``FileDescriptorProto`` objects obtained without
+    a local ``.proto`` -- typically from gRPC server reflection.
+
+    ``source_label`` ends up in each resource's *Source proto* header, e.g.
+    ``hello.proto (server reflection)``.
+    """
+    services: List[_Service] = []
+    for file_desc in file_descriptors:
+        if not file_desc.service:
+            continue
+        services.extend(_services_from_file_descriptor(
+            file_desc, f"{file_desc.name} ({source_label})"))
+    return services
+
+
+def resource_file_name(svc: _Service) -> str:
+    """File name of the resource emitted for *svc*, e.g. ``hello_service.resource``."""
+    return f"{_snake(svc.name)}.resource"
+
+
+def keyword_name(svc: _Service, rpc: _Rpc = None) -> str:
+    """Robot keyword name: the service prefix alone, or prefix + method."""
+    base = _spaced(svc.name)
+    return f"{base} {_spaced(rpc.name)}" if rpc is not None else base
+
+
+def emit_resources(services: List[_Service]) -> Dict[str, str]:
+    """``{resource_file_name: content}`` for already-parsed services."""
+    return {resource_file_name(svc): _emit_service_resource(svc) for svc in services}

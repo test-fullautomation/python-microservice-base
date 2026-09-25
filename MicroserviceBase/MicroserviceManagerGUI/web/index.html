@@ -9,6 +9,9 @@
   <link rel="stylesheet" href="css/fleet.css">
   <link rel="stylesheet" href="css/creator.css">
   <link rel="stylesheet" href="css/docs.css">
+  <link rel="stylesheet" href="css/endo.css">
+  <!-- Bench theme: palette, fonts and Bootstrap overrides. Keep it last. -->
+  <link rel="stylesheet" href="css/theme.css">
   <title>Microservice Manager</title>
 </head>
 <body>
@@ -19,10 +22,26 @@
       <img src="img/logo.png" alt="Logo">
       Microservice Manager
     </a>
-    <div class="nav-mode-toggle">
-      <button class="mode-btn active" id="btnModeServices">Services</button>
-      <button class="mode-btn" id="btnModeFleet">Service Network</button>
-      <button class="mode-btn" id="btnModeCreator">Service Creator</button>
+    <!-- Ribbon tabs. Each names a group of commands shown in the band
+         below. User and Administrator also open their view; Developer
+         keeps the current view, because its "selected service" commands
+         act on whatever is selected in the Services view. -->
+    <div class="ribbon-tabs" role="tablist" aria-label="Command groups">
+      <button class="ribbon-tab active" id="btnModeServices" type="button" role="tab"
+              aria-selected="true" aria-controls="ribbonUser"
+              title="Operate and monitor services">User</button>
+      <button class="ribbon-tab" id="btnDevTools" type="button" role="tab"
+              aria-selected="false" aria-controls="ribbonDev"
+              title="Generate and test services">
+        <i class="bi bi-code-slash me-1"></i>Developer</button>
+      <button class="ribbon-tab" id="btnAdminTools" type="button" role="tab"
+              aria-selected="false" aria-controls="ribbonAdmin"
+              title="Configure the infrastructure">
+        <i class="bi bi-sliders me-1"></i>Administrator</button>
+
+      <span class="dev-mode-pill" id="devModePill" hidden title="Developer mode is on">
+        <i class="bi bi-code-slash me-1"></i>DEV
+      </span>
     </div>
     <div class="navbar-actions">
       <!-- Legacy broker chips/badge — kept in the DOM so existing app.js
@@ -34,35 +53,10 @@
         <span id="connectionLabel">Disconnected</span>
       </span>
 
-      <!-- Bridge control: LED + Start/Stop buttons -->
-      <div class="bridge-control" id="bridgeControl" title="FastAPI bridge status">
-        <span class="bridge-led" id="bridgeLed"></span>
-        <span class="bridge-label" id="bridgeLabel">Bridge</span>
-        <button class="btn-bridge btn-bridge-start" id="btnBridgeStart" title="Start bridge">
-          <i class="bi bi-play-fill"></i>
-        </button>
-        <button class="btn-bridge btn-bridge-stop" id="btnBridgeStop" title="Stop bridge">
-          <i class="bi bi-stop-fill"></i>
-        </button>
-      </div>
-
-      <!-- Infrastructure status: Consul (service registry) + Nomad (orchestrator).
-           Each pill is a button — click to jump to the corresponding sub-tab. -->
-      <div class="infra-status" id="infraStatus">
-        <button type="button" class="infra-pill" id="infraConsulPill" title="Consul — click to open">
-          <span class="infra-led" id="infraConsulLed"></span>
-          <span class="infra-label">Consul</span>
-        </button>
-        <button type="button" class="infra-pill" id="infraNomadPill" title="Nomad — click to open">
-          <span class="infra-led" id="infraNomadLed"></span>
-          <span class="infra-label">Nomad</span>
-        </button>
-      </div>
-
-      <!-- Connected Consul clusters: one chip per URL with an x button.
-           Populated by app.js after a successful Connect. -->
-      <div class="consul-chips" id="consulChips"></div>
-
+      <button class="btn-help" id="btnRibbonToggle" type="button"
+              title="Pin the ribbon open">
+        <i class="bi bi-pin-angle"></i>
+      </button>
       <button class="btn-help" id="btnReportIssue" title="Report Issue">
         <i class="bi bi-bug"></i>
       </button>
@@ -72,11 +66,165 @@
       <button class="btn-settings" id="btnSettings" title="Settings">
         <i class="bi bi-gear"></i>
       </button>
-      <button class="btn-connect" id="btnConnect" title="Connect to Consul">
-        <i class="bi bi-plug"></i> Connect
-      </button>
     </div>
   </nav>
+
+  <!-- ===== Ribbon band: the selected group's commands ===== -->
+  <div class="ribbon" id="ribbon">
+
+    <!-- User: operate the bench. The bridge, the infrastructure LEDs and
+         the registry connection live here. -->
+    <div class="ribbon-panel active" id="ribbonUser" role="tabpanel" aria-labelledby="btnModeServices">
+      <div class="ribbon-group">
+        <div class="ribbon-group-items">
+          <div class="bridge-control" id="bridgeControl" title="FastAPI bridge status">
+            <span class="bridge-led" id="bridgeLed"></span>
+            <span class="bridge-label" id="bridgeLabel">Bridge</span>
+            <button class="btn-bridge btn-bridge-start" id="btnBridgeStart" title="Start bridge">
+              <i class="bi bi-play-fill"></i>
+            </button>
+            <button class="btn-bridge btn-bridge-stop" id="btnBridgeStop" title="Stop bridge">
+              <i class="bi bi-stop-fill"></i>
+            </button>
+          </div>
+        </div>
+        <div class="ribbon-group-label">Bridge</div>
+      </div>
+
+      <div class="ribbon-group">
+        <div class="ribbon-group-items">
+          <div class="infra-status" id="infraStatus">
+            <button type="button" class="infra-pill" id="infraConsulPill" title="Consul — click to open">
+              <span class="infra-led" id="infraConsulLed"></span>
+              <span class="infra-label">Consul</span>
+            </button>
+            <button type="button" class="infra-pill" id="infraNomadPill" title="Nomad — click to open">
+              <span class="infra-led" id="infraNomadLed"></span>
+              <span class="infra-label">Nomad</span>
+            </button>
+          </div>
+        </div>
+        <div class="ribbon-group-label">Infrastructure</div>
+      </div>
+
+      <!-- The bench: one stage composed from many services' components.
+           Components on the bench add their own groups after these. -->
+      <div class="ribbon-group">
+        <div class="ribbon-group-items">
+          <button class="ribbon-btn" id="btnModeBench" type="button"
+                  title="Show the bench: the tiles of every component in the chosen composition">
+            <i class="bi bi-grid-1x2"></i><span>Bench</span>
+          </button>
+          <div class="bench-picker-wrap">
+            <label class="visually-hidden" for="benchPicker">Composition</label>
+            <select class="form-select form-select-sm bench-picker" id="benchPicker"
+                    title="Which composition the bench shows"></select>
+            <div class="bench-picker-actions">
+              <button class="btn btn-sm bench-mini" id="btnBenchEdit" type="button"
+                      title="Edit, check and save the composition">
+                <i class="bi bi-pencil-square me-1"></i>Edit</button>
+              <button class="btn btn-sm bench-mini" id="btnBenchReload" type="button"
+                      title="Reload the compositions and the components' manifests">
+                <i class="bi bi-arrow-clockwise me-1"></i>Reload</button>
+            </div>
+          </div>
+        </div>
+        <div class="ribbon-group-label">Bench</div>
+      </div>
+
+      <div class="ribbon-group ribbon-group-grow">
+        <div class="ribbon-group-items">
+          <button class="btn-connect" id="btnConnect" title="Connect to Consul">
+            <i class="bi bi-plug"></i> Connect
+          </button>
+          <!-- One chip per connected Consul; populated by app.js. -->
+          <div class="consul-chips" id="consulChips"></div>
+        </div>
+        <div class="ribbon-group-label">Service registry</div>
+      </div>
+    </div>
+
+    <!-- Developer -->
+    <div class="ribbon-panel" id="ribbonDev" role="tabpanel" aria-labelledby="btnDevTools" hidden>
+      <div class="ribbon-group">
+        <div class="ribbon-group-items">
+          <label class="ribbon-switch" for="devModeSwitch"
+                 title="Dock an inspector with the API, details and client code of the selected service">
+            <span class="form-check form-switch m-0">
+              <input class="form-check-input" type="checkbox" role="switch" id="devModeSwitch">
+            </span>
+            <span>Developer<br>mode</span>
+          </label>
+        </div>
+        <div class="ribbon-group-label">Inspector</div>
+      </div>
+
+      <div class="ribbon-group">
+        <div class="ribbon-group-items">
+          <button class="ribbon-btn" id="btnModeCreator" type="button"
+                  title="Scaffold a new service: proto, domain, adapters, clients, Nomad job">
+            <i class="bi bi-magic"></i><span>Service Creator</span>
+          </button>
+          <!-- Plugins add their Build commands here (robot-gen, graph-studio). -->
+        </div>
+        <div class="ribbon-group-label">Build</div>
+      </div>
+
+      <!-- Plugin groups (e.g. test-project's "Test project") go here. -->
+
+      <div class="ribbon-group ribbon-group-grow">
+        <div class="ribbon-group-items">
+          <button class="ribbon-btn" id="btnDevApiExplorer" type="button"
+                  title="Open the inspector on the API tab: methods via reflection, raw JSON calls">
+            <i class="bi bi-diagram-3"></i><span>API Explorer</span>
+          </button>
+          <button class="ribbon-btn" id="btnDevClassicPanel" type="button" aria-pressed="false"
+                  title="Show the service's classic panel instead of its component tiles">
+            <i class="bi bi-window"></i><span>Classic panel</span>
+          </button>
+          <button class="ribbon-btn" id="btnDevCodeExamples" type="button"
+                  title="Ready-to-run client snippets: Python, C++, Robot">
+            <i class="bi bi-file-earmark-code"></i><span>Code Examples</span>
+          </button>
+          <button class="ribbon-btn" id="btnDevExportToProject" type="button"
+                  title="Export Robot resources, protos and a starter suite into the open test project">
+            <i class="bi bi-box-arrow-in-down"></i><span>Add to project</span>
+          </button>
+          <button class="ribbon-btn" id="btnDevDownload" type="button"
+                  title="Fetch the service's GUI package (registry services)">
+            <i class="bi bi-download"></i><span>Download files</span>
+          </button>
+        </div>
+        <div class="ribbon-group-label">Selected service</div>
+      </div>
+    </div>
+
+    <!-- Administrator -->
+    <div class="ribbon-panel" id="ribbonAdmin" role="tabpanel" aria-labelledby="btnAdminTools" hidden>
+      <div class="ribbon-group">
+        <div class="ribbon-group-items">
+          <button class="ribbon-btn" id="btnAdminConsul" type="button"
+                  title="Start, stop and inspect the service registry">
+            <i class="bi bi-diagram-2"></i><span>Consul agent</span>
+          </button>
+          <button class="ribbon-btn" id="btnAdminNomad" type="button"
+                  title="Start, stop, submit jobs and view allocations">
+            <i class="bi bi-hdd-rack"></i><span>Nomad agent</span>
+          </button>
+        </div>
+        <div class="ribbon-group-label">Service Network</div>
+      </div>
+      <div class="ribbon-group ribbon-group-grow">
+        <div class="ribbon-group-items">
+          <button class="ribbon-btn" id="btnAdminPlugins" type="button"
+                  title="Turn plugins on or off on this PC: tile kinds, tabs, views and commands they add">
+            <i class="bi bi-puzzle"></i><span>Plugins</span>
+          </button>
+        </div>
+        <div class="ribbon-group-label">Shell</div>
+      </div>
+    </div>
+  </div>
 
   <!-- ===== Layout ===== -->
   <div class="app-layout">
@@ -94,6 +242,14 @@
           </div>
         </div>
       </div>
+      <!-- Bench navigator: the modules of the shown composition -->
+      <div class="sidebar-mode" id="sidebarBench">
+        <div class="sidebar-content bench-nav" id="benchNav"></div>
+      </div>
+      <!-- Test project sidebar: file tree of the open test project -->
+      <div class="sidebar-mode" id="sidebarTestProject">
+        <div class="tpv-tree" id="testProjectTree"></div>
+      </div>
       <!-- Creator sidebar -->
       <div class="sidebar-mode" id="sidebarCreator">
         <div class="creator-sidebar" id="creatorStepList"></div>
@@ -110,6 +266,21 @@
           <!-- Hub items dynamically inserted here -->
         </div>
       </div>
+
+      <!-- Footer tabs: switch the left pane (and the view). Plugins add
+           their navigators here, e.g. test-project's "Project". -->
+      <div class="sidebar-switch" id="sidebarSwitch">
+        <div class="sidebar-switch-group" role="tablist" aria-label="Left pane view">
+          <button type="button" class="sidebar-switch-tab active" id="sidebarSwitchServices" title="Running services"
+                  role="tab" aria-selected="true" data-mode="services">
+            <i class="bi bi-box-seam"></i><span>Services</span>
+          </button>
+          <button type="button" class="sidebar-switch-tab" id="sidebarSwitchBench" title="Bench: the modules of the shown composition"
+                  role="tab" aria-selected="false" data-mode="bench">
+            <i class="bi bi-grid-1x2"></i><span>Bench</span>
+          </button>
+        </div>
+      </div>
     </aside>
 
     <!-- Content -->
@@ -119,7 +290,9 @@
           <span><i class="bi bi-box-seam me-2"></i>Select a service to view its content</span>
         </div>
       </div>
+      <div id="benchContent" style="display:none;"></div>
       <div id="creatorContent" style="display:none;"></div>
+      <div id="testProjectContent" style="display:none;"></div>
       <div id="helpContent" style="display:none;"></div>
       <div id="fleetContent" style="display:none;">
         <ul class="nav nav-tabs fleet-sub-tabs" id="fleetSubTabs" role="tablist">
@@ -140,6 +313,12 @@
         </div>
       </div>
     </main>
+
+    <!-- Developer inspector: in developer mode it covers the whole content
+         area next to the sidebar, so the window is sidebar + inspector.
+         The runtime content underneath is left intact (GUI panels keep
+         their size) and reappears when developer mode is turned off. -->
+    <aside class="dev-inspector" id="devInspector" hidden></aside>
 
   </div>
 
@@ -195,15 +374,32 @@
     <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title" id="helperModalTitle">Python Helper</h5>
+          <h5 class="modal-title" id="helperModalTitle">Code Examples</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body" id="helperModalBody"></div>
         <div class="modal-footer">
-          <button class="btn btn-outline-primary" id="btnCopyHelper">
-            <i class="bi bi-clipboard me-1"></i>Copy Code
+          <button class="btn btn-outline-primary" id="btnCopyHelper" title="Copy the code of the active tab">
+            <i class="bi bi-clipboard me-1"></i>Copy code
           </button>
           <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Test Project Modal ===== -->
+  <div class="modal fade" id="testProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="testProjectModalTitle">Test project</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="testProjectModalBody"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnTestProjectCancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnTestProjectApply" hidden>Apply</button>
         </div>
       </div>
     </div>
@@ -336,6 +532,18 @@
   <script src="js/BridgeControl.js"></script>
   <script src="js/InfraStatus.js"></script>
   <script src="js/GrpcClient.js"></script>
+  <script src="js/TestProjectClient.js"></script>
+  <script src="js/FlowView.js"></script>
+  <!-- Bench Endoskeleton: component contract v1, core tile kinds, host -->
+  <script src="js/endo/contract/lint.js"></script>
+  <script src="js/endo/kinds-core.js"></script>
+  <script src="js/endo/bus.js"></script>
+  <script src="js/endo/frame-sdk.js" data-endo-shell></script>
+  <script src="js/endo/frame-host.js"></script>
+  <script src="js/endo/host.js"></script>
+  <script src="js/endo/composition.js"></script>
+  <script src="js/endo/bench.js"></script>
+  <script src="js/endo/plugins.js"></script>
   <script src="js/SchemaRenderer.js"></script>
   <script src="js/SchemaAutoGen.js"></script>
   <script src="js/QtWasmLoader.js"></script>

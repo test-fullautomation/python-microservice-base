@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "endo/plugin.schema.json",
+  "title": "Bench Endoskeleton plugin, contract v1",
+  "description": "Extends the shell itself: tile kinds, navigators, stage views, dock sections, drawer tabs, ribbon groups and commands. A contribution is implemented by a module in the plugin folder (entry) or by a view or action the shell already has (shell).",
+  "type": "object",
+  "required": ["plugin", "version", "title", "requires", "isolation", "contributes"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "plugin": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.-]+)?$" },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "requires": {
+      "type": "object",
+      "required": ["shell", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "shell": { "type": "string", "minLength": 1 },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "isolation": { "type": "string", "enum": ["schema", "frame", "window"] },
+    "main": { "type": "string", "description": "window plugins: main-process module, relative to the Manager GUI folder; exports register(), open(opts), shutdown()" },
+    "preload": { "type": "string", "description": "window plugins: preload script" },
+    "contributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "entry", "schema"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+              "entry": { "$ref": "#/definitions/entry" },
+              "schema": { "type": "object" },
+              "needs": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "ribbon.groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["tab", "group", "commands"],
+            "additionalProperties": false,
+            "properties": {
+              "tab": { "type": "string", "enum": ["user", "dev", "admin"] },
+              "group": { "type": "string", "minLength": 1, "description": "a group of the same name on that tab is joined, not duplicated" },
+              "commands": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["id", "label"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string", "description": "a command of contributes.commands" },
+                    "label": { "type": "string" },
+                    "icon": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+                    "title": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "navigators": { "$ref": "#/definitions/entries" },
+        "stage.views": { "$ref": "#/definitions/entries" },
+        "dock.sections": { "$ref": "#/definitions/entries" },
+        "drawer.tabs": { "$ref": "#/definitions/entries" },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "title"],
+            "anyOf": [{ "required": ["entry"] }, { "required": ["shell"] }, { "required": ["window"] }],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9.-]*$" },
+              "title": { "type": "string" },
+              "entry": { "$ref": "#/definitions/entry" },
+              "shell": { "type": "string", "description": "a shell action, e.g. robotGen" },
+              "window": { "type": "boolean", "description": "window plugins: open the plugin's window" }
+            }
+          }
+        },
+        "renderers": { "$ref": "#/definitions/entries" }
+      }
+    }
+  },
+  "definitions": {
+    "entry": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*\\.m?js$", "description": "module in the plugin folder" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "anyOf": [{ "required": ["entry"] }, { "required": ["shell"] }],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "title": { "type": "string" },
+          "icon": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "entry": { "$ref": "#/definitions/entry" },
+          "shell": { "type": "string", "description": "a view the shell already has, e.g. testproject" },
+          "for": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

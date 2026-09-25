@@ -1,0 +1,103 @@
+{
+  "service": {
+    "name": "uds-extract-dut",
+    "grpc_port": 50220,
+    "rate_hz": 10.0,
+    "flow_mode": "push"
+  },
+  "block_modules": ["uds_blocks.blocks"],
+  "device_services": {
+    "uds_tester": "uds-tester",
+    "uds_req": "testbench-uds-request"
+  },
+  "device_kinds": {
+    "uds_tester": "uds_blocks.tester",
+    "uds_req": "uds_blocks.request_service"
+  },
+  "mock_scripts": {
+    "uds_tester": [
+      ["periodic:52", { "BatteryVoltage": 12500, "EcuTemperature": 41 }, 0],
+      ["periodic:52", { "BatteryVoltage": 12480, "EcuTemperature": 63 }, 0],
+      ["periodic:52", { "BatteryVoltage": 12510, "EcuTemperature": 88 }, 0],
+      ["periodic:52", {}, 33],
+      ["periodic:52", { "BatteryVoltage": 12470, "EcuTemperature": 52 }, 0]
+    ],
+    "uds_req": [
+      ["service:ReadOdometer", { "Odometer": 120345 }, 0],
+      ["service:ReadOdometer", { "Odometer": 120346 }, 0],
+      ["service:ReadOdometer", {}, 34]
+    ]
+  },
+  "blocks": [
+    {
+      "id": "batt_v",
+      "type": "UdsPeriodicSourceBlock",
+      "description": "Battery voltage from the 0x2A periodic frame (mV -> V)",
+      "params": {
+        "tester": "uds_tester",
+        "periodic_id": 52,
+        "parameter": "BatteryVoltage",
+        "scale": 0.001,
+        "on_nrc": "none",
+        "unit": "V"
+      }
+    },
+    {
+      "id": "ecu_t",
+      "type": "UdsPeriodicSourceBlock",
+      "description": "ECU temperature from the same periodic frame",
+      "params": {
+        "tester": "uds_tester",
+        "periodic_id": 52,
+        "parameter": "EcuTemperature",
+        "on_nrc": "none",
+        "unit": "degC"
+      }
+    },
+    {
+      "id": "odo",
+      "type": "UdsDidSourceBlock",
+      "description": "Odometer from ReadOdometer results on the request lane",
+      "params": {
+        "request_service": "uds_req",
+        "service_name": "ReadOdometer",
+        "parameter": "Odometer",
+        "on_nrc": "none",
+        "unit": "km"
+      }
+    },
+    {
+      "id": "over",
+      "type": "ThresholdBlock",
+      "params": { "threshold": 85 }
+    },
+    {
+      "id": "rec_batt",
+      "type": "RecordSignalBlock",
+      "params": { "signal_name": "uds.dut.battery_voltage.V" }
+    },
+    {
+      "id": "rec_temp",
+      "type": "RecordSignalBlock",
+      "params": { "signal_name": "uds.dut.ecu_temp.degC" }
+    }
+  ],
+  "signals": [
+    { "from": "ecu_t.out", "to": "over.in" },
+    { "from": "ecu_t.out", "to": "rec_temp.in" },
+    { "from": "batt_v.out", "to": "rec_batt.in" }
+  ],
+  "observe": [
+    { "port": "batt_v.out",          "name": "uds.dut.battery_voltage.V" },
+    { "port": "batt_v.last_nrc",     "name": "uds.dut.battery_voltage.last_nrc" },
+    { "port": "batt_v.age_s",        "name": "uds.dut.battery_voltage.age_s" },
+    { "port": "batt_v.update_count", "name": "uds.dut.battery_voltage.update_count" },
+    { "port": "ecu_t.out",           "name": "uds.dut.ecu_temp.degC" },
+    { "port": "ecu_t.age_s",         "name": "uds.dut.ecu_temp.age_s" },
+    { "port": "over.out",            "name": "uds.dut.overtemp.flag" },
+    { "port": "odo.out",             "name": "uds.dut.odometer.km" },
+    { "port": "odo.last_nrc",        "name": "uds.dut.odometer.last_nrc" },
+    { "port": "odo.age_s",           "name": "uds.dut.odometer.age_s" }
+  ],
+  "setpoints": []
+}

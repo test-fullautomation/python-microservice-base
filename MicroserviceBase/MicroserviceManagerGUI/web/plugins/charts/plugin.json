@@ -1,0 +1,37 @@
+{
+  "$schema": "../../js/endo/contract/plugin.schema.json",
+  "plugin": "charts",
+  "version": "1.0.0",
+  "title": "Charts",
+  "description": "Live signal strips: the signal-strip tile kind, and a Chart drawer tab for the signals of the selected tile.",
+  "requires": { "shell": "^2.3", "capabilities": ["signals.subscribe"] },
+  "isolation": "frame",
+  "contributes": {
+    "kinds": [
+      {
+        "kind": "signal-strip",
+        "entry": "strip.js",
+        "needs": ["signals.subscribe"],
+        "schema": {
+          "type": "object",
+          "required": ["signals"],
+          "properties": {
+            "signals": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)+$" }
+            },
+            "window": { "type": "string", "pattern": "^[0-9]+(s|m)$" },
+            "min": { "type": "number" },
+            "max": { "type": "number" },
+            "digits": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    ],
+    "drawer.tabs": [
+      { "id": "chart", "title": "Chart", "icon": "graph-up", "entry": "drawer.js" }
+    ]
+  }
+}

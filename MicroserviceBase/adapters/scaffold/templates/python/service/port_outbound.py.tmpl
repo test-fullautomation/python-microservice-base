@@ -1,0 +1,39 @@
+@@{header}"""
+Outbound port for @@{svc} -- what the domain NEEDS from the outside world.
+
+The domain declares this Protocol; a driven adapter under
+``adapters/outbound/`` implements it (serial link, HTTP client, event
+bus, mock, ...). The domain imports only this file, so swapping real
+hardware for a mock is a composition-root change in ``context.py`` and
+nothing else.
+
+Delete this file if @@{svc} has no outbound dependency -- an unused port
+is worse than no port.
+"""
+
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class @@{cls}BackendPort(Protocol):
+    """
+Capability the @@{svc} domain requires from its environment.
+
+Rename to something concrete once you know what it talks to
+(``SerialPort``, ``PowerSupplyPort``, ``TelemetrySinkPort``, ...) --
+the name should describe the CAPABILITY, not the technology.
+    """
+
+    def connect(self) -> None:
+        """Open the underlying resource. Idempotent."""
+        ...
+
+    def disconnect(self) -> None:
+        """Release the underlying resource. Safe to call when not connected."""
+        ...
+
+    def is_connected(self) -> bool:
+        """Whether the resource is currently usable."""
+        ...

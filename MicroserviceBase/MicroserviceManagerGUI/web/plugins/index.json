@@ -1,0 +1,4 @@
+{
+  "description": "Plugins bundled with the Manager GUI, in the order their contributions appear. Installed plugins (%APPDATA%/DevAtServGUI/plugins/<id>/) are found without this list.",
+  "plugins": ["robot-gen", "graph-studio", "test-project", "charts"]
+}
