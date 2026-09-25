@@ -12,7 +12,7 @@
 "use strict";
 
 const DEFAULT_CATALOG = {
-  "catalog_version": "generated-2026-09-18",
+  "catalog_version": "generated-2026-09-25",
   "blocks": [
     {
       "type": "AdcBlock",
@@ -286,7 +286,7 @@ const DEFAULT_CATALOG = {
     {
       "type": "UdsPeriodicSourceBlock",
       "family": "source",
-      "doc": "Extracts one PDX parameter from XTS 0x2A periodic frames as a scaled signal.",
+      "doc": "Extracts one parameter from the tester's decoded 0x2A periodic values as a scaled signal.",
       "inputs": [],
       "outputs": [
         {
@@ -308,7 +308,7 @@ const DEFAULT_CATALOG = {
       ],
       "params": [
         {
-          "name": "gateway",
+          "name": "tester",
           "type": "device_ref",
           "required": true
         },
@@ -411,6 +411,78 @@ const DEFAULT_CATALOG = {
         {
           "name": "unit",
           "type": "string",
+          "required": false
+        }
+      ],
+      "origin": "generated",
+      "source": "blocks.py"
+    },
+    {
+      "type": "UdsWriteSinkBlock",
+      "family": "function",
+      "doc": "Embeds a signal into the DUT: writes the scaled input to a memory address through the tester (0x3D).",
+      "inputs": [
+        {
+          "name": "in",
+          "type": "float"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ack",
+          "type": "float"
+        },
+        {
+          "name": "last_nrc",
+          "type": "float"
+        },
+        {
+          "name": "age_s",
+          "type": "float"
+        },
+        {
+          "name": "write_count",
+          "type": "float"
+        }
+      ],
+      "params": [
+        {
+          "name": "tester",
+          "type": "device_ref",
+          "required": true
+        },
+        {
+          "name": "address",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "size",
+          "type": "int",
+          "required": false
+        },
+        {
+          "name": "scale",
+          "type": "float",
+          "required": false
+        },
+        {
+          "name": "offset",
+          "type": "float",
+          "required": false
+        },
+        {
+          "name": "trigger",
+          "type": "enum",
+          "required": false,
+          "choices": [
+            "on_change",
+            "every_tick"
+          ]
+        },
+        {
+          "name": "min_interval_s",
+          "type": "float",
           "required": false
         }
       ],

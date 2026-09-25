@@ -156,7 +156,8 @@ function buildBlockSkeleton(spec, opts) {
   }
   L.push(`    async def step(self, inputs: dict[str, Value]) -> dict[str, Value]:`);
   if (inputs.length) {
-    L.push(`        ${inputs.map((i) => pyIdent(i)).join(", ")}${inputs.length === 1 ? "," : ""} = ${inputs.map((i) => `inputs.get(${pyStr(i)})`).join(", ")}`);
+    // one local per input; no trailing comma for a single input (`x, = v` would unpack the value)
+    L.push(`        ${inputs.map((i) => pyIdent(i)).join(", ")} = ${inputs.map((i) => `inputs.get(${pyStr(i)})`).join(", ")}`);
     L.push(`        if ${inputs.map((i) => `${pyIdent(i)} is None`).join(" or ")}:`);
     L.push(`            return {${outputs.map((o) => `${pyStr(o)}: None`).join(", ")}}  # no sample this cycle`);
   }
@@ -411,7 +412,7 @@ function buildMockAdapter(opts) {
 }
 
 // adapters/<param>_grpc.py — one bench adapter per device_ref kind (e.g.
-// gateway_grpc.py → GrpcGatewayAdapter for kind "<pkg>.gateway"); transport
+// tester_grpc.py → GrpcTesterAdapter for kind "<pkg>.tester"); transport
 // specifics are TODOs. With no device_ref param at all: grpc_client.py.
 function adapterFileFor(param) { return param ? `${pyIdent(param)}_grpc.py` : "grpc_client.py"; }
 function adapterClassFor(opts, param) { return param ? `Grpc${camel(param)}Adapter` : `Grpc${camel(opts.pkgName)}Adapter`; }
@@ -583,7 +584,7 @@ function buildPackageFiles(opts) {
   return files;
 }
 
-// One gRPC adapter file per device_ref param name (gateway → adapters/gateway_grpc.py);
+// One gRPC adapter file per device_ref param name (tester → adapters/tester_grpc.py);
 // none at all → a single adapters/grpc_client.py. Also used by append mode for
 // the device params a newly appended block introduces.
 function adapterFiles(opts, params) {
@@ -619,10 +620,10 @@ if (typeof document !== "undefined") {
   const draft = {
     root: lib.lastRoot || "", pkgName: "uds_blocks", mode: "new", header: true, layout: true,
     description: "UDS extraction / embedding blocks for the signal graph service.",
-    typeName: "UdsPeriodicSourceBlock", doc: "Extracts one PDX parameter from XTS 0x2A periodic frames as a scaled signal.",
+    typeName: "UdsPeriodicSourceBlock", doc: "Extracts one parameter from the tester's decoded 0x2A periodic values as a scaled signal.",
     inputs: "", outputs: "out, last_nrc, age_s, update_count",
     params: [
-      { name: "gateway", type: "device_ref", required: true },
+      { name: "tester", type: "device_ref", required: true },
       { name: "periodic_id", type: "int", required: true },
       { name: "parameter", type: "string", required: true },
       { name: "scale", type: "float", required: false, default: "1.0" },
