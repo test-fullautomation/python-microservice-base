@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
+import sys
 from dataclasses import dataclass
 from typing import Awaitable, Callable, List, Optional, Sequence, Tuple
 
@@ -37,6 +39,7 @@ import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
 from .consul import ConsulRegistration
+from .gui_server import add_service_gui
 from .reflection import enable_reflection
 from .settings import BaseServiceSettings
 
@@ -139,6 +142,37 @@ Construct a ServiceRunner.
         self._bound_port: int = 0
         self._stop_event = asyncio.Event()
 
+    def _resolve_gui_dir(self) -> Optional[str]:
+        """
+Where this service's GUI files live, or ``None``.
+
+``settings.gui_dir`` wins. Without it, the usual layouts are tried next
+to the service's entry module: ``gui/<gui>`` (a service that keeps its
+panel beside its code), ``ui/<gui>`` (what the scaffold emits),
+``GUIs/<gui>`` (the AMQP-era layout) and a folder named after the
+component itself.
+        """
+        explicit = getattr(self._settings, "gui_dir", "")
+        if explicit:
+            if os.path.isdir(explicit):
+                return explicit
+            logger.warning("gui_dir %r is not a directory; serving no GUI files", explicit)
+            return None
+
+        main = sys.modules.get("__main__")
+        entry = getattr(main, "__file__", "") or ""
+        if not entry:
+            return None
+        base = os.path.dirname(os.path.abspath(entry))
+        name = self._settings.gui
+        for candidate in (os.path.join(base, "gui", name),
+                          os.path.join(base, "ui", name),
+                          os.path.join(base, "GUIs", name),
+                          os.path.join(base, name)):
+            if os.path.isdir(candidate):
+                return candidate
+        return None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -168,8 +202,25 @@ Start the gRPC server and register with Consul.
             self._health_servicer, self._server
         )
 
-        # Reflection so the GUI and grpcurl can enumerate methods.
+        # The service's own GUI folder, served on request (ADR-019 over
+        # gRPC): the Manager GUI asks for it the first time it opens this
+        # service, so no one has to copy files onto the operator's machine.
+        # Not advertised through reflection: the bridge calls it by path,
+        # and its types live in a private descriptor pool that reflection
+        # cannot describe -- listing it would break every client that walks
+        # the list (and put plumbing into the GUI's actions).
         reflection_names = [e.full_service_name for e in self._servicers]
+        self._gui_package = None
+        if self._settings.gui:
+            gui_dir = self._resolve_gui_dir()
+            if gui_dir:
+                self._gui_package = add_service_gui(self._server, gui_dir, self._settings.gui)
+            if self._gui_package is None:
+                logger.info(
+                    "Meta.gui is %r but no GUI folder was found; the Manager GUI "
+                    "will need the files locally", self._settings.gui)
+
+        # Reflection so the GUI and grpcurl can enumerate methods.
         reflection_names.append(health_pb2.DESCRIPTOR.services_by_name["Health"].full_name)
         enable_reflection(self._server, reflection_names)
 

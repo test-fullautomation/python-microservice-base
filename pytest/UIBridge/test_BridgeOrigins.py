@@ -22,6 +22,7 @@ from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
 from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import (  # noqa: E402
     ALLOWED_ORIGINS_ENV,
+    FILE_ORIGIN,
     NULL_ORIGIN,
     FastAPIBridge,
     default_allowed_origins,
@@ -104,10 +105,23 @@ class Test_Defaults:
         assert "http://localhost:1112" in origins
         assert "http://127.0.0.1:1112" in origins
         assert NULL_ORIGIN in origins  # Electron loads from file://
+        assert FILE_ORIGIN in origins  # ... and its WebSockets say so
 
     def test_electron_null_origin_accepted_on_loopback_bind(self):
         client, _ = _client(host="localhost", port=1112)
         assert client.get(PROBE, headers={"Origin": NULL_ORIGIN}).status_code == 200
+
+    def test_electron_file_origin_accepted_on_loopback_bind(self):
+        # A file:// page sends no Origin on fetch but "file://" on the
+        # WebSocket handshake, which is how live signals connect.
+        client, _ = _client(host="localhost", port=1112)
+        assert client.get(PROBE, headers={"Origin": FILE_ORIGIN}).status_code == 200
+
+    def test_non_loopback_default_excludes_file_origin(self):
+        origins = default_allowed_origins("10.0.0.5", 1112)
+        assert FILE_ORIGIN not in origins
+        client, _ = _client(host="10.0.0.5", port=1112)
+        assert client.get(PROBE, headers={"Origin": FILE_ORIGIN}).status_code == 403
 
     def test_non_loopback_default_excludes_null_origin(self):
         origins = default_allowed_origins("10.0.0.5", 1112)
@@ -166,3 +180,6 @@ class Test_Configuration:
 
     def test_null_token_is_accepted_as_configuration(self):
         assert parse_allowed_origins("http://a.example,null") == ["http://a.example", NULL_ORIGIN]
+
+    def test_file_origin_is_a_valid_entry(self):
+        assert parse_allowed_origins("file://") == [FILE_ORIGIN]

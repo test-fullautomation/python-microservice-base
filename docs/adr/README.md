@@ -37,6 +37,7 @@ ADRs document important architectural decisions made during the development of t
 | [ADR-027](027-kafka-event-bus-alongside-grpc.md) | Kafka event bus alongside gRPC | Proposed | 2026-05-07 | Audit follow-up | (pending) |
 | [ADR-028](028-grpc-reflection-primary-rpc.md) | gRPC + reflection as the primary RPC layer | Proposed | 2026-05-07 | Audit follow-up | (pending) |
 | [ADR-029](029-robot-framework-primary-test-client.md) | Robot Framework as the primary test client (via QConnectBase `GrpcClient` connection type) | Proposed | 2026-05-10 | Audit follow-up | (pending) |
+| [ADR-031](031-grpc-service-delivered-gui.md) | Service-delivered GUI over gRPC (`ServiceGui`) | Accepted | 2026-09-24 | ADR-019 follow-up | (pending) |
 
 > **Audit note (2026-05-07).** ADRs 023–029 capture the
 > post-migration architecture aligned with the TA reference at

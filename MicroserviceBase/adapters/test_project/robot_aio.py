@@ -22,6 +22,12 @@ Resources come from :mod:`MicroserviceBase.adapters.scaffold.robot_tmpl`,
 the same generator as the CLI and the GUI's Robot Resource Generator.
 They connect through Consul by service name, so no host/port is baked in
 -- Nomad assigns a new port on every placement.
+
+Running: ``.robot`` suites, flow files (``*.flow.json``, run with the
+RobotFramework AIO fork's ``--parser robot.flow``) and the whole suites
+folder. The process is ``robot_boot.py`` (``python -m robot`` that the GUI
+can stop gracefully); the outcome is read from ``output.xml``, UNKNOWN
+included.
 """
 
 from __future__ import annotations
@@ -30,10 +36,16 @@ import json
 import os
 import posixpath
 import re
+import sys
 from typing import Dict, List
 
 from ...ports.test_project import (
     PlannedFile,
+    RunArtifact,
+    RunOptions,
+    RunPlan,
+    RunResult,
+    RunSettings,
     ServiceExport,
     TestProjectError,
     TestProjectRunner,
@@ -48,6 +60,42 @@ from ..scaffold.robot_tmpl import (
 )
 
 _CONFIG_REL = "config/robot_config.jsonp"
+
+# Flow files (the RobotFramework AIO fork's ``robot.flow`` parser): a test
+# plan drawn as a graph, built into a suite at run time.
+FLOW_SUFFIX = ".flow.json"
+_BOOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_boot.py")
+_INSPECT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_inspect.py")
+_VARIABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_STATUS = {"PASS": "pass", "FAIL": "fail", "SKIP": "skip", "NOT RUN": "skip", "UNKNOWN": "unknown"}
+
+
+def _last_status(element):
+    """The element's own ``<status>`` (the last direct child of that name)."""
+    found = None
+    for child in element:
+        if child.tag == "status":
+            found = child
+    return found
+
+
+def _elapsed(status) -> float:
+    """Seconds from a ``<status>``: ``elapsed`` (RF 7) or start/end times (older)."""
+    if status is None:
+        return 0.0
+    if status.get("elapsed"):
+        try:
+            return round(float(status.get("elapsed")), 3)
+        except ValueError:
+            return 0.0
+    import datetime as _dt
+    try:
+        fmt = "%Y%m%d %H:%M:%S.%f"
+        start = _dt.datetime.strptime(status.get("starttime", ""), fmt)
+        end = _dt.datetime.strptime(status.get("endtime", ""), fmt)
+        return round((end - start).total_seconds(), 3)
+    except ValueError:
+        return 0.0
 
 
 def _ident(name: str) -> str:
@@ -160,6 +208,171 @@ class RobotAioRunner(TestProjectRunner):
 
     def project_run_hint(self, layout) -> str:
         return f"python -m robot -d results {layout['suites']}"
+
+    # ---- running ---------------------------------------------------------
+
+    def can_run(self, rel_path: str) -> bool:
+        lower = str(rel_path).lower()
+        return lower == "" or lower.endswith(".robot") or lower.endswith(FLOW_SUFFIX)
+
+    def run_plan(self, root, layout, target, settings: RunSettings, options: RunOptions,
+                 output_dir) -> RunPlan:
+        if not self.can_run(target):
+            raise TestProjectError(f"{target} is not a Robot suite or a flow file.")
+        target_abs = os.path.join(root, *(target or layout["suites"]).split("/"))
+        if not os.path.exists(target_abs):
+            raise TestProjectError(f"Nothing to run at {target or layout['suites']}.")
+
+        python = settings.python.strip() or sys.executable
+        if os.path.isabs(python) and not os.path.isfile(python):
+            raise TestProjectError(f"The interpreter in the run settings does not exist: {python}")
+
+        argv = [python, _BOOT, "--outputdir", output_dir,
+                "--consolecolors", "off", "--consolemarkers", "off", "--consolewidth", "100"]
+        if self._uses_flows(target_abs):
+            argv += ["--parser", "robot.flow"]
+        for name, value in sorted((options.variables or {}).items()):
+            if not _VARIABLE_RE.match(name):
+                raise TestProjectError(f"Invalid variable name {name!r}: use letters, digits and '_'.")
+            argv += ["--variable", f"{name}:{value}"]
+        if options.dryrun:
+            argv.append("--dryrun")
+        argv += [str(a) for a in settings.args]
+        argv.append(target_abs)
+
+        env = self._env(root, settings)
+        stop_file = os.path.join(output_dir, ".stop")
+        env["MM_RUN_STOP_FILE"] = stop_file
+        return RunPlan(
+            argv=argv, cwd=root, env=env, stop_file=stop_file,
+            artifacts=[RunArtifact("log.html", "Log", primary=True),
+                       RunArtifact("report.html", "Report"),
+                       RunArtifact("output.xml", "output.xml")],
+        )
+
+    @staticmethod
+    def _env(root: str, settings: RunSettings) -> Dict[str, object]:
+        """Environment changes for the project's interpreter (None = remove)."""
+        paths = [p if os.path.isabs(p) else os.path.normpath(os.path.join(root, p))
+                 for p in settings.pythonpath if str(p).strip()]
+        if os.environ.get("PYTHONPATH"):
+            paths.append(os.environ["PYTHONPATH"])
+        env = {
+            "PYTHONPATH": os.pathsep.join(paths) or None,
+            # A codec suffix (utf-8:surrogateescape) crashes Robot's console
+            # writer as soon as it reports an error.
+            "PYTHONIOENCODING": None,
+            "PYTHONUTF8": "1",
+            "PYTHONUNBUFFERED": "1",
+        }
+        env.update({str(k): str(v) for k, v in (settings.env or {}).items()})
+        return env
+
+    # ---- flow files: Diagram and Robot views -------------------------------
+
+    def file_views(self, rel_path: str) -> List[Dict[str, str]]:
+        if str(rel_path).lower().endswith(FLOW_SUFFIX):
+            return [{"id": "diagram", "title": "Diagram", "type": "flow-graph"},
+                    {"id": "robot", "title": "Robot", "type": "code", "language": "robot"}]
+        return []
+
+    def inspect_file(self, root, layout, rel_path, content, settings: RunSettings):
+        """Ask the fork itself: ``flow_inspect.py`` runs with the project's
+        interpreter and path, so the diagram shows exactly the structure the
+        run will build -- and refuses exactly what the run would refuse."""
+        if not self.file_views(rel_path):
+            return {"ok": False, "error": f"{rel_path} has no extra views."}
+        import subprocess
+        python = settings.python.strip() or sys.executable
+        env = dict(os.environ)
+        for key, value in self._env(root, settings).items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
+        full = os.path.join(root, *str(rel_path).split("/"))
+        try:
+            proc = subprocess.run(
+                [python, _INSPECT, full], input=content.encode("utf-8"), capture_output=True,
+                cwd=root, env=env, timeout=30,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {"ok": False, "error": f"Could not ask {python} about the flow: {exc}"}
+        try:
+            data = json.loads(proc.stdout.decode("utf-8", errors="replace") or "null")
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            tail = proc.stderr.decode("utf-8", errors="replace").strip().splitlines()[-3:]
+            return {"ok": False, "error": "The flow could not be read: " + (" / ".join(tail) or f"exit {proc.returncode}")}
+        if not data.get("ok"):
+            return {k: data.get(k) for k in ("ok", "error", "node", "line", "missing")}
+        return {"ok": True, "views": {"diagram": {"flow": data["flow"]},
+                                      "robot": {"text": data["robot"]}}}
+
+    @staticmethod
+    def _uses_flows(path: str) -> bool:
+        if os.path.isfile(path):
+            return path.lower().endswith(FLOW_SUFFIX)
+        for _dirpath, dirnames, filenames in os.walk(path):
+            dirnames[:] = [d for d in dirnames if d not in ("results", "__pycache__", ".git")]
+            if any(f.lower().endswith(FLOW_SUFFIX) for f in filenames):
+                return True
+        return False
+
+    def read_results(self, output_dir, returncode) -> RunResult:
+        xml_path = os.path.join(output_dir, "output.xml")
+        if not os.path.isfile(xml_path):
+            return RunResult("error", message=(
+                "Stopped before Robot Framework wrote output.xml." if returncode is None else
+                f"Robot Framework ended with code {returncode} without writing output.xml; "
+                "the console shows why."))
+        try:
+            import xml.etree.ElementTree as ET
+            top = ET.parse(xml_path).getroot().find("suite")
+        except Exception as exc:   # noqa: BLE001 -- a half-written file after a kill
+            return RunResult("error", message=f"output.xml could not be read: {exc}")
+        if top is None:
+            return RunResult("error", message="output.xml holds no suite.")
+
+        tests: List[dict] = []
+
+        def walk(suite, chain):
+            chain = chain + [suite.get("name", "")]
+            for child in suite:
+                if child.tag == "suite":
+                    walk(child, chain)
+                elif child.tag == "test":
+                    status = _last_status(child)
+                    tests.append({
+                        "name": child.get("name", ""),
+                        "suite": ".".join(chain),
+                        "status": _STATUS.get(status.get("status", ""), "unknown") if status is not None else "unknown",
+                        "message": (status.text or "").strip() if status is not None else "",
+                        "elapsed_s": _elapsed(status),
+                    })
+
+        walk(top, [])
+        counts = {"pass": 0, "fail": 0, "unknown": 0, "skip": 0}
+        for t in tests:
+            counts[t["status"]] = counts.get(t["status"], 0) + 1
+        suite_status = _last_status(top)
+        if counts["fail"]:
+            verdict = "fail"
+        elif counts["unknown"]:
+            verdict = "unknown"
+        elif counts["pass"]:
+            verdict = "pass"
+        elif counts["skip"]:
+            verdict = "skip"
+        else:
+            verdict = _STATUS.get(suite_status.get("status", "") if suite_status is not None else "", "error")
+        message = ""
+        if suite_status is not None and (suite_status.text or "").strip():
+            message = suite_status.text.strip().splitlines()[0]
+        if returncode is None:
+            message = "Stopped on request. " + message
+        return RunResult(verdict, counts, tests, message.strip())
 
     def suite_template(self, layout, suite_path, service, resource_paths,
                        consul_addr, proto_rel_dir) -> str:

@@ -2,9 +2,10 @@
  * @fileoverview Test project client.
  *
  * Wraps the /api/test-project/* endpoints on the FastAPI bridge: describe
- * a folder, initialize it as a test project, and plan or apply the export
- * of a Consul-registered service into it. All file I/O happens in the
- * bridge, so this works the same in Electron and browser mode.
+ * a folder, initialize it as a test project, plan or apply the export
+ * of a Consul-registered service into it, and run its tests. All file I/O
+ * and every process happen in the bridge, so this works the same in
+ * Electron and browser mode.
  *
  * IIFE attaching to MM.testProjectClient.
  *
@@ -141,6 +142,61 @@
 
     exportService: function (opts) {
       return _post('/api/test-project/export', opts);
+    },
+
+    // ---- running tests (whatever runner the project uses) ------------------
+
+    /**
+     * Start a run of one file, or of the whole project (path '').
+     * @param {object} opts {variables: {name: value}, dryrun: bool}
+     * @returns {Promise<object>} the run: id, run_state, target_label, argv, results_url, ...
+     */
+    run: function (root, path, opts) {
+      opts = opts || {};
+      return _post('/api/test-project/run', {
+        root: root, path: path || '', variables: opts.variables || {}, dryrun: !!opts.dryrun
+      });
+    },
+
+    /**
+     * A run's state and outcome, plus the console lines after `since`
+     * (`next` is the cursor for the following call).
+     */
+    runStatus: function (root, runId, since) {
+      return _post('/api/test-project/run/status', { root: root, run_id: runId, since: since || 0 });
+    },
+
+    /** Stop gracefully (teardowns and reports still run); force kills at once. */
+    stopRun: function (root, runId, force) {
+      return _post('/api/test-project/run/stop', { root: root, run_id: runId, force: !!force });
+    },
+
+    /** The project's recent runs, newest first. */
+    runs: function (root) {
+      return _post('/api/test-project/runs', { root: root });
+    },
+
+    /** Read (settings omitted) or replace the project's run settings. */
+    runSettings: function (root, settings) {
+      var body = { root: root };
+      if (settings) body.settings = settings;
+      return _post('/api/test-project/run-settings', body);
+    },
+
+    /**
+     * A file's extra views from the project's runner (a flow's diagram and
+     * Robot text). `content` is the editor's text; omit it for the file on disk.
+     * @returns {Promise<{ok: boolean, views: object, error: string, node: string, line: number, missing: boolean}>}
+     */
+    inspect: function (root, path, content) {
+      var body = { root: root, path: path };
+      if (typeof content === 'string') body.content = content;
+      return _post('/api/test-project/inspect', body);
+    },
+
+    /** Absolute URL of a file a run left behind (results_url + name). */
+    resultUrl: function (run, name) {
+      return _bridgeOrigin() + run.results_url + encodeURIComponent(name);
     }
   };
 

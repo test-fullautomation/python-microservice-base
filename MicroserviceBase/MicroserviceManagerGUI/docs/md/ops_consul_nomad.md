@@ -132,6 +132,17 @@ Existing Cluster). Dev Mode just needs Node Name and Datacenter; click
 | **Config File** | Loads an `.hcl` config (`-config <file>`) |
 | **Connect to Existing Cluster** | Just point at a running Nomad HTTP URL |
 
+The **Config File** field wants an *agent* configuration, not a job file —
+a job (`.nomad`) handed to the agent makes it exit at once, and the GUI
+then shows the agent's own parse error. Submit jobs through **Submit Job**
+instead.
+
+The **Config File** and **Data Directory** fields have a 📂 button in the
+desktop app that opens the native picker, so the paths need not be typed.
+The Consul **Config Directory** and **Data directory** fields have the
+same. In a browser the button is not shown — a web page is not allowed to
+learn a file's absolute path, which is what the agent needs.
+
 Defaults:
 
 - **HTTP port**: `4646`

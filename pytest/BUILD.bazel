@@ -39,10 +39,16 @@ _LEGACY_TESTS = {
     "bridge_origins": "UIBridge/test_BridgeOrigins.py",
     # Bench compositions: the per-user store and /api/ui/compositions.
     "compositions": "UIBridge/test_Compositions.py",
+    # Managed agents: a start that exits must report the agent's own error.
+    "agent_start": "UIBridge/test_AgentStart.py",
+    # Service-delivered GUI folders over gRPC (ADR-031), end to end.
+    "service_gui": "UIBridge/test_ServiceGui.py",
     # Live signals: the hub and /api/signals/* against a fake gRPC cluster.
     "signal_hub": "Signals/test_SignalHub.py",
     # Test projects: engine + Robot Framework AIO adapter + bridge endpoints.
     "test_project": "TestProject/test_TestProject.py",
+    # Running a test project: live console, results, stop, history, flows.
+    "test_project_run": "TestProject/test_TestProjectRun.py",
     # Scaffold emits a Manager GUI component (contract v1); lint needs node.
     "ui_component": "UIComponent/test_UIComponent.py",
 }

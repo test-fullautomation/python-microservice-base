@@ -1,11 +1,17 @@
-"""Test projects: export Consul-registered services into a test project.
+"""Test projects: export Consul-registered services into a test project,
+and run its tests.
 
-See :mod:`.engine` for the runner-neutral core and :mod:`.robot_aio` for
-the Robot Framework AIO adapter.
+See :mod:`.engine` for the runner-neutral core, :mod:`.runs` for running,
+and :mod:`.robot_aio` for the Robot Framework AIO adapter.
 """
 
 from ...ports.test_project import (
     PlannedFile,
+    RunArtifact,
+    RunOptions,
+    RunPlan,
+    RunResult,
+    RunSettings,
     ServiceExport,
     TestProjectConflict,
     TestProjectError,
@@ -21,21 +27,32 @@ from .engine import (
     describe,
     export_service,
     find_service_protos,
+    get_run_settings,
     get_runner,
     init_project,
+    inspect_file,
     locate_service_proto,
     project_tree,
     proto_services,
     read_project_file,
     register_runner,
+    set_run_settings,
     validate_name,
 )
 from .robot_aio import RobotAioRunner
+from .runs import RUNS, RunManager
 
 __all__ = [
     "MANIFEST_NAME",
     "PlannedFile",
+    "RUNS",
     "RobotAioRunner",
+    "RunArtifact",
+    "RunManager",
+    "RunOptions",
+    "RunPlan",
+    "RunResult",
+    "RunSettings",
     "ServiceExport",
     "TestProjectConflict",
     "TestProjectError",
@@ -48,12 +65,15 @@ __all__ = [
     "describe",
     "export_service",
     "find_service_protos",
+    "get_run_settings",
     "get_runner",
     "init_project",
+    "inspect_file",
     "locate_service_proto",
     "project_tree",
     "proto_services",
     "read_project_file",
     "register_runner",
+    "set_run_settings",
     "validate_name",
 ]

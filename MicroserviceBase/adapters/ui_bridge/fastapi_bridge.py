@@ -39,6 +39,7 @@ import threading
 import zipfile
 
 from ...ports.ui_bridge import UIBridgePort
+from . import service_gui as _service_gui
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,12 @@ ALLOWED_ORIGINS_ENV = "MB_BRIDGE_ALLOWED_ORIGINS"
 #: What a browser sends for a page loaded from ``file://`` -- i.e. the
 #: Electron GUI. Listing it admits the desktop app.
 NULL_ORIGIN = "null"
+
+#: The same page's WebSocket handshakes carry this instead of ``null``
+#: (Chromium sends the scheme for file:// pages), so a bridge that admits
+#: the desktop app has to admit both spellings or live signals never
+#: connect from Electron.
+FILE_ORIGIN = "file://"
 
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
 _UNSPECIFIED_HOSTS = ("0.0.0.0", "::")
@@ -100,12 +107,13 @@ the offending entry and shows what a valid one looks like.
          )
       return ["*"]
 
-   bad = [v for v in items if v != NULL_ORIGIN and not _looks_like_origin(v)]
+   bad = [v for v in items
+          if v not in (NULL_ORIGIN, FILE_ORIGIN) and not _looks_like_origin(v)]
    if bad:
       raise ValueError(
          f"invalid origin(s) {bad!r}. An origin is scheme://host[:port] with "
          "no path or trailing slash, e.g. http://localhost:1112 -- or the "
-         f"literal '{NULL_ORIGIN}' for the Electron GUI."
+         f"literal '{NULL_ORIGIN}' / '{FILE_ORIGIN}' for the Electron GUI."
       )
    return list(dict.fromkeys(items))
 
@@ -115,8 +123,9 @@ def default_allowed_origins(host, port):
 Origins the Manager GUI legitimately uses when nothing is configured.
 
 Always the bridge's own address and the loopback spellings of it. The
-Electron ``null`` origin is included only when the bridge is bound to
-loopback: on a machine-wide bind, ``null`` would admit any local page.
+Electron origins (``null`` and ``file://``) are included only when the
+bridge is bound to loopback: on a machine-wide bind they would admit any
+local page.
    """
    origins = []
    for h in dict.fromkeys([host, "localhost", "127.0.0.1"]):
@@ -126,8 +135,93 @@ loopback: on a machine-wide bind, ``null`` would admit any local page.
          h = f"[{h}]"   # bare IPv6 literal
       origins.append(f"http://{h}:{port}")
    if host in _LOOPBACK_HOSTS:
+      # Both spellings the desktop app sends: "null" on its HTTP requests,
+      # "file://" on its WebSocket handshakes.
       origins.append(NULL_ORIGIN)
+      origins.append(FILE_ORIGIN)
    return origins
+
+
+def _port_open(host, port, timeout=0.3):
+   """True when something already listens on ``host:port``."""
+   import socket
+
+   probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+   s.settimeout(timeout)
+   try:
+      return s.connect_ex((probe_host, int(port))) == 0
+   except Exception:   # noqa: BLE001 - an unresolvable host is simply "closed"
+      return False
+   finally:
+      s.close()
+
+
+def _agent_start_failure(label, proc, log_lines, port_open, timeout=6.0, poll=0.15):
+   """
+Watch a just-spawned agent long enough to tell *running* from *exited*.
+
+A bad configuration file makes an agent exit within a second. Reporting
+"started" then sends the GUI off waiting for a port that never opens, and
+the user is told the agent is unreachable instead of what was wrong with
+it -- so wait here until one of the two is known.
+
+**Arguments:**
+
+* ``label``
+
+  / *Condition*: required / *Type*: str /
+
+  What to call the agent in the message, e.g. ``"Nomad agent"``.
+
+* ``proc``
+
+  / *Condition*: required / *Type*: subprocess.Popen /
+
+  The agent process.
+
+* ``log_lines``
+
+  / *Condition*: required / *Type*: list /
+
+  The bridge's in-memory log buffer for this agent; its last lines carry
+  the agent's own error message.
+
+* ``port_open``
+
+  / *Condition*: required / *Type*: Callable[[], bool] /
+
+  Probe that answers True once the agent's HTTP port listens.
+
+**Returns:**
+
+* ``failure``
+
+  / *Type*: Optional[dict] /
+
+  ``None`` when the agent is up, or still alive when the window passes;
+  otherwise an error response carrying the exit code and the agent's
+  last output.
+   """
+   import time
+
+   deadline = time.time() + timeout
+   while time.time() < deadline:
+      if proc.poll() is not None:
+         time.sleep(0.3)   # let the log reader drain the pipe
+         tail = [l.rstrip() for l in list(log_lines)[-25:] if l.strip()]
+         errors = [l for l in tail
+                   if "error" in l.lower() or "failed" in l.lower()]
+         reason = (errors or tail or ["no output"])[0]
+         return {"success": False,
+                 "exit_code": proc.returncode,
+                 "message": "%s exited immediately (code %s): %s"
+                            % (label, proc.returncode, reason.lstrip("=> ").strip()),
+                 "log_tail": tail[-12:]}
+      if port_open():
+         return None
+      time.sleep(poll)
+   return None
 
 
 def _open_agent_log_file(agent_name):
@@ -344,7 +438,7 @@ Build the FastAPI application with all routes.
       from fastapi.middleware.cors import CORSMiddleware
       from fastapi.responses import JSONResponse
       from pydantic import BaseModel
-      from typing import Any, Optional, List
+      from typing import Any, Dict, Optional, List
 
       app = FastAPI(title="MicroserviceBase UI Bridge")
 
@@ -1244,6 +1338,19 @@ Forward a request to the FleetWebAPI.
          import time
          nomad_url = 'http://127.0.0.1:%d' % body.http_port
 
+         # Did it survive? A config file the agent rejects (a job file,
+         # say) kills it in under a second, and the reason is in its own
+         # output -- report that instead of a healthy-looking "started".
+         failure = _agent_start_failure(
+            "Nomad agent", proc, bridge._nomad_agent_log,
+            lambda: _probe("127.0.0.1", body.http_port))
+         if failure is not None:
+            bridge._nomad_agent_proc = None
+            _remove_agent_pid('nomad')
+            failure["log_file"] = nomad_log_path
+            logger.warning("Nomad agent start failed: %s", failure["message"])
+            return failure
+
          def _auto_configure():
             time.sleep(2)
             _ensure_nomad(nomad_url)
@@ -1782,20 +1889,20 @@ Forward a request to the FleetWebAPI.
          threading.Thread(target=_read_output, daemon=True,
                           name='consul-agent-log').start()
 
-         # Give the agent a moment to either bind the port or fail.  If it
-         # already exited, surface the captured log tail as the error — much
-         # friendlier than letting the GUI retry for 12 seconds.
-         time.sleep(1.0)
-         if proc.poll() is not None:
+         # Wait until the agent either binds its port or exits. An agent
+         # that exited says why in its own output -- much friendlier than
+         # letting the GUI retry for 12 seconds and then call it
+         # unreachable.
+         failure = _agent_start_failure(
+            "Consul agent", proc, bridge._consul_agent_log,
+            lambda: _port_open("127.0.0.1", body.http_port))
+         if failure is not None:
             bridge._consul_agent_proc = None
-            log_tail = '\n'.join(bridge._consul_agent_log[-15:])
-            return {"success": False,
-                    "message": (
-                        "Consul agent exited immediately (code %d). "
-                        "Last log lines:\n%s"
-                    ) % (proc.returncode, log_tail or "(no output)"),
-                    "log": log_tail,
-                    "log_file": consul_log_path}
+            _remove_agent_pid('consul')
+            failure["log"] = '\n'.join(failure.get("log_tail") or [])
+            failure["log_file"] = consul_log_path
+            logger.warning("Consul agent start failed: %s", failure["message"])
+            return failure
 
          consul_url = 'http://127.0.0.1:%d' % body.http_port
          bridge._consul_url = consul_url
@@ -2085,6 +2192,79 @@ Forward a request to the FleetWebAPI.
          meta = svc.get('Meta') or {}
          return host, port, meta
 
+      class ServiceGuiFetchBody(BaseModel):
+         """What to fetch, and what the caller already has."""
+         consul: str = ""            # which Consul to resolve the service in
+         folder: str = ""            # override Meta.gui / what the service says
+         known_checksum: str = ""    # skip the download when it still matches
+         extract: bool = True        # False: return the ZIP, caller unpacks it
+
+      @app.get("/api/service-gui/info/{service_name}")
+      def service_gui_info(service_name: str, consul: str = ""):
+         """
+What GUI files a service offers, without downloading them.
+
+Answers ``{status, available, folder, checksum, size_bytes, file_count}``,
+or ``status: "unavailable"`` with a reason for a service that does not
+serve the ``ServiceGui`` contract.
+         """
+         target = _find_service_target(service_name, consul)
+         if not target:
+            return {"status": "error", "error": f"{service_name} is not registered (or not passing)"}
+         host, port, meta = target
+         try:
+            info = _service_gui.gui_info(host, port)
+         except _service_gui.ServiceGuiError as exc:
+            return {"status": "unavailable" if exc.unavailable else "error",
+                    "error": str(exc), "folder": (meta or {}).get("gui", "")}
+         if not info.get("folder"):
+            info["folder"] = (meta or {}).get("gui", "")
+         return dict(info, status="ok")
+
+      @app.post("/api/service-gui/fetch/{service_name}")
+      def service_gui_fetch(service_name: str, body: ServiceGuiFetchBody = None):
+         """
+Fetch a service's GUI folder and, by default, extract it.
+
+The desktop app sends ``extract: false`` and unpacks the ZIP itself --
+only it knows whether it runs from the source tree or from
+``%APPDATA%``. The browser-hosted GUI lets the bridge extract, because
+the bridge is what serves ``web/``.
+         """
+         body = body or ServiceGuiFetchBody()
+         target = _find_service_target(service_name, body.consul)
+         if not target:
+            return {"status": "error", "error": f"{service_name} is not registered (or not passing)"}
+         host, port, meta = target
+         folder = (body.folder or (meta or {}).get("gui", "") or "").strip()
+
+         try:
+            info = _service_gui.gui_info(host, port)
+            if not info.get("available"):
+               return {"status": "unavailable",
+                       "error": f"{service_name} serves no GUI files", "folder": folder}
+            folder = folder or info.get("folder", "")
+            if not folder:
+               return {"status": "error", "error": "the service named no GUI folder"}
+            if body.known_checksum and body.known_checksum == info.get("checksum"):
+               return {"status": "ok", "cached": True, "folder": folder,
+                       "checksum": info["checksum"]}
+
+            zip_bytes, checksum = _service_gui.fetch_gui_zip(host, port, body.known_checksum)
+            if zip_bytes is None:
+               return {"status": "ok", "cached": True, "folder": folder, "checksum": checksum}
+            if not body.extract:
+               return {"status": "ok", "folder": folder, "checksum": checksum,
+                       "size_bytes": len(zip_bytes),
+                       "zip_base64": base64.b64encode(zip_bytes).decode("ascii")}
+            count = _service_gui.extract_package(zip_bytes, folder)
+         except _service_gui.ServiceGuiError as exc:
+            return {"status": "unavailable" if exc.unavailable else "error",
+                    "error": str(exc), "folder": folder}
+
+         return {"status": "ok", "folder": folder, "checksum": checksum,
+                 "files": count, "dir": os.path.join(_service_gui.services_dir(), folder)}
+
       def _proto_search_paths(extra: list = None) -> list:
          """Resolve the search paths used to find .proto files when the
          server doesn't ship reflection.
@@ -2242,6 +2422,12 @@ Forward a request to the FleetWebAPI.
                   out.append({"name": name, "methods": methods})
                except GrpcReflectError as e:
                   out.append({"name": name, "error": str(e)})
+               except Exception as e:   # noqa: BLE001
+                  # A service reflection lists but cannot describe (a
+                  # KeyError from the descriptor pool, say) must cost its
+                  # own entry, never the whole listing.
+                  logger.warning("Cannot describe %s on %s: %s", name, target, e)
+                  out.append({"name": name, "error": "cannot be described: %s" % e})
 
          return {"target": target, "discovery_source": source,
                  "grpc_services": out}
@@ -3050,6 +3236,120 @@ Generate scaffolding for a new microservice project.
             return create_suite(body.root, body.name, service=body.service or None)
          except TestProjectError as exc:
             return _tp_error(exc)
+
+      # ---- running tests (runner-neutral; see adapters/test_project/runs.py)
+
+      class TestProjectRunBody(BaseModel):
+         root: str
+         path: str = ""                 # project-relative; "" = the whole project
+         variables: Dict[str, str] = {}
+         dryrun: bool = False
+
+      class TestProjectRunRefBody(BaseModel):
+         root: str
+         run_id: str
+         since: int = 0                 # console cursor (status)
+         force: bool = False            # kill at once (stop)
+
+      class TestProjectRunSettingsBody(BaseModel):
+         root: str
+         settings: Optional[Dict[str, Any]] = None   # None = read only
+
+      def _tp_results_url(root, run_id):
+         import base64
+         token = base64.urlsafe_b64encode(root.encode("utf-8")).decode("ascii").rstrip("=")
+         return "/api/test-project/results/%s/%s/" % (token, run_id)
+
+      def _tp_with_url(run):
+         if run.get("status") == "ok" and run.get("id"):
+            run["results_url"] = _tp_results_url(run.get("root") or "", run["id"])
+         return run
+
+      @app.post("/api/test-project/run")
+      def test_project_run(body: TestProjectRunBody):
+         """Start a run of one file (or the whole project) in the background."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.start(body.root, body.path, variables=body.variables, dryrun=body.dryrun)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/status")
+      def test_project_run_status(body: TestProjectRunRefBody):
+         """A run's state, outcome and the console lines after ``since``."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.status(body.root, body.run_id, body.since)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/stop")
+      def test_project_run_stop(body: TestProjectRunRefBody):
+         """Stop a run: gracefully first (teardowns, reports), ``force`` kills."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            return RUNS.stop(body.root, body.run_id, force=body.force)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/runs")
+      def test_project_runs(body: TestProjectRootBody):
+         """The project's recent runs, newest first."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            out = RUNS.list(body.root)
+            for run in out["runs"]:
+               run["root"] = out["root"]
+               _tp_with_url(run)
+            return out
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectInspectBody(BaseModel):
+         root: str
+         path: str
+         content: Optional[str] = None  # the editor's text; None = the file on disk
+
+      @app.post("/api/test-project/inspect")
+      def test_project_inspect(body: TestProjectInspectBody):
+         """A file's extra views from its runner (a flow's diagram and Robot text)."""
+         from ..test_project import TestProjectError, inspect_file
+         try:
+            return inspect_file(body.root, body.path, body.content)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run-settings")
+      def test_project_run_settings(body: TestProjectRunSettingsBody):
+         """Read (``settings`` omitted) or replace a project's run settings."""
+         from ..test_project import TestProjectError, get_run_settings, set_run_settings
+         try:
+            if body.settings is None:
+               return get_run_settings(body.root)
+            return set_run_settings(body.root, body.settings)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.get("/api/test-project/results/{token}/{run_id}/{name}")
+      def test_project_result_file(token: str, run_id: str, name: str):
+         """A file a run left behind (log.html, report.html, ...), for the browser.
+
+         The project is in the path, not the query, so the relative links
+         between log.html and report.html keep working.
+         """
+         import base64
+         from fastapi.responses import FileResponse, PlainTextResponse
+         from ..test_project import RUNS, TestProjectError
+         try:
+            root = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode("utf-8")
+            path = RUNS.artifact_path(root, run_id, name)
+         except (ValueError, UnicodeDecodeError, TestProjectError) as exc:
+            return PlainTextResponse(str(exc) or "Invalid run file.", status_code=404)
+         return FileResponse(path)
 
       @app.post("/api/test-project/export")
       def test_project_export(body: TestProjectExportBody):

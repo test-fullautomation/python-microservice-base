@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Manager GUI &mdash; bench demo</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #10b981, #0ea5e9);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  .sidebar-nav {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav a.active { color: var(--green); border-left-color: var(--green);
+                          background: rgba(16,185,129,0.08); }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  main { margin-left: 250px; padding: 30px 40px; max-width: 1100px; }
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--green);
+  }
+  section h2 {
+    color: var(--green);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 14px; margin-bottom: 6px; font-size: 1em; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: var(--green); }
+  tr:last-child td { border-bottom: none; }
+
+  .led { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         vertical-align: middle; margin-right: 4px; box-shadow: 0 0 4px currentColor; }
+  .led-green { background: var(--green); color: var(--green); }
+  .led-amber { background: var(--amber); color: var(--amber); }
+  .led-red   { background: var(--red);   color: var(--red); }
+  .led-gray  { background: var(--muted); color: var(--muted); box-shadow: none; }
+
+  figure { margin: 18px 0; padding: 0; }
+  figure img { display: block; max-width: 100%; height: auto;
+               border: 1px solid var(--border); border-radius: 8px;
+               box-shadow: 0 4px 12px rgba(0,0,0,0.4); background: #0b1220; }
+  figure figcaption { color: var(--muted); font-size: 0.85em; margin-top: 8px;
+                      text-align: center; font-style: italic; }
+  figure.crop img { max-width: 480px; margin: 0 auto; }
+
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+
+  a { color: var(--accent); }
+  footer { text-align: center; padding: 30px; margin-left: 250px; color: var(--muted); font-size: 0.85em; }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Manager GUI &mdash; bench demo</h1>
+  <p>Ten minutes on the bench, on services that are really running</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">Bench demo</div>
+  <a href="#what-the-audience-sees">What the audience sees</a>
+  <a href="#before-the-demo">Before the demo</a>
+  <a href="#the-walkthrough">The walkthrough</a>
+  <a href="#reset-between-runs">Reset between runs</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+  <div class="nav-group">More</div>
+  <a href="index.html">Doc index</a>
+  <a href="ops_consul_nomad.html">Consul + Nomad ops</a>
+</nav>
+
+<main>
+<p>A ten-minute demo of the bench on live services: three components from
+three layers on one screen, values arriving over gRPC and over the signal
+stream, a command sent from a tile, and a service's own HTML panel running
+in a sandbox.</p>
+<p>Everything here runs against services that are really deployed — Nomad
+runs them, Consul finds them, the bridge talks to them. Nothing in the
+bench is mocked; only the devices behind the services are.</p>
+<figure>
+  <img src="../img/bench_demo.png" alt="The demo bench: three services in the rail, chamber state, live signal values and strips, a command form and the interpretation table">
+  <figcaption>The demo bench &mdash; the climate chamber, the bench signals and the hello service on one stage.</figcaption>
+</figure>
+<h2 id="what-the-audience-sees">What the audience sees</h2>
+<table>
+<thead>
+<tr>
+<th>On screen</th>
+<th>The point</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Three services in the left rail, each with its layer</td>
+<td>A bench is composed from what is registered, not hard-coded</td>
+</tr>
+<tr>
+<td><strong>DUT state</strong>, <strong>Reader</strong>, <strong>Interpretation table</strong></td>
+<td>A service ships a manifest; the shell renders the tiles from it — no GUI code</td>
+</tr>
+<tr>
+<td><strong>DUT</strong>, <strong>Temperature and ADC</strong>, <strong>Output</strong>, <strong>Setpoint and DAC</strong></td>
+<td>Live signals at up to 10 Hz, from three signal services, through one subscription each</td>
+</tr>
+<tr>
+<td><strong>Polling period</strong> → <em>Apply</em></td>
+<td>A tile issues a gRPC call and shows the answer</td>
+</tr>
+<tr>
+<td><strong>Hello panel</strong></td>
+<td>A service's own HTML, in a sandboxed frame that cannot touch the shell</td>
+</tr>
+<tr>
+<td><strong>composition passes</strong> badge</td>
+<td>The bench checked the manifests against the contract before rendering</td>
+</tr>
+</tbody>
+</table>
+<h2 id="before-the-demo">Before the demo</h2>
+<p>Three things must be running. The first two are the standing environment;
+only the third is specific to this demo.</p>
+<ol>
+<li><strong>The demo cluster</strong> — one Nomad server on <code>http://127.0.0.1:4746</code>
+   with three clients, and three Consul agents (<code>8500</code>–<code>8502</code>). It is
+   <code>nomad/jobs/demo_cluster.nomad</code> in the
+   <a href="https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal">taf_repo_proposal</a>
+   repository; start it from the GUI as described there.</li>
+<li><strong>The climate chamber</strong> — <code>testbench-climate-chamber-sim</code>, the
+   chamber job of the same repository, on client1.</li>
+<li><strong>The demo services</strong> — <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/ara_demo.nomad.hcl"><code>examples/ara_demo.nomad.hcl</code></a>:
+   the signal cluster and the hello service.</li>
+</ol>
+<p>Submit the third one to the demo server, <strong>not</strong> to the bootstrap agent
+the GUI starts for itself:</p>
+<p>The job needs one setting, <code>base_repo</code>: where this repository is checked
+out (forward slashes, no spaces). The taf checkout comes from the node's
+<code>meta.repo_root</code>, which the demo cluster sets.</p>
+<ul>
+<li>In the GUI: <strong>Nomad → Connect to Existing Cluster →
+  <code>http://127.0.0.1:4746</code> → Submit Job →</strong> pick the file, replace
+  <code>&lt;path-to-this-repository&gt;</code> with your checkout, Submit.</li>
+<li>Or from a terminal:</li>
+</ul>
+<p><code>nomad job run -address=http://127.0.0.1:4746 -var base_repo=&lt;path-to-this-repository&gt; examples/ara_demo.nomad.hcl</code></p>
+<p>Consul then lists <code>testbench-climate-chamber-sim</code>, <code>signal-discovery</code> and
+<code>hello-demo</code> on <code>http://127.0.0.1:8500</code>, each carrying the <code>gui</code> meta that
+names its component.</p>
+<h3 id="the-composition">The composition</h3>
+<p>The bench layout is stored per user
+(<code>%APPDATA%\devatservgui\compositions</code>). Store it once before the demo:
+<strong>Bench → Edit composition</strong>, set <em>Bench</em> to <code>ara-demo</code> and <em>Role</em> to
+<em>User</em>, paste the JSON below, press <strong>Check</strong> (the editor lints it against
+the contract) and <strong>Save</strong>.</p>
+<pre><code class="language-json">{
+  &quot;composition&quot;: &quot;ara-demo/user&quot;,
+  &quot;title&quot;: &quot;ara demo bench&quot;,
+  &quot;shell&quot;: &quot;^2.3&quot;,
+  &quot;role&quot;: &quot;user&quot;,
+  &quot;plugins&quot;: [&quot;charts&quot;],
+  &quot;components&quot;: [
+    { &quot;from&quot;: &quot;consul&quot;, &quot;service&quot;: &quot;testbench-climate-chamber-sim&quot; },
+    { &quot;from&quot;: &quot;consul&quot;, &quot;service&quot;: &quot;signal-discovery&quot; },
+    { &quot;from&quot;: &quot;consul&quot;, &quot;service&quot;: &quot;hello-demo&quot; }
+  ],
+  &quot;order&quot;: [
+    &quot;bits.climate-chamber/state&quot;,
+    &quot;signals.bench/values&quot;,
+    &quot;signals.bench/trend&quot;,
+    &quot;bits.climate-chamber/reader&quot;,
+    &quot;bits.climate-chamber/period&quot;,
+    &quot;signals.bench/output&quot;,
+    &quot;signals.bench/outtrend&quot;,
+    &quot;bits.climate-chamber/table&quot;,
+    &quot;bits.climate-chamber/changes&quot;,
+    &quot;*&quot;
+  ]
+}
+</code></pre>
+<p>The same thing from a terminal, if you prefer:</p>
+<pre><code>curl -X PUT http://127.0.0.1:1112/api/ui/compositions/ara-demo/user ^
+     -H &quot;Content-Type: application/json&quot; -d @ara-demo-user.json
+</code></pre>
+<p>Nothing breaks without it — the bench then shows every component of every
+selected service in manifest order, which is a fine demo too. The stored
+composition only fixes the order, so the same thing is on screen every
+time.</p>
+<h3 id="check-before-you-present">Check before you present</h3>
+<ul>
+<li>Consul <code>http://127.0.0.1:8500/v1/agent/services</code> lists the three services.</li>
+<li>The bridge LED in the navbar is green.</li>
+<li><code>http://127.0.0.1:1112/api/signals/catalog?consul=http://127.0.0.1:8500</code>
+  answers <code>"status": "ok"</code> with 13 signals. If it reports an address that
+  is not <code>127.0.0.1</code>, the gRPC call is going through the corporate proxy —
+  see <a href="#troubleshooting">Troubleshooting</a>.</li>
+</ul>
+<h2 id="the-walkthrough">The walkthrough</h2>
+<p>Eight beats, about a minute each.</p>
+<p><strong>1 · The bench is composed, not built.</strong> Open <strong>Bench</strong> and pick
+<em>ara demo bench</em>. Point at the left rail: three services, three layers
+(<code>bits</code>, <code>signals</code>, <code>operator</code>). None of them knows about the others, and
+none of them ships GUI code for this screen. The <strong>composition passes</strong>
+badge says the shell validated every manifest against the contract first.</p>
+<p><strong>2 · A tile is a manifest entry.</strong> Click any chamber tile: the dock on
+the right names the component (<code>bits.climate-chamber</code>), the capabilities it
+asked for, the gRPC service it is bound to and the instance it is talking
+to. Put the service's <code>component.json</code> next to it — its <code>tiles</code> array is
+exactly what is on screen: <code>live-status</code>, <code>command-form</code>, <code>table</code>, <code>log</code>.
+Adding a tile is adding six lines of JSON to the service, with no shell
+release.</p>
+<p><strong>3 · Values arrive over gRPC.</strong> <strong>DUT state</strong> and <strong>Reader</strong> re-read the
+chamber every two and ten seconds; the timestamps under them tick. The
+tiles say <em>which</em> RPC they call, so the bench is honest about where the
+number came from.</p>
+<p><strong>4 · Live signals are a different path.</strong> <strong>DUT</strong> and <strong>Output</strong> are not
+polling: the bench holds one subscription per signal service and the
+values stream in at up to 10 Hz. The strips beside them
+(<strong>Temperature and ADC</strong>, <strong>Setpoint and DAC</strong>) draw the last 60 seconds.
+The setpoint sweeps 0 → 5 V a minute, and <strong>DAC ch0</strong> follows it — that
+is <code>signal-out</code>'s graph doing the work, seen from the bench.</p>
+<p><strong>5 · The strips are a plugin.</strong> The two strip tiles are not a shell
+feature: the <strong>charts</strong> plugin contributes the <code>signal-strip</code> kind, and
+each strip runs in its own sandboxed frame. Turn it off under
+<strong>Administrator → Shell → Plugins</strong>: the tiles then say which plugin they
+need instead of disappearing. Turn it back on and they come back.</p>
+<p><strong>6 · A tile sends a command.</strong> In <strong>Polling period</strong>, set <code>0.5</code> and press
+<strong>Apply</strong>. The field and its bounds are declared in the manifest, the call
+goes out over gRPC, and the service's answer comes back in the tile.
+<strong>Reader</strong> shows the new period on its next refresh.</p>
+<p><strong>7 · A service can ship its own screen.</strong> Scroll to <strong>Hello panel</strong>: the
+service's own HTML and JavaScript, in a frame with an opaque origin that
+cannot reach the shell's DOM, its storage, or the network. It talks to the
+bench through one message channel, and a frame that hangs takes only its
+own tile down — the rest of the bench keeps updating.</p>
+<p><strong>8 · A different bench is a different file.</strong> Open <strong>Edit composition</strong>.
+The JSON on screen is the whole layout; press <strong>Check</strong> and the shell lints
+it live — break a component id on purpose and it says which rule failed and
+refuses to save. Change <em>Role</em> to <em>Developer</em>, cut the chamber
+entry down to <code>{ "from": "consul", "service": "testbench-climate-chamber-sim",
+"tiles": ["state"] }</code>, and save: a second bench, on the same services,
+without touching a service or the shell.</p>
+<h2 id="reset-between-runs">Reset between runs</h2>
+<pre><code>nomad job stop -address=http://127.0.0.1:4746 -purge ara-demo
+nomad job run  -address=http://127.0.0.1:4746 -var base_repo=&lt;path-to-this-repository&gt; examples/ara_demo.nomad.hcl
+</code></pre>
+<p>The chamber and the cluster can stay up. The reload button next to the
+bench picker re-reads the composition and the manifests without restarting
+anything.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>The signal tiles say <em>reconnecting</em>.</strong> The bench reaches live signals
+over a WebSocket, and the desktop app's WebSocket handshake carries
+<code>Origin: file://</code>. A bridge whose allow-list was configured by hand needs
+both Electron spellings — <code>null</code> and <code>file://</code> — or the connection is
+refused with <code>403</code>; see <a href="index.html#bridge-security-allowed-origins">the origin allow-list</a>.
+The defaults for a loopback bridge include both.</p>
+<p><strong>The catalog reports an address that is not <code>127.0.0.1</code>.</strong> Nomad
+advertises the host address by default, and gRPC to it is sent through the
+corporate HTTP proxy, which refuses it. The demo job pins
+<code>signal-discovery</code> to <code>127.0.0.1</code> for that reason; a service registered by
+hand needs the same.</p>
+<p><strong>A signal tile says <em>not in the catalog</em>.</strong> The signal cluster is not
+running, or it came up after the bench. The bench retries discovery; a
+reload is faster.</p>
+<p><strong>The bench shows every tile in manifest order.</strong> No composition is stored
+for the selected bench and role — see <a href="#the-composition">The composition</a>.
+The note above the stage says so.</p>
+</main>
+
+</body>
+</html>

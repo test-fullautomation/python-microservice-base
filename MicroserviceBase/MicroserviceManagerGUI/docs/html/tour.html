@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Manager GUI &mdash; guided tour</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  header {
+    background: linear-gradient(135deg, #10b981, #0ea5e9);
+    padding: 30px 20px 30px 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  header h1 { margin: 0; font-size: 2em; text-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+  header p { margin: 6px 0 0; opacity: 0.9; font-size: 1em; }
+
+  .sidebar-nav {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px;
+    height: 100vh;
+    background: #0b1220;
+    border-right: 2px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 200;
+  }
+  .sidebar-nav .nav-title {
+    padding: 0 20px 14px;
+    font-size: 0.82em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-nav a {
+    display: block;
+    padding: 6px 20px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+  .sidebar-nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .sidebar-nav a.active { color: var(--green); border-left-color: var(--green);
+                          background: rgba(16,185,129,0.08); }
+  .sidebar-nav .nav-group {
+    margin-top: 12px;
+    padding: 0 20px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(148,163,184,0.6);
+  }
+
+  main { margin-left: 250px; padding: 30px 40px; max-width: 1100px; }
+  section {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 4px solid var(--green);
+  }
+  section h2 {
+    color: var(--green);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    font-size: 1.4em;
+  }
+  h3 { color: var(--amber); margin-top: 20px; }
+  h4 { color: var(--text); margin-top: 14px; margin-bottom: 6px; font-size: 1em; }
+
+  code {
+    background: #0b1220;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fcd34d;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0b1220;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9em;
+    vertical-align: top;
+  }
+  th { background: #0b1220; color: var(--green); }
+  tr:last-child td { border-bottom: none; }
+
+  .led { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         vertical-align: middle; margin-right: 4px; box-shadow: 0 0 4px currentColor; }
+  .led-green { background: var(--green); color: var(--green); }
+  .led-amber { background: var(--amber); color: var(--amber); }
+  .led-red   { background: var(--red);   color: var(--red); }
+  .led-gray  { background: var(--muted); color: var(--muted); box-shadow: none; }
+
+  figure { margin: 18px 0; padding: 0; }
+  figure img { display: block; max-width: 100%; height: auto;
+               border: 1px solid var(--border); border-radius: 8px;
+               box-shadow: 0 4px 12px rgba(0,0,0,0.4); background: #0b1220; }
+  figure figcaption { color: var(--muted); font-size: 0.85em; margin-top: 8px;
+                      text-align: center; font-style: italic; }
+  figure.crop img { max-width: 480px; margin: 0 auto; }
+
+  .highlight-box {
+    background: rgba(16,185,129,0.08);
+    border-left: 4px solid var(--green);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+  .warn-box {
+    background: rgba(251,191,36,0.08);
+    border-left: 4px solid var(--amber);
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 0.92em;
+  }
+
+  a { color: var(--accent); }
+  footer { text-align: center; padding: 30px; margin-left: 250px; color: var(--muted); font-size: 0.85em; }
+
+  @media (max-width: 900px) {
+    .sidebar-nav { display: none; }
+    header  { padding-left: 20px; }
+    main    { margin-left: 0; padding: 20px; }
+    footer  { margin-left: 0; }
+  }
+</style>
+<style>
+  /* Tour-specific: the takeaway line that closes each stop. */
+  p.takeaway { border-left: 4px solid var(--accent); background: rgba(56,189,248,0.07);
+               padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 18px 0; }
+  main h3 { margin-top: 26px; }
+  main ol > li { margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Manager GUI &mdash; the guided tour</h1>
+  <p>A tour program for an audience: what the GUI gives you, how it is configured, what a service has to provide to appear in it, and how to build one from nothing in ten minutes</p>
+</header>
+
+<nav class="sidebar-nav">
+  <div class="nav-title">The tour</div>
+  <a href="#run">How to run this tour</a>
+  <a href="#shape">0 &middot; The shape of the thing</a>
+  <a href="#first-look">1 &middot; First look</a>
+  <a href="#config">2 &middot; Configuration</a>
+  <a href="#infra">3 &middot; Consul and Nomad</a>
+  <a href="#service-side">4 &middot; What a service provides</a>
+  <a href="#bench">5 &middot; The bench</a>
+  <a href="#plugins">6 &middot; Plugins</a>
+  <a href="#build">7 &middot; Build a service live</a>
+  <a href="#close">8 &middot; Closing</a>
+
+  <div class="nav-group">Reference</div>
+  <a href="#cheatsheet">Cheat sheet</a>
+  <a href="#trouble">If something breaks</a>
+  <a href="index.html">Doc index</a>
+  <a href="bench_demo.html">Bench demo</a>
+</nav>
+
+<main>
+
+<h2 id="run">How to run this tour</h2>
+
+<p>
+  Nine stops, about <strong>55 minutes</strong> with questions. Each stop
+  says what to <em>show</em>, what to <em>say</em>, and what the audience
+  should take away. Stops 1&ndash;3 are the operator's view, stop 4 is the
+  one service developers came for, stops 5&ndash;7 are the parts that make
+  the GUI worth having, and stop 8 sends everyone home with a working
+  recipe.
+</p>
+
+<div class="highlight-box">
+  <strong>Before the room fills up.</strong> Have these running and checked:
+  <ul>
+    <li>Consul with at least two services registered &mdash; one with a GUI,
+        one without. The bench demo's cluster is ideal
+        (<a href="bench_demo.html">Bench demo</a>).</li>
+    <li>The bridge: green <strong>Bridge up</strong> chip in the ribbon.</li>
+    <li>A terminal in the repo root, for stop 7.</li>
+    <li>An editor open on one <code>component.json</code>, for stop 4.</li>
+  </ul>
+</div>
+
+<table>
+  <thead><tr><th>Stop</th><th>Minutes</th><th>For whom</th></tr></thead>
+  <tbody>
+    <tr><td>0 &middot; The shape of the thing</td><td>4</td><td>everyone</td></tr>
+    <tr><td>1 &middot; First look</td><td>5</td><td>everyone</td></tr>
+    <tr><td>2 &middot; Configuration</td><td>5</td><td>operators, integrators</td></tr>
+    <tr><td>3 &middot; Consul and Nomad</td><td>6</td><td>operators</td></tr>
+    <tr><td>4 &middot; What a service provides</td><td>14</td><td>service developers</td></tr>
+    <tr><td>5 &middot; The bench</td><td>6</td><td>test engineers</td></tr>
+    <tr><td>6 &middot; Plugins</td><td>4</td><td>tool builders</td></tr>
+    <tr><td>7 &middot; Build a service live</td><td>8</td><td>service developers</td></tr>
+    <tr><td>8 &middot; Closing</td><td>2</td><td>everyone</td></tr>
+  </tbody>
+</table>
+
+<h2 id="shape">0 &middot; The shape of the thing</h2>
+
+<p><strong>Say this first, before any screen.</strong></p>
+
+<p>
+  The Manager GUI is a <em>thin client</em>. It owns no test logic and no
+  device drivers. Everything it shows comes from somewhere else, and that
+  is the whole point: a service that knows how to talk about itself gets a
+  user interface without anyone writing one for it.
+</p>
+
+<pre><code>  ┌─────────────────────────────┐
+  │  Manager GUI  (the shell)   │   Electron app, or the same pages in a browser
+  │  ribbon · navigators · bench│
+  └──────────────┬──────────────┘
+                 │  HTTP + WebSocket
+  ┌──────────────┴──────────────┐
+  │  FastAPI bridge             │   gRPC client, Consul client, Nomad client,
+  │  :1112                      │   signal hub, composition store
+  └───┬──────────┬──────────┬───┘
+      │          │          │
+   Consul      Nomad     services        gRPC (reflection or a .proto),
+   :8500       :4646     anywhere        server streams, signal streams</code></pre>
+
+<ul>
+  <li><strong>The shell</strong> renders; it never opens a socket to a
+      service itself.</li>
+  <li><strong>The bridge</strong> is the only thing that speaks gRPC,
+      Consul and Nomad. It runs on the operator's machine.</li>
+  <li><strong>Consul</strong> answers &ldquo;what is running, where, and is
+      it healthy&rdquo;.</li>
+  <li><strong>Nomad</strong> answers &ldquo;start it, stop it, show me its
+      logs&rdquo;.</li>
+  <li><strong>The services</strong> are ordinary gRPC servers. They do not
+      import anything of the GUI.</li>
+</ul>
+
+<p class="takeaway">
+  <strong>Takeaway:</strong> nothing in the GUI is wired to a particular
+  test bench. Change what is registered in Consul and the GUI changes with
+  it.
+</p>
+
+<h2 id="first-look">1 &middot; First look</h2>
+
+<figure>
+  <img src="../img/tour_services.png" alt="The Services view: the ribbon with Bridge, Consul and Nomad status, the bench picker and Connect; the service list on the left; the selected service's tiles on the right">
+  <figcaption>The Services view with a service selected &mdash; its greeting, its two forms, a streamed log and its own HTML panel, all declared by the service.</figcaption>
+</figure>
+
+<p><strong>Show, in this order:</strong></p>
+
+<ol>
+  <li><strong>The ribbon, three tabs.</strong> <em>User</em> is the daily
+      work, <em>Developer</em> holds the tools that generate code,
+      <em>Administrator</em> holds the infrastructure. A role sees one tab
+      and can ignore the rest.</li>
+  <li><strong>The status chips.</strong> <em>Bridge up</em> with start and
+      stop buttons, then Consul and Nomad. If a chip is red, nothing else
+      on the screen can be trusted &mdash; say that out loud, it saves the
+      audience an hour later.</li>
+  <li><strong>Connect.</strong> The Consul address the GUI reads. Several
+      can be connected at once; the service list groups by agent.</li>
+  <li><strong>The left rail</strong> and the three navigators at the bottom:
+      <em>Services</em> (one service at a time), <em>Bench</em> (many
+      services on one stage), <em>Project</em> (a Robot Framework test
+      project, from a plugin).</li>
+  <li><strong>Click a service.</strong> Two outcomes, and both matter:
+    <ul>
+      <li>A service that says nothing about a GUI gets a <strong>runtime
+          card</strong>: address, tags, health, and an API explorer built
+          from gRPC reflection. Useful, generic, free.</li>
+      <li>A service that <em>declares</em> one gets <strong>its own
+          screen</strong> &mdash; the tiles in the screenshot above.</li>
+      <li>A folder may ship <em>both</em> a component and an older
+          hand-written panel. The component opens by default, and
+          <strong>Developer &rarr; Selected service &rarr; Classic
+          panel</strong> switches that service to the other one and
+          remembers it &mdash; useful while a service is being migrated,
+          and a good live comparison to show the room.</li>
+    </ul>
+  </li>
+</ol>
+
+<p class="takeaway">
+  <strong>Takeaway:</strong> every registered service is usable on day one;
+  a service that wants a real screen declares one, and that is stop 4.
+</p>
+
+<h2 id="config">2 &middot; Configuration</h2>
+
+<p>
+  Everything configurable is a file or a field &mdash; no rebuild, no code.
+  Show the settings dialog (the gear, top right), then this table.
+</p>
+
+<table>
+  <thead><tr><th>What</th><th>Where</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td>Python used for the bridge and for generated services</td>
+        <td><code>electron/settings.json</code> &rarr; <code>pythonPath</code></td><td>the system Python</td></tr>
+    <tr><td>Bridge port</td>
+        <td><code>settings.json</code> &rarr; <code>bridgePort</code></td><td><code>1112</code></td></tr>
+    <tr><td><code>consul.exe</code> / <code>nomad.exe</code> the GUI may start</td>
+        <td><code>settings.json</code> &rarr; <code>consulPath</code>, <code>nomadPath</code></td><td>unset</td></tr>
+    <tr><td>Plugins allowed their own window and child processes</td>
+        <td><code>settings.json</code> &rarr; <code>windowPlugins</code></td><td>empty &mdash; nothing is allowed until you say so</td></tr>
+    <tr><td>Consul agents to read</td>
+        <td><strong>Connect</strong> in the ribbon (kept per user)</td><td>none</td></tr>
+    <tr><td>Bench layouts</td>
+        <td><code>%APPDATA%\devatservgui\compositions\&lt;bench&gt;\&lt;role&gt;.json</code>, or <code>MB_COMPOSITIONS_DIR</code></td><td>per user</td></tr>
+    <tr><td>Installed plugins</td>
+        <td><code>%APPDATA%\DevAtServGUI\plugins\&lt;id&gt;\</code></td><td>the four bundled ones</td></tr>
+    <tr><td>Who may call the bridge from a browser</td>
+        <td><code>MB_BRIDGE_ALLOWED_ORIGINS</code>, <code>--allowed-origins</code>, or <code>config.json</code></td><td>loopback + the desktop app</td></tr>
+  </tbody>
+</table>
+
+<div class="highlight-box">
+  <strong>The one that bites.</strong> The desktop app sends two different
+  origins: <code>null</code> on its HTTP calls and <code>file://</code> on
+  its WebSocket handshakes. A hand-written allow-list that lists only one
+  of them looks fine until live signals silently stay disconnected. The
+  defaults for a loopback bridge include both &mdash; see
+  <a href="index.html#bridge-security-allowed-origins">the origin allow-list</a>.
+</div>
+
+<p class="takeaway">
+  <strong>Takeaway:</strong> the GUI is configured the way a service is
+  &mdash; files and environment variables, reviewable and diffable.
+</p>
+
+<h2 id="infra">3 &middot; Consul and Nomad</h2>
+
+<figure>
+  <img src="../img/tour_nomad.png" alt="The Administrator tab with the Nomad panel: agent controls, cluster address, and the jobs table">
+  <figcaption>The Administrator tab &mdash; the same three-way pattern for Consul and for Nomad: run one for me, run one from my config, or connect to one that exists.</figcaption>
+</figure>
+
+<p><strong>Show:</strong> <em>Administrator &rarr; Consul</em>, then
+  <em>Nomad</em>. Both offer the same three choices, and the wording is
+  worth repeating because it is the mental model:</p>
+
+<ul>
+  <li><strong>Dev</strong> &mdash; the GUI starts a throwaway agent. For a
+      laptop demo.</li>
+  <li><strong>Config</strong> &mdash; the GUI starts an agent from your own
+      <code>.hcl</code>. For a real bench.</li>
+  <li><strong>Connect</strong> &mdash; the GUI touches nothing and only
+      reads an agent that already runs. For a shared cluster.</li>
+</ul>
+
+<p>
+  Then submit a job: <strong>Submit Job</strong>, pick an
+  <code>.hcl</code>, and watch the allocation appear, the service register
+  in Consul, and the service appear in the left rail. That chain &mdash;
+  job &rarr; allocation &rarr; Consul &rarr; the GUI &mdash; is the whole
+  operational story, and it is worth doing live rather than describing.
+</p>
+
+<p class="takeaway">
+  <strong>Takeaway:</strong> the GUI replaces a row of terminals, without
+  hiding what those terminals did. Every panel names the HTTP endpoint
+  behind it.
+</p>
+
+<h2 id="service-side">4 &middot; What a service has to provide</h2>
+
+<p>
+  This is the stop service developers came for. Say the summary first:
+  <strong>a service needs to do exactly two things</strong> &mdash;
+  register, and declare a component. Everything else is optional.
+</p>
+
+<h3>4.1 &nbsp;Register in Consul (mandatory)</h3>
+
+<p>
+  Whatever registers the service &mdash; <code>ServiceRunner</code>, a
+  Nomad <code>service</code> stanza, or a direct API call &mdash; must give:
+</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Why the GUI needs it</th></tr></thead>
+  <tbody>
+    <tr><td>Name</td><td>what the rail lists, and what a composition references</td></tr>
+    <tr><td>Address + port</td><td>where the bridge sends gRPC. Use an address the bridge can reach &mdash; on a corporate laptop, <code>127.0.0.1</code> beats the host address, which a proxy may swallow</td></tr>
+    <tr><td>Health check</td><td>the dot next to the name</td></tr>
+    <tr><td>Tags (optional)</td><td>filtering and grouping</td></tr>
+    <tr><td><code>Meta.gui</code> (optional)</td><td><strong>the folder of the component to show.</strong> Without it the service still works &mdash; it gets the runtime card</td></tr>
+  </tbody>
+</table>
+
+<p>
+  In the Python base that is one environment variable, for example
+  <code>HELLO_GUI=HelloService1.0.0</code>, which lands in Consul as
+  <code>Meta.gui</code>. The GUI then loads
+  <code>web/services/HelloService1.0.0/</code>.
+</p>
+
+<h3>4.2 &nbsp;Declare a component (the manifest)</h3>
+
+<p>
+  <code>component.json</code> is a service's user interface, written as
+  data. No JavaScript, no build step, no release of the GUI. Walk the
+  audience through this one, field by field:
+</p>
+
+<pre><code>{
+  "component": "operator.hello",          // &lt;layer&gt;.&lt;name&gt;, unique on a bench
+  "version": "1.0.0",
+  "layer": "operator",                    // operator | session | config |
+                                          // execution | runner | signals | bits
+  "title": "Hello",
+  "requires": {
+    "shell": "^2.3",                      // the shell API it was written against
+    "capabilities": ["grpc.call"]         // what it is allowed to do
+  },
+  "binds": {
+    "consul": "@self",                    // the service that declared it
+    "grpc": "hello.v1.HelloService"       // the proto service its tiles call
+  },
+  "tiles": [
+    { "id": "greet", "size": "1x1", "kind": "command-form",
+      "call": "Greet", "form": { "name": "string" }, "resultPath": "message" }
+  ],
+  "renderer": "schema"
+}</code></pre>
+
+<p><strong>The tile kinds</strong> &mdash; the vocabulary a service has:</p>
+
+<table>
+  <thead><tr><th>Kind</th><th>Shows</th><th>Needs</th></tr></thead>
+  <tbody>
+    <tr><td><code>text</code></td><td>fixed text</td><td>nothing</td></tr>
+    <tr><td><code>live-status</code></td><td>labelled values, polled from RPCs or streamed from signals</td><td><code>grpc.call</code> / <code>signals.subscribe</code></td></tr>
+    <tr><td><code>command-form</code></td><td>a typed form and the answer; the form can be built from gRPC reflection</td><td><code>grpc.call</code></td></tr>
+    <tr><td><code>table</code></td><td>rows from an RPC, or static rows</td><td><code>grpc.call</code></td></tr>
+    <tr><td><code>log</code></td><td>a server-streaming RPC, line by line</td><td><code>grpc.call</code></td></tr>
+    <tr><td><code>run-status</code></td><td>a run's progress</td><td>&mdash;</td></tr>
+    <tr><td><code>frame</code></td><td>the service's own HTML page, sandboxed</td><td>whatever the page uses</td></tr>
+  </tbody>
+</table>
+
+<p>
+  Sizes on the four-column stage: <code>1x1</code>, <code>2x1</code>,
+  <code>2x2</code>, <code>4x1</code>. Plugins add further kinds &mdash;
+  <code>signal-strip</code> comes from the bundled <em>charts</em> plugin.
+</p>
+
+<h3>4.3 &nbsp;The rules, and why they exist</h3>
+
+<p>
+  A manifest is checked before it is mounted; a broken one is refused with
+  the rule it broke, and the rest of the screen keeps working. The rules
+  that matter to the audience:
+</p>
+
+<ul>
+  <li><strong>Declare what you use.</strong> An RPC without
+      <code>grpc.call</code>, or a signal without
+      <code>signals.subscribe</code>, is denied at run time. Declaring more
+      than you use is a warning.</li>
+  <li><strong>Bind by name, never by address.</strong>
+      <code>"consul": "@self"</code> means &ldquo;the service that shipped
+      me&rdquo;. A host or IP in a manifest is rejected outright &mdash; a
+      component that hard-codes a machine is not portable.</li>
+  <li><strong>Stay in your layer.</strong> The component id starts with its
+      layer, and only the <code>bits</code> layer may name a device;
+      anything above it names a <em>signal</em>.</li>
+  <li><strong>Pin the shell.</strong> <code>"shell": "^2.3"</code>. A
+      component written for a newer shell is refused instead of half-working.</li>
+</ul>
+
+<p>Lint it before shipping &mdash; the same check the GUI runs:</p>
+
+<pre><code>node tools/endo-lint.js web/services/MyService1.0.0/component.json</code></pre>
+
+<h3>4.4 &nbsp;Optional: the service's own HTML</h3>
+
+<p>
+  When tiles are not enough, a <code>frame</code> tile shows a page from
+  the service's folder. It runs in a sandbox: its own process, an opaque
+  origin, no access to the GUI's page, storage or network. It reaches the
+  service only through <code>window.endo.ctx</code>, and only within the
+  capabilities the manifest declared. If it hangs, its tile says so and
+  nothing else on the screen notices.
+</p>
+
+<h3>4.5 &nbsp;Optional: live signals</h3>
+
+<p>
+  A bench signal (<code>bench.dut.temp.degC</code>) is not an RPC. The
+  bridge finds the <code>signal-discovery</code> service in Consul, holds
+  one subscription per owning service, and fans values out to the tiles at
+  up to ten a second. A service participates by being part of the signal
+  graph &mdash; a component just names the signal:
+</p>
+
+<pre><code>{ "label": "Temperature", "signal": "bench.dut.temp.degC", "unit": "°C", "digits": 1 }</code></pre>
+
+<h3>4.6 &nbsp;The seven layers, and what exists today</h3>
+
+<p>
+  The layer in a component id is not decoration: it says what kind of thing
+  the component is, and the contract enforces it (only <code>bits</code> may
+  name a device; above it, everything names a signal). The layers also map
+  onto services that the architecture expects &mdash; and this is the
+  question every audience asks, so answer it before they do:
+</p>
+
+<table>
+  <thead><tr><th>Layer</th><th>What belongs there</th><th>Today</th></tr></thead>
+  <tbody>
+    <tr><td><code>bits</code></td><td>device-facing services: the chamber, a PSU, a UDS gateway</td><td><strong>live</strong> &mdash; the chamber on the demo bench</td></tr>
+    <tr><td><code>signals</code></td><td>the signal graph and its discovery</td><td><strong>live</strong> &mdash; the bench signals</td></tr>
+    <tr><td><code>operator</code></td><td>whatever an operator drives directly</td><td><strong>live</strong> &mdash; the hello service</td></tr>
+    <tr><td><code>session</code></td><td>a <em>session manager</em>: which DUT, which run, which labels</td><td>reserved &mdash; no service yet</td></tr>
+    <tr><td><code>config</code></td><td>a <em>configuration manager</em>: bench and service configuration</td><td>reserved &mdash; no service yet</td></tr>
+    <tr><td><code>execution</code></td><td>a <em>test execution</em> service: what is running now</td><td>reserved &mdash; no service yet</td></tr>
+    <tr><td><code>runner</code></td><td>a <em>test runner</em>: Robot Framework runs and their results</td><td>partly &mdash; tooling, not a service (below)</td></tr>
+  </tbody>
+</table>
+
+<p>
+  The capabilities tell the same story, and the shell is honest about it: a
+  component may declare them all, but two of them are answered by stubs
+  until the services behind them exist.
+</p>
+
+<table>
+  <thead><tr><th>Capability</th><th>What it grants</th><th>State</th></tr></thead>
+  <tbody>
+    <tr><td><code>grpc.call</code></td><td>call the bound gRPC service</td><td><strong>live</strong></td></tr>
+    <tr><td><code>signals.subscribe</code></td><td>stream signal values</td><td><strong>live</strong> (bridge signal hub)</td></tr>
+    <tr><td><code>signals.set</code></td><td>write a setpoint</td><td><strong>live</strong></td></tr>
+    <tr><td><code>session.read</code>, <code>session.label</code></td><td>read the current session, label a run</td><td><strong>stub</strong> &mdash; reads return nothing, labels are not stored</td></tr>
+    <tr><td><code>config.read</code>, <code>config.write</code></td><td>read and write configuration</td><td><strong>stub</strong> &mdash; per-user local storage, not shared</td></tr>
+    <tr><td><code>files.project</code></td><td>the Robot Framework project folder</td><td><strong>live</strong>, through the <em>Test projects</em> plugin</td></tr>
+    <tr><td><code>process.spawn</code></td><td>start a child process</td><td><strong>live</strong> for window plugins on the allow-list only</td></tr>
+  </tbody>
+</table>
+
+<div class="highlight-box">
+  <strong>What to say when someone asks &ldquo;so where is the test
+  runner / session manager / configuration manager?&rdquo;</strong>
+  Those are <em>services</em> in this architecture, not features of the GUI,
+  and they do not exist yet. What already exists is everything they will
+  need to appear without a single line of GUI code: a layer reserved for
+  each, capabilities declared and enforced, a <code>run-status</code> tile
+  kind that renders a run's flow, steps and current position straight from
+  an RPC, and a <code>session</code>-layer slot at the top of a bench. On
+  the Robot Framework side the tooling is already here &mdash; the
+  <em>Robot resources</em> plugin generates typed keywords from a
+  <code>.proto</code> folder, and the <em>Test projects</em> plugin manages
+  the project those keywords are exported into. What is missing is the
+  service that <em>runs</em> them and reports progress; when it registers in
+  Consul with a manifest, it gets its screen like anything else.
+</div>
+
+<p class="takeaway">
+  <strong>Takeaway:</strong> a service ships JSON, and the GUI ships the
+  rendering. Neither side has to be released for the other to change.
+</p>
+
+<h2 id="bench">5 &middot; The bench</h2>
+
+<figure>
+  <img src="../img/tour_composition_editor.png" alt="The Edit composition dialog: bench name, role, the composition JSON, the store path, and a composition passes badge">
+  <figcaption>A bench is a JSON file: which services, which tiles, in which order &mdash; checked against the contract before it is saved.</figcaption>
+</figure>
+
+<p>
+  One service at a time is the Services view. A <em>bench</em> puts the
+  tiles of many services on one stage. Which ones, and in which order, is a
+  <strong>composition</strong>:
+</p>
+
+<pre><code>{
+  "composition": "bench07/operator",
+  "title": "Bench 07 · operator",
+  "shell": "^2.3",
+  "role": "user",
+  "plugins": ["charts"],
+  "components": [
+    { "from": "consul", "service": "session-service" },
+    { "from": "consul", "service": "testbench-device-psu", "tiles": ["out"] },
+    { "from": "consul", "service": "cpp-psu", "gui": "PowerSupply2.0.1" }
+  ],
+  "order": ["session.header", "*", "@cpp-psu"]
+}</code></pre>
+
+<ul>
+  <li>Services are referenced <strong>by Consul name</strong>; a composition
+      never copies a manifest, so a service that changes its tiles changes
+      every bench that uses it.</li>
+  <li><code>tiles</code> shows only part of a component; <code>gui</code>
+      names the folder for a service that cannot declare one itself (the
+      C++ runtime does not register <code>Meta.gui</code> yet).</li>
+  <li><code>order</code> takes <code>&lt;component&gt;/&lt;tile&gt;</code>,
+      <code>&lt;component&gt;</code>, <code>@&lt;service&gt;</code> and
+      <code>*</code> for everything else.</li>
+  <li><code>role</code> is the ribbon tab the bench opens on &mdash; the
+      same services, a different screen per role.</li>
+  <li>A service that is missing, refused or has no GUI still keeps a slot
+      <strong>saying why</strong>. A bench never goes blank because one
+      service is down.</li>
+</ul>
+
+<p class="takeaway">
+  <strong>Takeaway:</strong> the screen a test engineer stares at all day is
+  a reviewable file, not a build of the GUI.
+</p>
+
+<h2 id="plugins">6 &middot; Plugins</h2>
+
+<figure>
+  <img src="../img/tour_plugins.png" alt="The Plugins dialog listing Robot resources, Signal Graph Studio, Test projects and Charts, each with a toggle and what it contributes">
+  <figcaption>Every plugin says what it contributes and how isolated it is. Graph Studio additionally needs the window allow-list before it may open a window or start a process.</figcaption>
+</figure>
+
+<p>
+  A plugin extends the shell itself, where a component extends one service.
+  Neither is how a session manager, a configuration manager or a test runner
+  will arrive &mdash; those are services, and they get their screens the way
+  every service does (<a href="#service-side">stop 4.6</a>). A plugin is for
+  what the <em>shell</em> lacks: a new tile kind, a view, a tool.
+  It can contribute tile kinds, navigators, stage views, dock sections,
+  drawer tabs and ribbon commands. Show the dialog and point at three
+  things:
+</p>
+
+<ul>
+  <li><strong>What it adds</strong> is printed under each plugin
+      (<code>kinds: signal-strip</code>, <code>drawer.tabs: Chart</code>).</li>
+  <li><strong>How it runs</strong>: <em>schema</em> (data only),
+      <em>frame</em> (sandboxed code), <em>window</em> (its own window and
+      child processes).</li>
+  <li><strong>The allow-list.</strong> A window plugin does nothing until
+      someone ticks it on this machine. Turning a plugin off takes effect
+      at once, and tiles that needed it say which plugin they need.</li>
+</ul>
+
+<h2 id="build">7 &middot; Build a service live</h2>
+
+<figure>
+  <img src="../img/tour_service_creator.png" alt="The Service Creator wizard, step 1: service name, version, description, group, tag, routing key and transport type">
+  <figcaption>Developer &rarr; Service Creator. Four steps; the fourth previews every file before anything is written.</figcaption>
+</figure>
+
+<p>
+  Do this live &mdash; it is eight minutes and it lands every claim of the
+  previous stops.
+</p>
+
+<ol>
+  <li><strong>Name it</strong> (step 1) and pick Python + gRPC (step 2).</li>
+  <li><strong>Give it two methods</strong> (step 3): one plain RPC, one
+      server-streaming. Or import an existing <code>.proto</code>.</li>
+  <li><strong>Review and generate</strong> (step 4). Show the file tree in
+      the preview before pressing the button.</li>
+</ol>
+
+<p>The same thing from a terminal, for the CI-minded half of the room:</p>
+
+<pre><code>python -m MicroserviceBase.tools.scaffold_cli --config my_service.yaml</code></pre>
+
+<p><strong>What comes out</strong>, and where the GUI part is:</p>
+
+<pre><code>MyService/
+├── protos/my_service.proto
+├── domain/            ports/            adapters/
+├── main.py
+├── deploy/my_service.nomad.hcl
+└── ui/
+    ├── MyService1.0.0/component.json   ← the manifest, already filled in
+    └── README.md                        ← where to copy it</code></pre>
+
+<p>
+  The generated manifest is not a stub: one <code>command-form</code> per
+  unary RPC and one <code>log</code> per server-streaming RPC, in the
+  <code>bits</code> layer unless the spec sets <code>ui_layer</code>. Copy
+  the folder next to the other components, set the service's
+  <code>&lt;PREFIX&gt;_GUI</code> to its name, deploy the generated job, and
+  the service appears in the rail <em>with its own screen</em>.
+</p>
+
+<div class="highlight-box">
+  <strong>The four-line version, for the slide at the end:</strong>
+  <ol>
+    <li>Register in Consul, with <code>Meta.gui</code>.</li>
+    <li>Ship <code>component.json</code> in that folder.</li>
+    <li>Lint it.</li>
+    <li>There is no step 4.</li>
+  </ol>
+</div>
+
+<h2 id="close">8 &middot; Closing</h2>
+
+<figure>
+  <img src="../img/bench_demo.png" alt="The demo bench: the climate chamber, the bench signals and the hello service on one stage">
+  <figcaption>Where the tour ends: three services, three layers, one screen &mdash; and every tile of it declared by the service that owns it.</figcaption>
+</figure>
+
+<p>
+  Finish on the bench, because it shows all of it at once: services
+  discovered through Consul, values over gRPC and over the signal stream, a
+  command going out from a tile, a plugin drawing the strips, and a
+  service's own HTML running where it cannot hurt anything. The
+  <a href="bench_demo.html">Bench demo</a> is the beat-by-beat script for
+  that screen, if you want to hand the audience something to repeat.
+</p>
+
+<h2 id="cheatsheet">Cheat sheet</h2>
+
+<table>
+  <thead><tr><th>Thing</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>Bridge</td><td><code>http://127.0.0.1:1112</code> &mdash; <code>/api/version</code>, <code>/api/signals/catalog</code>, <code>/api/ui/compositions</code></td></tr>
+    <tr><td>Live signals</td><td><code>WS /api/signals/stream</code>, <code>POST /api/signals/set</code></td></tr>
+    <tr><td>Components</td><td><code>MicroserviceManagerGUI/web/services/&lt;folder&gt;/component.json</code></td></tr>
+    <tr><td>Contract + linter</td><td><code>web/js/endo/contract/</code>, <code>tools/endo-lint.js</code></td></tr>
+    <tr><td>Bundled plugins</td><td><code>web/plugins/&lt;id&gt;/plugin.json</code></td></tr>
+    <tr><td>Compositions</td><td><code>%APPDATA%\devatservgui\compositions\</code></td></tr>
+    <tr><td>Desktop settings</td><td><code>electron/settings.json</code></td></tr>
+    <tr><td>Shell API version</td><td><code>2.3.0</code> &mdash; manifests pin <code>^2.3</code></td></tr>
+  </tbody>
+</table>
+
+<h2 id="trouble">If something breaks mid-tour</h2>
+
+<table>
+  <thead><tr><th>Symptom</th><th>Cause</th><th>Fix on stage</th></tr></thead>
+  <tbody>
+    <tr><td>The rail is empty</td><td>no Consul connected, or the agent is down</td><td><strong>Connect</strong>, or start one under Administrator</td></tr>
+    <tr><td>A service shows a runtime card, not its screen</td><td>no <code>Meta.gui</code>, or the folder name does not match</td><td>say so &mdash; it is stop 4's point; name the folder in a composition instead</td></tr>
+    <tr><td>A tile says <em>refused</em></td><td>the manifest broke a rule</td><td>read the rule out loud, it is the best possible demo of the contract</td></tr>
+    <tr><td>Signal tiles say <em>reconnecting</em></td><td>bridge allow-list missing <code>file://</code>, or no signal cluster</td><td><a href="bench_demo.html#troubleshooting">Bench demo &rarr; troubleshooting</a></td></tr>
+    <tr><td>A strip tile says it needs a plugin</td><td>the plugin is off on this machine</td><td>Administrator &rarr; Plugins, toggle it back</td></tr>
+  </tbody>
+</table>
+
+<p>
+  Reference material for the questions that follow the tour:
+  <a href="index.html">the doc index</a>,
+  <a href="ops_consul_nomad.html">Consul + Nomad operations</a>,
+  <a href="service_creator.html">the Service Creator wizard</a>,
+  <a href="robot_generator.html">Robot resource generation</a>, and
+  <a href="bench_demo.html">the bench demo</a>.
+</p>
+
+</main>
+
+
+</body>
+</html>

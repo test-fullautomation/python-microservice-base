@@ -83,6 +83,10 @@
     if (btn) btn.onclick = handler;
   }
 
+  // The Browse buttons only exist where a native picker does (Electron);
+  // in a browser the field stays a plain path input.
+  function _canBrowse() { return !!(MM.canPickPath && MM.canPickPath()); }
+
   /**
    * Populate the bind-address datalist with the host's actual NICs by
    * fetching /api/system/network-interfaces from the bridge.  The form
@@ -184,9 +188,21 @@
       '          Start an agent using configuration files from a directory.' +
       '        </p>' +
       '        <div class="mb-2"><label class="form-label small">Config directory</label>' +
-      '          <input class="form-control form-control-sm" id="consulConfigDir" placeholder="/etc/consul.d"></div>' +
+      '          <div class="input-group input-group-sm">' +
+      '            <input class="form-control form-control-sm" id="consulConfigDir" placeholder="/etc/consul.d">' +
+      (_canBrowse()
+        ? '            <button class="btn btn-outline-secondary" type="button" id="consulBtnBrowseConfig" ' +
+          'title="Pick the directory the agent reads its configuration from"><i class="bi bi-folder2-open"></i></button>'
+        : '') +
+      '          </div></div>' +
       '        <div class="mb-2"><label class="form-label small">Data directory</label>' +
-      '          <input class="form-control form-control-sm" id="consulDataDir" placeholder="/opt/consul"></div>' +
+      '          <div class="input-group input-group-sm">' +
+      '            <input class="form-control form-control-sm" id="consulDataDir" placeholder="/opt/consul">' +
+      (_canBrowse()
+        ? '            <button class="btn btn-outline-secondary" type="button" id="consulBtnBrowseData" ' +
+          'title="Pick the directory the agent stores its state in"><i class="bi bi-folder2-open"></i></button>'
+        : '') +
+      '          </div></div>' +
       '        <div class="mb-2"><label class="form-label small">Bind address</label>' +
       '          <input class="form-control form-control-sm" id="consulBindAddr" value="0.0.0.0"></div>' +
       '        <div class="mb-2"><label class="form-label small">Node name</label>' +
@@ -240,6 +256,16 @@
     // Falls back to the static defaults already in the datalist if the
     // bridge endpoint isn't reachable (older bridge, network glitch).
     _populateBindAddrOptions();
+
+    // Wire the Browse buttons of the Config mode panel
+    if (MM.wirePathBrowse) {
+      MM.wirePathBrowse('consulBtnBrowseConfig', 'consulConfigDir', {
+        directory: true, title: 'Choose the Consul configuration directory'
+      });
+      MM.wirePathBrowse('consulBtnBrowseData', 'consulDataDir', {
+        directory: true, title: 'Choose the Consul data directory'
+      });
+    }
 
     // Wire tab switching
     var mode = 'dev';
