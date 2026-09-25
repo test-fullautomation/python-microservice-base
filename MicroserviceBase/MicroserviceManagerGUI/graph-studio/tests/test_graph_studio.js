@@ -296,7 +296,7 @@ check("parseRef keeps dotted block ids",
   check("scaffold: module imports time + port types for push-source blocks", mod.includes("import time") && mod.includes("from uds_blocks.ports.uds_blocks_port import UdsBlocksPort, UdsBlocksResponse"));
   check("scaffold: function-only module has no port import", !L.buildBlocksModule({ pkgName: "fn", specs: [fnSpec], header: false, layout: true }).includes("ports.fn_port"));
   const fnSkel = L.buildBlockSkeleton(fnSpec);
-  check("scaffold: function block reads inputs + None guard (keyword-safe local)", fnSkel.includes('in_, = inputs.get("in")') && fnSkel.includes("if in_ is None:"));
+  check("scaffold: function block reads inputs + None guard (keyword-safe local, no tuple unpack)", fnSkel.includes('in_ = inputs.get("in")') && !fnSkel.includes('in_, =') && fnSkel.includes("if in_ is None:"));
 
   const OUT = path.join(__dirname, "scaffold_out");
   fs.rmSync(OUT, { recursive: true, force: true });

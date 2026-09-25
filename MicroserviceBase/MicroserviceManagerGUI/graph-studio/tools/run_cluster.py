@@ -19,10 +19,10 @@ packages can be started before the hook PR is merged:
 
 * ``"block_modules": ["uds_blocks.blocks"]`` in graph.json → imported before
   the graph is built (registers the block types and the adapter kinds).
-* ``"device_kinds": {"uds_gw": "uds_blocks.gateway"}`` in graph.json → that
+* ``"device_kinds": {"uds_tester": "uds_blocks.tester"}`` in graph.json → that
   logical device gets the kind's MOCK adapter (``<pkg>.adapters.registry.
   MOCK_ADAPTER``) instead of the built-in mock device adapter.
-* ``"mock_scripts": {"uds_gw": [["periodic:52", {"BatteryVoltage": 12500}, 0]]}``
+* ``"mock_scripts": {"uds_tester": [["periodic:52", {"BatteryVoltage": 12500}, 0]]}``
   (optional, local runs only) → handed to that mock adapter as ``script=``
   so the graph shows moving values instead of None.
 
@@ -33,6 +33,21 @@ the graph so the deployable graph.json stays clean.
 
 All three keys are ignored by signal_graph's own loader (pydantic drops
 unknown keys) and preserved by Graph Studio's lossless round-trip.
+
+Bench mode — a second sidecar, ``<graph>.bench.json`` with ``"enabled": true``,
+turns the mocked local run into a member of the running bench:
+
+* ``"registry": {"backend": "consul", "host": "127.0.0.1", "port": 8500}`` →
+  the cluster registers in that Consul instead of an in-memory registry, so
+  the bench's own ``signal-discovery`` lists the graph and real adapters can
+  resolve real services by name. The Consul client here uses the standard
+  library only, so the Run interpreter needs nothing installed for it.
+* If a ``signal-discovery`` is already registered there, it is used and no
+  local one is started; otherwise a local one starts and registers itself.
+* ``"real_kinds": ["uds_tester"]`` → those logical devices get the kind's
+  REAL adapter (``<pkg>.adapters.registry.KINDS[kind]``) instead of the mock;
+  devices not listed keep the mock and its script.
+
 This file belongs to Graph Studio, not to the signals code.
 """
 
@@ -45,8 +60,95 @@ import json
 import os
 import signal
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 
 SHIPPED = ["signal-in", "signal-out", "signal-proc-foo-bar"]
+
+
+class StdlibConsulRegistry:
+    """The signal layer's ServiceRegistryPort over Consul's HTTP API, with urllib
+    on a worker thread. Same payload shape as the layer's own Consul adapter,
+    so a graph registered here looks identical to one deployed by Nomad, minus
+    a health check: Consul reports a check-less service as passing."""
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 8500) -> None:
+        self._base = f"http://{host}:{port}"
+
+    async def _call(self, method: str, path: str, body=None, params=None):
+        url = self._base + path + (("?" + urllib.parse.urlencode(params)) if params else "")
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Content-Type": "application/json"} if data else {})
+
+        def do():
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                raw = resp.read()
+                return json.loads(raw) if raw else None
+
+        return await asyncio.get_running_loop().run_in_executor(None, do)
+
+    async def register(self, name, host, port, service_type, meta=None) -> str:
+        service_id = f"{name}-{host}-{port}"
+        await self._call("PUT", "/v1/agent/service/register", body={
+            "ID": service_id, "Name": name, "Address": host, "Port": port,
+            "Tags": [f"service-type={service_type}"],
+            "Meta": {"service-type": service_type, **(meta or {})},
+        })
+        return service_id
+
+    async def deregister(self, service_id: str) -> None:
+        await self._call("PUT", f"/v1/agent/service/deregister/{service_id}")
+
+    async def resolve(self, name: str):
+        found = await self._health(name)
+        return found[0] if found else None
+
+    async def list_by_type(self, service_type: str):
+        catalog = await self._call("GET", "/v1/catalog/services") or {}
+        tag = f"service-type={service_type}"
+        result = []
+        for svc_name, tags in catalog.items():
+            if tag in (tags or []):
+                result.extend(await self._health(svc_name, service_type))
+        return result
+
+    async def _health(self, name: str, service_type: str = ""):
+        from common.ports import RegisteredService
+
+        entries = await self._call("GET", f"/v1/health/service/{name}", params={"passing": "true"}) or []
+        out = []
+        for entry in entries:
+            svc = entry["Service"]
+            meta = svc.get("Meta") or {}
+            out.append(RegisteredService(name=svc["Service"], host=svc.get("Address") or entry["Node"]["Address"],
+                                         port=svc["Port"], service_type=service_type or meta.get("service-type", ""),
+                                         meta=meta))
+        return out
+
+    async def close(self) -> None:
+        pass
+
+
+def _bench_path(path: str) -> str:
+    """``graph.json`` → ``graph.bench.json`` (same directory)."""
+    stem, _ext = os.path.splitext(path)
+    return stem + ".bench.json"
+
+
+def _bench_extras(path: str) -> dict | None:
+    """The bench sidecar when present and enabled, else None."""
+    side = _bench_path(path)
+    if not os.path.exists(side):
+        return None
+    with open(side, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not data.get("enabled", False):
+        print(f"  bench sidecar present but enabled=false, mocked run: {side}", flush=True)
+        return None
+    print(f"  bench sidecar: {side}", flush=True)
+    return data
 
 
 def _prepare_sys_path(root: str) -> None:
@@ -147,14 +249,31 @@ def _mock_adapter_for(kind: str, service_name: str, script: list | None):
     return mock_cls(service_name)
 
 
-def _make_app_class(graph_app_cls, device_kinds: dict[str, str], mock_scripts: dict[str, list]):
-    """GraphApp subclass that swaps in kind-specific mock adapters (hook #2, runner-side)."""
+def _real_adapter_for(kind: str, registry, service_name: str):
+    """``<pkg>.adapters.registry.KINDS[kind](registry, service_name, None)``: the package's real adapter."""
+    pkg = kind.split(".", 1)[0]
+    kinds = getattr(importlib.import_module(f"{pkg}.adapters.registry"), "KINDS", {})
+    if kind not in kinds:
+        sys.exit(f"device kind {kind!r} is not in {pkg}.adapters.registry.KINDS ({sorted(kinds)})")
+    return kinds[kind](registry, service_name, None)
+
+
+def _make_app_class(graph_app_cls, device_kinds: dict[str, str], mock_scripts: dict[str, list],
+                    real_kinds: set[str] | None = None):
+    """GraphApp subclass that swaps in kind-specific adapters (hook #2, runner-side):
+    the package's mock, or in bench mode its real adapter for the devices listed."""
+    real_kinds = real_kinds or set()
 
     class StudioGraphApp(graph_app_cls):
         def _build_device_adapters(self):
             adapters = super()._build_device_adapters()
             for logical, kind in device_kinds.items():
                 service_name = self._config.device_services.get(logical, logical)
+                if logical in real_kinds:
+                    adapters[logical] = _real_adapter_for(kind, self._registry, service_name)
+                    print(f"  device {logical!r} -> REAL adapter for kind {kind!r} "
+                          f"(service {service_name!r} via the registry)", flush=True)
+                    continue
                 script = mock_scripts.get(logical)
                 adapters[logical] = _mock_adapter_for(kind, service_name, script)
                 print(f"  device {logical!r} -> mock adapter for kind {kind!r}"
@@ -173,14 +292,32 @@ async def main(config_paths: list[str], discovery_port: int,
     from signal_graph.config import Settings as GraphSettings
     from signal_graph.core.domain.graph_config import GraphConfig
 
-    registry = InMemoryServiceRegistry()
+    # Bench mode is a property of the cluster: the first enabled sidecar wins.
+    bench = next((b for b in (_bench_extras(p) for p in config_paths) if b), None)
+    real_kinds: set[str] = set(bench.get("real_kinds") or []) if bench else set()
 
-    disc_settings = DiscoverySettings()
-    disc_settings.grpc_port = discovery_port
-    disc_settings.routing_refresh_interval = 2.0
-    discovery = DiscoveryApp(disc_settings, registry)
-    await discovery.start()
-    print(f"signal-discovery listening on 127.0.0.1:{discovery.port}", flush=True)
+    if bench and (bench.get("registry") or {}).get("backend", "consul") == "consul":
+        reg = bench.get("registry") or {}
+        registry = StdlibConsulRegistry(reg.get("host", "127.0.0.1"), int(reg.get("port", 8500)))
+        print(f"bench mode: registry consul {reg.get('host', '127.0.0.1')}:{reg.get('port', 8500)}"
+              f"{', real adapters for ' + ', '.join(sorted(real_kinds)) if real_kinds else ''}", flush=True)
+    else:
+        registry = InMemoryServiceRegistry()
+
+    discovery = None
+    existing = await registry.resolve("signal-discovery") if bench else None
+    if existing is not None:
+        disc_host, disc_port = existing.host, existing.port
+        print(f"signal-discovery already on the bench at {disc_host}:{disc_port}; using it "
+              f"(it lists this graph on its next refresh)", flush=True)
+    else:
+        disc_settings = DiscoverySettings()
+        disc_settings.grpc_port = discovery_port
+        disc_settings.routing_refresh_interval = 2.0
+        discovery = DiscoveryApp(disc_settings, registry)
+        await discovery.start()
+        disc_host, disc_port = "127.0.0.1", discovery.port
+        print(f"signal-discovery listening on {disc_host}:{disc_port}", flush=True)
 
     apps = []
     for path in config_paths:
@@ -192,9 +329,15 @@ async def main(config_paths: list[str], discovery_port: int,
             kinds[logical] = kind
             print(f"  device {logical!r}: kind {kind!r} inferred from its blocks "
                   f"(add \"device_kinds\" to override)", flush=True)
+        unknown = real_kinds - set(kinds)
+        if unknown:
+            sys.exit(f"real_kinds names devices without a kind: {sorted(unknown)} "
+                     f"(known: {sorted(kinds)})")
         config = GraphConfig.load(path)
-        app_cls = _make_app_class(GraphApp, kinds, scripts) if kinds else GraphApp
-        app = app_cls(config, _graph_settings(GraphSettings, discovery.port), registry)
+        app_cls = _make_app_class(GraphApp, kinds, scripts, real_kinds) if kinds else GraphApp
+        settings = _graph_settings(GraphSettings, disc_port)
+        settings.discovery_host = disc_host
+        app = app_cls(config, settings, registry)
         await app.start()
         apps.append(app)
         names = ", ".join(o.name for o in config.observe)
@@ -202,7 +345,8 @@ async def main(config_paths: list[str], discovery_port: int,
               f"[{names}]", flush=True)
 
     await asyncio.sleep(1.0)
-    await discovery.catalog.refresh()
+    if discovery is not None:
+        await discovery.catalog.refresh()
     print("READY", flush=True)
 
     stop = asyncio.Event()
@@ -231,7 +375,11 @@ async def main(config_paths: list[str], discovery_port: int,
     finally:
         for app in reversed(apps):
             await app.stop()
-        await discovery.stop()
+        if discovery is not None:
+            await discovery.stop()
+        close = getattr(registry, "close", None)
+        if close is not None:
+            await close()
         print("cluster stopped", flush=True)
 
 

@@ -7,15 +7,15 @@
   },
   "block_modules": ["uds_blocks.blocks"],
   "device_services": {
-    "uds_gw": "testbench-uds-gateway",
+    "uds_tester": "uds-tester",
     "uds_req": "testbench-uds-request"
   },
   "device_kinds": {
-    "uds_gw": "uds_blocks.gateway",
+    "uds_tester": "uds_blocks.tester",
     "uds_req": "uds_blocks.request_service"
   },
   "mock_scripts": {
-    "uds_gw": [
+    "uds_tester": [
       ["periodic:52", { "BatteryVoltage": 12500, "EcuTemperature": 41 }, 0],
       ["periodic:52", { "BatteryVoltage": 12480, "EcuTemperature": 63 }, 0],
       ["periodic:52", { "BatteryVoltage": 12510, "EcuTemperature": 88 }, 0],
@@ -34,7 +34,7 @@
       "type": "UdsPeriodicSourceBlock",
       "description": "Battery voltage from the 0x2A periodic frame (mV -> V)",
       "params": {
-        "gateway": "uds_gw",
+        "tester": "uds_tester",
         "periodic_id": 52,
         "parameter": "BatteryVoltage",
         "scale": 0.001,
@@ -47,7 +47,7 @@
       "type": "UdsPeriodicSourceBlock",
       "description": "ECU temperature from the same periodic frame",
       "params": {
-        "gateway": "uds_gw",
+        "tester": "uds_tester",
         "periodic_id": 52,
         "parameter": "EcuTemperature",
         "on_nrc": "none",
