@@ -1,0 +1,42 @@
+# Template for .bazelrc.user -- network-specific Bazel settings.
+#
+# Copy to <repo>/.bazelrc.user (ignored by git) and keep only the blocks
+# your network needs. The repository's .bazelrc imports that file if it
+# exists; without it Bazel uses the public Bazel Central Registry and no
+# remote cache.
+#
+# Never put credentials here: Bazel reads HTTP auth from ~/.netrc
+#
+#   machine <registry-host>
+#     login <user>
+#     password <api-token>
+
+# --- Module registry mirror --------------------------------------------
+# When the public Bazel Central Registry is not reachable.
+# common --registry=https://<registry-host>/<path-to-bazel-modules>
+
+# --- HTTP proxy ----------------------------------------------------------
+# Bazel's registry fetches run on the JVM's HTTP client, which reads system
+# properties, NOT http_proxy / https_proxy. Without these a proxy-only
+# network shows a misleading "Unknown host" error.
+# startup --host_jvm_args=-Dhttps.proxyHost=<proxy-host>
+# startup --host_jvm_args=-Dhttps.proxyPort=<proxy-port>
+# startup --host_jvm_args=-Dhttp.proxyHost=<proxy-host>
+# startup --host_jvm_args=-Dhttp.proxyPort=<proxy-port>
+# startup --host_jvm_args=-Dhttp.nonProxyHosts=localhost|127.0.0.1
+
+# --- Private CA ----------------------------------------------------------
+# When the registry or cache uses certificates of a private CA: a Java
+# truststore holding that CA chain (keep it out of the repository).
+# startup --host_jvm_args=-Djavax.net.ssl.trustStore=<path-to-truststore.jks>
+# startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=<password>
+
+# --- Remote cache --------------------------------------------------------
+# build --remote_cache=https://<cache-host>/<path>/cas
+# build --remote_timeout=10s
+# build --remote_max_connections=100
+# build --remote_accept_cached=true
+# build --remote_local_fallback
+# build --remote_retries=5
+# Developers read only; CI is the sole writer.
+# build --remote_upload_local_results=false

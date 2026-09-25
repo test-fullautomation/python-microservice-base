@@ -248,11 +248,11 @@ only the third is specific to this demo.</p>
 <li><strong>The demo cluster</strong> — one Nomad server on <code>http://127.0.0.1:4746</code>
    with three clients, and three Consul agents (<code>8500</code>–<code>8502</code>). It is
    <code>nomad/jobs/demo_cluster.nomad</code> in the
-   <a href="https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal">taf_repo_proposal</a>
+   <code>taf_repo_proposal</code>
    repository; start it from the GUI as described there.</li>
 <li><strong>The climate chamber</strong> — <code>testbench-climate-chamber-sim</code>, the
    chamber job of the same repository, on client1.</li>
-<li><strong>The demo services</strong> — <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/ara_demo.nomad.hcl"><code>examples/ara_demo.nomad.hcl</code></a>:
+<li><strong>The demo services</strong> — <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/ara_demo.nomad.hcl"><code>examples/ara_demo.nomad.hcl</code></a>:
    the signal cluster and the hello service.</li>
 </ol>
 <p>Submit the third one to the demo server, <strong>not</strong> to the bootstrap agent

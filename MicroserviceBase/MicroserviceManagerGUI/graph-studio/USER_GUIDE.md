@@ -5,7 +5,7 @@ generate a deployable `signal_graph` service — no JSON editing required.
 Then run it, watch the signals flow, and write setpoints into the running
 service.
 
-> One idea to hold on to: since PR #253 rev 2, **a graph service is just the
+> One idea to hold on to: since the revision-2 graph schema, **a graph service is just the
 > generic `signal_graph` binary plus one `graph.json`**. What this tool
 > generates *is* the service.
 

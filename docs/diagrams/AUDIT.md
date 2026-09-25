@@ -5,7 +5,7 @@ Refresh / Update batches still pending; verdicts below reflect the
 post-move layout.
 
 **Reference architecture**: TA repo at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+`taf_repo_proposal`
 (Bosch internal GitHub).  Note: the source PUML files referenced
 during this audit (component, class_service, sequence_startup,
 sequence_shutdown, sequence_robot_test, state_lifecycle,

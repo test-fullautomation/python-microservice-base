@@ -12,7 +12,7 @@ Proposed
 
 Audit follow-up (post-migration alignment).  Aligns with the TA
 architecture-proposal design at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+`taf_repo_proposal`.
 
 ## Reviewer
 
@@ -131,7 +131,7 @@ Deferred because:
 ## References
 
 - Reference architecture:
-  [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+  `taf_repo_proposal`
 - [`docs/diagrams/00_canonical_architecture.puml`](../diagrams/00_canonical_architecture.puml)
 - Consul gossip protocol: <https://developer.hashicorp.com/consul/docs/architecture/gossip>
 - Supersedes the discovery aspect of [ADR-003](003-service-registry-over-zookeeper.md)

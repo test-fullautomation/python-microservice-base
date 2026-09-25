@@ -11,7 +11,7 @@ Proposed
 ## Author
 
 Audit follow-up.  Aligns with the TA reference at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+`taf_repo_proposal`.
 
 ## Reviewer
 
@@ -229,7 +229,7 @@ Rejected because:
 ## References
 
 - Reference architecture:
-  [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+  `taf_repo_proposal`
 - Robot Framework: <https://robotframework.org/>
 - QConnectBase library: <https://github.com/test-fullautomation/QConnectBase>
 - New gRPC connection type:

@@ -85,8 +85,9 @@ on Nomad-assigned ports and takes the machine-specific paths as variables
 instead of hard-coding them:
 
 ```bash
-nomad job run examples/demo.nomad.hcl                      # from the repo root
-nomad job run -var count=1 -var consul_addr=http://127.0.0.1:8501 examples/demo.nomad.hcl
+# from the repo root; repo = where this repository is checked out
+nomad job run -var repo=<path-to-this-repository> examples/demo.nomad.hcl
+nomad job run -var repo=<path-to-this-repository> -var count=1 -var consul_addr=http://127.0.0.1:8501 examples/demo.nomad.hcl
 nomad job stop -purge demo
 ```
 

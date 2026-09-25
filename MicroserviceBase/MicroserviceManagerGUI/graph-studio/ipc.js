@@ -38,10 +38,10 @@ const REF_PROTOS = path.join(TOOL_ROOT, "reference", "protos");
 // "Run cluster" need a signals root: a directory containing signal_graph/,
 // signal_discovery/ and common/ (the repo's services/signals). It comes
 // from the studio's Live panel field, else MB_SIGNALS_ROOT, else the
-// sibling-checkout guess below.
+// sibling-checkout guess below (taf_repo_proposal next to this repository).
 const SIGNALS_ROOT_ENV = "MB_SIGNALS_ROOT";
 const RUNNER = path.join(TOOL_ROOT, "tools", "run_cluster.py");
-const REPO_SIGNALS_GUESS = path.resolve(TOOL_ROOT, "..", "..", "..", "..", "TA", "taf_repo_proposal", "services", "signals");
+const REPO_SIGNALS_GUESS = path.resolve(TOOL_ROOT, "..", "..", "..", "..", "taf_repo_proposal", "services", "signals");
 
 function isSignalsRoot(dir) {
   return !!dir && fs.existsSync(path.join(dir, "signal_graph", "app.py"))

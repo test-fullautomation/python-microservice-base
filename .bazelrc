@@ -1,54 +1,19 @@
 # Bazel configuration for MicroserviceBase.
 #
-# Adapted from taf_repo_proposal so both repos behave the same way and
-# share the Artifactory module registry + remote cache. Repo-specific
-# pieces (SBOM validation, TAF_* test env vars, downloader_config) are
-# intentionally omitted -- add them only when this repo needs them.
+# Only settings that hold on every machine live here. Anything tied to a
+# network -- a module registry mirror, a proxy, a CA truststore, a remote
+# cache -- goes into .bazelrc.user next to this file (not committed, see
+# .gitignore). tools/bazel/bazelrc.user.template shows the shape of such a
+# file; copy it to .bazelrc.user and fill in your own values.
 
-# --- Module registry -------------------------------------------------
-# Corporate mirror; the public BCR is not reachable from the Bosch
-# network.
-common --registry=https://artifactory.boschdevcloud.com/artifactory/api/bazelmodules/bits-bcr
-
-# --- Corporate proxy (REQUIRED) --------------------------------------
-# artifactory.boschdevcloud.com does NOT resolve via plain DNS on the
-# Bosch network -- it is only reachable through the proxy on
-# localhost:3128. Bazel's registry fetches run on the JVM's HTTP client,
-# which reads system properties, NOT http_proxy/https_proxy env vars.
-# Without these you get a misleading "Unknown host: artifactory..." that
-# looks like DNS rather than a proxy problem.
-startup --host_jvm_args=-Dhttps.proxyHost=localhost
-startup --host_jvm_args=-Dhttps.proxyPort=3128
-startup --host_jvm_args=-Dhttp.proxyHost=localhost
-startup --host_jvm_args=-Dhttp.proxyPort=3128
-startup --host_jvm_args=-Dhttp.nonProxyHosts=localhost|127.0.0.1
-
-# --- Artifactory credentials (REQUIRED) ------------------------------
-# With the proxy set but no credentials the registry returns 401.
-# Bazel reads HTTP auth from ~/.netrc; create one containing:
-#
-#   machine artifactory.boschdevcloud.com
-#     login <your-bosch-user>
-#     password <your-artifactory-api-token>
-#
-# (and the same block for shared01.artifacts.app.bosch.com if you want
-# the remote cache). Do NOT commit credentials to this file.
+try-import %workspace%/.bazelrc.user
 
 common --experimental_ui_max_stdouterr_bytes=-1
 common --show_timestamps
 
-# --- Corporate TLS ---------------------------------------------------
-# Bazel's downloader runs on the JVM and needs the Bosch CA chain to talk
-# to Artifactory (the public internet is not reachable from the corporate
-# network -- only Bosch hosts resolve). Truststore copied from
-# taf_repo_proposal/products/internal_development_platform/installer/certs.
-startup --host_jvm_args=-Djavax.net.ssl.trustStore=certs/truststore.jks
-startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
-
 # --- Windows ---------------------------------------------------------
 # NOTE: `startup` flags cannot be config-scoped (`startup:windows` is
-# rejected by Bazel 9 with "invalid command name"). taf_repo_proposal
-# carries that mistake; do not copy it back.
+# rejected by Bazel 9 with "invalid command name").
 #
 # Short output paths matter on Windows -- Bazel plus MSVC blow past the
 # 260-character path limit under the default output root. Put these in a
@@ -75,6 +40,7 @@ build:linux --action_env=PATH
 # are absent.
 test --test_env=PATH
 test --test_env=MB_PROTO_SEARCH_PATH
+test --test_env=MB_FLOW_SRC
 test:windows --test_env=ProgramW6432
 test:windows --test_env=LOCALAPPDATA
 test:windows --test_env=TEMP
@@ -90,16 +56,6 @@ build --jobs=auto
 build --verbose_failures
 build --disk_cache=~/.cache/bazel-disk-cache
 
-# --- Remote cache (Artifactory) --------------------------------------
-build --remote_cache=https://shared01.artifacts.app.bosch.com/artifactory/bits-bazel-remote-cache-local/cas
-build --remote_timeout=10s
-build --remote_max_connections=100
-build --remote_accept_cached=true
-build --remote_local_fallback
-build --remote_retries=5
-# Developers read only; CI is the sole writer.
-build --remote_upload_local_results=false
-
-# CI leans on Artifactory exclusively rather than a local disk cache that
-# does not survive the runner.
+# CI that relies on a remote cache (configured in its .bazelrc.user) runs
+# with --config=ci: no local disk cache that would not survive the runner.
 build:ci --disk_cache=

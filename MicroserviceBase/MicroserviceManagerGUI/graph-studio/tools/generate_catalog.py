@@ -66,6 +66,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import sys
 from datetime import date
@@ -393,9 +394,14 @@ def extract_catalog(paths: list[Path] | Path) -> dict:
             owner[b["type"]] = src
             blocks.append(b)
 
+    # Sources relative to the folder the inputs share, so the committed
+    # catalog names files (signal_graph/core/domain/blocks.py), not a
+    # machine's checkout location.
+    base = Path(os.path.commonpath([str(p if p.is_dir() else p.parent) for p in paths]))
+    shown = [s.relative_to(base).as_posix() if s.is_relative_to(base) else s.name for s in sources]
     return {
         "catalog_version": f"generated-{date.today().isoformat()}",
-        "generated_from": [str(s) for s in sources] if len(sources) != 1 else str(sources[0]),
+        "generated_from": shown if len(shown) != 1 else shown[0],
         "generator": "graph-studio/tools/generate_catalog.py (AST, no imports)",
         "blocks": blocks,
     }

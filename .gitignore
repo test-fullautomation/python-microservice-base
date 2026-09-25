@@ -116,3 +116,8 @@ ui_*.h
 htmlcov/
 *.pyc
 *.pyo
+
+# Network-specific Bazel settings and CA material stay local
+# (template: tools/bazel/bazelrc.user.template)
+.bazelrc.user
+certs/

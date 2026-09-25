@@ -41,7 +41,7 @@ ADRs document important architectural decisions made during the development of t
 
 > **Audit note (2026-05-07).** ADRs 023–029 capture the
 > post-migration architecture aligned with the TA reference at
-> [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+> `taf_repo_proposal`.
 > Several earlier ADRs carry **Superseded** or **Archived** callouts;
 > see [`AUDIT.md`](AUDIT.md) for the full triage.
 

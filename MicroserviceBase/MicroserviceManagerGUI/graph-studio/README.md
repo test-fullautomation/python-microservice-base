@@ -4,7 +4,7 @@
 > This README is the developer note for the copy hosted by the Manager GUI.
 
 Viewer/editor/**service composer** for Signals & Blocks `graph.json` files
-(BITS testbench, PR #253 **revision 2** schema), opened from the Manager
+(test bench signal layer, **revision 2** graph schema), opened from the Manager
 GUI's *Developer Tools → Signal Graph Studio*.
 
 > Rev-2 insight that shapes this tool: a graph service **is** the generic

@@ -67,9 +67,10 @@ for (const ex of ["signal_in", "signal_proc"]) {
 }
 
 // ─── real rev-1 repo files still work (backward compat) ────────────
+// Needs a taf_repo_proposal checkout: MB_TAF_REPO=<its root>; skipped otherwise.
 for (const rel of ["services/signals/input/graph.json", "services/signals/output/graph.json"]) {
-  const p = path.join("D:/Project/TA/taf_repo_proposal", rel);
-  if (!fs.existsSync(p)) { console.log("SKIP", rel); continue; }
+  const p = process.env.MB_TAF_REPO ? path.join(process.env.MB_TAF_REPO, rel) : "";
+  if (!p || !fs.existsSync(p)) { console.log("SKIP", rel); continue; }
   const raw = fs.readFileSync(p, "utf-8");
   const { graph, errors } = G.parseGraph(raw);
   check(`${rel}: parses`, graph !== null && errors.length === 0, errors);
@@ -264,7 +265,7 @@ check("parseRef keeps dotted block ids",
   vm.runInContext(fs.readFileSync(path.join(ROOT, "app/library.js"), "utf-8"), ctx, { filename: "app/library.js" });
   const L = vm.runInContext("({ buildBlockSkeleton, buildPackageFiles, buildBlocksModule })", ctx);
   const spec = {
-    typeName: "UdsPeriodicSourceBlock", doc: "Extracts one PDX parameter from XTS 0x2A frames.",
+    typeName: "UdsPeriodicSourceBlock", doc: "Extracts one PDX parameter from the tester's 0x2A frames.",
     inputs: [], outputs: ["out", "last_nrc", "age_s", "update_count"],
     params: [
       { name: "gateway", type: "device_ref", required: true },

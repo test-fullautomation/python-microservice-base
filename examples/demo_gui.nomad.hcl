@@ -8,9 +8,9 @@
 #  instead of the runtime card. Runs alongside examples/demo.nomad.hcl
 #  (service "hello", no GUI) so both cases can be shown side by side.
 #
-#  Run from the repo root:
-#      nomad job run examples/demo_gui.nomad.hcl
-#      nomad job run -var consul_addr=http://127.0.0.1:8501 examples/demo_gui.nomad.hcl
+#  Run from the repo root; `repo` is the one setting without a default:
+#      nomad job run -var repo=<path-to-this-repository> examples/demo_gui.nomad.hcl
+#      nomad job run -var repo=<path-to-this-repository> -var consul_addr=http://127.0.0.1:8501 examples/demo_gui.nomad.hcl
 #      nomad job stop -purge demo-gui
 #
 #  Prerequisites: same as demo.nomad.hcl.
@@ -22,9 +22,10 @@ variable "python" {
 }
 
 variable "repo" {
-  description = "Checkout of python-microservice-base (forward slashes)."
+  description = "Checkout of python-microservice-base (forward slashes, no spaces)."
   type        = string
-  default     = "D:/Project/robot/github/microsoft-base-develop"
+  # Placeholder: set it with -var repo=... or replace it before submitting.
+  default     = "<path-to-this-repository>"
 }
 
 variable "consul_addr" {

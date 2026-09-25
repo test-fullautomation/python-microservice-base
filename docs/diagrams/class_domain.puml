@@ -2,7 +2,7 @@
 title MicroserviceBase — Class structure (post-migration, hexagonal)
 
 ' Modeled on the TA reference's 02_class_diagram_service.puml
-' (https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal),
+' (taf_repo_proposal),
 ' adapted to this repo's framework boundary.  MicroserviceBase ships
 ' the base classes (Settings / ServiceRunner / ConsulRegistration /
 ' ServiceClient); a concrete service composes them with its own

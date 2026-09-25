@@ -9,8 +9,9 @@ Deliberately NOT in the graph: the Qt / vcpkg C++ builds under examples/.
 Those depend on 12 custom vcpkg triplets and patched gRPC ports, which
 fight Bazel's dependency model. They stay on build_qt.sh / CMake.
 
-Layout mirrors taf_repo_proposal so both repos share one mental model
-(and the same Artifactory registry + remote cache).
+Layout mirrors taf_repo_proposal so both repos share one mental model.
+A registry mirror or remote cache, where a network needs one, is set in
+.bazelrc.user (see tools/bazel/bazelrc.user.template).
 """
 
 module(

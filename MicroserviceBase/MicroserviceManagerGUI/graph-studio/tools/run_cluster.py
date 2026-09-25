@@ -9,8 +9,8 @@ no Consul, no DB. Graph ports come from each graph.json ``service.grpc_port``.
     python run_cluster.py --signals-root <repo>/services/signals --config path/to/graph.json
 
 ``--signals-root`` is the directory that contains the ``signal_graph``,
-``signal_discovery`` and ``common`` packages (the repo's ``services/signals``
-since PR #253 landed, or the tool's ``reference/signals`` snapshot).
+``signal_discovery`` and ``common`` packages (the signals repository's
+``services/signals``, or the tool's ``reference/signals`` snapshot).
 
 Runner-side hooks — the two extension points the UDS block stories need but
 signal_graph does not have yet (see the extraction explainer §4). They are

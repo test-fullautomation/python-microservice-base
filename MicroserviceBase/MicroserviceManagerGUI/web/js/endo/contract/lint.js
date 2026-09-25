@@ -316,10 +316,10 @@
       add('R3', 'error', 'binds.grpc', 'required when tiles or commands call RPCs (the fully-qualified proto service)');
     }
 
-    // R7: above BITS, read signals, not devices
+    // R7: above the bits layer, read signals, not devices
     if (manifest.layer && manifest.layer !== 'bits') {
       u.devices.forEach(function (d) {
-        add('R7', 'error', d.path, 'names device "' + d.value + '"; above the BITS layer name a signal instead');
+        add('R7', 'error', d.path, 'names device "' + d.value + '"; above the bits layer name a signal instead');
       });
     }
 

@@ -5,14 +5,14 @@
 #  in Consul under the service name "hello" (distinct instance IDs) -- enough
 #  to show discovery, dynamic ports and scaling in one job.
 #
-#  Run from the repo root:
-#      nomad job run examples/demo.nomad.hcl
-#      nomad job run -var count=1 examples/demo.nomad.hcl
-#      nomad job run -var python="C:/Python313/python.exe" examples/demo.nomad.hcl
+#  Run from the repo root; `repo` is the one setting without a default:
+#      nomad job run -var repo=<path-to-this-repository> examples/demo.nomad.hcl
+#      nomad job run -var repo=<path-to-this-repository> -var count=1 examples/demo.nomad.hcl
+#      nomad job run -var repo=<path-to-this-repository> -var python="C:/Python313/python.exe" examples/demo.nomad.hcl
 #      nomad job stop -purge demo
 #
 #  Or paste it into the Manager GUI: Administrator Tools -> Nomad agent
-#  -> Submit Job.
+#  -> Submit Job, after replacing the <path-to-this-repository> placeholder.
 #
 #  Prerequisites:
 #    - consul agent -dev            (http://127.0.0.1:8500)
@@ -30,9 +30,10 @@ variable "python" {
 }
 
 variable "repo" {
-  description = "Checkout of python-microservice-base (forward slashes)."
+  description = "Checkout of python-microservice-base (forward slashes, no spaces)."
   type        = string
-  default     = "D:/Project/robot/github/microsoft-base-develop"
+  # Placeholder: set it with -var repo=... or replace it before submitting.
+  default     = "<path-to-this-repository>"
 }
 
 variable "count" {

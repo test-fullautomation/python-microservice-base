@@ -4,7 +4,7 @@ title MicroserviceBase — Canonical architecture (post-migration, multi-node cl
 ' Adapted from the TA architecture-proposal design (component diagram
 ' + sequence diagrams in a working copy that pre-dated the reference
 ' repo's first push).  Reference repo:
-'   https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal
+'   taf_repo_proposal (sister repository)
 ' This diagram matches this repo's terminology (ServiceRunner, Manager
 ' GUI, scaffold generator) on top of that design.
 '
