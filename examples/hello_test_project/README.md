@@ -35,7 +35,7 @@ You need:
 1. Start `hello`, for example from the repository root:
 
     ```bash
-    nomad job run examples/demo.nomad.hcl
+    nomad job run -var repo=<path-to-this-repository> examples/demo.nomad.hcl
     ```
 
     or run it directly as described in the

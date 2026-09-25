@@ -1,6 +1,7 @@
 # EXTRACTED SNAPSHOT — services/signals/signal_graph/core/domain/blocks.py
-# from PR #253 revision 2 (253_update.diff, 2026-09-13). Reference input for
-# generate_catalog.py until the PR is checked out; then point at the real file.
+# at graph schema revision 2 (2026-09-13). Reference input for
+# generate_catalog.py when the signals code is not checked out; otherwise point
+# at the real file.
 """Block library for ``signal_graph``.
 
 Blocks are the reusable computational units wired together by a ``graph.json``.

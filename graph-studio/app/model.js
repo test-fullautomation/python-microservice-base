@@ -1,5 +1,5 @@
 // Graph model: parse / serialize / validate graph.json and topology helpers.
-// The canonical on-disk shape (from the PR #253 prototypes):
+// The canonical on-disk shape (from the revision-2 schema prototypes):
 //   { "blocks":  [ { "id", "type", "params" } ],
 //     "wires":   [ [ "blockId.port", "blockId.port" ] ],
 //     "observe": [ { "port": "blockId.port", "name": "signal_name" } ] }
@@ -20,8 +20,8 @@ function makeRef(block, port) {
 
 // Parse text → { graph, errors }. graph is null on fatal errors.
 //
-// Two wire dialects are accepted (the concept doc and the PR #253 prototype
-// disagree — flagged as doc drift for #240):
+// Two wire dialects are accepted (the concept doc and the revision-2
+// prototype disagree -- flagged upstream as doc drift):
 //   deck sketch:   "wires":   [ ["a.out", "b.in"], ... ]
 //   prototype:     "signals": [ { "from": "a.out", "to": "b.in" }, ... ]
 // The dialect that was read is remembered and written back on save, and all

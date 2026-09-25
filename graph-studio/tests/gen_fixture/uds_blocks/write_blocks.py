@@ -1,4 +1,4 @@
-"""Fixture: UDS embedding blocks the way story 05 would write them."""
+"""Fixture: UDS embedding blocks, written the way the UDS block package writes them."""
 
 
 def register_block(name):
