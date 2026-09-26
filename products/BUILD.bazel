@@ -26,6 +26,17 @@ package(default_visibility = ["//visibility:public"])
 # SKIP_DOCBUILD short-circuits setup.py's GenPackageDoc/LaTeX step, which
 # the wheel does not need and which would drag a TeX toolchain into the
 # graph.
+#
+# pip writes into a scratch folder: writing straight into $(RULEDIR) put
+# the wheel exactly at $@, so the copy onto itself failed and had to be
+# hidden with `|| true` -- which also hid a failed build. Now a failure
+# fails the target.
+_WHEEL_CMD = (
+    "T=$$(mktemp -d) && " +
+    "SKIP_DOCBUILD=1 %s -m pip wheel --no-deps --no-build-isolation -w $$T . && " +
+    "cp $$T/microservicebase-*.whl $@ && rm -rf $$T"
+)
+
 genrule(
     name = "wheel",
     srcs = [
@@ -36,16 +47,8 @@ genrule(
     ],
     outs = ["microservicebase-2.2.0-py3-none-any.whl"],
     cmd = select({
-        "@platforms//os:windows": (
-            "SKIP_DOCBUILD=1 python -m pip wheel --no-deps --no-build-isolation " +
-            "-w $(RULEDIR) . && " +
-            "cp $(RULEDIR)/microservicebase-*.whl $@ 2>/dev/null || true"
-        ),
-        "//conditions:default": (
-            "SKIP_DOCBUILD=1 python3 -m pip wheel --no-deps --no-build-isolation " +
-            "-w $(RULEDIR) . && " +
-            "cp $(RULEDIR)/microservicebase-*.whl $@ 2>/dev/null || true"
-        ),
+        "@platforms//os:windows": _WHEEL_CMD % "python",
+        "//conditions:default": _WHEEL_CMD % "python3",
     }),
     tags = [
         "manual",  # not built by //... -- needs a network-capable pip
@@ -86,7 +89,16 @@ genrule(
 # Installers
 # ----------------------------------------------------------------------
 # Each depends on :wheel, so the graph enforces what the CI version-guard
-# currently checks by hand.
+# currently checks by hand. electron-builder bundles whatever wheel sits in
+# build-resources/installers (package.json extraResources), so the rule
+# puts THIS build's wheel there first -- like build.bat / build.sh and the
+# CI workflow do -- and the one in the source tree is not an input
+# (//:microservicebase_sources excludes it).
+#
+# no-sandbox: electron-builder writes the installers to
+# MicroserviceManagerGUI/dist and npm ci writes node_modules, both outside
+# any declared output; in a sandbox they would be thrown away. Without a
+# sandbox they land in the workspace, where the build scripts put them.
 [
     genrule(
         name = "%s_installer" % os_name,
@@ -96,6 +108,9 @@ genrule(
         ],
         outs = ["%s_installer.stamp" % os_name],
         cmd = (
+            "D=MicroserviceBase/MicroserviceManagerGUI/build-resources/installers && " +
+            "mkdir -p $$D && rm -f $$D/microservicebase-*.whl && " +
+            "cp $(location :wheel) $$D/ && " +
             "cd MicroserviceBase/MicroserviceManagerGUI && " +
             "npm ci && " +
             "npx electron-builder %s && " % flags +
@@ -103,6 +118,7 @@ genrule(
         ),
         tags = [
             "manual",  # needs npm + network; run explicitly
+            "no-sandbox",
             "requires-network",
         ],
     )

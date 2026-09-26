@@ -19,26 +19,18 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-# The harness the pytest wrappers drive: component_test.py plus the
-# testconfig / testfiles / testutils trees.
+# `from pytestlibs.CExecute import CExecute` in every test file. The harness
+# it starts (component_test.py and its trees) is //test:harness_lib.
 py_library(
-    name = "harness_lib",
+    name = "pytestlibs",
     srcs = glob(
-        [
-            "../../*.py",
-            "../../testconfig/**/*.py",
-            "../../testfiles/**/*.py",
-            "../../testutils/**/*.py",
-        ],
+        ["pytestlibs/**/*.py"],
         exclude = ["**/__pycache__/**"],
-        allow_empty = True,
     ),
-    imports = ["../.."],
+    imports = ["."],
     deps = [
-        "//:microservicebase_lib",
-        "@pypi//grpcio",
-        "@pypi//grpcio-reflection",
-        "@pypi//protobuf",
+        "//test:harness_lib",
+        "@pypi//pythonextensionscollection",
     ],
 )
 
@@ -78,11 +70,14 @@ _SUITES = {
             "//tools/bazel:pytest_wrapper.py",
             cfg["src"],
         ],
-        imports = ["../.."],
+        # A file in srcs is not on argv: the wrapper runs exactly what it
+        # is given here (a runfiles-relative path).
+        args = ["$(rootpath %s)" % cfg["src"]],
         main = "pytest_wrapper.py",
         tags = ["framework:pytest"] + cfg["tags"],
         deps = [
-            ":harness_lib",
+            ":pytestlibs",
+            "//test:harness_lib",
             "//:microservicebase_lib",
             "@pypi//pytest",
         ],

@@ -63,6 +63,11 @@ _LEGACY_TESTS = {
             "//tools/bazel:pytest_wrapper.py",
             src,
         ],
+        # A file in srcs is not on argv: the wrapper runs exactly what it
+        # is given here (a runfiles-relative path).
+        args = ["$(rootpath %s)" % src],
+        # pytest.ini (log level, suite name) is found next to the tests.
+        data = ["pytest.ini"],
         imports = [".."],
         main = "pytest_wrapper.py",
         tags = [

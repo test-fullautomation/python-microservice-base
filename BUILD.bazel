@@ -83,6 +83,9 @@ filegroup(
             "MicroserviceBase/**/__pycache__/**",
             "MicroserviceBase/MicroserviceManagerGUI/node_modules/**",
             "MicroserviceBase/MicroserviceManagerGUI/dist/**",
+            # The installer targets copy //products:wheel here; a wheel left
+            # in the tree (one is committed) must never be what they bundle.
+            "MicroserviceBase/MicroserviceManagerGUI/build-resources/installers/*.whl",
         ],
     ),
 )

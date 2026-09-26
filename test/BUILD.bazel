@@ -1,0 +1,38 @@
+# The component-test harness the MSB suites drive
+# (test/pytest/pytestfiles): component_test.py plus the libs / testconfig /
+# testfiles / testutils trees it imports.
+#
+# It lives in its own package because a glob cannot reach up with `..`
+# from test/pytest/pytestfiles. pytestlibs/CExecute.py runs
+# component_test.py as a child process, so these files must be in the
+# runfiles as files; tools/bazel/pytest_wrapper.py hands the child the
+# import path.
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "harness_lib",
+    srcs = glob(
+        [
+            "*.py",
+            "libs/**/*.py",
+            "testconfig/**/*.py",
+            "testfiles/**/*.py",
+            "testutils/**/*.py",
+        ],
+        exclude = ["**/__pycache__/**"],
+    ),
+    # `from libs...`, `from testconfig...`, `from testutils...`
+    imports = ["."],
+    deps = [
+        "//:microservicebase_lib",
+        "@pypi//colorama",
+        "@pypi//grpcio",
+        "@pypi//grpcio-reflection",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pythonextensionscollection",
+    ],
+)
