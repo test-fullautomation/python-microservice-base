@@ -149,10 +149,49 @@ Per-run choices made when starting a run.
 
 * ``variables`` -- ``{name: value}`` handed to the tests.
 * ``dryrun`` -- check the tests without executing them, when supported.
+* ``resources`` -- record RAM and CPU of the run's processes (the engine's
+  monitor, ``resources.html``); not for a dry run.
    """
 
    variables: Dict[str, str] = field(default_factory=dict)
    dryrun: bool = False
+   resources: bool = False
+
+
+@dataclass
+class GroupMember:
+   """
+One process of a run group.
+
+* ``id`` -- short name, unique in the group (``IVI``); also its results folder.
+* ``target`` -- project-relative file it runs.
+* ``variables`` -- ``{name: value}`` for this process only.
+   """
+
+   id: str
+   target: str
+   variables: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class RunGroup:
+   """
+Processes that run at the same time and meet through the bench -- e.g. one
+flow run twice with different variables, each waiting for the other.
+Stored under ``"groups"`` in ``testproject.json``.
+
+* ``id`` -- unique in the project; names its runs.
+* ``title`` -- what the GUI calls it.
+* ``members`` -- the processes, started together.
+* ``env`` -- environment for every member. ``${RUN_DIR}`` in a value is the
+  run's own folder (a fresh meeting place per run), ``${PROJECT_DIR}`` the
+  project root.
+   """
+
+   id: str
+   title: str = ""
+   members: List[GroupMember] = field(default_factory=list)
+   env: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -170,6 +209,13 @@ A file a run leaves in its output folder that the GUI can open.
    primary: bool = False
 
 
+#: A run's live position, in its output folder: which node of its flow each
+#: process is in, written by the runner as it goes (JSON: ``node``,
+#: ``counts``, ``last``, ``done``, ``seq``). Optional; the engine passes it on
+#: with the run's status, and the GUI lights that node in the Diagram.
+POSITION_FILE = "flow_position.json"
+
+
 @dataclass
 class RunPlan:
    """
@@ -179,7 +225,8 @@ removes that variable) and keeps the console output.
 
 ``stop_file``: when set, *Stop* first creates this file and gives the
 process a grace period to finish on its own (teardowns, reports) before
-it is killed. Without it, *Stop* kills at once.
+it is killed. Without it, *Stop* kills at once. A runner that can tell
+where the run is writes :data:`POSITION_FILE` into its output folder.
    """
 
    argv: List[str]
@@ -318,6 +365,49 @@ cannot be read that way. ``missing: True`` means the runner's tooling is
 not available with the project's run settings.
       """
       return {"ok": False, "error": f"{self.display_name or self.runner_id} has no extra views."}
+
+   def edit_view(self, root: str, layout: Dict[str, str], rel_path: str, content: str,
+                 view_id: str, edit: Dict[str, object], settings: RunSettings) -> Dict[str, object]:
+      """
+Apply one edit made in a file view (e.g. a step changed in a grid) to
+``content``, the text in the editor. Returns ``{"ok": True, "text": new
+text, "line": where the edited part now is}`` or ``{"ok": False, "error":
+...}``. The GUI puts the text into the editor as an unsaved change, so
+saving, checking and conflict detection stay the editor's. Default: views
+cannot edit.
+      """
+      return {"ok": False, "error": f"{self.display_name or self.runner_id} views cannot edit files."}
+
+   # ---- run groups: views (optional) -----------------------------------------
+
+   def group_env(self, run_dir: str) -> Dict[str, str]:
+      """
+Environment every member of a group run shares, set by the engine for that
+run -- e.g. where the members meet (the RobotFramework AIO fork's
+``ROBOT_FLOW_SIGNALS``: a signal store in ``run_dir``, so two runs never
+see each other's signals). The group's own ``env`` wins over it. Default:
+nothing.
+      """
+      return {}
+
+   def group_views(self, group: RunGroup) -> List[Dict[str, str]]:
+      """
+Views of a run group as a whole, like :meth:`file_views`. ``"flow-group"``
+draws every member's flow and how they meet. Default: none.
+      """
+      return []
+
+   def inspect_group(self, root: str, layout: Dict[str, str], group: RunGroup,
+                     settings: RunSettings) -> Dict[str, object]:
+      """
+The data of :meth:`group_views`: ``{"ok": True, "views": {view_id: data}}``
+or ``{"ok": False, "error": ..., "member": <id or None>}``. For
+``"flow-group"`` the data is ``{"members": [{"id", "target", "variables",
+"flow"}], "links": [{"from": {"member", "node"}, "to": {"member", "node"},
+"label"}]}`` -- a link is a step of one member that another member waits
+for.
+      """
+      return {"ok": False, "error": f"{self.display_name or self.runner_id} has no group views."}
 
    def read_results(self, output_dir: str, returncode: Optional[int]) -> RunResult:
       """

@@ -67,6 +67,29 @@ FLOW_UNKNOWN = {
     "edges": [["start", "wait"], ["wait", "end"]],
 }
 
+# A gate that waits, then a loop whose step fails every time and is recovered.
+FLOW_FAILING_LOOP = {
+    "flow": {"name": "Failing Loop", "version": 1},
+    "nodes": [
+        {"id": "start", "kind": "start"},
+        {"id": "setup", "kind": "phase", "role": "setup"},
+        {"id": "ready", "kind": "gate", "keyword": "Should Be True", "args": ["time.time() > ${READY_AT}"],
+         "timeout": "5s", "interval": "0.1s"},
+        {"id": "cycle", "kind": "phase", "role": "test", "name": "Cycle"},
+        {"id": "loop", "kind": "loop", "max_loops": 3},
+        {"id": "step", "kind": "keyword", "keyword": "Fail", "args": ["not this time"]},
+        {"id": "fix", "kind": "keyword", "keyword": "Log", "args": ["recovered"]},
+        {"id": "end", "kind": "end"},
+    ],
+    "variables": {"READY_AT": "${{ time.time() + 0.5 }}"},
+    "edges": [["start", "setup"], ["setup", "ready"], ["ready", "cycle"], ["cycle", "loop"],
+              {"from": "loop", "to": "step", "label": "body"},
+              {"from": "step", "to": "loop", "label": "next"},
+              {"from": "loop", "to": "fix", "label": "on_failure"},
+              {"from": "fix", "to": "loop", "label": "continue"},
+              {"from": "loop", "to": "end", "label": "done"}],
+}
+
 
 def _write(root, rel, text):
     path = os.path.join(str(root), *rel.split("/"))
@@ -279,6 +302,49 @@ class Test_Flow:
         assert st["counts"]["unknown"] == 1
         assert st["tests"][0]["name"] == "Gate Times Out"
 
+    def test_flow_run_reports_where_it_is(self, project):
+        """flow_position.py: the run's status carries the node each step ran in, with counts."""
+        tp.set_run_settings(str(project), {"pythonpath": [FLOW_SRC]})
+        _write(project, "testsuites/plan.flow.json", json.dumps(FLOW_FAILING_LOOP))
+        st = _wait(project, tp.RUNS.start(str(project), "testsuites/plan.flow.json")["id"])
+        assert st["verdict"] == "pass", st["all_lines"]
+        pos = st["position"]
+        assert pos["done"] is True and pos["node"] is None and pos["stack"] == []
+        assert pos["source"].replace("\\", "/").endswith("testsuites/plan.flow.json")
+        # Every iteration's step failed and was recovered; the loop and the
+        # gate count once each, not per iteration or per poll.
+        assert pos["counts"]["step"] == {"pass": 0, "fail": 3}
+        assert pos["counts"]["fix"] == {"pass": 3, "fail": 0}
+        assert pos["counts"]["ready"] == {"pass": 1, "fail": 0}
+        assert pos["counts"]["loop"]["fail"] == 0
+        # The last to end: the loop, after its third recovery.
+        assert pos["last"]["node"] == "loop" and pos["last"]["status"] == "PASS"
+        # The trail: every step entered, numbered, in order -- the gate once
+        # however often it polled, the loop once however often it iterated.
+        steps = [s for s, _ in pos["trail"]]
+        assert steps == list(range(steps[0], steps[0] + len(steps))) and steps[-1] == pos["step"]
+        assert [n for _, n in pos["trail"]] == ["ready", "loop"] + ["step", "fix"] * 3
+        # Read back from disk once the run is no longer live.
+        tp.RUNS._runs.clear()
+        stored = tp.RUNS.status(str(project), st["id"])
+        assert stored["position"]["counts"] == pos["counts"]
+
+    def test_position_listener_with_timeline(self, project):
+        """The fork's --timeline is a file Robot's listeners have no method for;
+        with the position listener registered the run must still end cleanly."""
+        tp.set_run_settings(str(project), {"pythonpath": [FLOW_SRC], "args": ["--timeline", "timeline.html"]})
+        _write(project, "testsuites/plan.flow.json", json.dumps(FLOW_FAILING_LOOP))
+        st = _wait(project, tp.RUNS.start(str(project), "testsuites/plan.flow.json")["id"])
+        assert st["verdict"] == "pass", st["all_lines"]
+        assert not any("Unexpected error" in line for line in st["all_lines"]), st["all_lines"]
+        assert st["position"]["done"] is True
+
+    def test_dry_run_has_no_position(self, project):
+        tp.set_run_settings(str(project), {"pythonpath": [FLOW_SRC]})
+        _write(project, "testsuites/plan.flow.json", json.dumps(FLOW_FAILING_LOOP))
+        st = _wait(project, tp.RUNS.start(str(project), "testsuites/plan.flow.json", dryrun=True)["id"])
+        assert "position" not in st
+
     def test_flow_without_the_fork_explains_itself(self, project):
         _write(project, "testsuites/gate.flow.json", json.dumps(FLOW_UNKNOWN))
         st = _wait(project, tp.RUNS.start(str(project), "testsuites/gate.flow.json")["id"])
@@ -319,9 +385,9 @@ class Test_FileViews:
         files = {f["path"]: f for f in tp.project_tree(str(project))["files"]}
         assert [v["id"] for v in files["testsuites/plan.flow.json"]["views"]] == ["diagram", "robot"]
         assert [v["type"] for v in files["testsuites/plan.flow.json"]["views"]] == ["flow-graph", "code"]
-        assert files["testsuites/passing.robot"]["views"] == []
+        assert [v["type"] for v in files["testsuites/passing.robot"]["views"]] == ["robot-grid"]
         with pytest.raises(tp.TestProjectError, match="no views"):
-            tp.inspect_file(str(project), "testsuites/passing.robot")
+            tp.inspect_file(str(project), "testsuites/config/robot_config.jsonp")
 
     @pytest.mark.skipif(not HAS_FLOW, reason="RobotFramework AIO fork with robot.flow not found (MB_FLOW_SRC)")
     def test_structure_and_robot_text_from_the_fork(self, project):
@@ -420,5 +486,5 @@ class Test_BridgeEndpoints:
         assert res["status"] == "ok" and res["ok"] is False and res["line"] == 1
         assert [v["id"] for v in res["available"]] == ["diagram", "robot"]
         err = client.post("/api/test-project/inspect",
-                          json={"root": root, "path": "testsuites/passing.robot"}).json()
+                          json={"root": root, "path": "testsuites/config/robot_config.jsonp"}).json()
         assert err["status"] == "error"

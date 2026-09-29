@@ -3244,6 +3244,8 @@ Generate scaffolding for a new microservice project.
          path: str = ""                 # project-relative; "" = the whole project
          variables: Dict[str, str] = {}
          dryrun: bool = False
+         resources: bool = False        # record RAM / CPU of the run (resources.html)
+         group: str = ""                # run this run group instead of ``path``
 
       class TestProjectRunRefBody(BaseModel):
          root: str
@@ -3267,10 +3269,14 @@ Generate scaffolding for a new microservice project.
 
       @app.post("/api/test-project/run")
       def test_project_run(body: TestProjectRunBody):
-         """Start a run of one file (or the whole project) in the background."""
+         """Start a run of one file, the whole project or a run group, in the background."""
          from ..test_project import RUNS, TestProjectError
          try:
-            run = RUNS.start(body.root, body.path, variables=body.variables, dryrun=body.dryrun)
+            if body.group:
+               run = RUNS.start_group(body.root, body.group, dryrun=body.dryrun, resources=body.resources)
+            else:
+               run = RUNS.start(body.root, body.path, variables=body.variables, dryrun=body.dryrun,
+                                resources=body.resources)
             run["root"] = os.path.abspath(body.root.strip())
             return _tp_with_url(run)
          except TestProjectError as exc:
@@ -3323,6 +3329,50 @@ Generate scaffolding for a new microservice project.
          except TestProjectError as exc:
             return _tp_error(exc)
 
+      class TestProjectGroupsBody(BaseModel):
+         root: str
+         groups: Optional[List[Dict[str, Any]]] = None   # None = read only
+
+      @app.post("/api/test-project/groups")
+      def test_project_groups(body: TestProjectGroupsBody):
+         """Read (``groups`` omitted) or replace a project's run groups."""
+         from ..test_project import TestProjectError, get_groups, set_groups
+         try:
+            if body.groups is None:
+               return get_groups(body.root)
+            return set_groups(body.root, body.groups)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectGroupRefBody(BaseModel):
+         root: str
+         group: str
+
+      @app.post("/api/test-project/group/inspect")
+      def test_project_group_inspect(body: TestProjectGroupRefBody):
+         """A run group's views: every member's flow and where they meet."""
+         from ..test_project import TestProjectError, inspect_group
+         try:
+            return inspect_group(body.root, body.group)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      class TestProjectViewEditBody(BaseModel):
+         root: str
+         path: str
+         view: str
+         content: str                   # the editor's text
+         edit: Dict[str, Any]
+
+      @app.post("/api/test-project/view-edit")
+      def test_project_view_edit(body: TestProjectViewEditBody):
+         """Apply an edit made in a file view (a Grid step) to the editor's text."""
+         from ..test_project import TestProjectError, edit_file_view
+         try:
+            return edit_file_view(body.root, body.path, body.view, body.content, body.edit)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
       @app.post("/api/test-project/run-settings")
       def test_project_run_settings(body: TestProjectRunSettingsBody):
          """Read (``settings`` omitted) or replace a project's run settings."""
@@ -3347,6 +3397,19 @@ Generate scaffolding for a new microservice project.
          try:
             root = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode("utf-8")
             path = RUNS.artifact_path(root, run_id, name)
+         except (ValueError, UnicodeDecodeError, TestProjectError) as exc:
+            return PlainTextResponse(str(exc) or "Invalid run file.", status_code=404)
+         return FileResponse(path)
+
+      @app.get("/api/test-project/results/{token}/{run_id}/{member}/{name}")
+      def test_project_member_result_file(token: str, run_id: str, member: str, name: str):
+         """A file one member of a group run left behind (its own log.html, ...)."""
+         import base64
+         from fastapi.responses import FileResponse, PlainTextResponse
+         from ..test_project import RUNS, TestProjectError
+         try:
+            root = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode("utf-8")
+            path = RUNS.artifact_path(root, run_id, name, member)
          except (ValueError, UnicodeDecodeError, TestProjectError) as exc:
             return PlainTextResponse(str(exc) or "Invalid run file.", status_code=404)
          return FileResponse(path)

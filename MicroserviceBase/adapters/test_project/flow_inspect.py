@@ -12,7 +12,8 @@ Prints one JSON object:
 * ``{"ok": true, "flow": {...}, "robot": "..."}`` -- ``flow`` is the fork's
   own structure (:func:`robot.flow.graph.structure`): phases, each a list of
   steps; loops and tries carry ``body`` / ``recovery``, decisions ``yes`` /
-  ``no``. Nothing here re-implements the structuring rules.
+  ``no``. Nothing here re-implements the structuring rules. ``variables``
+  are the file's own defaults, as written.
 * ``{"ok": false, "error": "...", "node": "<id>"|null, "line": n|null}`` --
   the fork refused the file; ``node`` is the node its message names, ``line``
   the line of a JSON syntax error.
@@ -94,8 +95,10 @@ def main():
         match = (re.match(r"Node '([^']+)'", message)
                  or re.match(r"Unreachable node\(s\): ([^,.\s]+)", message))
         return {"ok": False, "node": match.group(1) if match else None, "error": message}
+    variables = data.get("variables") if isinstance(data.get("variables"), dict) else {}
     return {"ok": True, "robot": robot, "flow": {
         "name": flow.name,
+        "variables": {str(k): _text(v) for k, v in variables.items()},
         "setup": _phase(flow.setup),
         "tests": [_phase(p) for p in flow.tests],
         "teardown": _phase(flow.teardown),
