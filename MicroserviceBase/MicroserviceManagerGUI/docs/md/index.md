@@ -85,10 +85,10 @@ chamber, the bench signals and the hello service on one stage:
 
 | When you need… | Go to |
 |---|---|
-| The actual framework architecture (hexagonal layers, runtime model) | [`../../../../docs/`](../../docs/) (repo-level) |
-| A toolchain setup guide (MSYS2, Qt6::Grpc, vcpkg + Qt MinGW) | [`../../../../../examples/docs/md/index.md`](../../../../examples/docs/md/index.md) |
+| The actual framework architecture (hexagonal layers, runtime model) | [`../../../../docs/architecture/`](../../../../docs/architecture/overview.md) (repo-level) |
+| A toolchain setup guide (MSYS2, Qt6::Grpc, vcpkg + Qt MinGW) | [`../../../../examples/docs/md/index.md`](../../../../examples/docs/md/index.md) |
 | The lighter in-app help (loaded inside the running GUI) | `../../web/docs/help.html` (or click the **?** in the navbar when the GUI is running) |
-| A worked example of a multi-service C++ project | [`../../../../examples/PowerDeviceService/README.md`](../../../../examples/PowerDeviceService/README.md) |
+| Worked examples (C++ and Python services, a client, multi-proto projects) | [`../../../../examples/README.md`](../../../../examples/README.md) |
 
 ## Providing a GUI for a gRPC service
 
@@ -181,11 +181,54 @@ chart, the capabilities it uses and the tiles it shows:
   stopped and its tile says so; the rest of the screen keeps working.
   `web/services/HelloService1.0.0/panel.html` is the example
   (`"renderer": "html"`).
+- **Qt tiles** show a Qt UI of the component folder in the tile:
+  `"kind": "qml", "entry": "qt/panel.qml"` (run by the GUI's QML shell),
+  `"kind": "widget", "entry": "qt/panel.ui"` (a Qt Designer form, built by
+  the Widget shell) or `"kind": "wasm", "entry": "myui.js"` (the
+  component's own Qt for WebAssembly build: its Emscripten loader, next to
+  the `.wasm`). Each tile runs its own Qt instance, so several can share
+  the bench.
+  - **Calls:** `ServiceBridge.callService(...)` reaches `binds.grpc` over
+    gRPC through the component's capabilities, so a Qt tile needs
+    `grpc.call`.
+  - **Arguments:** one object is the request message; otherwise the values
+    fill the request fields in order, typed by gRPC reflection.
+  - **Replies:** a response with one scalar field comes back as that
+    value; anything else comes back as JSON.
+  - **Service name:** pass an empty one (`callService("", "Greet",
+    [name])`) so the call stays with its tile. A hard-coded name goes to
+    the tile that was clicked last. A `wasm` build gets its tile's token
+    as `Module.endoToken`: send that as the service name, so calls made
+    from a timer reach the right tile too.
+  - **Methods of other bound services:** name them as
+    `"<service>/<Method>"` (see `binds.grpc` above).
+  - **Tile height:** a Qt canvas does not make the tile grow. Set
+    `"minHeight": 520` (px) on the tile to fit a fixed-size window.
+  - **Full responses:** a `wasm` build also gets the whole response as
+    `result_json` next to `result_data`, to read fields by name.
+  - **Where the files go:** keep `.qml` and `.ui` files in a subfolder. A
+    top-level one would become the folder's classic panel.
+  - **wasm tiles:** they run the component's loader script in the GUI page
+    with a classic panel's trust. The linter warns; prefer `qml` or
+    `widget`.
+
+  `web/services/HelloService1.0.0/qt/hello.qml` is the example. The
+  shells are `web/qt-shell/` and `web/widget-shell/`, built from
+  `qt_qml_shell/` and `qt_widget_shell/`.
 - **`ribbon[]`** groups of commands (`label`, `call`, optional `args`,
   `form`, `confirm`) appear on their tab while the component is on the
   bench (below).
 - **`binds.consul: "@self"`** means the service that declared the component
   through `Meta.gui`. A host, port or IP here is rejected.
+- **`binds.grpc`** names the proto service that tiles and commands call.
+  For a binary that serves several, list them:
+  `"grpc": ["power_device.PowerSupplyService", "config_device.ConfigDeviceService"]`.
+  A plain method name (`"call": "SetVoltage"`) calls the first service. Call
+  another one as `"<service>/<Method>"`, e.g.
+  `"config_device.ConfigDeviceService/SetDeviceType"`. That works in `call`,
+  `rpc`, ribbon commands, frame tiles (`ctx.call`) and Qt tiles
+  (`ServiceBridge.callService`). The linter rejects a service that is not
+  listed.
 - **Capabilities** are enforced: an RPC or signal call that the manifest
   did not declare fails with `CapabilityDenied`. `signals.subscribe` and
   `signals.set` (write a setpoint) are served by the bridge
@@ -202,10 +245,15 @@ chart, the capabilities it uses and the tiles it shows:
 The Service Creator and `mb-scaffold` emit a starting manifest in
 `ui/<Service><version>/component.json`: one command form per unary RPC
 and one log per server-streaming RPC, in the `bits` layer unless the spec
-sets `ui_layer`. Multi-service projects don't get one yet. **C++
-services:** the C++ runtime does not register `Meta.gui` yet, so a C++
-service cannot declare its component itself; a composition can name its
-folder instead (below).
+sets `ui_layer`. Multi-service projects don't get one yet, unless the
+GUI type is **WASM panel**. With that type, every layout gets a component
+per service registration whose main tile is a generated Qt for
+WebAssembly panel. It is built from `gui_wasm/` with `build_wasm.bat` or
+`.sh`, which also install it when `MM_SERVICES` points at `web/services`.
+The panel shows one group per RPC and calls the service over gRPC.
+**C++ services** declare their folder the same way: the C++ runtime reads
+`<PREFIX>GUI` (e.g. `HELLO_GUI=HelloService1.0.0`) into the `gui` setting
+and registers it as `Meta.gui`.
 
 ### The bench: one screen from many services
 
@@ -273,6 +321,8 @@ what it added at once, and tiles of its kinds show *enable the plugin*.
 |---|---|
 | `charts` | tile kind `signal-strip` (live sparklines), drawer tab *Chart* for the selected tile's signals |
 | `test-project` | the *Project* tab under the left pane, the project view, the *Test project* ribbon group |
+| `flow-view` | the *Diagram* tab of flow files and run groups in the project view (file views for types `flow-graph` and `flow-group`) |
+| `robot-grid` | the *Grid* tab of suites and resources in the project view (file view for type `robot-grid`) |
 | `robot-gen` | *Robot Resources* in the Developer tab's Build group |
 | `graph-studio` | *Graph Studio* in the Build group; opens its own window (desktop app only) |
 
@@ -283,8 +333,12 @@ what it added at once, and tiles of its kinds show *enable the plugin*.
 - A plugin is a `plugin.json` (`web/js/endo/contract/plugin.schema.json`)
   plus ES modules. Contribution points: `kinds`, `ribbon.groups`,
   `commands`, `navigators`, `stage.views`, `dock.sections`,
-  `drawer.tabs`. A contribution names a module (`entry`) or a view or
-  action the shell already has (`shell`).
+  `drawer.tabs`, `file.views`. A contribution names a module (`entry`) or a
+  view or action the shell already has (`shell`).
+- A **file view** (`file.views`) draws one view type a project's runner
+  lists for a file (`for`, e.g. `["flow-graph"]`); it is always a module.
+  The project view pushes the runner's data to it as the frame's selection,
+  and the view's `ctx.reveal({ node })` shows that node in *Script*.
 - A kind's `schema` and `needs` are used when components are linted, so a
   tile of a plugin kind is checked like a core one.
 - `node tools/endo-lint.js web/plugins` lints the plugin manifests;
@@ -309,18 +363,46 @@ files around by hand.
 A complete sample — generated resources, starter files and a hand-written
 API suite — is in `examples/hello_test_project/`.
 
-**Open one:** *Developer Tools → Open test project…* (or the folder chip in
-the developer inspector). A folder that is not a test project yet can be
+**Open one:** *Developer → Test project → Open project* (or the folder chip
+in the developer inspector). A folder that is not a test project yet can be
 initialized; existing files are never moved or changed.
 
-**See what's in it:** *Developer Tools → Test project view* (opening a
-project lands there too). The sidebar lists every file grouped into suites,
+**See what's in it:** *Developer → Test project → Project view*, or
+**Project** in the left pane's switcher (opening a project lands there too). The sidebar lists every file grouped into suites,
 resources, protos and configuration, each marked **gen** (generated),
 **starter**, **yours** or **manifest**. A generated file edited since the last
 export shows an amber dot, a deleted one a red dot. The overview shows the
 exported services with their file state and the command that runs all
 suites; from there you can **Re-export** a running service or export
 another one.
+
+**See a suite as a grid.** Suites and resources also open with a **Grid**
+tab: one row per statement, the keyword it calls, then one cell per argument
+labelled with the parameter it fills — through `Run Keyword`-style keywords
+too. Keywords are resolved the way the run resolves them (the project's
+interpreter, Robot's parser and Libdoc): BuiltIn, the file's libraries and
+resources and theirs, and its own keywords. Unknown keywords, values a
+keyword does not take and required parameters left out are marked; imports
+that cannot be read are listed. Hover a keyword for its parameters and
+documentation, click a line number to find it in *Script*. **Click a step to
+change it**: the keyword with completion over everything the file can call,
+then one input per parameter (required ones marked, defaults shown, `*args`
+and named values added with **+**). FOR / IF / ELSE IF / WHILE / EXCEPT rows
+edit their header; blocks and branches are added (**+ Add step** or a FOR /
+IF / WHILE / TRY block — and THREAD, name and daemon, where the project's
+Robot is RobotFramework AIO's; + ELSE IF / ELSE / EXCEPT / FINALLY; steps go
+inside a block from its END row, *+ Add step here*, or from a block or branch
+row, *Inside*), moved and
+deleted; setups and teardowns use the keyword editor; settings, imports and
+variables edit their values; **+ Setting** next to a test's or keyword's
+name adds its own `[Documentation]`, `[Tags]`, `[Setup]`, `[Teardown]`,
+`[Timeout]`, `[Template]` or `[Arguments]`; tests and keywords are added,
+renamed and deleted, and a toolbar adds a test, keyword, setting or variable. Every value
+input completes the `${variables}` in scope at that step. The runner applies
+each change with Robot's own model, so only that part changes (indentation,
+comments, line endings kept); the result lands in *Script* as an unsaved
+change, and *Undo last change* takes a grid change back. Generated files
+stay read-only (`robot-grid` plugin; `/api/test-project/view-edit`).
 
 **Edit suites in place.** Selecting a suite, a starter file or one of your
 own files opens it in an editor with Robot Framework highlighting and line
@@ -333,8 +415,8 @@ and is offered again when you reopen the file. Generated files and the
 manifest open read-only. **New suite…** (overview, or **+** next to
 *Suites*) creates a suite already wired to an exported service's keywords.
 
-**Export a service:** select a Consul-registered service, then *Developer
-Tools → Add to test project* (or the button in the inspector's API tab).
+**Export a service:** select a Consul-registered service, then *Developer →
+Selected service → Add to project* (or the button in the inspector's API tab).
 The GUI first shows a plan — every file with its status and a diff for
 anything that would change — and writes only when you confirm.
 
@@ -396,7 +478,8 @@ builds into a suite at run time.
   is the JSON, the only thing you edit. *Diagram* draws the flow: a lane per
   phase, gates as hexagons, a loop as a frame with its body, `next` return
   and recovery (`on_failure` → `continue` / `abort`), decisions with their
-  yes / no branches. *Robot* shows the suite the flow becomes. Both are made
+  yes / no branches (drawn by the `flow-view` plugin; turned off, the tab
+  says so). *Robot* shows the suite the flow becomes. Both are made
   by the fork itself (`robot.flow`, with the project's run settings) from
   the text in *Script*, unsaved changes included. Click a node to find it in
   *Script*; a flow the fork refuses shows its message and a link to the
@@ -432,16 +515,140 @@ under `"run"`, so a project runs the same way for everyone who opens it:
 | Extra arguments | Added to every run (one per line). |
 | Environment | `NAME=value` pairs for every run. |
 
+### Run groups: processes that meet
+
+Some tests are more than one process: two blades on one bench, a driver and
+a checker, each waiting at a gate for what the other publishes. RobotFramework
+AIO's flows do this through the bench's signals — one flow runs twice with
+different variables (`BLADE=IVI PEER=ADAS`, then swapped), each announces
+itself with `Set Signal` and gates on its peer. A **run group** is that
+pairing, kept with the project:
+
+```json
+"groups": [
+  { "id": "rendezvous", "title": "IVI + ADAS rendezvous",
+    "env": { "FLOW_DEMO_SIGNALS": "${RUN_DIR}/signals.json" },
+    "members": [
+      { "id": "IVI",  "target": "pairs/rendezvous.flow.json", "variables": { "BLADE": "IVI",  "PEER": "ADAS" } },
+      { "id": "ADAS", "target": "pairs/rendezvous.flow.json", "variables": { "BLADE": "ADAS", "PEER": "IVI" } } ] }
+]
+```
+
+- **Sidebar → Run groups** lists them; **+** (or *Edit…* on a group) opens
+  the editor: an id, a title, 2–8 members (id, the file it runs, its
+  variables) and environment for all of them. `${RUN_DIR}` in a value is the
+  run's own folder — a fresh meeting place per run, so a flag left by the
+  previous run cannot open a gate — and `${PROJECT_DIR}` the project root.
+  Saved in `testproject.json` under `"groups"`.
+- **Diagram** (a group of flow files; drawn by the `flow-view` plugin): one
+  column per member, read top to bottom, and a dashed arrow across the
+  channel wherever a step of one member sets a signal that a gate of another
+  waits for. The arrows are read from the flows — a `Set Signal <name>
+  <value>` step and a gate whose first argument is the same signal (with
+  `==`, the same value), after each member's variables are filled in.
+  Click a step to open that member's file on it.
+- **▶ / Run…** starts every member at once. *Runs* shows one console column
+  per member with its own verdict, **Log** and **Report**; *Results* lists
+  every member's tests. The run's verdict is the worst of the members'
+  (error, then fail, then unknown). **Stop** stops them all, gracefully
+  first. Each member writes to `results/<run>/<member>/`; `console.log` of
+  the run interleaves their lines as `[member] …`.
+- **Where members meet.** RobotFramework AIO ships `robot.flow.signals`
+  (`Set Signal`, `Get Signal`, `Signal Should Be`) for flows to coordinate.
+  Every run gets its own store: the members of a group run share
+  `results/<run>/signals.json`, a single flow run has one in its folder
+  (`ROBOT_FLOW_SIGNALS`, set by the runner adapter's `group_env` /
+  `run_plan`; one in the run settings' or the group's environment wins). Two
+  runs can never read each other's signals.
+
+#### Resources of a run: RAM and CPU over hours
+
+Tick **Record RAM and CPU of the run** in the Run dialog (of a file, or of a run
+group; remembered like the other choices, kept by *Run again*, off by default and
+never for a dry run) and the run is watched by a **separate process**
+(`adapters/test_project/resmon.py`, so its own work is not counted and it keeps
+recording if the runner misbehaves). Every 5 s it samples each process of the run,
+and the processes those started:
+private memory, working set, CPU (percent of one core), threads and handles, plus
+the machine's CPU and memory. Each sample is one line of
+`results/<run>/resources.jsonl` -- nothing is lost if the machine goes down.
+
+When the run's processes have ended it writes **`resources.html`**, offered as
+**Resources** next to Log and Report. It shows:
+
+- a verdict per process and for the run: **STABLE**, **GROWING** or **SHORT**
+  (too little time after the warm-up to judge);
+- per process: private memory after the warm-up → at the end, its peak, its trend
+  in MB/h, working set, CPU mean / p95 / max, threads and handles;
+- one chart over time with a band per metric (private memory, working set, CPU,
+  threads, handles, the machine's CPU and memory), shown or hidden with checkboxes,
+  as are the processes and the memory trend (dashed). Hovering shows every visible
+  value at that moment, with the time since the start and the clock time; dragging
+  zooms into a period (double-click or *Reset zoom* for all of it); the arrow keys
+  step through the samples. The page needs no network: the samples are in it.
+
+How it judges: the first 10 % of a process's time (at most 10 min) is warm-up, the
+last 5 % (at most 1 min) wind-down -- Robot merging its output and writing the log
+and report, a short burst at the very end -- and both are left out of the trend
+(not of the peak). A least-squares line through the rest gives the trend. GROWING means a
+trend above **10 MB/h** *and* more than 5 % above the level after the warm-up;
+SHORT means less than 10 min after the warm-up.
+
+`MM_RESMON_INTERVAL` in the run settings' environment sets the seconds between
+samples. From the command line, or for processes started elsewhere:
+
+```
+python resmon.py record --out r.jsonl --report r.html --pid DRIVER=1234 --pid CHECKER=5678
+python resmon.py record --out r.jsonl --match "robot.*endurance" --duration 8h
+python resmon.py report r.jsonl -o r.html          # any time, also while recording
+```
+
+`--max-growth` (MB/h) and `--min-steady` change the thresholds; `report` exits
+with 3 when a process is GROWING, for a build to fail on it.
+
+#### Live Diagram of a run
+
+A run of a flow file, or of a group of flow files, shows its **Diagram
+beside the console** (*Runs* → *Console*; the **Diagram** button in the tab
+row hides or shows it). The step each process is in right now pulses in
+blue, the loop or try around it is outlined, a step that just failed turns
+red for a few seconds, and every step carries a count: ✓ passed, ✗ failed.
+The divider between console and Diagram drags (or moves with the arrow
+keys); **Fit / 75% / 100%** size the drawing, and at 75% and 100% it scrolls
+sideways. The view updates about once a second; the steps a process went
+through in between are replayed quickly (at most 8, within 0.6 s): **Tail**
+flashes them in order and lets them fade, **Hop** moves the mark through
+them, **Off** shows only where the run is now. Reduced motion turns the
+replay off. The Diagram keeps the running step in view, except for a few
+seconds after you scroll it yourself. A finished run keeps its counts: where
+the deviations of a long night were.
+
+How it knows: `robot_boot.py` (which starts every GUI run) loads
+`adapters/test_project/flow_position.py` into the Robot process. It numbers
+every item the fork builds for a flow node (through the builder's emitters,
+before Robot builds the suite) and, as a Robot listener, writes the node the
+main thread is in, each node's counts and the trail of the last 30 steps
+entered (numbered, so the view replays only what it has not shown) to
+`flow_position.json` in the
+run's folder, replaced whole on every change. The bridge adds it to
+`/run/status` (`position`, or `member_positions` for a group run), which the
+view already polls. The cost is a dictionary look-up per keyword and a small
+file write per step (a few a second); the Diagram is drawn once and only its
+marks move. Runs from the command line and dry runs write nothing.
+
 All of this is runner-neutral: the adapter says which files it can run, the
 exact command (`run_plan`) and how to read the outcome (`read_results`),
 and which extra views a file has (`file_views`, `inspect_file`: views of
-type `flow-graph` or `code`); the bridge (`/api/test-project/run`,
-`/run/status`, `/run/stop`, `/runs`, `/run-settings`, `/inspect`) and this
-view stay the same for any runner.
+type `flow-graph` or `code`) and a run group has (`group_views`,
+`inspect_group`: `flow-group`); the bridge (`/api/test-project/run` — with
+`group` for a run group —, `/run/status`, `/run/stop`, `/runs`,
+`/run-settings`, `/inspect`, `/view-edit`, `/groups`, `/group/inspect`) and this view stay
+the same for any runner; a view type is drawn by whichever plugin
+contributes a `file.views` entry for it.
 
 ## Signal Graph Studio
 
-**Developer Tools → Signal Graph Studio** opens the Signals & Blocks graph
+**Developer → Build → Graph Studio** opens the Signals & Blocks graph
 editor in its own window: draw blocks/wires/observe taps, map device
 parameters to Consul services, validate, and generate a deployable graph
 service (configs folder + Nomad job + `RUN.txt`, with a cross-graph
@@ -497,7 +704,11 @@ It is vendored under `graph-studio/` and hosted, not merged:
 - The live panel is pre-filled with the Consul the manager is connected to
   and the Python from *Settings* (a previously saved endpoint in the studio
   wins).
-- Closing with unsaved changes asks first.
+- Closing the studio keeps its session. Opening it again shows the same
+  graph, view and selection. A saved file is read again from disk, and
+  unsaved edits come back still marked unsaved (`gs-session` in the
+  studio's local storage). A running cluster and the monitor do not
+  survive a close.
 - The installer unpacks `graph-studio/**` from the asar archive, because
   `grpcurl` and Python are given real file paths (the reference proto, the
   catalog generator, and the catalog it rewrites).

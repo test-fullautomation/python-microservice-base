@@ -10,9 +10,13 @@
     </div>
     <a href="#about">About</a>
     <a href="#getting-started">Getting Started</a>
-    <a href="#service-network">Service Network (Consul + Nomad)</a>
-    <a href="#services-mode">Services Mode</a>
+    <a href="#services-mode">Services</a>
+    <a href="#bench">Bench</a>
+    <a href="#developer">Developer tools</a>
+    <a href="#test-projects">Test projects</a>
     <a href="#service-creator">Service Creator</a>
+    <a href="#service-network">Service Network (Consul + Nomad)</a>
+    <a href="#plugins">Plugins</a>
     <a href="#settings">Settings</a>
     <a href="#troubleshooting">Troubleshooting</a>
     <a href="#more">More</a>
@@ -21,7 +25,7 @@
   <!-- ===== Scrollable Content ===== -->
   <div class="docs-body" id="docsBody">
 
-    <!-- Modernisation banner kept as a top-of-page pointer to long-form docs -->
+    <!-- Pointer to the long-form docs -->
     <div class="docs-callout info" style="padding: 14px 18px; margin: 0 0 18px 0;">
       <div class="docs-callout-title" style="margin-bottom: 6px;">
         <i class="bi bi-info-circle me-1"></i>For the long-form guides, see <code>docs/</code>
@@ -73,9 +77,11 @@
         A Python + C++ framework for building gRPC microservices with
         Consul-based service discovery and Nomad-based orchestration.
         The Manager GUI gives you a desktop UX over the FastAPI bridge:
-        start/stop infrastructure agents, browse registered services,
-        invoke methods via gRPC reflection, and scaffold new services
-        from a 4-step wizard.
+        operate running services through their own GUIs, put several of
+        them on one bench, inspect and call any service via gRPC
+        reflection, scaffold new services, export them into Robot
+        Framework test projects and run the tests, and start / stop the
+        Consul and Nomad agents.
       </p>
       <div class="docs-project-info">
         <h3>Project</h3>
@@ -125,237 +131,427 @@
       <h2><i class="bi bi-rocket-takeoff"></i>Getting Started</h2>
       <p>
         Microservice Manager is a graphical interface for operating and
-        building MicroserviceBase services.  It runs in two modes
-        (Electron desktop or browser), connects to the same FastAPI
-        bridge, and keeps the Services view in front with developer and
-        administrator functions behind two menus.
+        building MicroserviceBase services.  It runs as a desktop app
+        (Electron) or in a browser; both use the same FastAPI bridge.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/gui_overview.png" alt="Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar">
-        <figcaption>Main layout &mdash; navbar with mode toggle and Bridge / Consul / Nomad LEDs, services sidebar on the left, content area on the right.</figcaption>
+        <img src="docs/img/services.png" alt="Manager GUI: ribbon with the User tab open, services sidebar on the left, the hello-demo service's component tiles on the right">
+        <figcaption>The main window &mdash; ribbon tabs in the navbar (the <em>User</em> tab open), services of the connected Consul on the left, the selected service's GUI on the right, and the Services / Bench / Project switcher at the bottom of the left pane.</figcaption>
       </figure>
 
-      <h3>Dual Hosting</h3>
-      <p>The GUI runs in two modes:</p>
-      <ul>
-        <li><strong>Electron</strong> &mdash; standalone desktop app with native window, system tray, and auto-launch of the FastAPI bridge.</li>
-        <li><strong>Browser</strong> &mdash; served by the FastAPI bridge at
-          <span class="docs-inline-code">http://localhost:1112</span>; no installation
-          required (just <span class="docs-inline-code">python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</span> and open the URL).</li>
-      </ul>
-      <p>Both modes share the same web front-end and connect to the same FastAPI bridge.</p>
+      <h3>First steps</h3>
+      <ol>
+        <li><strong>Bridge</strong> &mdash; in the desktop app the bridge starts with the window; the <em>Bridge</em> LED on the <em>User</em> tab turns green.  If it stays red, press &#9654; next to it.</li>
+        <li><strong>Consul</strong> &mdash; <em>User &rarr; Service registry &rarr; Connect</em> and enter the Consul address (e.g. <code>http://127.0.0.1:8500</code>).  No Consul running yet?  <em>Administrator &rarr; Consul agent</em> starts one in dev mode.</li>
+        <li><strong>A service</strong> &mdash; click it in the left pane.  Its GUI opens in the main area.</li>
+      </ol>
 
-      <h3>Navigation</h3>
-      <p>The navbar keeps the runtime view in front; developer and administrator functions sit behind two menus:</p>
+      <h3>Dual hosting</h3>
       <ul>
-        <li><strong>Services</strong> (default) &mdash; active services and their GUIs. A service without a GUI shows an overview (health, instances with their checks, address, tags) and an <em>Actions</em> section with a typed form per method, so operators can invoke it without any developer tooling. It is marked <em>No GUI</em>. The app always starts here.</li>
-        <li><strong>Developer Tools &#9662;</strong> &mdash; the <em>Developer mode</em> switch docks an inspector on the right (amber accent + <em>DEV</em> pill in the navbar) showing the selected service's <em>API</em> (reflection, raw JSON calls), <em>Details</em> (instances, checks, Consul metadata) and <em>Code</em> (Python / C++ / Robot). The service itself stays in the main view. The menu also holds <em>Service Creator</em>, the <em>Robot Resource Generator</em>, <em>Signal Graph Studio</em> (the Signals &amp; Blocks graph editor, in its own window: draw a graph, generate a deployable graph service, watch live signal values and strip charts while it runs, set a setpoint into the running service, and scaffold new block types), <em>Code Examples</em> and <em>Download service files</em>. <em>Open test project&hellip;</em> picks a Robot Framework AIO test project and <em>Test project view</em> shows its files (generated, starter or yours, with locally edited ones flagged), the exported services, and lets you edit suites and your own files in place (Robot highlighting, Ctrl+S, syntax check, New suite&hellip;) while generated files stay read-only, and runs them. A flow file opens with <em>Script</em>, <em>Diagram</em> (the flow drawn from the text, click a node to find it) and <em>Robot</em> (the suite it becomes) tabs. &#9654; next to a suite or flow file (or <em>Run all&hellip;</em>) asks for variables and dry run, then <em>Runs</em> shows the live console, the verdict (Pass, Fail, Unknown, Skipped, Error), one row per test, Log and Report, Stop and the run history; <em>Run settings&hellip;</em> keeps the interpreter, PYTHONPATH and extra arguments in the project; <em>Add to test project</em> exports the selected service into it (generated resources, copied protos when available, a starter suite) after showing a plan of every file it would write.</li>
-        <li><strong>Administrator Tools &#9662;</strong> &mdash; <em>Consul agent</em> / <em>Nomad agent</em>: open the Service Network view to start / stop / inspect the agents, browse jobs, submit <code>.nomad.hcl</code> files.</li>
+        <li><strong>Desktop (Electron)</strong> &mdash; native window, starts and stops the bridge for you, opens Graph Studio in its own window.</li>
+        <li><strong>Browser</strong> &mdash; served by the bridge at
+          <span class="docs-inline-code">http://localhost:1112</span>
+          (<span class="docs-inline-code">python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge</span>, then open the URL).  Window plugins such as Graph Studio are desktop-only.</li>
       </ul>
-      <p>Opening a menu never interrupts a running service GUI; switching back to <strong>Services</strong> shows it exactly as you left it.</p>
 
-      <h3>Status pills in the navbar</h3>
-      <p>To the right of the mode toggle, three small pills show live infrastructure health:</p>
+      <h3>The ribbon</h3>
+      <p>The navbar holds three ribbon tabs; each opens a band of commands grouped by task:</p>
       <ul>
-        <li><strong>Bridge</strong> &mdash; the FastAPI bridge process. ▶/■ buttons start/stop it (Electron mode).</li>
-        <li><strong>Consul</strong> &mdash; service-discovery agent. Click to jump to the Consul tab in <em>Service Network</em>.</li>
-        <li><strong>Nomad</strong> &mdash; orchestrator agent. Click to jump to the Nomad tab.</li>
+        <li><strong>User</strong> &mdash; operate: <em>Bridge</em> (LED, start / stop), <em>Infrastructure</em> (Consul and Nomad LEDs; click one to open its agent view), <em>Bench</em> (show the bench, pick a composition, Edit, Reload), <em>Service registry</em> (Connect, and one chip per connected Consul with &times; to disconnect).  While the bench is shown, components add their own groups here.</li>
+        <li><strong>Developer</strong> &mdash; build and test: <em>Inspector</em> (Developer mode), <em>Build</em> (Service Creator, Robot Resources, Graph Studio), <em>Test project</em> (Project view, Open project), <em>Selected service</em> (API Explorer, Classic panel, Code Examples, Add to project, Download files).</li>
+        <li><strong>Administrator</strong> &mdash; configure: <em>Service Network</em> (Consul agent, Nomad agent) and <em>Shell</em> (Plugins).</li>
       </ul>
-      <p>LEDs are polled every 5 seconds and reflect the bridge's <code>/api/{consul,nomad}/health</code> endpoints.</p>
+      <p>
+        The ribbon folds away to leave room for the content and drops down
+        when you click a tab; the <i class="bi bi-pin-angle"></i> pin on the
+        right keeps it open.  Next to it: <i class="bi bi-bug"></i>
+        <em>Report Issue</em> (opens a pre-filled GitHub issue),
+        <i class="bi bi-question-circle"></i> this guide and
+        <i class="bi bi-gear"></i> <em>Settings</em>.
+      </p>
+
+      <h3>The left pane</h3>
+      <p>
+        The switcher at its bottom picks what the pane lists:
+        <strong>Services</strong> (the connected registries),
+        <strong>Bench</strong> (the modules of the shown composition) or
+        <strong>Project</strong> (the files of the open test project).
+        Switching never interrupts a running service GUI; coming back shows
+        it exactly as you left it.
+      </p>
+    </section>
+
+    <!-- Services -->
+    <section class="docs-section" id="services-mode">
+      <h2><i class="bi bi-box-seam"></i>Services</h2>
+      <p>
+        The default view and where the app starts.  The left pane lists
+        every service registered in the connected Consul(s), grouped per
+        registry when there is more than one.  The search box filters by
+        name; the dot shows the Consul health check (green passing, red
+        failing).
+      </p>
+
+      <h3>What opens for a service</h3>
+      <ul>
+        <li><strong>Its component</strong> &mdash; a service that declares a GUI with a <code>component.json</code> opens as tiles (status, command forms, tables, logs, framed panels).  The badge at the top right says whether the manifest passes the contract.</li>
+        <li><strong>Its classic panel</strong> &mdash; an HTML / JS, QML, Qt Widgets, Qt WASM or schema GUI.  A folder that ships both opens the component; <em>Developer &rarr; Classic panel</em> switches that service to the other one, and the choice is remembered.</li>
+        <li><strong>No GUI</strong> &mdash; the service is marked <em>No GUI</em> and shows an overview (health, instances with their checks, address, tags) plus an <em>Actions</em> section: one typed form per method, so operators can call it without developer tooling.</li>
+      </ul>
+      <p>
+        <strong>GUIs delivered by the service.</strong>  When the GUI's folder
+        is not on this PC yet, the Manager asks the service for it
+        (services built on <code>ServiceRunner</code> serve their GUI over
+        gRPC), unpacks it and opens it &mdash; so a fresh machine fills
+        itself.  <em>Developer &rarr; Download files</em> fetches it again.
+      </p>
+    </section>
+
+    <!-- Bench -->
+    <section class="docs-section" id="bench">
+      <h2><i class="bi bi-grid-1x2"></i>Bench</h2>
+      <p>
+        <em>User &rarr; Bench</em> (or <strong>Bench</strong> in the left
+        pane's switcher) shows the tiles of several services on one
+        4-column stage.  Which services, in which order, is a
+        <strong>composition</strong>; pick one in the <em>Bench</em> group.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/bench.png" alt="Bench showing tiles from a climate chamber simulator, the signal service and the hello service, with live values and signal strips">
+        <figcaption>A bench composed of three services &mdash; live values, signal strips and command forms side by side.  The left pane lists the modules; the chamber component adds its own ribbon group on the right.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Edit</strong> opens the composition.  The <em>Visual</em> tab lists every connected service that declares a GUI, the composition's first and in its order: tick a service to show it, untick tiles to hide them (the tiles come from its <code>component.json</code>), drag a row by its handle or use &uarr; &darr; to set the order, and give a GUI folder to a service that registers none.  Every change is written to the <em>JSON</em> tab, which is what is checked against the contract and saved through the bridge; edit it directly for anything else.  With nothing stored, the bench shows <em>All components</em>: every connected service that declares a GUI.</li>
+        <li>A module that cannot show tiles keeps its slot and says why (<em>refused</em> with the broken rules, <em>classic panel</em>, <em>no GUI</em>, <em>not registered</em>); the rest of the bench keeps working.</li>
+        <li><strong>Selecting a tile</strong> opens the dock with the component's details and, when it lists one, its API explorer.  The drawer below the stage has a <em>Chart</em> tab for the selected tile's signals.</li>
+        <li><strong>Live signals</strong> update at most 10 times a second.  They need <code>signal-discovery</code> in the connected Consul (or its address set with the <em>signals</em> badge under the stage).</li>
+        <li>Tiles stop polling while the bench is hidden.</li>
+      </ul>
+
+      <h3>Which services and tiles appear</h3>
+      <p>
+        A service <em>declares a GUI</em> by registering the name of its GUI folder in Consul as <code>Meta.gui</code>:
+        the <code>&lt;PREFIX&gt;GUI</code> setting of the service, the same for Python and C++ services.  The folder is
+        <code>web/services/&lt;folder&gt;/</code>, and its <code>component.json</code> lists the service's tiles.
+        <em>All components</em> takes every such service with all its tiles; a composition chooses:
+      </p>
+      <pre><code>{
+  "composition": "endurance/user",
+  "title": "Endurance bench",
+  "shell": "^2.3",
+  "role": "user",
+  "components": [
+    { "from": "consul", "service": "testbench-climate-chamber-sim" },
+    { "from": "consul", "service": "testbench-device-pps-mock", "tiles": ["output", "voltage"] },
+    { "from": "consul", "service": "bits-power", "gui": "BitsPower1.0.0" }
+  ],
+  "order": ["@testbench-device-pps-mock", "*"]
+}</code></pre>
+      <ul>
+        <li><code>components</code> &mdash; the services on the bench, and only these (by their Consul name).</li>
+        <li><code>tiles</code> <span class="text-muted">(optional)</span> &mdash; only these tiles of the service's component, by their ids in its <code>component.json</code>.</li>
+        <li><code>gui</code> <span class="text-muted">(optional)</span> &mdash; the GUI folder for a service that does not register <code>Meta.gui</code> itself.</li>
+        <li><code>order</code> <span class="text-muted">(optional)</span> &mdash; the order on the stage: <code>@service</code> (that service's module), <code>component</code> (all its tiles), <code>component/tile</code> (one tile), <code>*</code> for everything not listed.</li>
+        <li><code>shell</code> &mdash; the GUI versions the composition works with, as a range (<code>^2.3</code>); a GUI outside that range refuses it, and so does a range left open (<code>*</code>).</li>
+        <li><code>role</code> &mdash; <code>user</code>, <code>dev</code> or <code>admin</code>: the ribbon tab the bench selects while it shows this composition.  A composition is stored per bench and role (<em>endurance / user</em>), and the picker lists them that way.</li>
+        <li>Compositions are stored per user in <code>%APPDATA%\devatservgui\compositions\</code> (on Linux <code>~/.config/devatservgui/compositions/</code>), or in the folder named by <code>MB_COMPOSITIONS_DIR</code>.</li>
+        <li>The role applies to a whole composition, not to single tiles; for a different selection per role, store one composition per role.</li>
+      </ul>
+    </section>
+
+    <!-- Developer tools -->
+    <section class="docs-section" id="developer">
+      <h2><i class="bi bi-code-slash"></i>Developer tools</h2>
+      <figure class="docs-figure">
+        <img src="docs/img/developer-mode.png" alt="Developer tab of the ribbon and the developer inspector showing the API of hello-demo discovered via reflection">
+        <figcaption>Developer mode &mdash; the inspector on the <em>API</em> tab: the service's methods discovered via gRPC reflection.  The amber line and the <em>DEV</em> pill mark the mode.</figcaption>
+      </figure>
+
+      <h3>Developer mode (inspector)</h3>
+      <p>
+        <em>Developer &rarr; Developer mode</em> docks an inspector for the
+        selected service with three tabs:
+      </p>
+      <ul>
+        <li><strong>API</strong> &mdash; the methods from the server's reflection, each with a JSON request pre-filled from its schema and a Call button (server streams included).  Also <em>Code</em>, <em>Robot</em> and <em>Add to test project</em>.</li>
+        <li><strong>Details</strong> &mdash; instances, health checks, Consul metadata.</li>
+        <li><strong>Code</strong> &mdash; ready-to-run client snippets in Python, C++ and Robot Framework.</li>
+      </ul>
+      <p>
+        <em>API Explorer</em> and <em>Code Examples</em> in the ribbon open
+        the inspector on those tabs directly.
+      </p>
+      <p>
+        <strong>No reflection?</strong>  Some servers (older builds, custom
+        toolchains) don't ship <code>grpc++_reflection</code>.  The bridge then
+        compiles local <code>.proto</code> files; if it finds none, the panel
+        asks for the folder that holds them and remembers it for the session.
+      </p>
+
+      <h3>Robot Framework resources</h3>
+      <p>
+        <em>Developer &rarr; Build &rarr; Robot Resources</em> turns a
+        <code>.proto</code> folder into one <code>.resource</code> file per
+        service, each with typed keywords (one per RPC) on top of
+        <code>QConnectBase.ConnectionManager</code>.  Existing files are
+        skipped unless you confirm the overwrite.  The same generator runs
+        from the command line:
+      </p>
+      <pre><code>python -m MicroserviceBase.tools.robot_gen --proto-dir &lt;path&gt; --out &lt;path&gt;</code></pre>
+      <p>
+        To export a running service straight into a test project instead,
+        use <em>Add to project</em> (see <a href="#test-projects">Test projects</a>).
+        Long-form: <a href="../docs/html/robot_generator.html" target="_blank">Generate Robot Framework resources</a>.
+      </p>
+
+      <h3>Signal Graph Studio</h3>
+      <p>
+        <em>Developer &rarr; Build &rarr; Graph Studio</em> opens the Signals
+        &amp; Blocks graph editor in its own window (desktop app only): draw
+        blocks, wires and observe taps, generate a deployable graph service
+        (configs, Nomad job), then watch it run &mdash; <em>&#9673; Monitor</em>
+        shows live values on the graph, the <em>Chart</em> tab plots them, and
+        a setpoint block's inspector writes a value into the running service.
+        <em>Library&hellip;</em> scaffolds new block types and regenerates the
+        block catalog.
+      </p>
+    </section>
+
+    <!-- Test projects -->
+    <section class="docs-section" id="test-projects">
+      <h2><i class="bi bi-folder2-open"></i>Test projects</h2>
+      <p>
+        A test project is a Robot Framework AIO folder the Manager exports
+        services into, so test authors get working keywords without copying
+        generated files by hand.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/project-view.png" alt="Project view: the project's files on the left, a flow file open on its Diagram tab showing setup, test and teardown lanes">
+        <figcaption>The project view &mdash; files grouped into suites, flows, resources, protos and configuration; a flow file open on its <em>Diagram</em> tab.</figcaption>
+      </figure>
+
+      <h3>Open, browse, export</h3>
+      <ul>
+        <li><strong>Open</strong> &mdash; <em>Developer &rarr; Test project &rarr; Open project</em>.  A folder that is not a test project yet can be initialized; existing files are never moved or changed.</li>
+        <li><strong>Browse</strong> &mdash; <em>Project view</em> (or <strong>Project</strong> in the left pane's switcher).  Every file is marked <em>gen</em> (generated), <em>starter</em>, <em>yours</em> or <em>manifest</em>; an amber dot means a generated file was edited since the last export, a red dot that it was deleted.</li>
+        <li><strong>Export a service</strong> &mdash; select it, then <em>Developer &rarr; Add to project</em>.  You see a plan first &mdash; every file with its status and a diff for anything that would change &mdash; and nothing is written until you confirm.  The overview's <em>Re-export</em> refreshes a service later.</li>
+      </ul>
+
+      <h3>Edit</h3>
+      <p>
+        Suites, starter files and your own files open in an editor with Robot
+        Framework highlighting (<kbd>Ctrl</kbd>+<kbd>S</kbd> saves).
+        <em>Check</em> (and every save) parses the file with Robot Framework and
+        lists syntax problems by line.  A save never overwrites a file that
+        changed on disk since you opened it.  Generated files and the manifest
+        are read-only.  <em>New suite&hellip;</em> creates a suite already wired
+        to an exported service's keywords.
+      </p>
+
+      <h3>Grid</h3>
+      <p>
+        Suites and resources also have a <em>Grid</em> tab: one row per step, the keyword it calls, then one cell per
+        argument labelled with the parameter it fills. Keywords are resolved from the file&rsquo;s imports the way the run
+        resolves them; unknown keywords, extra values and missing required parameters are marked. Hover a keyword for its
+        parameters and documentation; click a line number to find it in <em>Script</em>.
+        <strong>Click a step to change it</strong>: pick the keyword (type a few letters &mdash; &ldquo;sh be eq&rdquo; finds
+        <em>Should Be Equal</em>), then fill one input per parameter. <em>+ Add step</em>, <em>Insert step below</em>,
+        <em>Delete step</em> and <em>Undo last change</em> are there too; so are FOR / IF / WHILE / TRY (and, with RobotFramework AIO, THREAD) blocks and their
+        branches, moving steps, settings, imports, variables, and adding, renaming and deleting tests and keywords.
+        To put steps inside a block, click its END row (<em>+ Add step here</em>) or its first row (<em>Inside</em>).
+        <em>+ Setting</em> next to a test&rsquo;s or keyword&rsquo;s name adds its own [Documentation], [Tags], [Setup],
+        [Teardown], [Timeout], [Template] or [Arguments].
+        Typing <code>${</code> in a value offers the variables in scope. Changes land in <em>Script</em> as unsaved edits.
+      </p>
+
+      <h3>Flow files</h3>
+      <p>
+        Flow files (<code>*.flow.json</code>, listed under <em>Flows</em>) are
+        test plans drawn as a graph; RobotFramework AIO's flow support turns
+        them into a suite when they run.  They open with three tabs:
+      </p>
+      <ul>
+        <li><strong>Script</strong> &mdash; the JSON, the only thing you edit.</li>
+        <li><strong>Diagram</strong> &mdash; the flow drawn from the text in Script, unsaved changes included: a lane per phase, gates as hexagons, loops and tries as frames with their recovery, decisions with their yes / no branches.  Click a node to find it in Script.  Drawn by the <em>Flow view</em> plugin; with the plugin off, the tab says so.</li>
+        <li><strong>Robot</strong> &mdash; the suite the flow becomes (read-only).</li>
+      </ul>
+      <p>A flow the runner refuses shows its message with a link to the node or line it names.</p>
+
+      <h3>Run</h3>
+      <ul>
+        <li>&#9654; next to a suite or flow (on hover), <em>Run&hellip;</em> in its editor, or <em>Run all&hellip;</em> on the overview.  The dialog takes variables for this run (<code>NAME=value</code>, one per line) and <em>Dry run</em>; both are remembered per file.</li>
+        <li><strong>Runs</strong> shows the live console, then the verdict &mdash; <em>Pass</em>, <em>Fail</em>, <em>Unknown</em> (the bench was not ready, e.g. a gate timed out, so nothing was tested), <em>Skipped</em> or <em>Error</em> &mdash; one row per test, <em>Log</em> and <em>Report</em>, <em>Run again</em> and the history of earlier runs.</li>
+        <li><strong>Stop</strong> ends a run gracefully (teardowns still run, reports are written); <em>Force stop</em> kills it.  One run per project at a time.</li>
+        <li><strong>Run settings&hellip;</strong> are kept in <code>testproject.json</code> so the project runs the same for everyone: interpreter, PYTHONPATH (e.g. the <code>src</code> of a RobotFramework AIO checkout), extra arguments, environment.</li>
+      </ul>
+      <p>Each run gets its own folder, <code>results/&lt;date-time&gt;_&lt;name&gt;/</code>, so the history survives restarts.</p>
+
+      <h3>Run groups</h3>
+      <p>
+        Processes that run at the same time and wait for each other through the bench &mdash; two blades running one flow
+        with different variables, or a driver and a checker. <em>Run groups</em> in the sidebar lists them; <strong>+</strong>
+        creates one: 2&ndash;8 members, each a file of the project with its own variables, plus environment for all of them
+        (<code>${RUN_DIR}</code> is the run&rsquo;s own folder, a fresh meeting place per run).
+      </p>
+      <ul>
+        <li><strong>Diagram</strong> &mdash; one column per member, read top to bottom, and a dashed arrow wherever a step of
+          one member sets a signal that a gate of another waits for (read from the flows). Click a step to open its file there.</li>
+        <li><strong>&#9654; / Run&hellip;</strong> starts every member at once; <em>Runs</em> shows a console column per member
+          with its own verdict, Log and Report. The run&rsquo;s verdict is the worst of theirs; <em>Stop</em> stops them all.</li>
+      </ul>
+
+      <h3>Resources of a run</h3>
+      <p>
+        Tick <em>Record RAM and CPU of the run</em> in the Run dialog (off by default) and a separate process samples RAM
+        and CPU of every process of the run every 5 seconds. When the run ends,
+        <strong>Resources</strong> (next to Log and Report) opens <code>resources.html</code>: a verdict per process &mdash;
+        <strong>STABLE</strong>, <strong>GROWING</strong> (memory rising more than 10&nbsp;MB/h after the warm-up) or
+        <strong>SHORT</strong> (too short to judge) &mdash; with charts of memory, CPU, threads and handles over time.
+        <code>MM_RESMON_INTERVAL</code> in the run settings' environment changes the interval.
+      </p>
+
+      <h3>Live Diagram of a run</h3>
+      <p>
+        A run of a flow file or of a group of flow files shows its <strong>Diagram beside the console</strong>: the step each
+        process is in pulses in blue, the loop around it is outlined, a step that just failed turns red for a moment, and every
+        step counts how often it passed (&#10003;) and failed (&#10007;). The <strong>Diagram</strong> button in the tab row hides
+        or shows it; drag the divider (or use the arrow keys on it) to share the width; <strong>Fit / 75% / 100%</strong> size
+        the drawing. It follows the running step unless you have just scrolled it. The steps passed between two updates
+        (about a second apart) replay quickly: <strong>Tail</strong> flashes them in order and lets them fade,
+        <strong>Hop</strong> moves the mark through them, <strong>Off</strong> shows only the current step. After the run the counts stay.
+      </p>
+    </section>
+
+    <!-- Service Creator -->
+    <section class="docs-section" id="service-creator">
+      <h2><i class="bi bi-magic"></i>Service Creator</h2>
+      <p>
+        <em>Developer &rarr; Build &rarr; Service Creator</em> scaffolds a new
+        service project (proto, domain, adapters, clients, Nomad job and a
+        starting <code>component.json</code>) without writing boilerplate.
+      </p>
+      <figure class="docs-figure">
+        <img src="docs/img/service-creator.png" alt="Service Creator wizard on step 1, Basic Information">
+        <figcaption>Service Creator &mdash; step 1, <em>Basic Info</em>.  The steps are listed on the left.</figcaption>
+      </figure>
+      <ol>
+        <li><strong>Basic Info</strong> &mdash; name, version, description, group, tag, routing key and transport.</li>
+        <li><strong>Technology</strong> &mdash; language (Python / C++), GUI type, the layer its Manager GUI component belongs to, and the toolchain: for C++ the server's gRPC build (MSYS2 or vcpkg + Qt MinGW) and a matching client stack.</li>
+        <li><strong>API Methods</strong> &mdash; define RPC methods by hand, or <em>Import .proto&hellip;</em> (multi-service protos get a picker and a single-project / monorepo choice).</li>
+        <li><strong>GUI Support</strong> &mdash; only for Python services with an HTML / JS GUI; skipped otherwise.</li>
+        <li><strong>Review &amp; Generate</strong> &mdash; preview the file tree, then write it to the folder you pick.</li>
+      </ol>
+      <p>
+        The wizard drives the same generator as the <code>mb-scaffold</code>
+        CLI; for scripted use:
+        <code>python -m MicroserviceBase.tools.scaffold_cli -c spec.yaml</code>.
+        Long-form: <a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a>.
+      </p>
     </section>
 
     <!-- Service Network -->
     <section class="docs-section" id="service-network">
       <h2><i class="bi bi-hdd-network"></i>Service Network <small>(Consul + Nomad)</small></h2>
       <p>
-        The <strong>Service Network</strong> mode replaces the
+        <em>Administrator &rarr; Consul agent</em> or <em>Nomad agent</em>
+        opens the Service Network view on that tab.  It replaces the
         per-terminal <code>consul agent -dev</code> /
-        <code>nomad agent -dev</code> workflow.  Two sub-tabs:
+        <code>nomad agent -dev</code> workflow.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/nomad_dashboard.png" alt="Nomad Cluster connected dashboard showing job count, nodes ready, and a Jobs table with a running service">
-        <figcaption>Nomad sub-tab &mdash; connected dashboard with job/node counts and the Jobs table.  The Consul sub-tab has the same shape (registered services + leader address).</figcaption>
+        <img src="docs/img/nomad.png" alt="Nomad tab connected: job and node counters, links to jobs, clients, servers and topology, and the jobs table">
+        <figcaption>The Nomad tab, connected &mdash; counters, Jobs / Clients / Servers / Topology, and the jobs table.  The Consul tab has the same shape.</figcaption>
       </figure>
 
       <h3>Consul tab</h3>
-      <p>Two render states:</p>
       <ul>
-        <li><strong>Setup form</strong> (agent stopped) &mdash; three start modes:
-          <strong>Dev Mode</strong> (single-node in-memory), <strong>Config Directory</strong>
-          (load <code>.hcl</code> / <code>.json</code>), or <strong>Connect to Existing</strong>
-          (point at a running agent's URL).</li>
-        <li><strong>Connected dashboard</strong> (agent running) &mdash; cluster
-          leader, node count, registered services list (this is the live
-          source of truth used by gRPC clients with <code>useConsul=true</code>),
-          plus <strong>Open Consul UI</strong> / <strong>Disconnect</strong> /
-          <strong>Stop Agent</strong> buttons.</li>
+        <li><strong>Not running</strong> &mdash; three ways in: <em>Dev Mode</em> (single node, in memory), <em>Config Directory</em> (load <code>.hcl</code> / <code>.json</code>) or <em>Connect to Existing</em> (the URL of a running agent).</li>
+        <li><strong>Connected</strong> &mdash; leader, nodes, the registered services with their healthy instances, plus <em>Open Consul UI</em>, <em>Disconnect</em> and <em>Stop Agent</em>.</li>
       </ul>
-      <p>Defaults match the framework: HTTP port <code>8500</code>, datacenter <code>dc1</code>, bind <code>0.0.0.0</code>.</p>
+      <p>Defaults match the framework: HTTP port <code>8500</code>, datacenter <code>dc1</code>.</p>
 
       <h3>Nomad tab</h3>
-      <p>Same two-state pattern.  Once running:</p>
       <ul>
-        <li><strong>Counters</strong> &mdash; Total Jobs / Running / Pending / Dead / Nodes Ready.</li>
-        <li><strong>Jobs table</strong> &mdash; every submitted job with type, status, task groups; per-row link to detail view.</li>
-        <li><strong>Submit Job</strong> dialog &mdash; HCL/JSON toggle, "Load from file…" picks a generated <code>deploy/&lt;svc&gt;.nomad.hcl</code>, or paste content directly.</li>
-        <li><strong>Open Nomad UI</strong> &mdash; opens the bundled Nomad UI (<code>:4646/ui</code>) in a new browser window.</li>
+        <li><strong>Counters</strong> &mdash; total, running, pending and dead jobs, nodes ready.</li>
+        <li><strong>Jobs table</strong> &mdash; every job with its type, status and task groups; each row links to its detail.</li>
+        <li><strong>Submit Job</strong> &mdash; HCL or JSON; <em>Load from file&hellip;</em> picks e.g. a generated <code>deploy/&lt;svc&gt;.nomad.hcl</code>, or paste the content.</li>
+        <li><strong>Open Nomad UI</strong> &mdash; the agent's own UI in a browser window.</li>
       </ul>
-      <p>Dev Mode start automatically writes a <code>raw_exec</code>-enabled config so generated services using <code>driver = "raw_exec"</code> work on Windows.</p>
-
-      <p>For the full walkthrough with per-state screenshots, see <a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a>.</p>
-    </section>
-
-    <!-- Services Mode -->
-    <section class="docs-section" id="services-mode">
-      <h2><i class="bi bi-box-seam"></i>Services Mode</h2>
       <p>
-        The default mode.  Sidebar lists every Consul-registered service.
-        Click a service to load its panel in the content area.
-      </p>
-      <figure class="docs-figure">
-        <img src="docs/img/gui_overview.png" alt="Manager GUI overview with the services sidebar visible on the left">
-        <figcaption>Services mode &mdash; sidebar (left) shows services from one or more connected Consul clusters; clicking a service loads its panel in the content area.</figcaption>
-      </figure>
-
-      <h3>Sidebar Navigation</h3>
-      <ul>
-        <li>The <strong>search bar</strong> at the top filters services by name.</li>
-        <li>Services show a status icon &mdash; green for healthy (passing Consul health check), red for failing.</li>
-        <li>When connected to multiple Consul clusters, services are grouped under collapsible cluster headers.</li>
-      </ul>
-
-      <h3>Method Invocation (via gRPC reflection)</h3>
-      <p>
-        Click a service to open its panel.  The Manager GUI uses the
-        server's gRPC reflection to enumerate the available methods,
-        then renders one accordion item per method &mdash; a JSON textarea
-        pre-filled from the request schema, a Call button, and a
-        response area.
-      </p>
-      <figure class="docs-figure">
-        <img src="docs/img/api-explorer.png" alt="Service detail panel showing methods discovered via reflection with JSON request textareas">
-        <figcaption>Service detail panel &mdash; methods discovered via reflection; pre-filled JSON skeleton + Call button per method.  <em>(Screenshot pending refresh &mdash; UI is current; image is from an earlier theme.)</em></figcaption>
-      </figure>
-
-      <h3>Reflection-not-available fallback</h3>
-      <p>
-        Some servers (e.g. older builds, custom toolchains) don't ship
-        <code>grpc++_reflection</code>.  When that happens the bridge
-        falls back to compiling local <code>.proto</code> files via
-        <code>grpc_tools.protoc</code>.  If the bridge can't find any
-        local protos, the panel shows a folder-path input so you can
-        point it at the right directory.  The path is remembered for
-        the rest of the browser session.
-      </p>
-
-      <h3>Service GUI Plugins</h3>
-      <p>
-        Each service can ship a custom GUI plugin (HTML + JS) loaded
-        from <code>web/services/&lt;ServiceName&gt;/</code>.  When
-        present, the plugin replaces the default reflection-based
-        invoker with a service-tailored UI &mdash; e.g. a Cleware switch
-        service can render a board with toggles instead of a generic
-        method list.  Plugins use the same
-        <code>MM.serviceClient</code> API to talk to the bridge.
-      </p>
-
-      <h3>Generate Robot Framework resources</h3>
-      <p>
-        The methods panel has a green <strong>Generate Robot
-        resources</strong> button in its top-right corner.  Clicking it
-        turns a <code>.proto</code> folder into one
-        <code>.resource</code> file per service &mdash; each containing
-        typed Robot keywords (one per RPC) on top of
-        <code>QConnectBase.ConnectionManager</code>.  Native folder
-        pickers prompt for the input and output dirs; existing
-        <code>.resource</code> files are skipped unless you confirm
-        the overwrite.  Same generator is available from the CLI for
-        CI use:
-      </p>
-      <pre><code>python -m MicroserviceBase.tools.robot_gen --proto-dir &lt;path&gt; --out &lt;path&gt;</code></pre>
-      <p>
-        Long-form doc (output conventions, all CLI flags,
-        troubleshooting):
-        <a href="../docs/html/robot_generator.html" target="_blank">Generate Robot Framework resources</a>.
+        <em>Dev Mode</em> writes a configuration with <code>raw_exec</code>
+        enabled, so generated jobs (<code>driver = "raw_exec"</code>) run on
+        Windows.  Long-form: <a href="../docs/html/ops_consul_nomad.html" target="_blank">Operating Consul + Nomad</a>.
       </p>
     </section>
 
-    <!-- Service Creator -->
-    <section class="docs-section" id="service-creator">
-      <h2><i class="bi bi-plus-circle"></i>Service Creator</h2>
+    <!-- Plugins -->
+    <section class="docs-section" id="plugins">
+      <h2><i class="bi bi-puzzle"></i>Plugins</h2>
       <p>
-        Switch to <strong>Service Creator</strong> mode for a 4-step
-        wizard that scaffolds a new service project (proto + domain +
-        adapter + clients + Nomad HCL) without writing boilerplate.
+        Plugins extend the GUI itself: tile kinds, tabs, views and ribbon
+        commands.  <em>Administrator &rarr; Shell &rarr; Plugins</em> lists
+        them and turns them on or off on this PC; the change takes effect at
+        once.
       </p>
       <figure class="docs-figure">
-        <img src="docs/img/gui_wizard_03.png" alt="Service Creator wizard — Step 1 Basic Information filled in">
-        <figcaption>Service Creator wizard &mdash; Step 1 Basic Info shown.  Wizard has 4 steps: Basic Info, Technology, Methods (with .proto import), Review &amp; Generate.</figcaption>
+        <img src="docs/img/plugins.png" alt="Plugins dialog listing the bundled plugins with on/off switches and what each contributes">
+        <figcaption>The Plugins dialog &mdash; one switch per plugin, with what it adds to the GUI.</figcaption>
       </figure>
-
-      <h3>The four steps</h3>
-      <ol>
-        <li><strong>Basic Info</strong> &mdash; name, language (C++ / Python),
-          GUI variant (none / widget / qml / wasm / html).</li>
-        <li><strong>Technology</strong> &mdash; toolchain matrix.  For C++:
-          server uses MSYS2 grpc or vcpkg+QtMinGW grpc; client picks a
-          matching gRPC stack (Google grpc++ via MSYS2, Qt6::Grpc, or
-          Google grpc++ via vcpkg).</li>
-        <li><strong>Methods</strong> &mdash; define RPC methods manually,
-          or click <strong>Import .proto…</strong> to parse an existing
-          file (handles multi-service protos with a picker; offers
-          single-project vs monorepo output layout).</li>
-        <li><strong>Review &amp; Generate</strong> &mdash; preview the file
-          tree before writing.  Output goes to the path you pick.</li>
-      </ol>
-
-      <h3>Same backend as <code>mb-scaffold</code> CLI</h3>
-      <p>
-        The wizard is a thin frontend over the same generator that
-        <code>mb-scaffold</code> calls.  For CI / scripted use, drive
-        the same generator from a YAML file:
-        <code>python -m MicroserviceBase.tools.scaffold_cli -c spec.yaml</code>.
-      </p>
-      <p>
-        For the full walkthrough with per-step screenshots and the YAML
-        config schema, see
-        <a href="../docs/html/service_creator.html" target="_blank">Service Creator wizard</a>.
-      </p>
+      <table class="docs-info-table">
+        <tr><td>Robot resources</td><td><em>Robot Resources</em> in the Developer tab's Build group</td></tr>
+        <tr><td>Signal Graph Studio</td><td><em>Graph Studio</em> in the Build group; opens its own window (desktop app only)</td></tr>
+        <tr><td>Test projects</td><td>the <em>Project</em> view, the Project entry in the left pane, the <em>Test project</em> ribbon group</td></tr>
+        <tr><td>Flow view</td><td>the <em>Diagram</em> tab of flow files and run groups in the project view</td></tr>
+        <tr><td>Robot grid</td><td>the <em>Grid</em> tab of suites and resources in the project view</td></tr>
+        <tr><td>Charts</td><td>the <code>signal-strip</code> tile kind and the <em>Chart</em> drawer tab on the bench</td></tr>
+      </table>
+      <ul>
+        <li>Turning a plugin off removes what it added; tiles of its kinds and views it draws say which plugin to turn on.</li>
+        <li>Plugin code runs in sandboxed frames, apart from the rest of the GUI.  Plugins that open their own window and may start processes (Graph Studio) run only when they are on the allow-list, set in the same dialog.</li>
+        <li>Installed plugins live in <code>%APPDATA%\DevAtServGUI\plugins\&lt;id&gt;\</code> and win over a bundled plugin of the same id.</li>
+      </ul>
     </section>
 
     <!-- Settings -->
     <section class="docs-section" id="settings">
       <h2><i class="bi bi-gear"></i>Settings</h2>
-      <figure class="docs-figure">
-        <img src="docs/img/settings-dialog.png" alt="Settings dialog with Bridge URL, Consul URL, theme toggle">
-        <figcaption>Settings dialog &mdash; bridge URL, default Consul URL, theme.  <em>(Screenshot pending refresh.)</em></figcaption>
-      </figure>
+      <p>The <i class="bi bi-gear"></i> in the navbar opens them:</p>
       <ul>
-        <li><strong>Bridge URL</strong> &mdash; where the FastAPI bridge runs (default <code>http://127.0.0.1:1112</code>).  Override via the <code>MB_BRIDGE_URL</code> env var.</li>
-        <li><strong>Default Consul URL</strong> &mdash; pre-fills the Consul tab and the Connect dialog (default <code>http://127.0.0.1:8500</code>).</li>
-        <li><strong>Theme</strong> &mdash; light / dark / auto.</li>
+        <li><strong>Python Path</strong> &mdash; the interpreter the desktop app starts the bridge with; also the default interpreter for test runs.</li>
+        <li><strong>Consul executable</strong> / <strong>Nomad executable</strong> &mdash; used when starting a local agent from the Service Network view.  Looked up in this order: this setting, <code>PATH</code>, <code>%ProgramFiles%\HashiCorp\</code>.  Leave empty to use <code>PATH</code>.</li>
+        <li><strong>Broker Host</strong> / <strong>Broker Port</strong> &mdash; the RabbitMQ broker of the legacy transport.</li>
+        <li><strong>Bridge Port</strong> &mdash; where the FastAPI bridge listens (default <code>1112</code>).</li>
       </ul>
     </section>
 
     <!-- Troubleshooting -->
     <section class="docs-section" id="troubleshooting">
       <h2><i class="bi bi-wrench"></i>Troubleshooting</h2>
-      <p>Quick lookups.  For the full symptom-indexed reference see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/troubleshooting.html" target="_blank">repo: docs/troubleshooting.html</a>.</p>
+      <p>Quick lookups.  For the full symptom-indexed reference see <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/reference/troubleshooting.md" target="_blank">Troubleshooting</a> in the repository docs (<code>docs/reference/troubleshooting.md</code>).</p>
 
       <h3>Bridge LED stays red</h3>
-      <p>Bridge process didn't start.  In Electron mode click ▶ next to the LED.  If port 1112 is taken, free it (<code>netstat -ano | findstr :1112</code>) or set <code>MB_BRIDGE_URL</code> to a different port.</p>
+      <p>The bridge didn't start.  In the desktop app press &#9654; next to the LED (<em>User</em> tab).  If port 1112 is taken, free it (<code>netstat -ano | findstr :1112</code>) or change <em>Settings &rarr; Bridge Port</em>.</p>
 
       <h3>"Reflection RPC … failed: UNIMPLEMENTED" when clicking a service</h3>
-      <p>The server doesn't ship <code>grpc++_reflection</code>.  The panel offers a proto-path input field &mdash; type the folder containing the service's <code>.proto</code> and click <strong>Use this path</strong>.  Permanent fix: rebuild the server with reflection enabled (the latest vcpkg overlay-port forces this; re-run <code>init_vcpkg_overlay.bat --upgrade</code>).</p>
+      <p>The server doesn't ship <code>grpc++_reflection</code>.  The panel offers a proto-path field &mdash; enter the folder containing the service's <code>.proto</code> and click <strong>Use this path</strong>.  Permanent fix: rebuild the server with reflection enabled (the latest vcpkg overlay port forces this; re-run <code>init_vcpkg_overlay.bat --upgrade</code>).</p>
+
+      <h3>A tile or bench slot says "refused"</h3>
+      <p>The component's manifest breaks a contract rule; the slot lists the rule ids.  Check it before shipping with <code>node tools/endo-lint.js web/services/&lt;gui&gt;/component.json</code> in the Manager GUI folder.</p>
+
+      <h3>A tile says "enable the plugin", or a Diagram tab says a plugin is off</h3>
+      <p>The plugin that provides it is turned off on this PC.  Turn it on under <em>Administrator &rarr; Plugins</em>.</p>
 
       <h3>Service registers, then disappears from Consul ~30 seconds later</h3>
-      <p>Consul TCP health check is failing.  Check <code>nomad alloc logs &lt;alloc-id&gt;</code> &mdash; service likely crashed or never started gRPC.  Confirm <code>&lt;PREFIX&gt;_GRPC_PORT</code> was set in the env (Nomad sets it via <code>${NOMAD_PORT_grpc}</code>).</p>
+      <p>The Consul health check is failing.  Check <code>nomad alloc logs &lt;alloc-id&gt;</code> &mdash; the service likely crashed or never started gRPC.  Confirm <code>&lt;PREFIX&gt;_GRPC_PORT</code> was set in the environment (Nomad sets it via <code>${NOMAD_PORT_grpc}</code>).</p>
 
       <h3>Nomad job stays "pending" forever</h3>
-      <p>Driver mismatch most often.  Generated jobs use <code>raw_exec</code>; dev mode auto-enables it.  Custom config? Add the <code>raw_exec</code> plugin block.  Or check <code>nomad node status</code> for any healthy clients.</p>
+      <p>Most often a driver mismatch.  Generated jobs use <code>raw_exec</code>; dev mode enables it.  Custom config?  Add the <code>raw_exec</code> plugin block.  Or check <code>nomad node status</code> for a healthy client &mdash; and that the job's constraints match one.</p>
 
       <h3>"Port 8500 in use" when starting Consul (or 4646 for Nomad)</h3>
       <p>Another agent is running.  Either stop it (<code>tasklist | findstr consul</code> &rarr; <code>taskkill /pid &lt;pid&gt;</code>) or use the tab's <strong>Connect to Existing</strong> form to point at it.</p>
+
+      <h3>A flow's Diagram or Robot tab says the runner's tools are missing</h3>
+      <p>The project's interpreter can't import RobotFramework AIO's flow support.  Open <em>Run settings&hellip;</em> and set the interpreter, or add the <code>src</code> of a RobotFramework AIO checkout to PYTHONPATH.</p>
     </section>
 
     <!-- More -->
@@ -371,10 +567,10 @@
         <li><a href="../docs/html/bench_demo.html" target="_blank">Bench demo</a> &mdash; the bench on live services, beat by beat</li>
         <li><a href="../docs/html/tour.html" target="_blank">Guided tour</a> &mdash; for presenting the GUI to a room</li>
         <li><a href="../docs/html/robot_generator.html" target="_blank">Generate Robot Framework resources</a> &mdash; typed keywords on top of QConnectBase, one <code>.resource</code> per service</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/architecture.html" target="_blank">Architecture</a> &mdash; hexagonal layers, Consul, Nomad, gRPC reflection</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/runtime_model.html" target="_blank">Runtime model</a> &mdash; <code>ServiceRunner</code> lifecycle and dynamic invocation flow</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/changelog.html" target="_blank">Changelog</a> &mdash; what changed (RabbitMQ → gRPC, ProcessHub → Nomad, etc.)</li>
-        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/PowerDeviceService/README.html" target="_blank">PowerDeviceService example</a> &mdash; canonical multi-service C++ monorepo with Qt client</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/architecture/overview.md" target="_blank">Architecture</a> &mdash; hexagonal layers, Consul, Nomad, gRPC reflection</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/architecture/runtime-model.md" target="_blank">Runtime model</a> &mdash; <code>ServiceRunner</code> lifecycle and dynamic invocation flow</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/reference/changelog.md" target="_blank">Changelog</a> &mdash; what changed (RabbitMQ → gRPC, ProcessHub → Nomad, etc.)</li>
+        <li><a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/README.md" target="_blank">Examples</a> &mdash; which example to start from: C++ and Python hello services, a C++ client, multi-proto projects, a Robot Framework test project</li>
       </ul>
     </section>
 
