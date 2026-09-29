@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "layer": "operator",
   "title": "Hello service",
-  "description": "Reference component for examples/hello_service: live polling, typed command forms, a server stream and an HTML panel in a sandboxed frame.",
+  "description": "Reference component for examples/hello_service: live polling, typed command forms, a server stream, an HTML panel in a sandboxed frame and a QML panel.",
   "requires": {
     "shell": "^2.3",
     "capabilities": ["grpc.call"]
@@ -59,6 +59,13 @@
       "kind": "frame",
       "title": "Hello panel (framed)",
       "entry": "panel.html"
+    },
+    {
+      "id": "qml",
+      "size": "2x2",
+      "kind": "qml",
+      "title": "Hello panel (QML)",
+      "entry": "qt/hello.qml"
     }
   ],
   "dock": ["api", "details"],

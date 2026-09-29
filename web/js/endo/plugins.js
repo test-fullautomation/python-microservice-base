@@ -166,11 +166,11 @@
    * Run one entry of a plugin in a sandboxed frame (frame-host.js): its own
    * process, no DOM of the shell, ctx over a port. fn: render | mount | run.
    */
-  function inFrame(p, el, entry, fn, args, ctx, label, selection) {
+  function inFrame(p, el, entry, fn, args, ctx, label, selection, onReveal, onEdit) {
     el.classList.add('endo-frame-body');
     return MM.endo.frames.create(el, {
       mode: 'module', base: p.base, entry: entry, fn: fn, args: args || [], ctx: ctx,
-      label: label || ((p.manifest && p.manifest.title) || p.id), selection: selection,
+      label: label || ((p.manifest && p.manifest.title) || p.id), selection: selection, onReveal: onReveal, onEdit: onEdit,
       // Tiles fill their cell; drawer, dock and views take the content's height.
       autoHeight: fn !== 'render' || !(args && args[0] && args[0].kind)
     });
@@ -475,6 +475,40 @@
       });
   }
 
+  /**
+   * File views of active plugins that draw view type `type` (their `for`):
+   * [{ key, title, icon, plugin, mount(el, data, onReveal) }]. A mounted
+   * view gets `data` as its selection (ctx.selection / ctx.onSelection),
+   * setData(d) pushes new data, and the view's ctx.reveal(target) calls
+   * onReveal(target) -- e.g. { node } to show a node in the source text.
+   * ctx.edit(change) calls onEdit(change), whose result (or rejection) is
+   * the view's answer; without onEdit the view is read-only.
+   */
+  function fileViews(type) {
+    return entriesOf('file.views', function (e) { return (e.for || []).indexOf(type) >= 0; })
+      .map(function (v) {
+        return {
+          key: v.key, title: v.entry.title, icon: v.entry.icon, plugin: v.plugin.id,
+          pluginTitle: v.plugin.manifest.title,
+          mount: function (el, data, onReveal, onEdit) {
+            var h = inFrame(v.plugin, el, v.entry.entry, 'mount', [], pluginCtx(v.plugin),
+                            v.entry.title + ' (' + v.plugin.manifest.title + ')', data, onReveal, onEdit);
+            var inst = frameInstance(h);
+            inst.setData = function (d) { h.setSelection(d); };
+            inst.ready = h.ready;
+            return inst;
+          }
+        };
+      });
+  }
+
+  /** Plugins (active or not) that contribute a file view of `type`: [{ id, title, state }]. */
+  function fileViewProviders(type) {
+    return plugins.filter(function (p) {
+      return contrib(p, 'file.views').some(function (e) { return (e.for || []).indexOf(type) >= 0; });
+    }).map(function (p) { return { id: p.id, title: (p.manifest && p.manifest.title) || p.id, state: p.state }; });
+  }
+
   function list() {
     return plugins.map(function (p) {
       return { id: p.id, title: (p.manifest && p.manifest.title) || p.id, version: p.manifest && p.manifest.version,
@@ -619,6 +653,8 @@
     knownKinds: knownKinds,
     drawerTabs: drawerTabs,
     dockSections: dockSections,
+    fileViews: fileViews,
+    fileViewProviders: fileViewProviders,
     modeChanged: modeChanged,
     openManager: openManager,
     onChange: function (fn) {

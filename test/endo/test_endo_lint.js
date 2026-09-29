@@ -164,7 +164,27 @@ check('SHELL_VERSION is 2.3.x', /^2\.3\./.test(C.SHELL_VERSION));
   check('K: an enabled plugin kind is validated against its schema',
         lint(m, { kinds }).some((i) => i.rule === 'S' && i.path === 'tiles[0].request'));
   const m2 = clone(GOOD); m2.renderer = 'html';
-  check('K: non-schema renderer warns until frames land', lint(m2).some((i) => i.rule === 'K' && /renderer/.test(i.message)));
+  check('K: renderer html without frame tiles warns', lint(m2).some((i) => i.rule === 'K' && /frame tiles/.test(i.message)));
+}
+
+// ---------- binds.grpc: one service or several ----------
+{
+  const m = clone(GOOD);
+  m.binds.grpc = ['power_device.PowerSupplyService', 'config_device.ConfigDeviceService'];
+  m.tiles = [{ id: 'dev', size: '1x1', kind: 'command-form', call: 'config_device.ConfigDeviceService/SetDeviceType' },
+             { id: 'v', size: '1x1', kind: 'command-form', call: 'SetVoltage' }];
+  m.ribbon = [{ tab: 'user', group: 'Power', commands: [{ label: 'Init', call: 'power_device.PowerSupplyService/InitDevice' }] }];
+  const issues = lint(m);
+  check('binds.grpc may list several services; "<service>/<Method>" calls one of them', !C.hasErrors(issues), issues.map(C.formatIssue));
+  const bad = clone(m); bad.tiles[0].call = 'other.Service/SetDeviceType';
+  check('R3: "<service>/<Method>" must name a bound service',
+        lint(bad).some((i) => i.rule === 'R3' && i.path === 'tiles[0].call' && /other\.Service/.test(i.message)));
+  const empty = clone(m); empty.binds.grpc = [];
+  check('binds.grpc: an empty list is refused', lint(empty).some((i) => i.rule === 'S' && i.path === 'binds.grpc'));
+  const typo = clone(m); typo.binds.grpc = ['power device'];
+  check('binds.grpc: each entry is a proto service name', lint(typo).some((i) => i.rule === 'S' && i.path === 'binds.grpc'));
+  const one = clone(GOOD); one.binds.grpc = 'hello.v1.HelloService';
+  check('binds.grpc: a single name still works', !C.hasErrors(lint(one)), lint(one).map(C.formatIssue));
 }
 
 // ---------- table: RPC rows or static rows ----------
