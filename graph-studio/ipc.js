@@ -158,6 +158,13 @@ function registerGraphStudioIpc() {
 
   ipcMain.handle(CH("reload-graph"), async (_ev, graphPath) => readGraph(graphPath));
 
+  // A graph brought back from the last session: tell the editor when it changes.
+  ipcMain.handle(CH("watch-graph"), async (_ev, graphPath) => {
+    if (typeof graphPath !== "string" || !fs.existsSync(graphPath)) return false;
+    startWatch(graphPath);
+    return true;
+  });
+
   ipcMain.handle(CH("save-graph"), async (_ev, payload) => {
     // payload: { path|null, graphContent, layoutContent }
     let graphPath = payload.path;
@@ -560,27 +567,20 @@ function openGraphStudio(opts) {
       "})()", true).catch(() => {});
   });
 
-  // Closing with unsaved changes: the editor's beforeunload would just
-  // swallow the close silently; ask instead.
+  // Closing keeps the session: the editor stores what it shows (unsaved
+  // edits too) and brings it back the next time the studio opens. Store it
+  // before the window goes; destroy() skips the page's unload handlers.
   studioWin.on("close", (event) => {
     if (studioWin.__forceClose) return;
     event.preventDefault();
     const win = studioWin;
-    win.webContents.executeJavaScript("typeof state !== 'undefined' && !!state.dirty", true)
+    // A hung page must not keep the window open: give up on the save after 2 s.
+    Promise.race([
+      win.webContents.executeJavaScript("typeof saveSession === 'function' && saveSession()", true),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ])
       .catch(() => false)
-      .then(async (dirty) => {
-        if (dirty) {
-          const r = await dialog.showMessageBox(win, {
-            type: "warning",
-            buttons: ["Discard and close", "Keep editing"],
-            defaultId: 1,
-            cancelId: 1,
-            title: "Unsaved graph",
-            message: "The graph has unsaved changes.",
-            detail: "Close anyway? The changes will be lost.",
-          });
-          if (r.response !== 0) return;
-        }
+      .then(() => {
         win.__forceClose = true;
         win.destroy();
       });

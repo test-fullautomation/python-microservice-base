@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("bridge", {
   // Files
   openGraph: () => ipcRenderer.invoke("gs:open-graph"),
   reloadGraph: (p) => ipcRenderer.invoke("gs:reload-graph", p),
+  watchGraph: (p) => ipcRenderer.invoke("gs:watch-graph", p),
   saveGraph: (payload) => ipcRenderer.invoke("gs:save-graph", payload),
   generateService: (payload) => ipcRenderer.invoke("gs:generate-service", payload),
   onFileChanged: (cb) => ipcRenderer.on("gs:file-changed", (_ev, p) => cb(p)),

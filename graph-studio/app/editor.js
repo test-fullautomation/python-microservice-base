@@ -279,6 +279,7 @@ function renderNode(block, parent) {
 
 function applyView() {
   if (worldG) worldG.setAttribute("transform", `translate(${state.view.x},${state.view.y}) scale(${state.view.scale})`);
+  scheduleSession();
 }
 
 function screenToWorld(ev) {
@@ -1601,6 +1602,57 @@ function renderFileLabel() {
   const lbl = document.getElementById("file-label");
   const name = state.filePath || state.fileName || "unsaved graph";
   lbl.innerHTML = (state.dirty ? `<span class="dirty">● </span>` : "") + name;
+  scheduleSession();
+}
+
+/* ============================== session ============================== */
+// Closing the window keeps the session (session.js): opening the studio
+// again shows the same graph, file, view, selection and unsaved edits.
+
+let sessionReady = false;   // not before boot has restored the last one
+let sessionTimer = null;
+
+function saveSession() {
+  clearTimeout(sessionTimer);
+  sessionTimer = null;
+  if (!sessionReady) return false;
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(makeSession(state))); return true; }
+  catch (_e) { return false; /* storage blocked or full: the studio works without it */ }
+}
+
+function scheduleSession() {
+  if (!sessionReady) return;
+  clearTimeout(sessionTimer);
+  sessionTimer = setTimeout(saveSession, 400);
+}
+
+/** Bring back the last session; false when there is none. */
+async function restoreSession() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (_e) { s = null; }
+  let plan = restorePlan(s, isElectron);
+  if (!plan) return false;
+  if (plan === "file") {
+    try {
+      const res = await window.bridge.reloadGraph(s.filePath);
+      loadGraphText(res.content, res.layout, res.path);
+    } catch (_e) {
+      toast(`${s.filePath} could not be read — showing the copy from the last session`, true);
+      plan = "missing";
+    }
+  }
+  if (plan !== "file") {
+    loadGraphText(s.graph, sessionLayoutText(s), s.filePath || s.fileName);
+    state.dirty = s.dirty || plan === "missing";
+  }
+  if (isElectron && state.filePath && plan !== "missing") {
+    try { await window.bridge.watchGraph(state.filePath); } catch (_e) { /* older shell: no reload on change */ }
+  }
+  const view = validView(s.view);
+  if (view) state.view = view;
+  state.selection = validSelection(s.selection, state.graph);
+  render();
+  return true;
 }
 
 function markDirty() {
@@ -1931,7 +1983,9 @@ document.getElementById("sel-example").addEventListener("change", (ev) => {
 });
 
 window.addEventListener("beforeunload", (ev) => {
-  if (state.dirty) { ev.preventDefault(); ev.returnValue = ""; }
+  saveSession();
+  // Browser mode: the session keeps the edits, but the file is not saved.
+  if (state.dirty && !isElectron) { ev.preventDefault(); ev.returnValue = ""; }
 });
 
 /* ============================== toast ============================== */
@@ -1978,8 +2032,11 @@ async function boot() {
     }
   }
   renderPalette();
-  loadGraphText(JSON.stringify(EXAMPLES.signal_in), null, "signal_in (example)");
-  state.dirty = false;
+  if (!(await restoreSession())) {
+    loadGraphText(JSON.stringify(EXAMPLES.signal_in), null, "signal_in (example)");
+    state.dirty = false;
+  }
+  sessionReady = true;
   renderFileLabel();
 }
 
