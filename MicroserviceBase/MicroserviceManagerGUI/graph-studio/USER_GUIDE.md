@@ -153,6 +153,8 @@ status pill.
    the engine, with its reason shown.
 5. **■** stops the cluster cleanly (and monitoring with it); Monitor alone
    toggles off with its own button. Closing the studio window stops both.
+   The graph itself is kept: opening the studio again continues where you
+   left off, with the same file, view, selection and any unsaved edits.
 
 What you *won't* see: values on un-tapped internal wires. The engine only
 publishes observed ports. Want to watch a wire? Give its port an observe

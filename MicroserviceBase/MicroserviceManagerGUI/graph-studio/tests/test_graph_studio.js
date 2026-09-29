@@ -9,11 +9,12 @@ const vm = require("vm");
 const ROOT = path.join(__dirname, "..");
 const PY = process.env.GS_PYTHON || "python";
 const ctx = vm.createContext({ console });
-for (const f of ["app/catalog.js", "app/model.js", "app/layout.js"]) {
+for (const f of ["app/catalog.js", "app/model.js", "app/layout.js", "app/session.js"]) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf-8"), ctx, { filename: f });
 }
 const G = vm.runInContext(
-  "({ DEFAULT_CATALOG, checkCatalog, catalogByType, parseGraph, serializeGraph, validateGraph, autoLayout, parseRef, makeRef, cycleBlocks })",
+  "({ DEFAULT_CATALOG, checkCatalog, catalogByType, parseGraph, serializeGraph, validateGraph, autoLayout, parseRef, makeRef, cycleBlocks," +
+  "   SESSION_KEY, makeSession, restorePlan, sessionLayoutText, validSelection, validView })",
   ctx
 );
 
@@ -371,6 +372,44 @@ check("parseRef keeps dotted block ids",
     /#logdrawer\.collapsed\s*\{[^}]*height:\s*32px\s*!important/.test(css));
   check("chart: the strip cap is 32, not 8", /const MAX_STRIPS = 32;/.test(src) && !/\.slice\(0, 8\)/.test(src));
   check("chart: drawer height is persisted and resettable", /localStorage\.setItem\("gs-drawer-h"/.test(src) && /localStorage\.removeItem\("gs-drawer-h"/.test(src));
+}
+
+// ─── Session: closing the window and opening it again continues there ─
+{
+  const ex = fs.readFileSync(path.join(ROOT, "examples", "signal_in.graph.json"), "utf-8");
+  const graph = G.parseGraph(ex).graph;
+  const st = { graph, positions: { a: { x: 1, y: 2 } }, view: { x: 10, y: -5, scale: 1.5 },
+               filePath: "C:/work/graph.json", fileName: null, dirty: false, selection: { kind: "block", id: graph.blocks[0].id } };
+  const s = JSON.parse(JSON.stringify(G.makeSession(st)));
+  check("session: key is gs-session", G.SESSION_KEY === "gs-session");
+  check("session: the graph round-trips through the record", JSON.stringify(sortKeys(G.parseGraph(s.graph).graph)) === JSON.stringify(sortKeys(graph)));
+  check("session: file, view, positions and selection are kept",
+    s.filePath === st.filePath && s.view.scale === 1.5 && s.positions.a.y === 2 && s.selection.id === graph.blocks[0].id && s.dirty === false);
+  check("session: a saved file without edits is read again from disk", G.restorePlan(s, true) === "file");
+  check("session: unsaved edits come back from the session's copy", G.restorePlan(Object.assign({}, s, { dirty: true }), true) === "snapshot");
+  check("session: an example (no file) comes back from the copy", G.restorePlan(Object.assign({}, s, { filePath: null, fileName: "signal_in (example)" }), true) === "snapshot");
+  check("session: browser mode always uses the copy", G.restorePlan(s, false) === "snapshot");
+  check("session: nothing, another version or a broken graph is ignored",
+    G.restorePlan(null, true) === null && G.restorePlan(Object.assign({}, s, { version: 2 }), true) === null &&
+    G.restorePlan(Object.assign({}, s, { graph: "{not json" }), true) === null);
+  const lay = JSON.parse(G.sessionLayoutText(s));
+  check("session: layout text has the sidecar's shape", lay.version === 1 && lay.positions.a.x === 1 && lay.view.x === 10);
+  check("session: a selection of a block that is gone is dropped",
+    G.validSelection({ kind: "block", id: graph.blocks[0].id }, graph) !== null && G.validSelection({ kind: "block", id: "nope" }, graph) === null);
+  check("session: a wire selection past the end is dropped",
+    G.validSelection({ kind: "wire", index: graph.wires.length }, graph) === null && G.validSelection({ kind: "wire", index: -1 }, graph) === null &&
+    (graph.wires.length === 0 || G.validSelection({ kind: "wire", index: 0 }, graph) !== null));
+  check("session: a broken or out-of-range view is not applied",
+    G.validView({ x: 1, y: 2, scale: 1 }) !== null && G.validView({ x: NaN, y: 0, scale: 1 }) === null &&
+    G.validView({ x: 0, y: 0, scale: 9 }) === null && G.validView(null) === null);
+  const src = fs.readFileSync(path.join(ROOT, "app/editor.js"), "utf-8");
+  const ipc = fs.readFileSync(path.join(ROOT, "ipc.js"), "utf-8");
+  const html = fs.readFileSync(path.join(ROOT, "app/index.html"), "utf-8");
+  check("session: loaded before the editor", html.indexOf("session.js") > 0 && html.indexOf("session.js") < html.indexOf("editor.js"));
+  check("session: boot restores it before falling back to the example", /if \(!\(await restoreSession\(\)\)\)/.test(src));
+  check("session: the window stores it before it is destroyed, without asking to discard",
+    /saveSession\(\)/.test(ipc) && !/Discard and close/.test(ipc));
+  check("session: a restored file is watched again", /watchGraph\(state\.filePath\)/.test(src) && /CH\("watch-graph"\)/.test(ipc));
 }
 
 console.log(failures === 0 ? "\nALL TESTS PASSED" : `\n${failures} FAILURES`);
