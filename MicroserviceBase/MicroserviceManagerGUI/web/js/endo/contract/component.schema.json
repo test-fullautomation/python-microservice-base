@@ -32,7 +32,13 @@
       "description": "Service identities, never addresses. consul may be \"@self\": the service that declared this component through Meta.gui.",
       "properties": {
         "consul": { "type": "string", "minLength": 1 },
-        "grpc": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$" }
+        "grpc": {
+          "description": "The fully-qualified proto service, or a list of them (one binary serving several). The first is the default; call the others as \"<service>/<Method>\".",
+          "anyOf": [
+            { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$" },
+            { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$" } }
+          ]
+        }
       }
     },
     "tiles": { "type": "array", "items": { "$ref": "#/definitions/tile" } },
@@ -68,7 +74,7 @@
       "properties": {
         "label": { "type": "string", "minLength": 1 },
         "icon": { "type": "string" },
-        "call": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "call": { "type": "string", "pattern": "^([A-Za-z_][A-Za-z0-9_.]*/)?[A-Za-z_][A-Za-z0-9_]*$" },
         "args": { "type": "object" },
         "form": { "$ref": "#/definitions/form" },
         "confirm": { "type": "string" }
@@ -101,7 +107,7 @@
       "properties": {
         "label": { "type": "string", "minLength": 1 },
         "signal": { "type": "string", "pattern": "^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)+$" },
-        "rpc": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "rpc": { "type": "string", "pattern": "^([A-Za-z_][A-Za-z0-9_.]*/)?[A-Za-z_][A-Za-z0-9_]*$" },
         "args": { "type": "object" },
         "path": { "type": "string" },
         "unit": { "type": "string" },
@@ -134,7 +140,7 @@
         "type": "object",
         "required": ["call"],
         "properties": {
-          "call": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "call": { "type": "string", "pattern": "^([A-Za-z_][A-Za-z0-9_.]*/)?[A-Za-z_][A-Za-z0-9_]*$" },
           "args": { "type": "object" },
           "form": { "$ref": "#/definitions/form" },
           "submitLabel": { "type": "string" },
@@ -185,6 +191,33 @@
         "required": ["entry"],
         "properties": {
           "entry": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.html?$" }
+        }
+      },
+      "qml": {
+        "type": "object",
+        "description": "A .qml file of the component folder, run by the shared QML shell. Its ServiceBridge calls reach binds.grpc through ctx.",
+        "required": ["entry"],
+        "properties": {
+          "entry": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.qml$" },
+          "minHeight": { "type": "integer", "minimum": 80, "maximum": 2000, "description": "Tile body height in px: a Qt canvas does not make the tile grow" }
+        }
+      },
+      "widget": {
+        "type": "object",
+        "description": "A Qt Designer .ui file of the component folder, built by the shared Widget shell. Its ServiceBridge calls reach binds.grpc through ctx.",
+        "required": ["entry"],
+        "properties": {
+          "entry": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.ui$" },
+          "minHeight": { "type": "integer", "minimum": 80, "maximum": 2000, "description": "Tile body height in px: a Qt canvas does not make the tile grow" }
+        }
+      },
+      "wasm": {
+        "type": "object",
+        "description": "The component's own Qt for WebAssembly build: entry is its Emscripten loader .js, next to the .wasm. Runs in the GUI page.",
+        "required": ["entry"],
+        "properties": {
+          "entry": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*\\.js$" },
+          "minHeight": { "type": "integer", "minimum": 80, "maximum": 2000, "description": "Tile body height in px: a Qt canvas does not make the tile grow" }
         }
       },
       "run-status": {

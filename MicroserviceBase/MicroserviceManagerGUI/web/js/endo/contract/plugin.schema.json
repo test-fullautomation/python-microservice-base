@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "endo/plugin.schema.json",
   "title": "Bench Endoskeleton plugin, contract v1",
-  "description": "Extends the shell itself: tile kinds, navigators, stage views, dock sections, drawer tabs, ribbon groups and commands. A contribution is implemented by a module in the plugin folder (entry) or by a view or action the shell already has (shell).",
+  "description": "Extends the shell itself: tile kinds, navigators, stage views, dock sections, drawer tabs, file views, ribbon groups and commands. A contribution is implemented by a module in the plugin folder (entry) or by a view or action the shell already has (shell).",
   "type": "object",
   "required": ["plugin", "version", "title", "requires", "isolation", "contributes"],
   "additionalProperties": false,
@@ -73,6 +73,7 @@
         "stage.views": { "$ref": "#/definitions/entries" },
         "dock.sections": { "$ref": "#/definitions/entries" },
         "drawer.tabs": { "$ref": "#/definitions/entries" },
+        "file.views": { "$ref": "#/definitions/entries", "description": "extra views of a file in the project view; for: the view types the project's runner lists (e.g. flow-graph). Frame plugins only (entry)." },
         "commands": {
           "type": "array",
           "items": {

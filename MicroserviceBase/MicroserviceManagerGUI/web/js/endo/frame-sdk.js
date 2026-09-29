@@ -159,6 +159,12 @@
       },
       notify: function (kind, text) { send({ type: 'call', id: ++seq, method: 'notify', args: [kind, text] }); },
       confirm: function (message) { return request('confirm', [message]); },
+      // Ask the host to show something this view points at (a file view:
+      // { node } of the file it draws). The host decides; no answer.
+      reveal: function (target) { send({ type: 'call', id: ++seq, method: 'reveal', args: [target] }); },
+      // Ask the host to change what this view shows (a file view: one edit of
+      // the file). The host applies it -- or refuses, with a message.
+      edit: function (change) { return request('edit', [change]); },
       selection: function () { return selection; },
       onSelection: function (fn) {
         handlers.selection.push(fn);

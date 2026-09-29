@@ -83,6 +83,22 @@
     var consulName = binds.consul === '@self' ? env.consulName : binds.consul;
     var methodsP = null;
     var open = 0;
+    // One binary may serve several proto services: the first is the default,
+    // the others are called as "<service>/<Method>".
+    var services = [].concat(binds.grpc || []);
+
+    function target(method) {
+      var s = String(method || '');
+      var i = s.lastIndexOf('/');
+      if (i < 0) return { service: services[0], method: s };
+      var svc = s.slice(0, i);
+      if (services.indexOf(svc) < 0) {
+        var e = new Error('NotBound: ' + svc + ' is not in binds.grpc');
+        e.code = 'NotBound';
+        throw e;
+      }
+      return { service: svc, method: s.slice(i + 1) };
+    }
 
     return {
       component: manifest.component,
@@ -90,13 +106,18 @@
       /** URL of the component (or plugin) folder: where frame tiles find their pages. */
       base: env.base || '',
 
+      /** The proto services this component may call (binds.grpc; the first is the default). */
+      services: services.slice(),
+
       call: function (method, args) {
         if (!caps['grpc.call']) return denied('grpc.call');
+        var t;
+        try { t = target(method); } catch (e) { return Promise.reject(e); }
         return MM.grpcClient.callMethod({
           consulName: consulName,
           consulUrl: env.consulUrl,
-          grpcService: binds.grpc,
-          method: method,
+          grpcService: t.service,
+          method: t.method,
           argsJson: JSON.stringify(args || {}),
           protoPath: env.protoPath
         }).then(function (d) {
@@ -107,15 +128,17 @@
 
       describe: function (method) {
         if (!caps['grpc.call']) return denied('grpc.call');
+        var t;
+        try { t = target(method); } catch (e) { return Promise.reject(e); }
         methodsP = methodsP || MM.grpcClient.getServiceMethods(consulName, env.consulUrl, env.protoPath);
         return methodsP.then(function (data) {
-          var svc = ((data && data.grpc_services) || []).filter(function (s) { return s.name === binds.grpc; })[0];
+          var svc = ((data && data.grpc_services) || []).filter(function (s) { return s.name === t.service; })[0];
           if (!svc) {
             methodsP = null;   // retry next time: the service may just be starting
-            throw new Error(binds.grpc + ' is not served by ' + consulName + (data && data.error ? ' (' + data.error + ')' : ''));
+            throw new Error(t.service + ' is not served by ' + consulName + (data && data.error ? ' (' + data.error + ')' : ''));
           }
-          var m = (svc.methods || []).filter(function (x) { return x.name === method; })[0];
-          if (!m) throw new Error(method + ' is not a method of ' + binds.grpc);
+          var m = (svc.methods || []).filter(function (x) { return x.name === t.method; })[0];
+          if (!m) throw new Error(t.method + ' is not a method of ' + t.service);
           return m;
         });
       },

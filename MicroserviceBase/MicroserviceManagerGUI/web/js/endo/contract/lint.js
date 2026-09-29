@@ -37,7 +37,11 @@
   /** Tile sizes on the 4-column stage: [columns, rows]. */
   var SIZES = { '1x1': [1, 1], '2x1': [2, 1], '2x2': [2, 2], '4x1': [4, 1] };
 
-  var CORE_KINDS = ['text', 'live-status', 'command-form', 'table', 'log', 'run-status', 'frame'];
+  var CORE_KINDS = ['text', 'live-status', 'command-form', 'table', 'log', 'run-status', 'frame',
+                    'qml', 'widget', 'wasm'];
+
+  /** Qt tile kinds: their UI calls the bound service through ServiceBridge. */
+  var QT_KINDS = ['qml', 'widget', 'wasm'];
 
   /** Reserved binds.consul value: the service that declared this component. */
   var SELF = '@self';
@@ -104,6 +108,9 @@
     }
     if (typeof value === 'number' && schema.minimum != null && value < schema.minimum) {
       errs.push({ path: path, message: 'must be >= ' + schema.minimum });
+    }
+    if (typeof value === 'number' && schema.maximum != null && value > schema.maximum) {
+      errs.push({ path: path, message: 'must be <= ' + schema.maximum });
     }
     if (Array.isArray(value)) {
       if (schema.minItems != null && value.length < schema.minItems) {
@@ -188,15 +195,20 @@
 
   /** Tiles, ribbon commands and fields that call RPCs or read signals. */
   function uses(manifest) {
-    var u = { rpc: [], signals: [], devices: [] };
+    var u = { rpc: [], signals: [], devices: [], names: [] };
+    function named(path, value) {
+      u.rpc.push(path);
+      if (typeof value === 'string') u.names.push({ path: path, value: value });
+    }
     (manifest.tiles || []).forEach(function (t, i) {
       var p = 'tiles[' + i + ']';
-      if (t.rpc) u.rpc.push(p + '.rpc');
-      if (t.call) u.rpc.push(p + '.call');
+      if (t.rpc) named(p + '.rpc', t.rpc);
+      if (t.call) named(p + '.call', t.call);
+      if (QT_KINDS.indexOf(t.kind) >= 0) u.rpc.push(p + '.kind');
       if (t.device) u.devices.push({ path: p + '.device', value: t.device });
       (t.fields || []).forEach(function (f, j) {
         var fp = p + '.fields[' + j + ']';
-        if (f.rpc) u.rpc.push(fp + '.rpc');
+        if (f.rpc) named(fp + '.rpc', f.rpc);
         if (f.signal) u.signals.push(fp + '.signal');
         if (f.device) u.devices.push({ path: fp + '.device', value: f.device });
       });
@@ -204,7 +216,7 @@
     });
     (manifest.ribbon || []).forEach(function (g, i) {
       (g.commands || []).forEach(function (c, j) {
-        if (c.call) u.rpc.push('ribbon[' + i + '].commands[' + j + '].call');
+        if (c.call) named('ribbon[' + i + '].commands[' + j + '].call', c.call);
       });
     });
     return u;
@@ -315,6 +327,14 @@
     if (u.rpc.length && !b.grpc) {
       add('R3', 'error', 'binds.grpc', 'required when tiles or commands call RPCs (the fully-qualified proto service)');
     }
+    // "<service>/<Method>" calls one of the bound services by name.
+    var bound = [].concat(b.grpc || []);
+    u.names.forEach(function (n) {
+      var i = n.value.lastIndexOf('/');
+      if (i > 0 && bound.indexOf(n.value.slice(0, i)) < 0) {
+        add('R3', 'error', n.path, '"' + n.value.slice(0, i) + '" is not in binds.grpc');
+      }
+    });
 
     // R7: above the bits layer, read signals, not devices
     if (manifest.layer && manifest.layer !== 'bits') {
@@ -351,14 +371,21 @@
       }
     });
 
-    // "html": code runs in frame tiles. "wasm", "qml", "widget" are not hosted yet.
-    var frames = (manifest.tiles || []).filter(function (t) { return t && t.kind === 'frame'; });
-    if (manifest.renderer === 'html' && !frames.length) {
-      add('K', 'warn', 'renderer', 'renderer "html" means frame tiles; this component has none');
-    } else if (manifest.renderer && manifest.renderer !== 'schema' && manifest.renderer !== 'html') {
-      add('K', 'warn', 'renderer', 'renderer "' + manifest.renderer + '" is not supported by shell ' + shell +
-          ' yet; its tiles still render');
+    // The renderer names the kind of tile that carries the component's own
+    // UI: "html" frame tiles, "qml", "widget" or "wasm" Qt tiles.
+    var rendererKind = manifest.renderer === 'html' ? 'frame' : manifest.renderer;
+    if (rendererKind && rendererKind !== 'schema' &&
+        !(manifest.tiles || []).some(function (t) { return t && t.kind === rendererKind; })) {
+      add('K', 'warn', 'renderer', 'renderer "' + manifest.renderer + '" means ' + rendererKind +
+          ' tiles; this component has none');
     }
+    // A wasm tile runs the component's own loader script in the GUI page.
+    (manifest.tiles || []).forEach(function (t, i) {
+      if (t && t.kind === 'wasm') {
+        add('K', 'warn', 'tiles[' + i + ']', 'a wasm tile runs its loader script in the GUI page, like a classic ' +
+            'panel: its calls go through ctx, but the script itself is not sandboxed; use qml or widget where you can');
+      }
+    });
     return issues;
   }
 
@@ -422,13 +449,21 @@
         }
       });
     });
-    ['navigators', 'stage.views', 'dock.sections', 'drawer.tabs'].forEach(function (point) {
+    ['navigators', 'stage.views', 'dock.sections', 'drawer.tabs', 'file.views'].forEach(function (point) {
       var seen = {};
       (Array.isArray(c[point]) ? c[point] : []).forEach(function (e, i) {
         if (!e || !e.id) return;
         if (seen[e.id]) add('P2', 'error', 'contributes["' + point + '"][' + i + '].id', 'duplicate id "' + e.id + '"');
         seen[e.id] = true;
       });
+    });
+    // A file view draws the data of a view type the runner lists; the shell
+    // has none of its own, so it is always a module.
+    (Array.isArray(c['file.views']) ? c['file.views'] : []).forEach(function (e, i) {
+      var p = 'contributes["file.views"][' + i + ']';
+      if (!e) return;
+      if (!e.entry) add('S', 'error', p, 'a file view is a module: give it an entry');
+      if (!Array.isArray(e.for) || !e.for.length) add('S', 'error', p + '.for', 'name the view types it draws, e.g. ["flow-graph"]');
     });
     var kseen = {};
     (Array.isArray(c.kinds) ? c.kinds : []).forEach(function (k, i) {
@@ -442,7 +477,7 @@
     });
     // Code runs in frames (frame) or its own window (window); schema plugins ship none.
     if (manifest.isolation === 'schema' || manifest.isolation === 'window') {
-      ['kinds', 'navigators', 'stage.views', 'dock.sections', 'drawer.tabs', 'commands'].forEach(function (point) {
+      ['kinds', 'navigators', 'stage.views', 'dock.sections', 'drawer.tabs', 'file.views', 'commands'].forEach(function (point) {
         (Array.isArray(c[point]) ? c[point] : []).forEach(function (e, i) {
           if (e && e.entry) {
             add('P', 'error', 'contributes["' + point + '"][' + i + '].entry',

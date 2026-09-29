@@ -18,7 +18,12 @@
  * and its tile says so (R10).
  *
  *   MM.endo.frames.create(el, spec) -> handle { ready, suspend, resume, destroy, setSelection, state }
- *     spec: { mode: 'module' | 'html', base, entry, fn, args, ctx, label, selection }
+ *     spec: { mode: 'module' | 'html', base, entry, fn, args, ctx, label, selection, onReveal, onEdit }
+ *     onReveal(target): the frame's ctx.reveal(target), for hosts that show
+ *     what a view points at (file views: jump to a node in the source).
+ *     onEdit(change): the frame's ctx.edit(change); its result (or a
+ *     promise of it) is the answer, a throw or rejection the refusal.
+ *     Without it the frame's ctx.edit is refused (a read-only view).
  */
 (function () {
   'use strict';
@@ -40,6 +45,9 @@
   // pingMs x missLimit: how long a frame may stop answering. startMs: how
   // long it may take to start (a new process each, so it varies with load).
   var config = { pingMs: 5000, missLimit: 3, startMs: 10000 };
+  // Upper bound of an auto-sized frame (px): a guard against a page that keeps
+  // growing, far above any real diagram or view.
+  var MAX_AUTO_HEIGHT = 30000;
   var live = new Set();
   var stats = { created: 0, killed: 0, failed: 0 };
 
@@ -272,7 +280,7 @@
         post({ type: 'result', id: msg.id, error: err });
       };
       var a = msg.args || [];
-      if (suspended && msg.method !== 'unsubscribe' && msg.method !== 'notify') {
+      if (suspended && msg.method !== 'unsubscribe' && msg.method !== 'notify' && msg.method !== 'reveal') {
         return refuse({ code: 'Suspended', message: 'the tile is hidden (R5)' });
       }
       try {
@@ -292,6 +300,14 @@
           case 'config.get': return ctx.config.get(a[0], a[1]).then(reply, refuse);
           case 'config.put': return ctx.config.put(a[0], a[1], a[2]).then(reply, refuse);
           case 'notify': ctx.notify(a[0], String(a[1] || '').slice(0, 500)); return reply(null);
+          case 'edit':
+            // The host view applies it (or not); the frame only gets the answer.
+            if (typeof spec.onEdit !== 'function') return refuse({ code: 'ReadOnly', message: 'this view cannot edit' });
+            return Promise.resolve(spec.onEdit(JSON.parse(JSON.stringify(a[0] == null ? null : a[0])))).then(reply, refuse);
+          case 'reveal':
+            // Plain data only; what to do with it is the host view's call.
+            if (typeof spec.onReveal === 'function') spec.onReveal(JSON.parse(JSON.stringify(a[0] == null ? null : a[0])));
+            return reply(null);
           case 'confirm': return ctx.confirm(String(a[0] || '').slice(0, 500)).then(reply, refuse);
           default: return refuse({ code: 'Unknown', message: 'no ctx method "' + msg.method + '"' });
         }
@@ -316,7 +332,9 @@
         return;
       }
       if (msg.type === 'size') {
-        if (spec.autoHeight && iframe) iframe.style.height = Math.max(40, Math.min(Number(msg.height) || 0, 1600)) + 'px';
+        // The frame takes its content's full height and the host scrolls it:
+        // a lower cap made a tall diagram scroll inside the frame as well.
+        if (spec.autoHeight && iframe) iframe.style.height = Math.max(40, Math.min(Number(msg.height) || 0, MAX_AUTO_HEIGHT)) + 'px';
         return;
       }
       if (msg.type === 'failed') { fail(msg.message || 'failed to start'); return; }
