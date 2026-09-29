@@ -714,7 +714,9 @@
       rows.push(['Consul', '<code>' + esc(svc.consulUrl || '') + '</code>']);
     }
     if (mod.folder) rows.push(['GUI folder', '<code>' + esc(mod.folder) + '</code>' + (mod.entry && mod.entry.gui ? ' (from the composition)' : '')]);
-    if (binds.grpc) rows.push(['gRPC', '<code>' + esc(binds.grpc) + '</code>']);
+    if (binds.grpc) {
+      rows.push(['gRPC', [].concat(binds.grpc).map(function (g) { return '<code>' + esc(g) + '</code>'; }).join(' ')]);
+    }
     if (m.requires) rows.push(['Capabilities', (req.capabilities || []).length
       ? (req.capabilities || []).map(function (c) { return '<code>' + esc(c) + '</code>'; }).join(' ') : 'none']);
     if (m.requires) rows.push(['Shell', '<code>' + esc(req.shell || '') + '</code>']);
@@ -945,8 +947,21 @@
         K().ROLES.map(function (r) { return '<option value="' + r + '">' + ROLE_LABEL[r] + '</option>'; }).join('') +
         '      </select></div>' +
         '  </div>' +
-        '  <label class="form-label" for="benchEditJson">Composition (JSON)</label>' +
-        '  <textarea class="form-control bench-json" id="benchEditJson" rows="16" spellcheck="false"></textarea>' +
+        '  <ul class="nav nav-tabs bench-edit-tabs" role="tablist">' +
+        '    <li class="nav-item" role="presentation"><button type="button" class="nav-link active" role="tab" id="benchEditTabVisual" aria-selected="true">Visual</button></li>' +
+        '    <li class="nav-item" role="presentation"><button type="button" class="nav-link" role="tab" id="benchEditTabJson" aria-selected="false">JSON</button></li>' +
+        '  </ul>' +
+        '  <div id="benchEditVisual" class="bench-vis">' +
+        '    <div class="mb-2"><label class="form-label" for="benchEditTitle">Title</label>' +
+        '      <input class="form-control form-control-sm" id="benchEditTitle" placeholder="e.g. Night bench, operator view" autocomplete="off"></div>' +
+        '    <div class="form-text mb-2">Tick the services to show and the tiles of each; drag a row by <span aria-hidden="true">&#x2807;</span> (or use &uarr; &darr;) to set the order. Every change is written to the JSON, which is what is saved.</div>' +
+        '    <div id="benchEditOrderNote"></div>' +
+        '    <ul class="bench-vis-list" id="benchEditList" aria-label="Services of the composition"></ul>' +
+        '  </div>' +
+        '  <div id="benchEditJsonPane" hidden>' +
+        '    <label class="form-label visually-hidden" for="benchEditJson">Composition (JSON)</label>' +
+        '    <textarea class="form-control bench-json" id="benchEditJson" rows="16" spellcheck="false"></textarea>' +
+        '  </div>' +
         '  <div class="form-text" id="benchEditDir"></div>' +
         '  <div class="mt-2" id="benchEditIssues"></div>' +
         '</div>' +
@@ -964,8 +979,18 @@
         var bench = el.querySelector('#benchEditBench').value.trim() || 'default';
         var role = el.querySelector('#benchEditRole').value;
         el.querySelector('#benchEditJson').value = JSON.stringify(K().defaultComposition(services(), bench, role), null, 2);
+        if (vis.tab === 'visual') visLoad();
         checkEditor();
       });
+      el.querySelector('#benchEditTabVisual').addEventListener('click', function () { visTab('visual'); });
+      el.querySelector('#benchEditTabJson').addEventListener('click', function () { visTab('json'); });
+      el.querySelector('#benchEditTitle').addEventListener('input', function (e) {
+        vis.base.title = e.target.value;
+        if (!e.target.value) delete vis.base.title;
+        visWrite();
+      });
+      el.querySelector('#benchEditJson').addEventListener('input', function () { vis.stale = true; });
+      visWireList(el.querySelector('#benchEditList'));
     }
     editModal = bootstrap.Modal.getOrCreateInstance(el);
     var sel = state.selection || { bench: 'default', role: 'user' };
@@ -977,7 +1002,268 @@
     el.querySelector('#benchEditDir').textContent = state.dir ? 'Stored in ' + state.dir : '';
     el.querySelector('#benchEditIssues').innerHTML = '';
     el.querySelector('#benchEditDelete').hidden = !state.stored;
+    visTab('visual');
     editModal.show();
+  }
+
+  // ------------------------------------------------------------ visual editor
+  //
+  // The composition as a list: one row per service -- those of the composition
+  // in its order, then every connected service with a GUI that it leaves out
+  // (unticked) -- with the tiles of each component underneath. The JSON stays
+  // the saved form: every change rewrites it, keeping the keys the list does
+  // not show (shell, plugins, order, ...); switching back to Visual reads it.
+
+  var vis = { tab: 'visual', base: {}, rows: [], manifests: {}, stale: false, drag: null, lintTimer: null };
+
+  function visTab(tab) {
+    var el = document.getElementById('benchEditModal');
+    if (tab === 'visual') {
+      var v = editorValue();
+      if (v.error) {
+        showEditorIssues('<div class="endo-refused">' + esc(v.error) + ' Fix it in JSON to use the visual editor.</div>');
+        tab = 'json';
+      } else if (vis.tab !== 'visual' || vis.stale || !vis.rows.length) {
+        visLoad();
+      }
+    }
+    vis.tab = tab;
+    el.querySelector('#benchEditVisual').hidden = tab !== 'visual';
+    el.querySelector('#benchEditJsonPane').hidden = tab !== 'json';
+    [['#benchEditTabVisual', 'visual'], ['#benchEditTabJson', 'json']].forEach(function (t) {
+      var b = el.querySelector(t[0]);
+      b.classList.toggle('active', tab === t[1]);
+      b.setAttribute('aria-selected', String(tab === t[1]));
+    });
+  }
+
+  /** Read the JSON into rows. */
+  function visLoad() {
+    var v = editorValue();
+    if (v.error) return;
+    var comp = v.comp && typeof v.comp === 'object' ? v.comp : {};
+    vis.base = JSON.parse(JSON.stringify(comp));
+    vis.stale = false;
+    var byName = {};
+    services().forEach(function (svc) { if (!byName[svc.name]) byName[svc.name] = svc; });
+    var listed = {};
+    vis.rows = (Array.isArray(comp.components) ? comp.components : []).map(function (e) {
+      e = e || {};
+      listed[e.service] = true;
+      return { service: String(e.service || ''), use: true, gui: e.gui ? String(e.gui) : '',
+               tiles: Array.isArray(e.tiles) ? e.tiles.slice() : null, extra: visExtra(e) };
+    });
+    Object.keys(byName).sort().forEach(function (name) {
+      if (!listed[name] && byName[name].gui) vis.rows.push({ service: name, use: false, gui: '', tiles: null, extra: {} });
+    });
+    document.getElementById('benchEditTitle').value = comp.title || '';
+    visRender();
+  }
+
+  /** Keys of an entry the list does not edit, kept as they are. */
+  function visExtra(e) {
+    var out = {};
+    Object.keys(e).forEach(function (k) {
+      if (['from', 'service', 'gui', 'tiles'].indexOf(k) < 0) out[k] = e[k];
+    });
+    return out;
+  }
+
+  function visService(name) {
+    return services().filter(function (svc) { return svc.name === name; })[0] || null;
+  }
+
+  function visFolder(row) {
+    var svc = visService(row.service);
+    return String(row.gui || (svc && svc.gui) || '').replace(/^[\/\\]+|[\/\\]+$/g, '');
+  }
+
+  /** The tiles a folder's component offers: [{ id, title, kind }] or a reason there are none. */
+  function visTiles(folder) {
+    if (!folder) return Promise.resolve({ none: 'no GUI folder' });
+    if (!vis.manifests[folder]) {
+      vis.manifests[folder] = fetchManifest(folder).then(function (res) {
+        if (res.missing) return { none: 'classic panel: no component.json, no tiles to choose' };
+        var m = res.manifest || {};
+        if (m.__parseError) return { none: 'component.json does not parse' };
+        return { tiles: (m.tiles || []).filter(function (t) { return t && t.id; }).map(function (t) {
+          return { id: String(t.id), title: t.title ? String(t.title) : '', kind: t.kind || '' };
+        }) };
+      }, function () { return { none: 'component.json could not be read' }; });
+    }
+    return vis.manifests[folder];
+  }
+
+  function visRender() {
+    var list = document.getElementById('benchEditList');
+    if (!list) return;
+    var note = document.getElementById('benchEditOrderNote');
+    var hasOrder = Array.isArray(vis.base.order) && vis.base.order.length;
+    note.innerHTML = hasOrder
+      ? '<div class="alert alert-secondary py-1 px-2 small d-flex align-items-center gap-2">' +
+        '<span>This composition also has an explicit <code>order</code> (' + esc(vis.base.order.join(', ')) +
+        '): it comes before the order of this list.</span>' +
+        '<button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="benchEditClearOrder">Use this list\'s order</button></div>'
+      : '';
+    var clear = document.getElementById('benchEditClearOrder');
+    if (clear) clear.addEventListener('click', function () { delete vis.base.order; visWrite(); visRender(); });
+    if (!vis.rows.length) {
+      list.innerHTML = '<li class="bench-vis-empty">No services: connect a Consul, or add entries in JSON.</li>';
+      return;
+    }
+    list.innerHTML = vis.rows.map(function (row, i) {
+      var svc = visService(row.service);
+      var folder = visFolder(row);
+      var status = !svc ? '<span class="badge text-bg-warning">not registered</span>'
+        : !folder ? '<span class="badge text-bg-secondary">no GUI</span>' : '';
+      var needsFolder = !svc || !svc.gui || row.gui;
+      var id = 'benchVis' + i;
+      return '<li class="bench-vis-row' + (row.use ? '' : ' bench-vis-off') + '" draggable="true" data-row="' + i + '">' +
+        '<span class="bench-vis-grip" title="Drag to reorder" aria-hidden="true">&#x2807;</span>' +
+        '<div class="bench-vis-main">' +
+        '  <div class="bench-vis-head">' +
+        '    <input class="form-check-input" type="checkbox" id="' + id + '" data-act="use"' + (row.use ? ' checked' : '') + '>' +
+        '    <label for="' + id + '"><strong>' + esc(row.service) + '</strong></label>' +
+        (folder ? ' <code class="bench-vis-folder">' + esc(folder) + '</code>' : '') + ' ' + status +
+        '  </div>' +
+        (needsFolder
+          ? '  <div class="bench-vis-gui"><label class="small" for="' + id + 'g">GUI folder</label>' +
+            '    <input class="form-control form-control-sm" id="' + id + 'g" data-act="gui" value="' + esc(row.gui) + '"' +
+            ' placeholder="' + esc((svc && svc.gui) || 'e.g. MyService1.0.0') + '" autocomplete="off" spellcheck="false"></div>'
+          : '') +
+        '  <div class="bench-vis-tiles" data-tiles="' + i + '"><span class="small text-muted">Reading tiles…</span></div>' +
+        '</div>' +
+        '<div class="bench-vis-move">' +
+        '  <button type="button" class="btn btn-sm btn-link" data-act="up" title="Move up" aria-label="Move ' + esc(row.service) + ' up"' + (i === 0 ? ' disabled' : '') + '>&uarr;</button>' +
+        '  <button type="button" class="btn btn-sm btn-link" data-act="down" title="Move down" aria-label="Move ' + esc(row.service) + ' down"' + (i === vis.rows.length - 1 ? ' disabled' : '') + '>&darr;</button>' +
+        '</div></li>';
+    }).join('');
+    vis.rows.forEach(function (row, i) { visRenderTiles(row, i); });
+  }
+
+  function visRenderTiles(row, i) {
+    var folder = visFolder(row);
+    visTiles(folder).then(function (res) {
+      var box = document.querySelector('#benchEditList [data-tiles="' + i + '"]');
+      if (!box || vis.rows[i] !== row) return;
+      if (!res.tiles) { box.innerHTML = '<span class="small text-muted">' + esc(res.none) + '</span>'; return; }
+      row.known = res.tiles.map(function (t) { return t.id; });
+      if (!res.tiles.length) { box.innerHTML = '<span class="small text-muted">the component has no tiles</span>'; return; }
+      var shown = row.tiles ? row.tiles : row.known;
+      var html = res.tiles.map(function (t) {
+        var tid = 'benchVis' + i + 't' + t.id;
+        return '<label class="bench-vis-tile" for="' + esc(tid) + '"><input class="form-check-input" type="checkbox" id="' + esc(tid) +
+          '" data-act="tile" data-tile="' + esc(t.id) + '"' + (shown.indexOf(t.id) >= 0 ? ' checked' : '') + (row.use ? '' : ' disabled') + '>' +
+          '<span>' + esc(t.title || t.id) + '</span>' + (t.title && t.title !== t.id ? ' <code>' + esc(t.id) + '</code>' : '') +
+          (t.kind ? ' <span class="bench-vis-kind">' + esc(t.kind) + '</span>' : '') + '</label>';
+      }).join('');
+      // Ids the composition names that the component does not have (any more).
+      var unknown = (row.tiles || []).filter(function (id) { return row.known.indexOf(id) < 0; });
+      if (unknown.length) html += '<div class="small text-warning">Not in the component: ' + esc(unknown.join(', ')) + '</div>';
+      if (row.use && row.tiles && !row.tiles.length) html += '<div class="small text-muted">No tiles ticked: the service keeps its entry in the navigator, but nothing on the stage.</div>';
+      box.innerHTML = html;
+    });
+  }
+
+  /** Rows (and the kept keys) -> the JSON; then check it. */
+  function visWrite() {
+    var comp = JSON.parse(JSON.stringify(vis.base));
+    comp.components = vis.rows.filter(function (r) { return r.use; }).map(function (r) {
+      var e = Object.assign({ from: 'consul', service: r.service }, r.extra || {});
+      if (r.gui) e.gui = r.gui;
+      if (r.tiles) e.tiles = r.tiles.slice();
+      return e;
+    });
+    vis.base.components = comp.components;
+    var ta = document.getElementById('benchEditJson');
+    ta.value = JSON.stringify(comp, null, 2);
+    vis.stale = false;
+    clearTimeout(vis.lintTimer);
+    vis.lintTimer = setTimeout(checkEditor, 250);
+  }
+
+  function visMove(from, to) {
+    if (to < 0 || to >= vis.rows.length || from === to) return;
+    var row = vis.rows.splice(from, 1)[0];
+    vis.rows.splice(to, 0, row);
+    visWrite();
+    visRender();
+  }
+
+  function visWireList(list) {
+    list.addEventListener('change', function (ev) {
+      var t = ev.target;
+      var li = t.closest('[data-row]');
+      if (!li) return;
+      var row = vis.rows[Number(li.getAttribute('data-row'))];
+      var act = t.getAttribute('data-act');
+      if (act === 'use') {
+        row.use = t.checked;
+        visWrite();
+        visRender();
+      } else if (act === 'tile') {
+        var all = row.known || [];
+        var on = (row.tiles ? row.tiles.slice() : all.slice()).filter(function (id) { return id !== t.getAttribute('data-tile'); });
+        if (t.checked) on.push(t.getAttribute('data-tile'));
+        // In component order; every tile ticked = no "tiles" key (all of them).
+        on = all.filter(function (id) { return on.indexOf(id) >= 0; })
+          .concat(on.filter(function (id) { return all.indexOf(id) < 0; }));
+        row.tiles = all.length && on.length === all.length && all.every(function (id) { return on.indexOf(id) >= 0; }) ? null : on;
+        visWrite();
+        visRenderTiles(row, Number(li.getAttribute('data-row')));
+      } else if (act === 'gui') {
+        row.gui = t.value.trim();
+        visWrite();
+        visRender();
+      }
+    });
+    list.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-act="up"], [data-act="down"]');
+      if (!b) return;
+      var i = Number(b.closest('[data-row]').getAttribute('data-row'));
+      var to = b.getAttribute('data-act') === 'up' ? i - 1 : i + 1;
+      visMove(i, to);
+      var again = document.querySelector('#benchEditList [data-row="' + to + '"] [data-act="' + b.getAttribute('data-act') + '"]');
+      if (again && !again.disabled) again.focus();
+    });
+    // Drag a row by anything but its inputs: drop above or below the row under the pointer.
+    list.addEventListener('dragstart', function (ev) {
+      var li = ev.target.closest && ev.target.closest('[data-row]');
+      if (!li || /INPUT|BUTTON|LABEL/.test(ev.target.tagName)) { if (li) ev.preventDefault(); return; }
+      vis.drag = Number(li.getAttribute('data-row'));
+      li.classList.add('bench-vis-dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer.setData('text/plain', String(vis.drag)); } catch (e) { /* some hosts refuse */ }
+    });
+    list.addEventListener('dragover', function (ev) {
+      if (vis.drag == null) return;
+      var li = ev.target.closest && ev.target.closest('[data-row]');
+      if (!li) return;
+      ev.preventDefault();
+      var r = li.getBoundingClientRect();
+      var below = ev.clientY > r.top + r.height / 2;
+      list.querySelectorAll('.bench-vis-above, .bench-vis-below').forEach(function (x) { x.classList.remove('bench-vis-above', 'bench-vis-below'); });
+      li.classList.add(below ? 'bench-vis-below' : 'bench-vis-above');
+    });
+    list.addEventListener('drop', function (ev) {
+      if (vis.drag == null) return;
+      var li = ev.target.closest && ev.target.closest('[data-row]');
+      ev.preventDefault();
+      var from = vis.drag;
+      vis.drag = null;
+      if (!li) return;
+      var r = li.getBoundingClientRect();
+      var over = Number(li.getAttribute('data-row'));
+      var to = over + (ev.clientY > r.top + r.height / 2 ? 1 : 0);
+      if (to > from) to -= 1;
+      visMove(from, to);
+    });
+    list.addEventListener('dragend', function () {
+      vis.drag = null;
+      list.querySelectorAll('.bench-vis-dragging, .bench-vis-above, .bench-vis-below').forEach(function (x) {
+        x.classList.remove('bench-vis-dragging', 'bench-vis-above', 'bench-vis-below');
+      });
+    });
   }
 
   function editorValue() {
