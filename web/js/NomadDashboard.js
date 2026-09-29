@@ -597,6 +597,14 @@
   }
 
   function _connectToUrl(url, btn) {
+    if (!_httpBase(url)) {
+      MM.showToast('Nomad', 'The Nomad address must start with http:// or https://', 'warning');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug me-1"></i>Connect';
+      }
+      return;
+    }
     fetch(url + '/v1/agent/self', { method: 'GET' })
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -839,7 +847,7 @@
       jobLinks[l].addEventListener('click', (function (jobId) {
         return function (e) {
           e.preventDefault();
-          _openNomadUI('/ui/jobs/' + jobId);
+          _openNomadUI(_jobPath(jobId));
         };
       })(jobLinks[l].getAttribute('data-job-id')));
     }
@@ -847,7 +855,7 @@
     var viewBtns = pane.querySelectorAll('.nomad-view-btn');
     for (var v = 0; v < viewBtns.length; v++) {
       viewBtns[v].addEventListener('click', (function (jobId) {
-        return function () { _openNomadUI('/ui/jobs/' + jobId); };
+        return function () { _openNomadUI(_jobPath(jobId)); };
       })(viewBtns[v].getAttribute('data-job-id')));
     }
   }
@@ -871,8 +879,32 @@
     if (el) el.onclick = handler;
   }
 
+  // The agent URL as an http(s) base, or null. It comes from a text field
+  // or localStorage, so anything else (javascript:, data:) is refused
+  // before it can reach a window's location.
+  function _httpBase(raw) {
+    var u;
+    try { u = new URL(String(raw || '')); } catch (e) { return null; }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.origin + u.pathname.replace(/\/+$/, '');
+  }
+
+  // A job's page in the Nomad UI. The ID comes from the Nomad API: encode
+  // it so it stays one path segment.
+  function _jobPath(jobId) {
+    return '/ui/jobs/' + encodeURIComponent(String(jobId || ''));
+  }
+
   function _openNomadUI(path) {
-    var url = _currentUrl + (path || '/ui/');
+    var base = _httpBase(_currentUrl);
+    if (!base) {
+      MM.showToast('Nomad', 'The Nomad address must start with http:// or https://', 'warning');
+      return;
+    }
+    // Only paths inside the Nomad UI.
+    path = String(path || '/ui/');
+    if (path.indexOf('/ui/') !== 0) path = '/ui/';
+    var url = base + path;
     if (_nomadWindow && !_nomadWindow.closed) {
       _nomadWindow.location.href = url;
       _nomadWindow.focus();
