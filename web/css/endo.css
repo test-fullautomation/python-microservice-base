@@ -351,6 +351,36 @@
 
 .bench-json { font: 0.78rem/1.45 var(--font-mono, monospace); }
 
+/* Edit composition: the visual list (bench.js, "visual editor"). */
+.bench-edit-tabs { margin-bottom: 0.6rem; }
+.bench-vis-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bench-vis-empty { color: #6c7a86; font-size: 0.88rem; padding: 0.5rem 0; }
+.bench-vis-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; border: 1px solid #dfe6ea; border-radius: 6px; background: #fff;
+}
+.bench-vis-row.bench-vis-off { background: #f6f8f9; }
+.bench-vis-row.bench-vis-off .bench-vis-head strong { color: #6c7a86; font-weight: 500; }
+.bench-vis-row.bench-vis-dragging { opacity: 0.45; }
+.bench-vis-row.bench-vis-above { box-shadow: 0 -3px 0 0 var(--accent, #127A69); }
+.bench-vis-row.bench-vis-below { box-shadow: 0 3px 0 0 var(--accent, #127A69); }
+.bench-vis-grip { cursor: grab; color: #9aa7b0; font-size: 1.1rem; line-height: 1.4; user-select: none; padding: 0 2px; }
+.bench-vis-main { flex: 1 1 auto; min-width: 0; }
+.bench-vis-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bench-vis-head .form-check-input { margin: 0; }
+.bench-vis-head label { cursor: pointer; }
+.bench-vis-folder { font-size: 0.78rem; color: #6c7a86; }
+.bench-vis-gui { display: flex; align-items: center; gap: 8px; margin: 6px 0 0 22px; max-width: 360px; }
+.bench-vis-gui label { white-space: nowrap; color: #6c7a86; }
+.bench-vis-tiles { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0 22px; }
+.bench-vis-tile { display: inline-flex; align-items: center; gap: 5px; font-size: 0.86rem; cursor: pointer; }
+.bench-vis-tile .form-check-input { margin: 0; }
+.bench-vis-tile code { font-size: 0.74rem; color: #6c7a86; }
+.bench-vis-kind { font-size: 0.7rem; color: #6c7a86; border: 1px solid #dfe6ea; border-radius: 3px; padding: 0 4px; }
+.bench-vis-tiles > div { flex-basis: 100%; }
+.bench-vis-move { display: flex; flex-direction: column; }
+.bench-vis-move .btn { padding: 0 6px; line-height: 1.2; text-decoration: none; }
+
 @container (max-width: 780px) {
   .bench-stage { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -477,3 +507,11 @@
 .endo-frame-banner.warn { border-color: color-mix(in srgb, var(--warn, #A96A12) 55%, transparent); color: var(--warn, #A96A12); }
 .endo-frame-banner button { border: 0; background: transparent; color: inherit; line-height: 1; font-size: 1rem; padding: 0 0.2rem; cursor: pointer; }
 .endo-tile { position: relative; }
+/* ================= Qt tiles (qml, widget, wasm) ================= */
+.endo-tile-body.endo-qt-body { position: relative; padding: 0; display: block; overflow: hidden; }
+.endo-qt-body > .endo-qt-canvas { position: absolute; inset: 0; }
+.endo-qt-body > .endo-qt-status {
+  position: absolute; left: 0; right: 0; top: 0;
+  padding: 0.65rem 0.75rem; font-size: 0.82rem;
+  background: var(--surface, #fff);
+}
