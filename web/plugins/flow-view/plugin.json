@@ -1,0 +1,15 @@
+{
+  "$schema": "../../js/endo/contract/plugin.schema.json",
+  "plugin": "flow-view",
+  "version": "1.0.0",
+  "title": "Flow view",
+  "description": "The Diagram tab of flow files and run groups in the project view: phases, loops, tries and decisions drawn from the runner's own structure of the flow; for a run group, every member's flow and where they wait for each other. Click a node to find it in the file.",
+  "requires": { "shell": "^2.3", "capabilities": [] },
+  "isolation": "frame",
+  "contributes": {
+    "file.views": [
+      { "id": "diagram", "title": "Diagram", "icon": "diagram-3", "entry": "view.js", "for": ["flow-graph"] },
+      { "id": "group", "title": "Diagram", "icon": "diagram-3", "entry": "group.js", "for": ["flow-group"] }
+    ]
+  }
+}

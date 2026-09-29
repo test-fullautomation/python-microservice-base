@@ -68,6 +68,22 @@ check('normalize refuses leaving the root', SDK.normalize('../x.js') === null &&
   check('charts graph links', Object.keys(SDK.linkModules(files, () => 'blob:' + (++n))).length === 3);
 }
 
+// ---------- the flow-view plugin: its graph, and reveal ----------
+{
+  const base = path.join(GUI, 'web', 'plugins', 'flow-view');
+  const files = {};
+  const load = (p) => { if (files[p]) return; files[p] = fs.readFileSync(path.join(base, p), 'utf-8'); SDK.importsOf(p, files[p]).forEach(load); };
+  load('view.js');
+  check('flow-view ships view, flow, style and live', Object.keys(files).sort().join() === 'flow.js,live.js,style.js,view.js', Object.keys(files));
+  const host = fs.readFileSync(path.join(GUI, 'web', 'js', 'endo', 'frame-host.js'), 'utf-8');
+  check('reveal reaches the host view as plain data, also while suspended',
+        /case 'reveal':[\s\S]{0,200}spec\.onReveal\(JSON\.parse\(JSON\.stringify/.test(host) && /msg\.method !== 'reveal'/.test(host));
+  check('edit is answered by the host view, and refused by a read-only one',
+        /case 'edit':[\s\S]{0,300}typeof spec\.onEdit !== 'function'\) return refuse\([\s\S]{0,200}spec\.onEdit\(JSON\.parse\(JSON\.stringify/.test(host));
+  const sdk = fs.readFileSync(path.join(GUI, 'web', 'js', 'endo', 'frame-sdk.js'), 'utf-8');
+  check('the frame asks with ctx.edit and gets an answer', /edit: function \(change\) \{ return request\('edit', \[change\]\); \}/.test(sdk));
+}
+
 // ---------- frame tiles ----------
 {
   const hello = readJson(path.join(GUI, 'web', 'services', 'HelloService1.0.0', 'component.json'));
@@ -81,7 +97,7 @@ check('normalize refuses leaving the root', SDK.normalize('../x.js') === null &&
   const m3 = clone(hello); m3.tiles = m3.tiles.filter((t) => t.kind !== 'frame');
   check('renderer html without frame tiles warns', C.lintComponent(m3, { schema: componentSchema }).some((i) => i.rule === 'K'));
   const m4 = clone(hello); m4.renderer = 'wasm';
-  check('renderer wasm still warns (not hosted yet)', C.lintComponent(m4, { schema: componentSchema }).some((i) => i.rule === 'K' && /wasm/.test(i.message)));
+  check('renderer wasm without wasm tiles warns', C.lintComponent(m4, { schema: componentSchema }).some((i) => i.rule === 'K' && /wasm tiles/.test(i.message)));
 }
 
 // ---------- only frame plugins ship code ----------
