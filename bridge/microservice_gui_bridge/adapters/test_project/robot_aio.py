@@ -40,7 +40,9 @@ import sys
 from typing import Dict, List
 
 from ...ports.test_project import (
+    POSITION_FILE,
     PlannedFile,
+    RunGroup,
     RunArtifact,
     RunOptions,
     RunPlan,
@@ -64,8 +66,13 @@ _CONFIG_REL = "config/robot_config.jsonp"
 # Flow files (the RobotFramework AIO fork's ``robot.flow`` parser): a test
 # plan drawn as a graph, built into a suite at run time.
 FLOW_SUFFIX = ".flow.json"
+# robot.flow.signals' store of a run, in its output folder (ROBOT_FLOW_SIGNALS).
+SIGNALS_FILE = "signals.json"
 _BOOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_boot.py")
 _INSPECT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_inspect.py")
+# Suites and resources as a grid: rows, and the keyword each calls (robot_grid.py).
+_GRID = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_grid.py")
+_GRID_SUFFIXES = (".robot", ".resource")
 _VARIABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _STATUS = {"PASS": "pass", "FAIL": "fail", "SKIP": "skip", "NOT RUN": "skip", "UNKNOWN": "unknown"}
 
@@ -123,6 +130,78 @@ def _config_jsonp(project_name: str, consul_addr: str) -> str:
         "  }\n"
         "}\n"
     )
+
+
+# ---- where the members of a run group meet ------------------------------------
+#
+# Flows that run side by side meet through the bench: one publishes a value
+# with ``Set Signal <name> <value>``, another waits for it at a gate on the
+# same signal (``Signal Should Be <name> == <value>``). That is read from the
+# flows, not declared, so only these two shapes are recognised: a keyword
+# step named "Set Signal", and a gate whose first argument is a signal some
+# other member sets (with ``==`` its value must match too).
+
+_VAR_REF_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+def _norm(name: str) -> str:
+    """Robot's name matching: case, spaces and underscores do not count."""
+    return re.sub(r"[\s_]+", "", str(name)).lower()
+
+
+def _resolve(value, values: Dict[str, str]) -> str:
+    table = {_norm(k): v for k, v in values.items()}
+    return _VAR_REF_RE.sub(lambda m: str(table.get(_norm(m.group(1)), m.group(0))), str(value))
+
+
+def _same_value(a: str, b: str) -> bool:
+    try:
+        return float(a) == float(b)
+    except ValueError:
+        return a.strip() == b.strip()
+
+
+def _walk_steps(steps):
+    for step in steps or []:
+        yield step
+        for key in ("body", "recovery", "yes", "no"):
+            yield from _walk_steps(step.get(key))
+
+
+def _flow_steps(flow: dict):
+    for phase in [flow.get("setup")] + list(flow.get("tests") or []) + [flow.get("teardown")]:
+        if phase:
+            yield from _walk_steps(phase.get("steps"))
+
+
+def sync_links(members: List[dict]) -> List[dict]:
+    """Where run-group members meet: ``[{"from": {"member", "node"},
+    "to": {"member", "node"}, "label"}]`` -- a ``Set Signal`` step of one
+    member that a gate of another member waits for.
+
+    ``members``: ``[{"id", "flow", "values"}]``, ``values`` being the
+    variables the member runs with (file defaults, then its own).
+    """
+    writes, waits = [], []
+    for m in members:
+        for step in _flow_steps(m["flow"]):
+            args = [_resolve(a, m.get("values") or {}) for a in step.get("args") or []]
+            if step.get("kind") == "keyword" and _norm(step.get("keyword", "")) == "setsignal" and len(args) >= 2:
+                writes.append((m["id"], step["id"], args[0], args[1]))
+            elif step.get("kind") == "gate" and args:
+                value = args[2] if len(args) >= 3 and args[1] == "==" else None
+                waits.append((m["id"], step["id"], args[0], value))
+    links = []
+    for w_member, w_node, name, value in writes:
+        for g_member, g_node, g_name, g_value in waits:
+            if g_member == w_member or g_name != name:
+                continue
+            if g_value is not None and not _same_value(g_value, value):
+                continue
+            links.append({"from": {"member": w_member, "node": w_node},
+                          "to": {"member": g_member, "node": g_node},
+                          "label": f"{name} = {value}"})
+    return links
 
 
 class RobotAioRunner(TestProjectRunner):
@@ -243,6 +322,14 @@ class RobotAioRunner(TestProjectRunner):
         env = self._env(root, settings)
         stop_file = os.path.join(output_dir, ".stop")
         env["MM_RUN_STOP_FILE"] = stop_file
+        if self._uses_flows(target_abs):
+            # The fork's robot.flow.signals: this run's own store (a group run
+            # shares one, see group_env). The settings' environment wins.
+            if "ROBOT_FLOW_SIGNALS" not in (settings.env or {}):
+                env["ROBOT_FLOW_SIGNALS"] = os.path.join(output_dir, SIGNALS_FILE)
+            if not options.dryrun:
+                # Where the run is in its flow, for the live Diagram (flow_position.py).
+                env["MM_FLOW_POSITION"] = os.path.join(output_dir, POSITION_FILE)
         return RunPlan(
             argv=argv, cwd=root, env=env, stop_file=stop_file,
             artifacts=[RunArtifact("log.html", "Log", primary=True),
@@ -271,17 +358,48 @@ class RobotAioRunner(TestProjectRunner):
     # ---- flow files: Diagram and Robot views -------------------------------
 
     def file_views(self, rel_path: str) -> List[Dict[str, str]]:
-        if str(rel_path).lower().endswith(FLOW_SUFFIX):
+        lower = str(rel_path).lower()
+        if lower.endswith(FLOW_SUFFIX):
             return [{"id": "diagram", "title": "Diagram", "type": "flow-graph"},
                     {"id": "robot", "title": "Robot", "type": "code", "language": "robot"}]
+        if lower.endswith(_GRID_SUFFIXES):
+            return [{"id": "grid", "title": "Grid", "type": "robot-grid"}]
         return []
 
     def inspect_file(self, root, layout, rel_path, content, settings: RunSettings):
-        """Ask the fork itself: ``flow_inspect.py`` runs with the project's
-        interpreter and path, so the diagram shows exactly the structure the
-        run will build -- and refuses exactly what the run would refuse."""
+        """Ask the tools themselves, with the project's interpreter and path:
+        for a flow, the fork (``flow_inspect.py``), so the diagram shows exactly
+        the structure the run will build -- and refuses what the run would
+        refuse; for a suite or resource, Robot's parser and Libdoc
+        (``robot_grid.py``), so every keyword resolves as it will at run time."""
         if not self.file_views(rel_path):
             return {"ok": False, "error": f"{rel_path} has no extra views."}
+        if str(rel_path).lower().endswith(_GRID_SUFFIXES):
+            data = self._run_helper(_GRID, root, rel_path, content, settings, "the file")
+            if not data.get("ok"):
+                return {k: data.get(k) for k in ("ok", "error", "node", "line", "missing")}
+            return {"ok": True, "views": {"grid": {k: data.get(k) for k in ("grid", "keywords", "imports", "catalog", "catalog_list", "variables", "features")}}}
+        data = self._inspect_flow(root, rel_path, content, settings)
+        if not data.get("ok"):
+            return {k: data.get(k) for k in ("ok", "error", "node", "line", "missing")}
+        return {"ok": True, "views": {"diagram": {"flow": data["flow"]},
+                                      "robot": {"text": data["robot"]}}}
+
+    def _inspect_flow(self, root, rel_path, content, settings: RunSettings) -> dict:
+        """``flow_inspect.py``'s answer for ``content`` (the text of ``rel_path``)."""
+        return self._run_helper(_INSPECT, root, rel_path, content, settings, "the flow")
+
+    def edit_view(self, root, layout, rel_path, content, view_id, edit, settings: RunSettings):
+        """A step changed in the Grid: Robot's own model applies it (``robot_grid.py
+        --edit``), so what the edit does not touch is written back as it was."""
+        if view_id != "grid" or not str(rel_path).lower().endswith(_GRID_SUFFIXES):
+            return {"ok": False, "error": f"{rel_path} is not edited in a {view_id} view."}
+        payload = json.dumps({"text": content, "edit": edit})
+        data = self._run_helper(_GRID, root, rel_path, payload, settings, "the edit", flags=["--edit"])
+        return {k: data.get(k) for k in ("ok", "text", "line", "error", "missing") if k in data}
+
+    def _run_helper(self, script, root, rel_path, content, settings: RunSettings, what, flags=()) -> dict:
+        """Run a helper script with the project's interpreter and path; its JSON answer."""
         import subprocess
         python = settings.python.strip() or sys.executable
         env = dict(os.environ)
@@ -293,22 +411,55 @@ class RobotAioRunner(TestProjectRunner):
         full = os.path.join(root, *str(rel_path).split("/"))
         try:
             proc = subprocess.run(
-                [python, _INSPECT, full], input=content.encode("utf-8"), capture_output=True,
-                cwd=root, env=env, timeout=30,
+                [python, script, *flags, full], input=content.encode("utf-8"), capture_output=True,
+                cwd=root, env=env, timeout=60,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            return {"ok": False, "error": f"Could not ask {python} about the flow: {exc}"}
+            return {"ok": False, "error": f"Could not ask {python} about {what}: {exc}"}
         try:
             data = json.loads(proc.stdout.decode("utf-8", errors="replace") or "null")
         except ValueError:
             data = None
         if not isinstance(data, dict):
             tail = proc.stderr.decode("utf-8", errors="replace").strip().splitlines()[-3:]
-            return {"ok": False, "error": "The flow could not be read: " + (" / ".join(tail) or f"exit {proc.returncode}")}
-        if not data.get("ok"):
-            return {k: data.get(k) for k in ("ok", "error", "node", "line", "missing")}
-        return {"ok": True, "views": {"diagram": {"flow": data["flow"]},
-                                      "robot": {"text": data["robot"]}}}
+            return {"ok": False, "error": f"{what[0].upper() + what[1:]} could not be read: " +
+                                          (" / ".join(tail) or f"exit {proc.returncode}")}
+        return data
+
+    # ---- run groups: every member's flow, and where they meet ----------------
+
+    def group_env(self, run_dir: str) -> Dict[str, str]:
+        """The members of a group run meet in one signal store of that run."""
+        return {"ROBOT_FLOW_SIGNALS": os.path.join(run_dir, SIGNALS_FILE)}
+
+    def group_views(self, group: RunGroup) -> List[Dict[str, str]]:
+        if group.members and all(m.target.lower().endswith(FLOW_SUFFIX) for m in group.members):
+            return [{"id": "sync", "title": "Diagram", "type": "flow-group"}]
+        return []
+
+    def inspect_group(self, root, layout, group: RunGroup, settings: RunSettings):
+        if not self.group_views(group):
+            return {"ok": False, "error": "Only groups of flow files can be drawn.", "member": None}
+        flows: Dict[str, dict] = {}
+        members = []
+        for m in group.members:
+            if m.target not in flows:
+                path = os.path.join(root, *m.target.split("/"))
+                with open(path, encoding="utf-8-sig", errors="replace") as fh:
+                    flows[m.target] = self._inspect_flow(root, m.target, fh.read(), settings)
+            data = flows[m.target]
+            if not data.get("ok"):
+                out = {k: data.get(k) for k in ("ok", "error", "node", "line", "missing")}
+                out.update(member=m.id, error=f"{m.id} ({m.target}): {data.get('error')}")
+                return out
+            values = dict(data["flow"].get("variables") or {})
+            values.update(m.variables)
+            members.append({"id": m.id, "target": m.target, "variables": m.variables,
+                            "values": values, "flow": data["flow"]})
+        links = sync_links(members)
+        for member in members:
+            member.pop("values")
+        return {"ok": True, "views": {"sync": {"members": members, "links": links}}}
 
     @staticmethod
     def _uses_flows(path: str) -> bool:

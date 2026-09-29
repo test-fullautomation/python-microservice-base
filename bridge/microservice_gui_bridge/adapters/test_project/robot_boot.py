@@ -37,5 +37,22 @@ def _watch() -> None:
 if _STOP_FILE:
     threading.Thread(target=_watch, name="mm-stop-watch", daemon=True).start()
 
-sys.argv = ["robot"] + sys.argv[1:]
+_args = sys.argv[1:]
+
+# The live position of a flow run (MM_FLOW_POSITION names the file): the
+# builder hook must be in place before Robot builds the suite, and the same
+# module is the listener. Options go first -- Robot stops reading options at
+# the first data source.
+if os.environ.get("MM_FLOW_POSITION"):
+    import importlib.util
+
+    _here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_position.py")
+    _spec = importlib.util.spec_from_file_location("flow_position", _here)
+    _position = importlib.util.module_from_spec(_spec)
+    sys.modules["flow_position"] = _position
+    _spec.loader.exec_module(_position)
+    if _position.install():
+        _args = ["--listener", _here] + _args
+
+sys.argv = ["robot"] + _args
 runpy.run_module("robot", run_name="__main__", alter_sys=True)

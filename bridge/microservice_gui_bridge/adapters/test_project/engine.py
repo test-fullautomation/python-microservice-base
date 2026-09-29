@@ -29,7 +29,9 @@ from dataclasses import asdict
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ...ports.test_project import (
+    GroupMember,
     PlannedFile,
+    RunGroup,
     RunSettings,
     ServiceExport,
     TestProjectConflict,
@@ -662,6 +664,7 @@ def project_tree(root: str) -> dict:
         "run_hint": runner.project_run_hint(layout),
         "can_run": runner.can_run(""),
         "run_settings": asdict(run_settings_of(manifest)),
+        "groups": [_group_entry(runner, g) for g in groups_of(manifest)],
     }
 
 
@@ -721,6 +724,152 @@ def set_run_settings(root: str, settings: dict) -> dict:
         manifest.pop("run", None)
     _save_manifest(root, manifest)
     return {"status": "ok", "root": root, "settings": data}
+
+
+# ---------------------------------------------------------------------------
+# Run groups (``"groups"`` in the manifest): processes started together
+# ---------------------------------------------------------------------------
+
+_GROUP_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
+_GROUP_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+MAX_GROUP_MEMBERS = 8
+
+
+def groups_of(manifest: dict) -> List[RunGroup]:
+    """The manifest's run groups, leniently: malformed entries are skipped
+    (:func:`set_groups` is what refuses them)."""
+    out: List[RunGroup] = []
+    raw = manifest.get("groups")
+    for g in raw if isinstance(raw, list) else []:
+        if not isinstance(g, dict) or not isinstance(g.get("id"), str):
+            continue
+        members = []
+        for m in g.get("members") if isinstance(g.get("members"), list) else []:
+            if isinstance(m, dict) and isinstance(m.get("id"), str) and isinstance(m.get("target"), str):
+                variables = m.get("variables") if isinstance(m.get("variables"), dict) else {}
+                members.append(GroupMember(m["id"], m["target"].replace("\\", "/").strip("/"),
+                                           {str(k): str(v) for k, v in variables.items()}))
+        env = g.get("env") if isinstance(g.get("env"), dict) else {}
+        out.append(RunGroup(g["id"], str(g.get("title") or ""), members,
+                            {str(k): str(v) for k, v in env.items()}))
+    return out
+
+
+def find_group(manifest: dict, group_id: str) -> RunGroup:
+    for group in groups_of(manifest):
+        if group.id == group_id:
+            return group
+    raise TestProjectError(f"No run group {group_id!r} in this project.")
+
+
+def _group_entry(runner: TestProjectRunner, group: RunGroup) -> dict:
+    entry = asdict(group)
+    entry["views"] = runner.group_views(group)
+    entry["runnable"] = len(group.members) >= 2 and all(runner.can_run(m.target) for m in group.members)
+    return entry
+
+
+def validate_groups(root: str, runner: TestProjectRunner, groups) -> List[RunGroup]:
+    """Check groups as the GUI sends them; returns them cleaned up."""
+    if not isinstance(groups, list):
+        raise TestProjectError("Run groups must be a list.")
+    out: List[RunGroup] = []
+    seen = set()
+    for i, g in enumerate(groups):
+        where = f"Group {i + 1}"
+        if not isinstance(g, dict):
+            raise TestProjectError(f"{where} must be an object.")
+        unknown = set(g) - {"id", "title", "members", "env", "views", "runnable"}
+        if unknown:
+            raise TestProjectError(f"{where}: unknown keys {', '.join(sorted(unknown))}.")
+        gid = str(g.get("id") or "").strip()
+        if not _GROUP_ID_RE.match(gid):
+            raise TestProjectError(f"{where}: the id {gid!r} must be letters, digits, '_' or '-' (at most 40).")
+        if gid in seen:
+            raise TestProjectError(f"Two groups are called {gid!r}.")
+        seen.add(gid)
+        where = f"Group {gid!r}"
+        members_raw = g.get("members")
+        if not isinstance(members_raw, list) or not 2 <= len(members_raw) <= MAX_GROUP_MEMBERS:
+            raise TestProjectError(f"{where} needs 2 to {MAX_GROUP_MEMBERS} members.")
+        members: List[GroupMember] = []
+        member_ids = set()
+        for m in members_raw:
+            if not isinstance(m, dict):
+                raise TestProjectError(f"{where}: every member must be an object.")
+            mid = str(m.get("id") or "").strip()
+            if not _GROUP_ID_RE.match(mid):
+                raise TestProjectError(f"{where}: the member id {mid!r} must be letters, digits, '_' or '-'.")
+            if mid in member_ids:
+                raise TestProjectError(f"{where}: two members are called {mid!r}.")
+            member_ids.add(mid)
+            target = str(m.get("target") or "").replace("\\", "/").strip().strip("/")
+            if not target:
+                raise TestProjectError(f"{where}: member {mid!r} names no file.")
+            _safe_join(root, target)
+            if not runner.can_run(target):
+                raise TestProjectError(f"{where}: {runner.display_name} cannot run {target}.")
+            variables = m.get("variables") or {}
+            if not isinstance(variables, dict):
+                raise TestProjectError(f"{where}: member {mid!r}: variables must map names to values.")
+            for name, value in variables.items():
+                if not isinstance(name, str) or not _GROUP_VAR_RE.match(name):
+                    raise TestProjectError(f"{where}: member {mid!r}: invalid variable name {name!r}.")
+                if not isinstance(value, (str, int, float, bool)):
+                    raise TestProjectError(f"{where}: member {mid!r}: variable {name} must be text.")
+            members.append(GroupMember(mid, target, {k: str(v) for k, v in variables.items()}))
+        env = g.get("env") or {}
+        if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+            raise TestProjectError(f"{where}: 'env' must map names to strings.")
+        out.append(RunGroup(gid, str(g.get("title") or "").strip(), members,
+                            {k.strip(): v for k, v in env.items() if k.strip()}))
+    return out
+
+
+def get_groups(root: str) -> dict:
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    runner = get_runner(manifest["runner"])
+    return {"status": "ok", "root": root,
+            "groups": [_group_entry(runner, g) for g in groups_of(manifest)]}
+
+
+def set_groups(root: str, groups) -> dict:
+    """Replace the project's run groups (an empty list removes them)."""
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    runner = get_runner(manifest["runner"])
+    clean = validate_groups(root, runner, groups)
+    if clean:
+        manifest["groups"] = [asdict(g) for g in clean]
+    else:
+        manifest.pop("groups", None)
+    _save_manifest(root, manifest)
+    return {"status": "ok", "root": root, "groups": [_group_entry(runner, g) for g in clean]}
+
+
+def inspect_group(root: str, group_id: str) -> dict:
+    """The runner's views of a run group (every member's flow and where they meet)."""
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    runner = get_runner(manifest["runner"])
+    group = find_group(manifest, group_id)
+    views = runner.group_views(group)
+    if not views:
+        raise TestProjectError(f"Run group {group_id!r} has no views.")
+    for m in group.members:
+        if not os.path.isfile(_safe_join(root, m.target)):
+            raise TestProjectError(f"Member {m.id} runs {m.target}, which does not exist.")
+    result = runner.inspect_group(root, _layout(runner, manifest), group, run_settings_of(manifest))
+    out = {"status": "ok", "group": group.id, "available": views}
+    out.update(result)
+    return out
 
 
 _EDITABLE_ROLES = ("yours", "starter")
@@ -798,6 +947,30 @@ def inspect_file(root: str, rel: str, content: Optional[str] = None) -> dict:
     result = runner.inspect_file(root, _layout(runner, manifest), rel, content,
                                  run_settings_of(manifest))
     out = {"status": "ok", "path": rel, "available": views}
+    out.update(result)
+    return out
+
+
+def edit_file_view(root: str, rel: str, view_id: str, content: str, edit: dict) -> dict:
+    """Apply an edit made in one of a file's views to ``content`` (the editor's
+    text); returns the new text for the editor. Only files the user owns
+    (``yours``, ``starter``) are edited this way -- like in the editor."""
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    runner = get_runner(manifest["runner"])
+    rel = str(rel).replace("\\", "/")
+    _safe_join(root, rel)
+    if not any(v["id"] == view_id for v in runner.file_views(rel)):
+        raise TestProjectError(f"{rel} has no view {view_id!r}.")
+    if _role_of(manifest, rel) not in _EDITABLE_ROLES:
+        raise TestProjectError(f"{rel} is not edited here: it is written by an export.")
+    if not isinstance(edit, dict):
+        raise TestProjectError("The edit must be an object.")
+    result = runner.edit_view(root, _layout(runner, manifest), rel, str(content), view_id, edit,
+                              run_settings_of(manifest))
+    out = {"status": "ok", "path": rel}
     out.update(result)
     return out
 
