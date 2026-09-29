@@ -98,7 +98,7 @@ class Test_Generated:
     def test_cpp_projects_get_the_same_component(self):
         files = generate_scaffold(_spec(language="cpp"))
         assert _component(files)["binds"]["grpc"] == "power_supply.v1.PowerSupplyService"
-        assert "C++ runtime does not register" in files["ui/README.md"]
+        assert "GUI=" in files["ui/README.md"] and "Python and C++ runtimes" in files["ui/README.md"]
 
 
 class Test_Bridge:
