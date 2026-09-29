@@ -35,6 +35,11 @@ struct BaseServiceSettings {
     // Python-style log level name ("DEBUG", "INFO", ...).
     std::string log_level = "INFO";
 
+    // Manager GUI folder of this service, registered as Consul Meta.gui
+    // (e.g. "PowerService1.0.0").  Empty = no GUI.  The Manager GUI then
+    // loads web/services/<gui>/ when the service is selected.
+    std::string gui;
+
     // Read an environment variable into *out* if set.  Subclasses call this
     // from their own loadFromEnv() with the service-specific prefix.
     static void readEnv(const std::string& key, std::string& out) {
@@ -61,6 +66,7 @@ struct BaseServiceSettings {
         readEnv(prefix + "CONSUL_ADDR",   consul_addr);
         readEnv(prefix + "CONSUL_TOKEN",  consul_token);
         readEnv(prefix + "LOG_LEVEL",     log_level);
+        readEnv(prefix + "GUI",           gui);
     }
 };
 

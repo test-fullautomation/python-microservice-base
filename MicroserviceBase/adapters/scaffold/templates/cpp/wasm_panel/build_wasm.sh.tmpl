@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# ==========================================================================
+#  @@{title} - Manager GUI panel (Qt WebAssembly)
+#
+#    ./build_wasm.sh            Release build
+#    ./build_wasm.sh debug      Debug build
+#    ./build_wasm.sh clean      delete the build folder
+#
+#  Output: build/wasm/@@{target}.js + @@{target}.wasm
+#  Install: set MM_SERVICES to the Manager GUI's web/services folder and
+#  this script copies the panel next to each component (<folder>/qt/) with
+#  its component.json from ../ui/<folder>/.
+#
+#  Qt 6.11 wasm_singlethread needs Emscripten 4.0.7 exactly.
+# ==========================================================================
+set -euo pipefail
+
+QT_WASM_DIR="${QT_WASM_DIR:-$HOME/Qt/6.11.0/wasm_singlethread}"
+QT_HOST_DIR="${QT_HOST_DIR:-$HOME/Qt/6.11.0/gcc_64}"
+EMSDK_DIR="${EMSDK_DIR:-$HOME/emsdk}"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BUILD_DIR="$SCRIPT_DIR/build/wasm"
+EMSCRIPTEN_DIR="$EMSDK_DIR/upstream/emscripten"
+
+BUILD_TYPE=Release
+case "${1:-}" in
+    debug) BUILD_TYPE=Debug ;;
+    clean) rm -rf "$BUILD_DIR"; echo "Removed $BUILD_DIR"; exit 0 ;;
+esac
+
+[ -f "$QT_WASM_DIR/lib/cmake/Qt6/qt.toolchain.cmake" ] || { echo "ERROR: Qt WebAssembly kit not found at $QT_WASM_DIR (set QT_WASM_DIR)"; exit 1; }
+[ -d "$QT_HOST_DIR" ] || { echo "ERROR: Qt host kit not found at $QT_HOST_DIR (set QT_HOST_DIR)"; exit 1; }
+[ -x "$EMSCRIPTEN_DIR/emcc" ] || { echo "ERROR: Emscripten not found at $EMSCRIPTEN_DIR (set EMSDK_DIR)"; exit 1; }
+
+export EMSDK="$EMSDK_DIR"
+export PATH="$EMSCRIPTEN_DIR:$EMSDK_DIR:$PATH"
+
+echo "===== Configure [$BUILD_TYPE] ====="
+cmake -G Ninja -S "$SCRIPT_DIR" -B "$BUILD_DIR" \
+    -DCMAKE_TOOLCHAIN_FILE="$QT_WASM_DIR/lib/cmake/Qt6/qt.toolchain.cmake" \
+    -DQT_CHAINLOAD_TOOLCHAIN_FILE="$EMSCRIPTEN_DIR/cmake/Modules/Platform/Emscripten.cmake" \
+    -DQT_HOST_PATH="$QT_HOST_DIR" \
+    -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+
+echo "===== Build ====="
+cmake --build "$BUILD_DIR"
+
+echo
+echo "Built: $BUILD_DIR/@@{target}.js"
+echo "       $BUILD_DIR/@@{target}.wasm"
+
+# The build goes in <folder>/qt/: a .wasm at the folder top would also be
+# offered as a classic (broker) panel, which cannot reach a gRPC service.
+install_into() {
+    local dest="$MM_SERVICES/$1"
+    mkdir -p "$dest/qt"
+    cp "$BUILD_DIR/@@{target}.js" "$BUILD_DIR/@@{target}.wasm" "$dest/qt/"
+    cp "$SCRIPT_DIR/../ui/$1/component.json" "$dest/"
+    echo "Installed into $dest"
+}
+
+if [ -n "${MM_SERVICES:-}" ]; then
+@@{install_calls_sh}
+fi

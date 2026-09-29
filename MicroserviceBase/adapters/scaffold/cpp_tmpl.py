@@ -2,7 +2,9 @@
 
 Generates CMake-based projects for gRPC microservices using the
 MicroserviceBase C++ runtime (ServiceRunner + ConsulRegistration).
-Supports four GUI variants: none, qml, wasm, widget.
+Supports four GUI variants: none, qml, wasm, widget. The wasm variant is
+the Manager GUI panel in gui_wasm/, emitted for every layout by
+``wasm_panel.py`` (called from ``generator.generate_scaffold``).
 """
 
 from __future__ import annotations
@@ -96,14 +98,10 @@ the single public entry point.
     # The "qt" and "google_vcpkg" variants emit standalone Qt projects below
     # (qt_client/ and qt_client_grpcpp/) so the client uses the Qt-installer
     # MinGW toolchain with no ABI conflict against the server.
+    # (gui_type "wasm" is the Manager GUI panel in gui_wasm/: wasm_panel.py.)
     google_gui = spec.gui_type != "none" and spec.client_grpc_kind == "google"
     if google_gui and spec.gui_type == "qml":
         files.update(_qml_files(spec))
-    elif google_gui and spec.gui_type == "wasm":
-        files.update(_wasm_files(spec))
-        if spec.gen_build_scripts:
-            files["build_wasm.bat"] = _build_wasm_bat(spec)
-            files["build_wasm.sh"] = _build_wasm_sh(spec)
     elif google_gui and spec.gui_type == "widget":
         files.update(_widget_files(spec))
 
@@ -468,11 +466,12 @@ def _set_env_bat(spec: "ScaffoldSpec") -> str:
     if spec.gui_type == "wasm":
         wasm_block = '''
 :: ----- Qt / Emscripten paths (only needed for WASM GUI builds) -----
-set "QT_WASM_DIR=C:\\Qt\\6.7.1\\wasm_singlethread"
-set "QT_HOST_DIR=C:\\Qt\\6.7.1\\msvc2019_64"
+set "QT_WASM_DIR=C:\\Qt\\6.11.0\\wasm_singlethread"
+set "QT_HOST_DIR=C:\\Qt\\6.11.0\\msvc2022_64"
 set "QT_CMAKE_DIR=C:\\Qt\\Tools\\CMake_64\\bin"
 set "QT_NINJA_DIR=C:\\Qt\\Tools\\Ninja"
-set "EMSDK_DIR=D:\\emsdk"
+:: Qt 6.11 wasm_singlethread needs Emscripten 4.0.7 (gui_wasm/build_wasm.bat)
+set "EMSDK_DIR=C:\\emsdk"
 '''
         wasm_summary = (
             'echo   QT_WASM_DIR  = %QT_WASM_DIR%\n'
@@ -515,8 +514,8 @@ def _set_env_sh(spec: "ScaffoldSpec") -> str:
     if spec.gui_type == "wasm":
         wasm_block = '''
 # ----- Qt / Emscripten paths (only needed for WASM GUI builds) -----
-export QT_WASM_DIR="$HOME/Qt/6.7.1/wasm_singlethread"
-export QT_HOST_DIR="$HOME/Qt/6.7.1/gcc_64"
+export QT_WASM_DIR="$HOME/Qt/6.11.0/wasm_singlethread"
+export QT_HOST_DIR="$HOME/Qt/6.11.0/gcc_64"
 export EMSDK_DIR="$HOME/emsdk"
 '''
         wasm_summary = (
@@ -622,20 +621,6 @@ def _gen_stubs_sh(spec: "ScaffoldSpec") -> str:
     )
 
 
-def _build_wasm_bat(spec: "ScaffoldSpec") -> str:
-    return load_template(
-        "cpp/build/build_wasm.bat.tmpl",
-        snake_name=spec.snake_name,
-    )
-
-
-def _build_wasm_sh(spec: "ScaffoldSpec") -> str:
-    return load_template(
-        "cpp/build/build_wasm.sh.tmpl",
-        snake_name=spec.snake_name,
-    )
-
-
 # -----------------------------------------------------------------------
 # QML GUI files
 # -----------------------------------------------------------------------
@@ -651,22 +636,6 @@ def _qml_files(spec: "ScaffoldSpec") -> Dict[str, str]:
             "cpp/client/qml/qmldir.tmpl"),
         "stubs/MicroserviceBase/ServiceBridge.qml": load_template(
             "cpp/client/qml/ServiceBridge.qml.tmpl"),
-    }
-
-
-# -----------------------------------------------------------------------
-# WASM GUI files
-# -----------------------------------------------------------------------
-
-def _wasm_files(spec: "ScaffoldSpec") -> Dict[str, str]:
-    svc = spec.service_name
-    return {
-        "wasm/main.cpp":      load_template("cpp/client/wasm/main.cpp.tmpl"),
-        "src/MainWidget.h":   load_template("cpp/client/wasm/MainWidget.h.tmpl"),
-        "src/MainWidget.cpp": load_template(
-            "cpp/client/wasm/MainWidget.cpp.tmpl", service_name=svc),
-        f"GUIs/{svc}.html":   load_template(
-            "cpp/client/wasm/service.html.tmpl", service_name=svc),
     }
 
 
@@ -1672,6 +1641,12 @@ def _mono_client_files(spec, services) -> Dict[str, str]:
     # duplicated work with no upside.
     ui_kind = spec.gui_type if (spec.gui_type in ("widget", "wasm", "qml")
                                 and spec.client_grpc_kind == "google") else "none"
+    # "wasm": the desktop Widget client here; the WebAssembly panel for the
+    # Manager GUI is gui_wasm/ (wasm_panel.py), not a build of this client,
+    # which links grpc++ and cannot be compiled to WebAssembly.
+    wasm = ui_kind == "wasm"
+    if wasm:
+        ui_kind = "widget"
     if ui_kind != "none":
         files["client/gui/ClientRegistry.h"]   = _mono_client_registry_h()
         files["client/gui/ClientRegistry.cpp"] = _mono_client_registry_cpp(spec, services)
@@ -1680,9 +1655,6 @@ def _mono_client_files(spec, services) -> Dict[str, str]:
         files["client/gui/main.cpp"]      = _mono_widget_main_cpp()
         files["client/gui/MainWindow.h"]  = _mono_widget_mainwindow_h()
         files["client/gui/MainWindow.cpp"] = _mono_widget_mainwindow_cpp(spec)
-        if ui_kind == "wasm":
-            files["client/build_wasm.bat"] = _mono_wasm_build_bat(spec)
-            files["client/build_wasm.sh"]  = _mono_wasm_build_sh(spec)
     elif ui_kind == "qml":
         files["client/gui/main.cpp"]         = _mono_qml_main_cpp(spec)
         files["client/gui/ClientBridge.h"]   = _mono_qml_bridge_h()
@@ -1703,7 +1675,7 @@ def _mono_client_files(spec, services) -> Dict[str, str]:
             "cpp/monorepo/client/ui_section_widget.md.tmpl",
             project_snake=project_snake,
         )
-        if ui_kind == "wasm":
+        if wasm:
             ui_section += load_template(
                 "cpp/monorepo/client/ui_section_wasm.md.tmpl")
     elif ui_kind == "qml":
@@ -1845,24 +1817,6 @@ def _mono_widget_mainwindow_cpp(spec) -> str:
     return load_template(
         "cpp/monorepo/client/widget_mainwindow.cpp.tmpl",
         title=f"{spec.service_name} Client",
-    )
-
-
-# ----------------------------------------------------------------------
-# Monorepo: WASM build scripts (reuses the Widget client)
-# ----------------------------------------------------------------------
-
-def _mono_wasm_build_bat(spec) -> str:
-    return load_template(
-        "cpp/monorepo/client/wasm_build.bat.tmpl",
-        project_snake=spec.snake_name,
-    )
-
-
-def _mono_wasm_build_sh(spec) -> str:
-    return load_template(
-        "cpp/monorepo/client/wasm_build.sh.tmpl",
-        project_snake=spec.snake_name,
     )
 
 

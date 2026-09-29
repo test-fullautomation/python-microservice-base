@@ -131,6 +131,8 @@ void ServiceRunner::serveForever() {
         }
         meta["grpc_services"] = ss.str();
     }
+    // The Manager GUI's folder for this service (same key as the Python runtime).
+    if (!m_settings.gui.empty()) meta["gui"] = m_settings.gui;
 
     m_consul = std::make_unique<ConsulRegistration>(
         m_settings.service_name,

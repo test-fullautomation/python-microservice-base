@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from . import shared, python_tmpl, cpp_tmpl
+from . import shared, python_tmpl, cpp_tmpl, wasm_panel
 
 #: Package of a single-layout Python service that holds its protoc output:
 #: main.py and the gRPC adapter import `from generated import ...`,
@@ -188,7 +188,17 @@ def generate_scaffold(spec: ScaffoldSpec) -> Dict[str, str]:
     """Return ``{path: content}`` for every file in the scaffold.
 
     Paths are relative to the project root (e.g. ``src/main.cpp``).
+    ``gui_type == "wasm"`` adds the Manager GUI panel (``gui_wasm/``) and
+    its components (``ui/``) to every layout and language.
     """
+    files = _generate_project(spec)
+    if spec.gui_type == "wasm":
+        files.update(wasm_panel.generate(spec, files))
+    return files
+
+
+def _generate_project(spec: ScaffoldSpec) -> Dict[str, str]:
+    """Every file of the scaffold except the WebAssembly panel."""
     # Multi-service path: one project folder, N gRPC services.  Layout
     # decides whether they share a process (multi_proto) or each get
     # their own (monorepo).

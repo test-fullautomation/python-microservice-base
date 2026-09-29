@@ -265,11 +265,12 @@
     var pythonGuis = [
       { value: 'none', label: 'None', desc: 'Service only, no GUI' },
       { value: 'html', label: 'HTML / JS', desc: 'Browser-based UI loaded by MicroserviceManagerGUI' },
+      { value: 'wasm', label: 'WASM panel (Qt Widgets)', desc: 'Manager GUI panel: Qt compiled to WebAssembly, calling the service over gRPC (gui_wasm/)' },
     ];
     var cppGuis = [
       { value: 'none', label: 'None', desc: 'Service only, no GUI' },
       { value: 'qml', label: 'QML (Qt Quick)', desc: 'Qt Quick UI with preview app + WASM-ready' },
-      { value: 'wasm', label: 'WASM (Qt Widgets)', desc: 'Qt Widgets compiled to WebAssembly for in-browser rendering' },
+      { value: 'wasm', label: 'WASM panel (Qt Widgets)', desc: 'Manager GUI panel: Qt compiled to WebAssembly, calling the service over gRPC (gui_wasm/)' },
       { value: 'widget', label: 'Widget (Qt Widgets)', desc: 'Native Qt Widgets desktop window' },
     ];
 
