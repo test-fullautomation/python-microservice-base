@@ -21,7 +21,8 @@
 # One py_test per test file (not one per directory) so a failure names
 # the file, and so Bazel can cache and re-run them independently.
 # Every target runs through ../pytest_wrapper.py because py_test executes
-# a script rather than a pytest session.
+# a script rather than a pytest session; `args` hands the wrapper the one
+# file to collect.
 #
 # Environment variables tests need are forwarded from .bazelrc
 # (`test --test_env=...`), NOT declared here.
@@ -50,6 +51,7 @@ py_test(
         "pytest_wrapper.py",
         "unit/test_@@{sn}_service.py",
     ],
+    args = ["$(rootpath unit/test_@@{sn}_service.py)"],
     data = ["pytest.ini"],
     imports = ["../.."],
     main = "pytest_wrapper.py",
@@ -68,6 +70,7 @@ py_test(
         "pytest_wrapper.py",
         "architecture/test_core_purity.py",
     ],
+    args = ["$(rootpath architecture/test_core_purity.py)"],
     data = [
         "pytest.ini",
         "//@@{bazel_pkg}:@@{sn}_folder",

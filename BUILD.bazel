@@ -66,6 +66,7 @@ py_library(
         "@pypi//grpcio-reflection",
         "@pypi//grpcio-tools",
         "@pypi//httpx",
+        "@pypi//pika",
         "@pypi//protobuf",
         "@pypi//psutil",
         "@pypi//pydantic",
