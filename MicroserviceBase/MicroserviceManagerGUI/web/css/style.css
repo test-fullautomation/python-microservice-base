@@ -276,6 +276,11 @@ body.ribbon-pinned {
   --ribbon-height: 86px;
 }
 
+/* The user guide hides the ribbon, pinned or not. */
+body.ribbon-pinned.help-open {
+  --ribbon-height: 0px;
+}
+
 body.ribbon-pinned .ribbon {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -2407,6 +2412,32 @@ body.dev-mode .app-navbar {
 
 .tpv-role-generated { background: color-mix(in srgb, var(--accent) 25%, transparent); color: #8FDCCB; }
 .tpv-role-starter   { background: rgba(46, 204, 113, 0.18); color: #8fe0b0; }
+.tpv-role-group     { background: rgba(255, 255, 255, 0.08); color: #c9d4dc; }
+.tpv-group-icon     { opacity: 0.8; }
+.tpv-empty.tpv-empty-sm { font-size: 0.78rem; padding-top: 0.2rem; }
+.tpv-empty.tpv-empty-sm a { color: #8FDCCB; }
+
+/* Run group editor (test-project modal) */
+.tpg-member {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  align-items: start;
+  margin-bottom: 0.4rem;
+}
+
+.tpg-member .tpg-m-vars {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.tpg-run-list {
+  padding-left: 1.1rem;
+  margin-bottom: 0.8rem;
+}
+
+.tpg-run-list li { margin-bottom: 0.2rem; }
 
 .tpv-dot {
   width: 7px;
@@ -2755,6 +2786,14 @@ body.dev-mode .app-navbar {
   padding: 0.6rem 0.75rem;
 }
 
+/* A view drawn by a plugin (Diagram, Grid, the group Diagram): the frame
+   takes its content's height and the page is the one scroller. A fixed,
+   scrolling pane inside the scrolling page gave two vertical scrollbars. */
+.tpv-view-pane:has(> .tpv-diagram) {
+  height: auto;
+  overflow: visible;
+}
+
 .tpv-view-note {
   font-size: 0.78rem;
   color: #6c757d;
@@ -2773,55 +2812,6 @@ body.dev-mode .app-navbar {
   white-space: pre;
   overflow: auto;
 }
-
-/* Flow diagram (web/js/FlowView.js): light, like the rest of the content area. */
-.flow-view {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  font-family: var(--font-family);
-}
-
-.flow-view .fv-lane { fill: #f3f6f8; stroke: #dfe6ea; }
-.flow-view .fv-lane-title { font: 600 11px Consolas, "Courier New", monospace; letter-spacing: 0.06em; fill: #1a9c83; }
-
-.flow-view .fv-node rect,
-.flow-view .fv-node polygon { fill: #ffffff; stroke: #b8c4cc; stroke-width: 1.3; }
-.flow-view .fv-node { cursor: pointer; outline: none; }
-.flow-view .fv-node:hover rect,
-.flow-view .fv-node:hover polygon,
-.flow-view .fv-node:focus-visible rect,
-.flow-view .fv-node:focus-visible polygon { stroke: var(--sidebar-active); stroke-width: 2.2; }
-
-.flow-view .fv-title { font-size: 13px; font-weight: 600; fill: #1a252f; text-anchor: middle; }
-.flow-view .fv-sub { font-size: 11px; fill: #6c7a86; text-anchor: middle; }
-
-.flow-view .fv-gate polygon { fill: #effaf7; stroke: #1a9c83; stroke-width: 1.8; }
-.flow-view .fv-sleep rect { stroke-dasharray: 4 3; }
-.flow-view .fv-decision polygon { fill: #fff8e6; stroke: #c9a227; stroke-width: 1.6; }
-.flow-view .fv-loop rect { fill: #f4effb; stroke: #7d5ba6; stroke-width: 1.8; }
-.flow-view .fv-try rect { fill: #eef2f5; stroke: #5d6d7e; stroke-width: 1.8; }
-.flow-view .fv-in-recovery rect,
-.flow-view .fv-in-recovery polygon { fill: #fff6e6; stroke: #c77c0e; }
-.flow-view .fv-error rect,
-.flow-view .fv-error polygon { stroke: #e74c3c; stroke-width: 2.6; }
-
-.flow-view .fv-frame { fill: none; stroke-width: 1.3; stroke-dasharray: 6 4; }
-.flow-view .fv-frame-loop { stroke: #b9a3d6; }
-.flow-view .fv-frame-try { stroke: #aab7c4; }
-.flow-view .fv-rec-zone { fill: #fffaf0; stroke: #e8c690; stroke-dasharray: 4 4; }
-
-.flow-view .fv-pill rect { fill: #ffffff; stroke: #1a252f; stroke-width: 1.3; }
-
-.flow-view .fv-edge { fill: none; stroke: #8a99a6; stroke-width: 1.5; }
-.flow-view .fv-edge-next { stroke: #7d5ba6; }
-.flow-view .fv-edge-fail { stroke: #c77c0e; stroke-width: 1.7; }
-.flow-view .fv-edge-cont { stroke: #c77c0e; stroke-width: 1.5; stroke-dasharray: 6 4; }
-
-.flow-view .fv-label { font-size: 11px; fill: #6c7a86; }
-.flow-view .fv-label-next { fill: #7d5ba6; }
-.flow-view .fv-label-fail,
-.flow-view .fv-label-cont { fill: #c77c0e; }
 
 /* ---------- Test project view: running tests ---------- */
 /* Verdict words are the runner-neutral ones the bridge reports
@@ -2947,6 +2937,7 @@ body.dev-mode .app-navbar {
 }
 
 .tpr-counts b { font-size: 1.05rem; margin-right: 0.2rem; }
+.tpr-counts-running { font-size: 0.8rem; color: #6c757d; font-style: italic; }
 .tpr-c-pass b    { color: #1e8449; }
 .tpr-c-fail b    { color: #c0392b; }
 .tpr-c-unknown b { color: #b9770e; }
@@ -2976,6 +2967,147 @@ body.dev-mode .app-navbar {
   line-height: 1.45;
   white-space: pre;
 }
+
+/* A group run: one console column per member, side by side (wrapping). */
+.tpr-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 0.6rem;
+}
+
+.tpr-member {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tpr-member-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  padding: 0.35rem 0.1rem;
+  min-height: 2.2rem;
+}
+
+.tpr-member-id {
+  font-weight: 700;
+}
+
+.tpr-member-meta {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.78rem;
+  color: #6c7a86;
+}
+
+.tpr-member-counts span { margin-right: 0.5rem; }
+
+.tpr-member-tools {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.tpr-console.tpr-member-console {
+  height: calc(100vh - 470px);
+}
+
+/* A flow run: the Diagram beside the console, lit where the run is. A
+   divider sets their widths (--tpr-split-a/b, from app.js); a group run's
+   member consoles stack, so the Diagram gets the room. Below 1100px the
+   two stack. */
+.tpr-live.tpr-with-diagram {
+  display: grid;
+  grid-template-columns: minmax(0, var(--tpr-split-a, 1fr)) 10px minmax(0, var(--tpr-split-b, 1fr));
+  align-items: start;
+}
+
+.tpr-live.tpr-with-diagram .tpr-members {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tpr-live.tpr-with-diagram .tpr-console.tpr-member-console {
+  height: calc((100vh - 420px - 0.6rem) / 2 - 2.2rem);
+  min-height: 120px;
+}
+
+.tpr-split {
+  align-self: stretch;
+  cursor: col-resize;
+  position: relative;
+  outline: none;
+}
+
+.tpr-split::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: #dfe6ea;
+}
+
+.tpr-split:hover::after,
+.tpr-split:focus-visible::after,
+.tpr-dragging .tpr-split::after {
+  background: var(--accent, #127A69);
+}
+
+.tpr-dragging { cursor: col-resize; user-select: none; }
+.tpr-dragging .tpr-diagram-pane { pointer-events: none; }
+
+.tpr-diagram-pane {
+  position: relative;
+  height: calc(100vh - 420px);
+  min-height: 220px;
+  overflow: auto;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #dfe6ea;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.tpr-diagram-tools {
+  position: sticky;
+  top: -0.25rem;       /* the pane's top padding */
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.25rem 0;
+  background: #ffffff;
+}
+
+.tpr-tool-group { display: inline-flex; }
+.tpr-tool-group + .tpr-tool-group { margin-left: 0.5rem; }
+
+.tpr-diagram-tools .btn {
+  padding: 0.05rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 0;
+}
+
+.tpr-tool-group .btn:first-child { border-radius: 4px 0 0 4px; }
+.tpr-tool-group .btn:last-child { border-radius: 0 4px 4px 0; }
+.tpr-tool-group .btn + .btn { margin-left: -1px; }
+
+.tpr-tab.tpr-diagram-toggle {
+  margin-left: auto;
+}
+
+@media (max-width: 1100px) {
+  .tpr-live.tpr-with-diagram {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.6rem;
+  }
+  .tpr-split { display: none; }
+}
+
 
 .tpr-console .tpr-l-pass    { color: #7ee2a8; }
 .tpr-console .tpr-l-fail    { color: #f1948a; }

@@ -5021,6 +5021,8 @@
       else if (_tpState.action === 'export') _applyExport();
       else if (_tpState.action === 'run') _applyRunDialog();
       else if (_tpState.action === 'run-settings') _applyRunSettings();
+      else if (_tpState.action === 'group') _applyGroupDialog();
+      else if (_tpState.action === 'run-group') _applyRunGroupDialog();
     });
   })();
 
@@ -5402,7 +5404,7 @@
   // Content: an overview (exported services, re-export, add a running
   // service) or a read-only preview of the selected file.
   // `runs`: the Runs pane is shown (then `selected` is null).
-  var _tpView = { selected: null, data: null, runs: false };
+  var _tpView = { selected: null, data: null, runs: false, group: null };
 
   var TPV_GROUPS = [
     { kind: 'suite', title: 'Suites', icon: 'bi-play-circle' },
@@ -5423,6 +5425,7 @@
   function _showTestProjectView() {
     _tpView.selected = null;
     _tpView.runs = false;
+    _tpView.group = null;
     if (_currentMode === 'testproject') renderTestProjectView();
     else switchMode('testproject');
   }
@@ -5490,8 +5493,10 @@
         }
         var keep = _tpView.selected && data.files.some(function (f) { return f.path === _tpView.selected; });
         if (!keep) _tpView.selected = null;
+        if (_tpView.group && !(data.groups || []).some(function (g) { return g.id === _tpView.group; })) _tpView.group = null;
         _renderTpvSidebar(data);
         if (_tpView.selected) _showTpvFile(_tpView.selected);
+        else if (_tpView.group) _showTpvGroup(_tpView.group);
         else if (_tpView.runs) _renderTpvRuns();
         else _renderTpvOverview(data);
       })
@@ -5511,7 +5516,7 @@
       '  <div class="tpv-project-name"><i class="bi bi-folder2-open me-1"></i>' + _escapeHtml(data.name) + '</div>' +
       '  <div class="tpv-project-meta">' + _escapeHtml(data.runner_name) + '</div>' +
       '</div>' +
-      '<button type="button" class="tpv-item' + (_tpView.selected || _tpView.runs ? '' : ' active') + '" data-tpv-overview="1">' +
+      '<button type="button" class="tpv-item' + (_tpView.selected || _tpView.runs || _tpView.group ? '' : ' active') + '" data-tpv-overview="1">' +
       '  <i class="bi bi-grid-1x2"></i><span class="tpv-item-label">Overview</span></button>' +
       (data.can_run
         ? '<button type="button" class="tpv-item' + (_tpView.runs ? ' active' : '') + '" data-tpv-runs="1">' +
@@ -5551,6 +5556,32 @@
       });
       html += '</div>';
     });
+    if (data.can_run) {
+      var groups = data.groups || [];
+      html += '<div class="tpv-group"><div class="tpv-group-title"><span><i class="bi bi-diagram-2 me-1"></i>Run groups</span><span>' +
+              '<button type="button" class="tpv-add" data-tpv-new-group="1" title="New run group: processes started together">' +
+              '<i class="bi bi-plus-lg"></i></button>' + groups.length + '</span></div>';
+      groups.forEach(function (g) {
+        var open = _tpView.group === g.id;
+        var who = g.members.map(function (m) { return m.id; }).join(' + ');
+        html +=
+          '<button type="button" class="tpv-item' + (open ? ' active' : '') + '" data-tpv-group="' + _escapeHtml(g.id) + '"' +
+          ' title="' + _escapeHtml((g.title || g.id) + ': ' + who + ', started together') + '">' +
+          '  <i class="bi bi-diagram-2 tpv-group-icon"></i>' +
+          '  <span class="tpv-item-label">' + _escapeHtml(g.title || g.id) + '</span>' +
+          (g.runnable
+            ? '  <span class="tpv-play" role="button" tabindex="0" data-tpv-run-group="' + _escapeHtml(g.id) + '"' +
+              ' title="Run ' + _escapeHtml(who) + ' together…"><i class="bi bi-play-fill"></i></span>'
+            : '') +
+          '  <span class="tpv-role tpv-role-group" title="' + _escapeHtml(who) + '">' + g.members.length + '\u00d7</span>' +
+          '</button>';
+      });
+      if (!groups.length) {
+        html += '<div class="tpv-empty tpv-empty-sm">Flows or suites that run side by side and wait for each other. ' +
+                '<a href="#" data-tpv-new-group="1">Add one\u2026</a></div>';
+      }
+      html += '</div>';
+    }
     if (data.truncated) html += '<div class="tpv-empty">Only the first 2000 files are listed.</div>';
     sidebar.innerHTML = html;
 
@@ -5559,6 +5590,7 @@
         _tpvGuard(function () {
           _tpView.selected = null;
           _tpView.runs = false;
+          _tpView.group = null;
           _renderTpvSidebar(data);
           _renderTpvOverview(data);
         });
@@ -5584,10 +5616,33 @@
         if (path === _tpView.selected && _tpvEditor) return;
         _tpvGuard(function () {
           _tpView.runs = false;
+          _tpView.group = null;
           _tpView.selected = path;
           _renderTpvSidebar(data);
           _showTpvFile(path);
         });
+      });
+    });
+    sidebar.querySelectorAll('[data-tpv-group]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-tpv-group');
+        _tpvGuard(function () { _showTpvGroup(id); });
+      });
+    });
+    sidebar.querySelectorAll('[data-tpv-run-group]').forEach(function (b) {
+      function go(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        _tpgRunDialog(b.getAttribute('data-tpv-run-group'));
+      }
+      b.addEventListener('click', go);
+      b.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') go(e); });
+    });
+    sidebar.querySelectorAll('[data-tpv-new-group]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        _tpgEditDialog(null);
       });
     });
     sidebar.querySelectorAll('[data-tpv-new-suite]').forEach(function (b) {
@@ -5600,6 +5655,7 @@
 
   function _renderTpvOverview(data) {
     var content = document.getElementById('testProjectContent');
+    _tpvDropFileView();
     function count(kind) {
       return data.files.filter(function (f) { return f.kind === kind && f.state !== 'missing'; }).length;
     }
@@ -5726,6 +5782,7 @@
     var role = TPV_ROLE[f.role] || [f.role, ''];
     _tpvEditor = null;
     _tpvViewState = null;
+    _tpvDropFileView();
 
     var head =
       '<div class="tpv-file-head">' +
@@ -5891,6 +5948,7 @@
 
     ta.addEventListener('input', function () {
       if (_tpvEditor !== ed) return;
+      ed.viewUndo = [];   // typed over: undoing a view's edit would undo the typing too
       _tpvRefreshEditor();
       _tpvStoreDraft(ed);
     });
@@ -5902,6 +5960,7 @@
       showConfirm('Revert ' + ed.path + ' to the saved version? Your changes are lost.', function () {
         if (_tpvEditor !== ed) return;
         ta.value = ed.original;
+        ed.viewUndo = [];
         _tpvClearDraft(ed.root, ed.path);
         _tpvRefreshEditor();
         _tpvShowProblems([], false);
@@ -6105,7 +6164,12 @@
 
   function _tpvGotoLine(line) {
     var ed = _tpvEditor;
-    if (!ed || !ed.textarea) return;
+    if (!ed || !ed.textarea) {
+      // A read-only file: scroll its preview to the line.
+      var pre = document.querySelector('#tpvFileBody pre');
+      if (pre) pre.scrollTop = Math.max(0, (line - 4) * (parseFloat(getComputedStyle(pre).lineHeight) || 18));
+      return;
+    }
     var ta = ed.textarea;
     var idx = 0;
     for (var i = 1; i < line; i++) {
@@ -6210,8 +6274,16 @@
 
   var TPV_TAB_KEY = 'mm_tpv_tab';
   var _tpvViewState = null;   // { path, views, getText, tab, cacheText, cacheRes }
+  var _tpvFileView = null;    // the plugin view mounted in the pane (file.views)
+
+  function _tpvDropFileView() {
+    if (_tpvFileView) { try { _tpvFileView.destroy(); } catch (e) { /* already gone */ } }
+    _tpvFileView = null;
+    _tprDropDiagram();
+  }
 
   function _tpvWireViews(f, getText) {
+    _tpvDropFileView();
     var views = f.views || [];
     var bar = document.getElementById('tpvTabs');
     if (!views.length || !bar) { _tpvViewState = null; return; }
@@ -6228,6 +6300,7 @@
     var st = _tpvViewState;
     if (!st) return;
     st.tab = id;
+    _tpvDropFileView();
     try { localStorage.setItem(TPV_TAB_KEY, id); } catch (e) { /* storage unavailable */ }
     document.querySelectorAll('#tpvTabs [data-tpv-tab]').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tpv-tab') === id);
@@ -6247,8 +6320,11 @@
       return;
     }
     pane.innerHTML = _devLoading('Asking ' + ((_tpView.data || {}).runner_name || 'the runner') + '…');
-    MM.testProjectClient.inspect(_getTestProject(), st.path, text)
-      .then(function (res) {
+    // Views are drawn by plugins: wait until they are loaded.
+    var pluginsReady = MM.endo && MM.endo.plugins ? MM.endo.plugins.ready : Promise.resolve();
+    Promise.all([MM.testProjectClient.inspect(_getTestProject(), st.path, text), pluginsReady])
+      .then(function (r) {
+        var res = r[0];
         if (_tpvViewState !== st) return;
         st.cacheText = text;
         st.cacheRes = res;
@@ -6298,17 +6374,99 @@
     }
     var data = (res.views || {})[view.id] || {};
     var note = unsaved ? ' Includes your unsaved changes.' : '';
-    if (view.type === 'flow-graph' && MM.flowView && data.flow) {
-      pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-diagram-3 me-1"></i>' +
-        _escapeHtml(data.flow.name || '') + ' — drawn from the runner’s own structure of the text in Script.' + note +
-        ' Click a node to find it there.</div><div class="tpv-diagram" id="tpvDiagram"></div>';
-      MM.flowView.mount(document.getElementById('tpvDiagram'), data.flow, { onNode: _tpvGotoNode });
+    // Drawn by a plugin (contributes["file.views"], for: [view.type]) in a
+    // sandboxed frame; a node it reveals is shown in Script.
+    var plugged = MM.endo && MM.endo.plugins ? MM.endo.plugins.fileViews(view.type)[0] : null;
+    _tpvDropFileView();
+    if (plugged) {
+      var what = view.type === 'flow-graph'
+        ? _escapeHtml((data.flow && data.flow.name) || '') + ' — drawn by the ' + _escapeHtml(plugged.pluginTitle) +
+          ' plugin from the runner’s own structure of the text in Script.' + note + ' Click a node to find it there.'
+        : 'Drawn by the ' + _escapeHtml(plugged.pluginTitle) + ' plugin from the text in Script, as the runner reads it.' + note;
+      pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-' + _escapeHtml(plugged.icon || 'window') + ' me-1"></i>' +
+        what + '</div><div class="tpv-diagram" id="tpvDiagram"></div>';
+      // What a view points at: a node of the flow, or a line of the file.
+      _tpvFileView = plugged.mount(document.getElementById('tpvDiagram'), _tpvViewData(view, res), function (target) {
+        if (!target) return;
+        if (target.node != null) {
+          _tpvGotoNode(String(target.node));
+        } else if (target.line != null && isFinite(target.line)) {
+          _tpvShowTab('script');
+          _tpvGotoLine(Number(target.line));
+        }
+      }, _tpvEditable() ? function (change) { return _tpvViewEdit(view, change); } : null);
     } else if (view.type === 'code') {
       pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-code-slash me-1"></i>What the runner builds from the text in Script; read-only.' + note + '</div>' +
         '<pre class="tpv-code-view">' + (view.language === 'robot' ? _rfHighlight(data.text || '') : _escapeHtml(data.text || '')) + '</pre>';
     } else {
-      pane.innerHTML = _devAlert('warning', 'This view cannot be shown', 'Unknown view type ' + view.type + '.');
+      pane.innerHTML = _tpvNoViewAlert(view.type);
     }
+  }
+
+  /** The file open in the editor, when it is the one the views show. */
+  function _tpvEditable() {
+    var st = _tpvViewState;
+    return !!(st && _tpvEditor && _tpvEditor.textarea && _tpvEditor.path === st.path);
+  }
+
+  /** A view's data for its plugin: the runner's, plus whether it may edit and can undo. */
+  function _tpvViewData(view, res) {
+    var data = Object.assign({}, (res.views || {})[view.id] || {});
+    data.editable = _tpvEditable();
+    data.undo = data.editable ? (_tpvEditor.viewUndo || []).length : 0;
+    return data;
+  }
+
+  /**
+   * An edit made in a view (a step changed in the Grid): the runner applies
+   * it to the editor's text, which then shows as an unsaved change -- saving,
+   * checking and conflicts stay the editor's. `{ op: 'undo' }` puts back the
+   * text from before the view's last edit.
+   */
+  function _tpvViewEdit(view, change) {
+    var st = _tpvViewState;
+    var ed = _tpvEditor;
+    if (!_tpvEditable()) return Promise.reject(new Error('This file is read-only here.'));
+    var before = ed.textarea.value;
+    var next;
+    if (change && change.op === 'undo') {
+      var prev = (ed.viewUndo || []).pop();
+      if (prev == null) return Promise.reject(new Error('Nothing to undo.'));
+      next = Promise.resolve({ ok: true, text: prev, line: null });
+    } else {
+      next = MM.testProjectClient.viewEdit(ed.root, st.path, view.id, before, change);
+    }
+    return next.then(function (res) {
+      if (!res.ok) throw new Error(res.error || 'The change was not applied.');
+      if (_tpvEditor !== ed || _tpvViewState !== st) throw new Error('The file was closed meanwhile.');
+      if (!(change && change.op === 'undo')) {
+        (ed.viewUndo = ed.viewUndo || []).push(before);
+        if (ed.viewUndo.length > 50) ed.viewUndo.shift();
+      }
+      ed.textarea.value = res.text;
+      _tpvRefreshEditor();
+      _tpvStoreDraft(ed);
+      if (_tpView.data) _renderTpvSidebar(_tpView.data);   // the unsaved-changes dot
+      // The view shows the new text as the runner reads it.
+      return MM.testProjectClient.inspect(ed.root, st.path, res.text).then(function (fresh) {
+        st.cacheText = res.text;
+        st.cacheRes = fresh;
+        if (fresh.ok && _tpvFileView && _tpvFileView.setData) _tpvFileView.setData(_tpvViewData(view, fresh));
+        else if (!fresh.ok) _tpvDrawView(view, fresh);
+        return { ok: true, line: res.line, undo: (ed.viewUndo || []).length };
+      });
+    });
+  }
+
+  /** Why a view of `type` cannot be drawn: its plugin is off, broken or missing. */
+  function _tpvNoViewAlert(type) {
+    var providers = MM.endo && MM.endo.plugins ? MM.endo.plugins.fileViewProviders(type) : [];
+    var off = providers.length && providers[0].state === 'disabled';
+    return providers.length
+      ? _devAlert('warning', 'The ' + providers[0].title + (off ? ' plugin is turned off' : ' plugin is not running'),
+          off ? 'It draws this view. Turn it on under Administrator → Plugins.'
+              : 'It draws this view. See Administrator → Plugins for why it is ' + providers[0].state + '.')
+      : _devAlert('warning', 'This view cannot be shown', 'No plugin draws views of type ' + type + '.');
   }
 
   /** Back to Script, on the line that defines node `id`. */
@@ -6327,6 +6485,352 @@
       var pre = document.querySelector('#tpvFileBody pre');
       if (pre) pre.scrollTop = Math.max(0, (line - 4) * (parseFloat(getComputedStyle(pre).lineHeight) || 18));
     }
+  }
+
+  // ---- Run groups --------------------------------------------------------------
+  // Processes started together that meet through the bench (a flow run twice
+  // with different variables, each waiting for the other). Stored under
+  // "groups" in testproject.json; the runner draws them (flow-group view) and
+  // the run manager starts, follows and stops them as one run.
+
+  var _tpgState = null;   // { id, tab, res } of the open group page
+
+  function _tpgFind(id) {
+    return ((_tpView.data || {}).groups || []).filter(function (g) { return g.id === id; })[0] || null;
+  }
+
+  function _showTpvGroup(id) {
+    var data = _tpView.data || {};
+    var g = _tpgFind(id);
+    if (!g) { _showTestProjectView(); return; }
+    _tpView.selected = null;
+    _tpView.runs = false;
+    _tpView.group = id;
+    _tpvEditor = null;
+    _tpvViewState = null;
+    _tpvDropFileView();
+    _renderTpvSidebar(data);
+    var content = document.getElementById('testProjectContent');
+    var views = g.views || [];
+    var env = Object.keys(g.env || {});
+    content.innerHTML =
+      '<div class="tpv-view">' +
+      '  <div class="tpv-file-head">' +
+      '    <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
+      '    <i class="bi bi-diagram-2"></i><strong>' + _escapeHtml(g.title || g.id) + '</strong>' +
+      '    <code>' + _escapeHtml(g.id) + '</code>' +
+      '    <span class="dev-tag">' + g.members.length + ' processes</span>' +
+      '    <div class="tpv-file-tools">' +
+      '      <button type="button" class="btn btn-sm btn-primary" id="tpgRun"' + (g.runnable ? '' : ' disabled') + '>' +
+      '        <i class="bi bi-play-fill me-1"></i>Run…</button>' +
+      '      <button type="button" class="btn btn-sm btn-outline-secondary" id="tpgEdit"><i class="bi bi-pencil me-1"></i>Edit…</button>' +
+      '      <button type="button" class="btn btn-sm btn-outline-danger" id="tpgDelete" title="Remove the group from testproject.json; its files stay">' +
+      '        <i class="bi bi-trash"></i></button>' +
+      '    </div>' +
+      '  </div>' +
+      _tpvNote('Started together, stopped together; each member writes its results to its own folder of the run. ' +
+               (env.length ? 'Every member also gets ' + env.join(', ') + '.' : '')) +
+      '  <div class="tpr-tabs tpv-tabs" id="tpgTabs" role="tablist">' +
+      (views.length ? '<button type="button" class="tpr-tab" data-tpg-tab="diagram">' + _escapeHtml(views[0].title) + '</button>' : '') +
+      '    <button type="button" class="tpr-tab" data-tpg-tab="members">Members</button>' +
+      '  </div>' +
+      '  <div class="tpv-view-pane" id="tpgDiagram" hidden></div>' +
+      '  <div id="tpgMembers" hidden></div>' +
+      '</div>';
+    document.getElementById('tpvBack').addEventListener('click', function (e) {
+      e.preventDefault();
+      _tpView.group = null;
+      _renderTpvSidebar(data);
+      _renderTpvOverview(data);
+    });
+    document.getElementById('tpgRun').addEventListener('click', function () { _tpgRunDialog(g.id); });
+    document.getElementById('tpgEdit').addEventListener('click', function () { _tpgEditDialog(g.id); });
+    document.getElementById('tpgDelete').addEventListener('click', function () {
+      showConfirm('Remove the run group "' + (g.title || g.id) + '"? Its files and earlier runs stay.', function () {
+        var rest = (data.groups || []).filter(function (x) { return x.id !== g.id; });
+        MM.testProjectClient.groups(_getTestProject(), rest)
+          .then(function (res) {
+            data.groups = res.groups;
+            showToast('Run groups', 'Removed ' + (g.title || g.id) + '.', 'success');
+            _showTestProjectView();
+          })
+          .catch(function (err) { showToast('Run groups', err.message || String(err), 'danger'); });
+      });
+    });
+    document.querySelectorAll('#tpgTabs [data-tpg-tab]').forEach(function (b) {
+      b.addEventListener('click', function () { _tpgShowTab(b.getAttribute('data-tpg-tab')); });
+    });
+    _tpgRenderMembers(g);
+    _tpgState = { id: g.id, tab: null, res: null };
+    _tpgShowTab(views.length ? 'diagram' : 'members');
+  }
+
+  function _tpgRenderMembers(g) {
+    var box = document.getElementById('tpgMembers');
+    box.innerHTML =
+      '<div class="svc-ov-table-wrap"><table class="svc-ov-table"><thead><tr><th>Member</th><th>Runs</th><th>Variables</th></tr></thead><tbody>' +
+      g.members.map(function (m) {
+        return '<tr><td><strong>' + _escapeHtml(m.id) + '</strong></td>' +
+          '<td><a href="#" data-tpg-open="' + _escapeHtml(m.target) + '"><code>' + _escapeHtml(m.target) + '</code></a></td>' +
+          '<td>' + (Object.keys(m.variables || {}).map(function (k) {
+            return '<code>' + _escapeHtml(k + '=' + m.variables[k]) + '</code>';
+          }).join(' ') || '<span class="text-muted">—</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      (Object.keys(g.env || {}).length
+        ? '<div class="small mt-2"><span class="text-muted">Environment of every member:</span> ' +
+          Object.keys(g.env).map(function (k) { return '<code>' + _escapeHtml(k + '=' + g.env[k]) + '</code>'; }).join(' ') +
+          ' <span class="text-muted">(<code>${RUN_DIR}</code> is the run’s own folder)</span></div>'
+        : '');
+    box.querySelectorAll('[data-tpg-open]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        _tpgOpenFile(a.getAttribute('data-tpg-open'), null);
+      });
+    });
+  }
+
+  function _tpgShowTab(which) {
+    var st = _tpgState;
+    if (!st || _tpView.group !== st.id || !document.getElementById('tpgDiagram')) return;
+    st.tab = which;
+    document.querySelectorAll('#tpgTabs [data-tpg-tab]').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tpg-tab') === which);
+    });
+    var pane = document.getElementById('tpgDiagram');
+    document.getElementById('tpgMembers').hidden = which !== 'members';
+    pane.hidden = which !== 'diagram';
+    if (which !== 'diagram') return;
+    var g = _tpgFind(st.id);
+    var view = g && (g.views || [])[0];
+    if (!view) return;
+    if (st.res) { _tpgDrawDiagram(g, view, st.res); return; }
+    pane.innerHTML = _devLoading('Asking ' + ((_tpView.data || {}).runner_name || 'the runner') + ' about ' + g.members.length + ' flows…');
+    var pluginsReady = MM.endo && MM.endo.plugins ? MM.endo.plugins.ready : Promise.resolve();
+    Promise.all([MM.testProjectClient.inspectGroup(_getTestProject(), g.id), pluginsReady])
+      .then(function (r) {
+        if (_tpgState !== st) return;
+        st.res = r[0];
+        if (st.tab === 'diagram') _tpgDrawDiagram(g, view, st.res);
+      })
+      .catch(function (err) {
+        if (_tpgState === st && st.tab === 'diagram') pane.innerHTML = _devAlert('warning', 'No diagram', err.message || err);
+      });
+  }
+
+  function _tpgDrawDiagram(g, view, res) {
+    var pane = document.getElementById('tpgDiagram');
+    if (!pane) return;
+    _tpvDropFileView();
+    if (!res.ok) {
+      var m = g.members.filter(function (x) { return x.id === res.member; })[0];
+      pane.innerHTML = _devAlert(res.missing ? 'warning' : 'danger',
+        res.missing ? 'The runner’s tools are not on the project’s path' : 'The runner refuses a member’s flow', res.error) +
+        (m ? '<div class="tp-links"><a href="#" id="tpgOpenBroken">Open ' + _escapeHtml(m.target) + '</a></div>' : '');
+      var a = document.getElementById('tpgOpenBroken');
+      if (a) a.addEventListener('click', function (e) { e.preventDefault(); _tpgOpenFile(m.target, res.node || null); });
+      return;
+    }
+    var data = (res.views || {})[view.id] || {};
+    var plugged = MM.endo && MM.endo.plugins ? MM.endo.plugins.fileViews(view.type)[0] : null;
+    if (!plugged) { pane.innerHTML = _tpvNoViewAlert(view.type); return; }
+    pane.innerHTML = '<div class="tpv-diagram" id="tpgDiagramFrame"></div>';
+    _tpvFileView = plugged.mount(document.getElementById('tpgDiagramFrame'), data, function (target) {
+      var member = target && g.members.filter(function (x) { return x.id === target.member; })[0];
+      if (member) _tpgOpenFile(member.target, target.node != null ? String(target.node) : null);
+    });
+  }
+
+  /** Open a member's file; with `node`, on the line that defines it once it has loaded. */
+  function _tpgOpenFile(path, node) {
+    var data = _tpView.data || {};
+    _tpView.group = null;
+    _tpView.runs = false;
+    _tpView.selected = path;
+    _renderTpvSidebar(data);
+    _showTpvFile(path);
+    if (node == null) return;
+    var tries = 0;
+    (function wait() {
+      if (_tpView.selected !== path) return;
+      if (_tpvViewState && _tpvViewState.path === path) { _tpvGotoNode(node); return; }
+      if (++tries < 50) setTimeout(wait, 100);
+    })();
+  }
+
+  /** Create (id null) or edit a run group, in the test-project modal. */
+  function _tpgEditDialog(id) {
+    var root = _getTestProject();
+    var data = _tpView.data || {};
+    if (!root) return;
+    var runnable = (data.files || []).filter(function (f) { return f.runnable; }).map(function (f) { return f.path; });
+    if (!runnable.length) {
+      showToast('Run groups', 'The project has nothing to run yet: add a suite or a flow first.', 'warning');
+      return;
+    }
+    var g = id ? _tpgFind(id) : null;
+    var flows = runnable.filter(function (p) { return /\.flow\.json$/i.test(p); });
+    var first = flows[0] || runnable[0];
+    var draft = g ? JSON.parse(JSON.stringify(g)) : {
+      id: '', title: '', env: {},
+      members: [{ id: 'A', target: first, variables: {} }, { id: 'B', target: first, variables: {} }]
+    };
+    _tpState = { action: 'group', root: root, original: id, runnable: runnable };
+    _tpShow('<i class="bi bi-diagram-2 me-2"></i>' + (g ? 'Edit run group' : 'New run group'),
+      '<div class="tpr-form tpg-form">' +
+      '  <p class="small text-muted">Files of this project started at the same time, e.g. one flow run twice with different variables, ' +
+      '  each waiting at a gate for what the other publishes. Stop stops them all; the run’s verdict is the worst of theirs.</p>' +
+      '  <div class="row g-2 mb-3">' +
+      '    <div class="col-5"><label class="form-label small" for="tpgId">Id</label>' +
+      '      <input type="text" class="form-control form-control-sm" id="tpgId" spellcheck="false" placeholder="e.g. rendezvous"></div>' +
+      '    <div class="col-7"><label class="form-label small" for="tpgTitle">Title</label>' +
+      '      <input type="text" class="form-control form-control-sm" id="tpgTitle" placeholder="e.g. IVI + ADAS rendezvous"></div>' +
+      '  </div>' +
+      '  <label class="form-label small">Members</label>' +
+      '  <div id="tpgMembersEdit"></div>' +
+      '  <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="tpgAddMember"><i class="bi bi-plus-lg me-1"></i>Add member</button>' +
+      '  <div class="mb-2">' +
+      '    <label class="form-label small" for="tpgEnv">Environment of every member</label>' +
+      '    <textarea class="form-control form-control-sm" id="tpgEnv" rows="2" spellcheck="false" placeholder="NAME=value, one per line"></textarea>' +
+      '    <div class="form-text"><code>${RUN_DIR}</code> is the run’s own folder — a fresh meeting place per run (e.g. a shared signal store); ' +
+      '    <code>${PROJECT_DIR}</code> the project root.</div>' +
+      '  </div>' +
+      '  <div class="form-text">Saved in <code>testproject.json</code> under <code>"groups"</code>.</div>' +
+      '  <div id="tpgError" class="mt-2"></div>' +
+      '</div>',
+      '<i class="bi bi-save me-1"></i>Save');
+    document.getElementById('tpgId').value = draft.id;
+    document.getElementById('tpgTitle').value = draft.title || '';
+    document.getElementById('tpgEnv').value = _tprPairsText(draft.env);
+    draft.members.forEach(function (m) { _tpgAddMemberRow(m); });
+    document.getElementById('tpgAddMember').addEventListener('click', function () {
+      var n = document.querySelectorAll('#tpgMembersEdit .tpg-member').length;
+      _tpgAddMemberRow({ id: String.fromCharCode(65 + (n % 26)), target: first, variables: {} });
+    });
+  }
+
+  function _tpgAddMemberRow(m) {
+    var box = document.getElementById('tpgMembersEdit');
+    var files = (_tpState && _tpState.runnable) || [];
+    if (m.target && files.indexOf(m.target) < 0) files = [m.target].concat(files);
+    var row = document.createElement('div');
+    row.className = 'tpg-member';
+    row.innerHTML =
+      '<input type="text" class="form-control form-control-sm tpg-m-id" spellcheck="false" placeholder="Id" title="Member id (also its results folder)">' +
+      '<select class="form-select form-select-sm tpg-m-target" title="What it runs">' +
+        files.map(function (f) { return '<option value="' + _escapeHtml(f) + '">' + _escapeHtml(f) + '</option>'; }).join('') +
+      '</select>' +
+      '<textarea class="form-control form-control-sm tpg-m-vars" rows="1" spellcheck="false" placeholder="NAME=value, one per line"></textarea>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary tpg-m-remove" title="Remove this member"><i class="bi bi-x-lg"></i></button>';
+    box.appendChild(row);
+    row.querySelector('.tpg-m-id').value = m.id || '';
+    row.querySelector('.tpg-m-target').value = m.target || files[0] || '';
+    row.querySelector('.tpg-m-vars').value = _tprPairsText(m.variables);
+    row.querySelector('.tpg-m-vars').rows = Math.max(1, Object.keys(m.variables || {}).length);
+    row.querySelector('.tpg-m-remove').addEventListener('click', function () { row.remove(); });
+  }
+
+  function _applyGroupDialog() {
+    var st = _tpState;
+    var err = document.getElementById('tpgError');
+    function fail(text) { err.innerHTML = _devAlert('warning', 'Not saved', text); }
+    var members = [];
+    var rows = document.querySelectorAll('#tpgMembersEdit .tpg-member');
+    for (var i = 0; i < rows.length; i++) {
+      var vars = _tprParsePairs(rows[i].querySelector('.tpg-m-vars').value, 'Member ' + (i + 1) + ' variables');
+      if (vars.error) return fail(vars.error);
+      members.push({ id: rows[i].querySelector('.tpg-m-id').value.trim(),
+                     target: rows[i].querySelector('.tpg-m-target').value, variables: vars.vars });
+    }
+    var env = _tprParsePairs(document.getElementById('tpgEnv').value, 'Environment');
+    if (env.error) return fail(env.error);
+    var group = { id: document.getElementById('tpgId').value.trim(),
+                  title: document.getElementById('tpgTitle').value.trim(), members: members, env: env.vars };
+    var others = ((_tpView.data || {}).groups || []).filter(function (g) { return g.id !== st.original; })
+      .map(function (g) { return { id: g.id, title: g.title, members: g.members, env: g.env }; });
+    var list = others.slice();
+    var at = ((_tpView.data || {}).groups || []).map(function (g) { return g.id; }).indexOf(st.original);
+    if (at >= 0) list.splice(at, 0, group); else list.push(group);
+    var apply = document.getElementById('btnTestProjectApply');
+    apply.disabled = true;
+    MM.testProjectClient.groups(st.root, list)
+      .then(function (res) {
+        if (_tpView.data) _tpView.data.groups = res.groups;
+        st.action = 'done';
+        _testProjectModal.hide();
+        showToast('Run groups', 'Saved ' + (group.title || group.id) + ' in testproject.json.', 'success');
+        _tpvGuard(function () { _showTpvGroup(group.id); });
+      })
+      .catch(function (e) {
+        apply.disabled = false;
+        fail(e.message || String(e));
+      });
+  }
+
+  function _tpgRunDialog(id) {
+    var root = _getTestProject();
+    var g = _tpgFind(id);
+    if (!root || !g) return;
+    var live = _tprLiveRun(root);
+    if (live) {
+      showToast('Run', 'A run is already in progress: ' + live.record.target_label + '.', 'warning');
+      _tpvGuard(function () { _showTpvRuns(live.id); });
+      return;
+    }
+    var unsaved = _tpvDirty() && g.members.some(function (m) { return m.target === _tpvEditor.path; });
+    if (unsaved) {
+      showToast('Run', 'Save ' + _tpvEditor.path + ' first (Ctrl+S): a run uses the files as they are on disk.', 'warning');
+      return;
+    }
+    var saved = _tprLoadOptions(root, 'group:' + id);
+    _tpState = { action: 'run-group', root: root, group: id };
+    _tpShow('<i class="bi bi-play-fill me-2"></i>Run ' + _escapeHtml(g.title || g.id),
+      '<div class="tpr-form">' +
+      '  <p class="mb-2">Starts these processes at the same time:</p>' +
+      '  <ul class="tpg-run-list">' + g.members.map(function (m) {
+        var vars = Object.keys(m.variables || {}).map(function (k) { return k + '=' + m.variables[k]; }).join(', ');
+        return '<li><strong>' + _escapeHtml(m.id) + '</strong> <code>' + _escapeHtml(m.target) + '</code>' +
+          (vars ? ' <span class="small text-muted">' + _escapeHtml(vars) + '</span>' : '') + '</li>';
+      }).join('') + '</ul>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="tpgDry">' +
+      '    <label class="form-check-label small" for="tpgDry">Dry run: check keywords and arguments, execute nothing</label>' +
+      '  </div>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="tpgRes">' +
+      '    <label class="form-check-label small" for="tpgRes">Record RAM and CPU of the run: a <em>Resources</em> report with a verdict per process, for long runs</label>' +
+      '  </div>' +
+      '  <div class="small text-muted">Each member’s variables are part of the group — <a href="#" id="tpgRunEdit">Edit the group…</a></div>' +
+      '</div>',
+      '<i class="bi bi-play-fill me-1"></i>Run ' + g.members.length);
+    document.getElementById('tpgDry').checked = !!saved.dryrun;
+    document.getElementById('tpgRes').checked = !!saved.resources;
+    document.getElementById('tpgRunEdit').addEventListener('click', function (e) {
+      e.preventDefault();
+      _tpgEditDialog(id);
+    });
+  }
+
+  function _applyRunGroupDialog() {
+    var st = _tpState;
+    var dryrun = document.getElementById('tpgDry').checked;
+    var resources = document.getElementById('tpgRes').checked;
+    _tprStoreOptions(st.root, 'group:' + st.group, { dryrun: dryrun, resources: resources });
+    st.action = 'done';
+    _afterModalHidden(function () { _tprStartGroup(st.root, st.group, { dryrun: dryrun, resources: resources }); });
+  }
+
+  function _tprStartGroup(root, id, opts) {
+    return MM.testProjectClient.runGroup(root, id, opts)
+      .then(function (rec) {
+        var e = _tprRuns[_tprKey(root, rec.id)] =
+          { root: root, id: rec.id, record: rec, lines: [], memberLines: [], since: 0, polling: false };
+        _tprPoll(e);
+        _tpvGuard(function () { _showTpvRuns(rec.id); });
+        return rec;
+      })
+      .catch(function (err) {
+        showToast('Run not started', err.message || String(err), 'danger');
+      });
   }
 
   // ---- Running tests ---------------------------------------------------------
@@ -6348,6 +6852,12 @@
   var _tprShown = null;          // run id shown in the Runs pane
   var _tprRenderedKey = null;    // root|id whose skeleton is in the DOM
   var _tprHistory = [];          // last history read for the open project
+  var _tprDiagram = null;        // the live Diagram beside the console: { key, view, base, live, ... }
+  var TPR_DIAGRAM_KEY = 'mm_tpr_diagram';   // '0' = the user hid it
+  var TPR_FOLLOW_PAUSE_MS = 8000;           // after the user scrolls it, the Diagram stays put this long
+  var TPR_SPLIT_KEY = 'mm_tpr_split';       // the console's share of the width, beside the Diagram
+  var TPR_ZOOM_KEY = 'mm_tpr_zoom';         // 'fit' | '0.75' | 'natural'
+  var TPR_MOTION_KEY = 'mm_tpr_motion';     // how the steps between two polls replay: 'tail' | 'hop' | 'off'
 
   function _tprKey(root, id) { return root + '|' + id; }
 
@@ -6360,7 +6870,9 @@
   }
 
   function _tprState(rec) {
-    return rec.run_state && rec.run_state !== 'done' ? rec.run_state : (rec.verdict || 'error');
+    // A run says run_state; the members of a group run keep their own "state".
+    var live = rec.run_state || rec.state;
+    return live && live !== 'done' ? live : (rec.verdict || 'error');
   }
 
   function _tprBadge(rec, small) {
@@ -6386,6 +6898,16 @@
     if (isNaN(d.getTime())) return String(iso).replace('T', ' ');
     var today = new Date().toDateString() === d.toDateString();
     return (today ? '' : d.toLocaleDateString() + ' ') + d.toLocaleTimeString();
+  }
+
+  /**
+   * A history row's Tests cell. The counts go in a span: flex layout on the
+   * <td> itself would take it out of the table, and an empty one (a run
+   * still going) would not fill its row.
+   */
+  function _tprCountsCell(r) {
+    if (r.run_state && r.run_state !== 'done') return '<span class="tpr-counts-running">running…</span>';
+    return '<span class="tpr-counts">' + _tprCounts(r.counts, true) + '</span>';
   }
 
   function _tprCounts(c, compact) {
@@ -6466,12 +6988,17 @@
       '    <input class="form-check-input" type="checkbox" id="tprDry">' +
       '    <label class="form-check-label small" for="tprDry">Dry run: check keywords and arguments, execute nothing</label>' +
       '  </div>' +
+      '  <div class="form-check mb-2">' +
+      '    <input class="form-check-input" type="checkbox" id="tprRes">' +
+      '    <label class="form-check-label small" for="tprRes">Record RAM and CPU of the run: a <em>Resources</em> report with a verdict per process, for long runs</label>' +
+      '  </div>' +
       '  <div class="small text-muted">' + envInfo + ' · <a href="#" id="tprOpenSettings">Run settings…</a></div>' +
       '  <div id="tprDialogError" class="mt-2"></div>' +
       '</div>',
       '<i class="bi bi-play-fill me-1"></i>Run');
     document.getElementById('tprVars').value = saved.vars || '';
     document.getElementById('tprDry').checked = !!saved.dryrun;
+    document.getElementById('tprRes').checked = !!saved.resources;
     document.getElementById('tprOpenSettings').addEventListener('click', function (e) {
       e.preventDefault();
       _tpvRunSettingsDialog(function () { _tpvRunDialog(path); });
@@ -6485,15 +7012,16 @@
     var st = _tpState;
     var varsText = document.getElementById('tprVars').value;
     var dryrun = document.getElementById('tprDry').checked;
+    var resources = document.getElementById('tprRes').checked;
     var parsed = _tprParsePairs(varsText, 'Variables');
     if (parsed.error) {
       document.getElementById('tprDialogError').innerHTML = _devAlert('warning', 'Not started', parsed.error);
       return;
     }
-    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun });
+    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun, resources: resources });
     st.action = 'done';
     _afterModalHidden(function () {
-      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun });
+      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun, resources: resources });
     });
   }
 
@@ -6606,8 +7134,17 @@
       MM.testProjectClient.runStatus(e.root, e.id, e.since)
         .then(function (st) {
           var fresh = st.lines || [];
+          var freshMembers = st.member_lines || [];
           var wasLive = e.record.run_state && e.record.run_state !== 'done';
           delete st.lines;
+          delete st.member_lines;
+          // A group run: each member's lines, for its own column.
+          if (!e.memberLines) e.memberLines = [];
+          freshMembers.forEach(function (ml) {
+            var list = e.memberLines[ml[0]] = e.memberLines[ml[0]] || [];
+            list.push(ml[1]);
+            if (list.length > TPR_MAX_LINES) list.splice(0, list.length - TPR_MAX_LINES);
+          });
           e.record = st;
           e.since = st.next || e.since;
           e.error = '';
@@ -6615,7 +7152,7 @@
           Array.prototype.push.apply(e.lines, fresh);
           if (e.lines.length > TPR_MAX_LINES) e.lines.splice(0, e.lines.length - TPR_MAX_LINES);
           var more = fresh.length >= TPR_BATCH;
-          _tprUpdateShown(e, fresh);
+          _tprUpdateShown(e, fresh, freshMembers);
           if (st.run_state === 'done' && !more) {
             e.polling = false;
             if (wasLive) _tprFinished(e);
@@ -6654,6 +7191,7 @@
 
   function _showTpvRuns(runId) {
     _tpView.selected = null;
+    _tpView.group = null;
     _tpView.runs = true;
     if (runId) _tprShown = runId;
     if (_currentMode !== 'testproject') { switchMode('testproject'); return; }
@@ -6666,6 +7204,7 @@
     var data = _tpView.data || {};
     _tpvEditor = null;
     _tprRenderedKey = null;
+    _tpvDropFileView();
     content.innerHTML =
       '<div class="tpv-view tpr-view">' +
       '  <div class="svc-ov-head">' +
@@ -6721,13 +7260,17 @@
         var vars = Object.keys(opts.variables || {});
         return '<tr data-tpr-run="' + _escapeHtml(r.id) + '"' + (r.id === _tprShown ? ' class="tpr-shown"' : '') + '>' +
           '<td>' + _tprBadge(r, true) + '</td>' +
-          '<td><code>' + _escapeHtml(r.target_label || r.target || '') + '</code>' +
+          '<td>' + (r.group ? '<i class="bi bi-diagram-2 me-1" title="Run group"></i>' : '') +
+          '<code>' + _escapeHtml(r.target_label || r.target || '') + '</code>' +
+          (r.group ? ' <span class="dev-tag" title="' + _escapeHtml((r.members || []).map(function (m) { return m.id + ': ' + (TPR_VERDICT[_tprState(m)] || _tprState(m)); }).join(', ')) + '">' +
+                     (r.members || []).map(function (m) { return _escapeHtml(m.id); }).join(' + ') + '</span>' : '') +
           (opts.dryrun ? ' <span class="dev-tag">dry run</span>' : '') +
+          (opts.resources ? ' <span class="dev-tag" title="RAM and CPU recorded: Resources">resources</span>' : '') +
           (vars.length ? ' <span class="dev-tag" title="' + _escapeHtml(_tprPairsText(opts.variables)) + '">' +
                          vars.length + ' variable' + (vars.length === 1 ? '' : 's') + '</span>' : '') + '</td>' +
           '<td>' + _escapeHtml(_tprWhen(r.started_at)) + '</td>' +
           '<td>' + _escapeHtml(_tprDuration(r.elapsed_s)) + '</td>' +
-          '<td class="tpr-counts">' + _tprCounts(r.counts, true) + '</td>' +
+          '<td>' + _tprCountsCell(r) + '</td>' +
           '<td>' + ((r.artifacts || []).some(function (a) { return a.primary; }) && r.run_state === 'done' && r.verdict !== 'error'
             ? '<a href="#" data-tpr-open="' + _escapeHtml(r.id) + '" title="Open the log">Log</a>' : '') + '</td>' +
           '</tr>';
@@ -6776,6 +7319,17 @@
       _tprPoll(e);
     }
     _tprRenderedKey = key;
+    var group = !!e.record.group;
+    var members = e.record.members || [];
+    var consoleHtml = group
+      ? '<div class="tpr-members" id="tprConsole">' + members.map(function (m, i) {
+          return '<div class="tpr-member">' +
+            '<div class="tpr-member-head" id="tprMHead' + i + '"></div>' +
+            '<pre class="tpr-console tpr-member-console" id="tprMCon' + i + '"></pre></div>';
+        }).join('') + '</div>'
+      : '<pre class="tpr-console" id="tprConsole"></pre>';
+    var drawable = _tprDrawable(e.record);
+    var showDiagram = drawable && _tprDiagramWanted();
     box.innerHTML =
       '<div class="tpr-head">' +
       '  <span id="tprBadge"></span>' +
@@ -6787,15 +7341,48 @@
       '<div class="tpr-tabs" role="tablist">' +
       '  <button type="button" class="tpr-tab active" data-tpr-tab="console">Console</button>' +
       '  <button type="button" class="tpr-tab" data-tpr-tab="results">Results <span id="tprResultsN"></span></button>' +
+      (drawable ? '  <button type="button" class="tpr-tab tpr-diagram-toggle' + (showDiagram ? ' active' : '') + '" id="tprDiagramToggle"' +
+                  ' aria-pressed="' + showDiagram + '" title="Show or hide the flow beside the console, lit where the run is">' +
+                  '<i class="bi bi-diagram-3 me-1"></i>Diagram</button>' : '') +
       '</div>' +
-      '<pre class="tpr-console" id="tprConsole"></pre>' +
+      '<div class="tpr-live' + (showDiagram ? ' tpr-with-diagram' + (group ? ' tpr-live-group' : '') : '') + '" id="tprLive">' +
+      consoleHtml +
+      (drawable ? '<div class="tpr-split" id="tprSplit" role="separator" aria-orientation="vertical" tabindex="0"' +
+                  ' aria-label="Width of the console and the Diagram (arrow keys)"' + (showDiagram ? '' : ' hidden') + '></div>' +
+                  '<div class="tpr-diagram-pane" id="tprDiagramPane"' + (showDiagram ? '' : ' hidden') + '>' +
+                  '<div class="tpr-diagram-tools">' +
+                  '<span class="tpr-tool-group" role="group" aria-label="Steps between two updates">' +
+                  '<button type="button" class="btn btn-sm" data-tpr-motion="tail" title="The steps since the last update flash and fade, in order">Tail</button>' +
+                  '<button type="button" class="btn btn-sm" data-tpr-motion="hop" title="The mark jumps through the steps since the last update">Hop</button>' +
+                  '<button type="button" class="btn btn-sm" data-tpr-motion="off" title="Only where the run is now">Off</button>' +
+                  '</span>' +
+                  '<span class="tpr-tool-group" role="group" aria-label="Diagram size">' +
+                  '<button type="button" class="btn btn-sm" data-tpr-zoom="fit" title="Fit the width">Fit</button>' +
+                  '<button type="button" class="btn btn-sm" data-tpr-zoom="0.75" title="Three quarters of its size; scrolls sideways">75%</button>' +
+                  '<button type="button" class="btn btn-sm" data-tpr-zoom="natural" title="Its own size; scrolls sideways">100%</button>' +
+                  '</span></div><div id="tprDiagramBody"></div></div>' : '') +
+      '</div>' +
       '<div class="tpr-results" id="tprResults" hidden></div>';
     box.querySelectorAll('[data-tpr-tab]').forEach(function (tab) {
       tab.addEventListener('click', function () { _tprTab(tab.getAttribute('data-tpr-tab')); });
     });
+    var toggle = document.getElementById('tprDiagramToggle');
+    if (toggle) toggle.addEventListener('click', function () { _tprToggleDiagram(e); });
+    if (drawable) _tprWireSplit(e);
+    _tprDropDiagram();
+    if (showDiagram) _tprMountDiagram(e);
     e.toolsState = null;
     e.resultsShown = null;
-    document.getElementById('tprConsole').innerHTML = e.lines.map(_tprLine).join('');
+    e.memberTools = [];
+    if (group) {
+      members.forEach(function (m, i) {
+        var pre = document.getElementById('tprMCon' + i);
+        pre.innerHTML = ((e.memberLines || [])[i] || []).map(_tprLine).join('');
+        pre.scrollTop = pre.scrollHeight;
+      });
+    } else {
+      document.getElementById('tprConsole').innerHTML = e.lines.map(_tprLine).join('');
+    }
     _tprUpdateShown(e, null);
     var con = document.getElementById('tprConsole');
     con.scrollTop = con.scrollHeight;
@@ -6806,10 +7393,12 @@
     document.querySelectorAll('#tprCurrent [data-tpr-tab]').forEach(function (t) {
       t.classList.toggle('active', t.getAttribute('data-tpr-tab') === which);
     });
-    var con = document.getElementById('tprConsole');
+    var live = document.getElementById('tprLive');
     var res = document.getElementById('tprResults');
-    if (con) con.hidden = which !== 'console';
+    if (live) live.hidden = which !== 'console';
     if (res) res.hidden = which !== 'results';
+    var toggle = document.getElementById('tprDiagramToggle');
+    if (toggle) toggle.hidden = which !== 'console';
   }
 
   function _tprLine(line) {
@@ -6820,17 +7409,23 @@
     return (cls ? '<span class="' + cls + '">' + _escapeHtml(line) + '</span>' : _escapeHtml(line)) + '\n';
   }
 
-  /** Bring the shown run's parts up to date; `fresh` lines are appended (null = none). */
-  function _tprUpdateShown(e, fresh) {
+  /**
+   * Bring the shown run's parts up to date; `fresh` lines are appended (null
+   * = none), `freshMembers` ([member index, line]) to a group run's columns.
+   */
+  function _tprUpdateShown(e, fresh, freshMembers) {
     if (!_tpView.runs || _tprRenderedKey !== _tprKey(e.root, e.id)) return;
     var rec = e.record;
     var con = document.getElementById('tprConsole');
     if (!con) return;
-    if (fresh && fresh.length) {
+    if (rec.group) {
+      _tprUpdateMembers(e, freshMembers || []);
+    } else if (fresh && fresh.length) {
       var atEnd = con.scrollTop + con.clientHeight >= con.scrollHeight - 30;
       con.insertAdjacentHTML('beforeend', fresh.map(_tprLine).join(''));
       if (atEnd) con.scrollTop = con.scrollHeight;
     }
+    _tprUpdateDiagram(e);
     var state = _tprState(rec);
     document.getElementById('tprBadge').innerHTML = _tprBadge(rec);
     document.getElementById('tprTarget').textContent = rec.target_label || rec.target || rec.id;
@@ -6840,6 +7435,7 @@
     if (rec.elapsed_s != null) meta.push((state === 'running' || state === 'stopping' ? 'running for ' : 'took ') + _tprDuration(rec.elapsed_s));
     if (rec.runner_name) meta.push(rec.runner_name);
     if (opts.dryrun) meta.push('dry run');
+    if (opts.resources) meta.push('recording RAM and CPU');
     var vars = Object.keys(opts.variables || {});
     if (vars.length) meta.push(vars.map(function (k) { return k + '=' + opts.variables[k]; }).join(', '));
     if (e.error) meta.push('⚠ ' + e.error);
@@ -6864,7 +7460,8 @@
         });
       }
       if (done) {
-        html += '<button type="button" class="btn btn-sm btn-outline-success" id="tprAgain" title="Same file, same variables">' +
+        html += '<button type="button" class="btn btn-sm btn-outline-success" id="tprAgain" title="' +
+          (rec.group ? 'The same group again' : 'Same file, same variables') + '">' +
           '<i class="bi bi-arrow-repeat me-1"></i>Run again</button>';
       }
       html += '<button type="button" class="btn btn-sm btn-outline-secondary" id="tprCopyCmd" title="Copy the command line">' +
@@ -6895,12 +7492,20 @@
       if (again) {
         again.addEventListener('click', function () {
           var o = e.record.options || {};
-          _tprStart(e.root, e.record.target || '', { variables: o.variables || {}, dryrun: !!o.dryrun });
+          if (e.record.group) _tprStartGroup(e.root, e.record.group, { dryrun: !!o.dryrun, resources: !!o.resources });
+          else _tprStart(e.root, e.record.target || '', { variables: o.variables || {}, dryrun: !!o.dryrun, resources: !!o.resources });
         });
       }
       document.getElementById('tprCopyCmd').addEventListener('click', function () {
-        var argv = (e.record.argv || []).map(function (a) { return /[\s"]/.test(a) ? '"' + a.replace(/"/g, '\\"') + '"' : a; });
-        _copyText(argv.join(' '), 'Command');
+        function line(argv) {
+          return (argv || []).map(function (a) { return /[\s"]/.test(a) ? '"' + a.replace(/"/g, '\\"') + '"' : a; }).join(' ');
+        }
+        if (e.record.group) {
+          _copyText((e.record.members || []).map(function (m) { return '# ' + m.id + '\n' + line(m.argv); }).join('\n'),
+                    'Commands');
+        } else {
+          _copyText(line(e.record.argv), 'Command');
+        }
       });
     }
 
@@ -6914,9 +7519,11 @@
     if (done && e.resultsShown !== rec.ended_at) {
       e.resultsShown = rec.ended_at;
       document.getElementById('tprResults').innerHTML = tests.length
-        ? '<table class="svc-ov-table"><thead><tr><th>Status</th><th>Test</th><th>Suite</th><th>Took</th><th>Message</th></tr></thead><tbody>' +
+        ? '<table class="svc-ov-table"><thead><tr><th>Status</th>' + (rec.group ? '<th>Member</th>' : '') +
+          '<th>Test</th><th>Suite</th><th>Took</th><th>Message</th></tr></thead><tbody>' +
           tests.map(function (t) {
             return '<tr><td>' + _tprBadge({ run_state: 'done', verdict: t.status }, true) + '</td>' +
+              (rec.group ? '<td><span class="dev-tag">' + _escapeHtml(t.member || '') + '</span></td>' : '') +
               '<td><strong>' + _escapeHtml(t.name) + '</strong></td>' +
               '<td class="small">' + _escapeHtml(t.suite) + '</td>' +
               '<td>' + _escapeHtml(_tprDuration(t.elapsed_s)) + '</td>' +
@@ -6929,6 +7536,273 @@
         _tprTab('results');
       }
     }
+  }
+
+  // ---- the live Diagram beside the console ---------------------------------
+  //
+  // A run of a flow file, or of a group of them, shows its flow next to the
+  // console (the flow-view plugin, as in the project view), and the runner's
+  // position file lights the step each process is in (position /
+  // member_positions in the run's status; see flow_position.py).
+
+  function _tprDrawable(rec) {
+    var flow = function (t) { return /\.flow\.json$/i.test(t || ''); };
+    if (!rec || (rec.options || {}).dryrun) return false;
+    if (rec.group) return (rec.members || []).length > 0 && rec.members.every(function (m) { return flow(m.target); });
+    return flow(rec.target);
+  }
+
+  function _tprDiagramWanted() {
+    try { return localStorage.getItem(TPR_DIAGRAM_KEY) !== '0'; } catch (err) { return true; }
+  }
+
+  function _tprToggleDiagram(e) {
+    var on = !_tprDiagramWanted();
+    try { localStorage.setItem(TPR_DIAGRAM_KEY, on ? '1' : '0'); } catch (err) { /* private window */ }
+    var toggle = document.getElementById('tprDiagramToggle');
+    var pane = document.getElementById('tprDiagramPane');
+    var live = document.getElementById('tprLive');
+    if (toggle) { toggle.classList.toggle('active', on); toggle.setAttribute('aria-pressed', String(on)); }
+    if (pane) pane.hidden = !on;
+    var split = document.getElementById('tprSplit');
+    if (split) split.hidden = !on;
+    if (live) {
+      live.classList.toggle('tpr-with-diagram', on);
+      live.classList.toggle('tpr-live-group', on && !!e.record.group);
+    }
+    if (on) _tprMountDiagram(e); else _tprDropDiagram();
+  }
+
+  function _tprDropDiagram() {
+    if (_tprDiagram && _tprDiagram.view) { try { _tprDiagram.view.destroy(); } catch (err) { /* already gone */ } }
+    _tprDiagram = null;
+  }
+
+  /** Where each process is, as the view takes it: one position, or { member id: position }. */
+  function _tprLivePositions(rec) {
+    if (!rec.group) return rec.position || null;
+    var out = {};
+    (rec.members || []).forEach(function (m, i) {
+      var pos = (rec.member_positions || [])[i];
+      if (pos) out[m.id] = pos;
+    });
+    return out;
+  }
+
+  function _tprMotion() {
+    var v = null;
+    try { v = localStorage.getItem(TPR_MOTION_KEY); } catch (err) { /* private window */ }
+    return v === 'hop' || v === 'off' ? v : 'tail';
+  }
+
+  /** What the Diagram view gets: the runner's drawing data, where the run is, and the view settings. */
+  function _tprViewData(d) {
+    return Object.assign({}, d.base, { live: d.live, zoom: _tprZoom(), motion: _tprMotion() });
+  }
+
+  /** The Diagram's size as the view takes it: 'fit', 'natural' or a share (0.75). */
+  function _tprZoom() {
+    var v = null;
+    try { v = localStorage.getItem(TPR_ZOOM_KEY); } catch (err) { /* private window */ }
+    return v === 'natural' ? 'natural' : v === '0.75' ? 0.75 : 'fit';
+  }
+
+  /** The divider between console and Diagram (drag, or arrow keys), and the Diagram's size buttons. */
+  function _tprWireSplit(e) {
+    var live = document.getElementById('tprLive');
+    var split = document.getElementById('tprSplit');
+    if (!live || !split) return;
+    var fallback = e.record.group ? 0.45 : 0.5;
+    function share() {
+      var v = NaN;
+      try { v = parseFloat(localStorage.getItem(TPR_SPLIT_KEY)); } catch (err) { /* private window */ }
+      return isFinite(v) ? v : fallback;
+    }
+    function apply(v, keep) {
+      v = Math.max(0.2, Math.min(0.8, v));
+      live.style.setProperty('--tpr-split-a', v + 'fr');
+      live.style.setProperty('--tpr-split-b', (1 - v) + 'fr');
+      split.setAttribute('aria-valuenow', String(Math.round(v * 100)));
+      if (keep) { try { localStorage.setItem(TPR_SPLIT_KEY, String(v)); } catch (err) { /* private window */ } }
+    }
+    apply(share(), false);
+    split.addEventListener('pointerdown', function (ev) {
+      ev.preventDefault();
+      split.setPointerCapture(ev.pointerId);
+      live.classList.add('tpr-dragging');   // the frame would swallow the pointer
+      function move(m) {
+        var box = live.getBoundingClientRect();
+        apply((m.clientX - box.left) / box.width, false);
+      }
+      function up(u) {
+        split.removeEventListener('pointermove', move);
+        split.removeEventListener('pointerup', up);
+        live.classList.remove('tpr-dragging');
+        var box = live.getBoundingClientRect();
+        apply((u.clientX - box.left) / box.width, true);
+      }
+      split.addEventListener('pointermove', move);
+      split.addEventListener('pointerup', up);
+    });
+    split.addEventListener('keydown', function (ev) {
+      var step = ev.key === 'ArrowLeft' ? -0.05 : ev.key === 'ArrowRight' ? 0.05 : 0;
+      if (!step) return;
+      ev.preventDefault();
+      apply(share() + step, true);
+    });
+    var pane = document.getElementById('tprDiagramPane');
+    // Two button rows, each a choice kept in the browser: size and motion.
+    [['zoom', TPR_ZOOM_KEY, _tprZoom], ['motion', TPR_MOTION_KEY, _tprMotion]].forEach(function (c) {
+      var attr = 'data-tpr-' + c[0];
+      function mark() {
+        var v = String(c[2]());
+        pane.querySelectorAll('[' + attr + ']').forEach(function (b) {
+          var on = b.getAttribute(attr) === v;
+          b.classList.toggle('btn-secondary', on);
+          b.classList.toggle('btn-outline-secondary', !on);
+          b.setAttribute('aria-pressed', String(on));
+        });
+      }
+      mark();
+      pane.querySelectorAll('[' + attr + ']').forEach(function (b) {
+        b.addEventListener('click', function () {
+          try { localStorage.setItem(c[1], b.getAttribute(attr)); } catch (err) { /* private window */ }
+          mark();
+          var d = _tprDiagram;
+          if (d && d.view) d.view.setData(_tprViewData(d));
+        });
+      });
+    });
+  }
+
+  function _tprMountDiagram(e) {
+    var pane = document.getElementById('tprDiagramBody');
+    if (!pane) return;
+    var rec = e.record;
+    var key = _tprKey(e.root, e.id);
+    var type = rec.group ? 'flow-group' : 'flow-graph';
+    var d = _tprDiagram = { key: key, view: null, base: null, live: null, followedAt: 0, userScrolledAt: 0 };
+    pane.innerHTML = _devLoading('Asking ' + (rec.runner_name || 'the runner') + ' about ' +
+      (rec.group ? (rec.members || []).length + ' flows' : rec.target) + '…');
+    var pluginsReady = MM.endo && MM.endo.plugins ? MM.endo.plugins.ready : Promise.resolve();
+    // The structure does not change during a run: ask the runner once per run.
+    var ask = e.diagramData ? Promise.resolve(e.diagramData)
+      : (rec.group ? MM.testProjectClient.inspectGroup(e.root, rec.group)
+                   : MM.testProjectClient.inspect(e.root, rec.target))
+          .then(function (res) {
+            if (!res.ok) throw new Error(res.error || 'The runner refuses the flow.');
+            var data = (res.views || {})[rec.group ? 'sync' : 'diagram'];
+            if (!data) throw new Error('The runner has no diagram for it.');
+            e.diagramData = data;
+            return data;
+          });
+    Promise.all([ask, pluginsReady])
+      .then(function (r) {
+        if (_tprDiagram !== d || !document.getElementById('tprDiagramBody')) return;
+        var plugged = MM.endo && MM.endo.plugins ? MM.endo.plugins.fileViews(type)[0] : null;
+        if (!plugged) { pane.innerHTML = _tpvNoViewAlert(type); return; }
+        d.base = r[0];
+        d.live = _tprLivePositions(e.record);
+        d.liveKey = JSON.stringify(d.live);
+        pane.innerHTML = '<div class="tpv-diagram" id="tprDiagramFrame"></div>';
+        document.getElementById('tprDiagramPane').addEventListener('scroll', function () {
+          // Our own scrolling (follow) is not the user's.
+          if (Date.now() - d.followedAt > 150) d.userScrolledAt = Date.now();
+        });
+        d.view = plugged.mount(document.getElementById('tprDiagramFrame'),
+          _tprViewData(d),
+          function (target) { _tprDiagramReveal(e, d, target); });
+      })
+      .catch(function (err) {
+        if (_tprDiagram === d && document.getElementById('tprDiagramBody')) {
+          pane.innerHTML = _devAlert('warning', 'No diagram', err.message || err);
+        }
+      });
+  }
+
+  /** Each poll: the new positions, when they changed; the drawing stays. */
+  function _tprUpdateDiagram(e) {
+    var d = _tprDiagram;
+    if (!d || !d.view || d.key !== _tprKey(e.root, e.id)) return;
+    var live = _tprLivePositions(e.record);
+    var liveKey = JSON.stringify(live);
+    if (liveKey === d.liveKey) return;
+    d.live = live;
+    d.liveKey = liveKey;
+    d.view.setData(_tprViewData(d));
+  }
+
+  /** The view reports where the lit step is (follow), or a click on a node (open it in its file). */
+  function _tprDiagramReveal(e, d, target) {
+    if (!target) return;
+    if (target.follow) {
+      var pane = document.getElementById('tprDiagramPane');
+      var frame = document.getElementById('tprDiagramFrame');
+      if (!pane || !frame || _tprDiagram !== d) return;
+      if (Date.now() - d.userScrolledAt < TPR_FOLLOW_PAUSE_MS) return;
+      var spots = target.nodes || [target];
+      var offset = frame.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+      var top = Math.min.apply(null, spots.map(function (n) { return n.top; })) + offset;
+      var bottom = Math.max.apply(null, spots.map(function (n) { return n.bottom; })) + offset;
+      if (bottom - top > pane.clientHeight) bottom = top + 60;   // too far apart: the first one
+      var margin = 40;
+      var to = null;
+      if (top < pane.scrollTop + margin) to = top - margin;
+      else if (bottom > pane.scrollTop + pane.clientHeight - margin) to = bottom - pane.clientHeight + margin;
+      if (to != null) {
+        d.followedAt = Date.now();
+        pane.scrollTop = Math.max(0, to);
+      }
+      return;
+    }
+    if (target.node == null) return;
+    var rec = e.record;
+    var path = rec.group
+      ? ((rec.members || []).filter(function (m) { return m.id === target.member; })[0] || {}).target
+      : rec.target;
+    if (path) _tpgOpenFile(path, String(target.node));
+  }
+
+  /** A group run's columns: new lines, and each member's state and files. */
+  function _tprUpdateMembers(e, freshMembers) {
+    var rec = e.record;
+    var byMember = {};
+    freshMembers.forEach(function (ml) { (byMember[ml[0]] = byMember[ml[0]] || []).push(ml[1]); });
+    (rec.members || []).forEach(function (m, i) {
+      var pre = document.getElementById('tprMCon' + i);
+      var head = document.getElementById('tprMHead' + i);
+      if (!pre || !head) return;
+      if (byMember[i]) {
+        var atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
+        pre.insertAdjacentHTML('beforeend', byMember[i].map(_tprLine).join(''));
+        if (atEnd) pre.scrollTop = pre.scrollHeight;
+      }
+      var state = _tprState(m);
+      var done = m.state === 'done';
+      var key = state + '|' + (rec.results_url ? 1 : 0) + '|' + (m.elapsed_s | 0);
+      if (e.memberTools[i] === key) return;
+      e.memberTools[i] = key;
+      var vars = Object.keys(m.variables || {}).map(function (k) { return k + '=' + m.variables[k]; }).join(', ');
+      var files = done && m.verdict !== 'error' && rec.results_url
+        ? (m.artifacts || []).filter(function (a) { return /\.html?$/i.test(a.name); }).map(function (a) {
+            return '<button type="button" class="btn btn-sm ' + (a.primary ? 'btn-primary' : 'btn-outline-primary') + '"' +
+              ' data-tpr-member-artifact="' + _escapeHtml(a.name) + '" data-member="' + _escapeHtml(m.id) + '">' +
+              '<i class="bi bi-box-arrow-up-right me-1"></i>' + _escapeHtml(a.label) + '</button>';
+          }).join('')
+        : '';
+      head.innerHTML =
+        '<span class="tpr-member-id">' + _escapeHtml(m.id) + '</span>' + _tprBadge(m, true) +
+        '<span class="tpr-member-meta" title="' + _escapeHtml(m.target + (vars ? ' · ' + vars : '')) + '">' +
+          _escapeHtml(m.target) + (vars ? ' · ' + _escapeHtml(vars) : '') +
+          (m.elapsed_s != null ? ' · ' + _escapeHtml(_tprDuration(m.elapsed_s)) : '') + '</span>' +
+        (done ? '<span class="tpr-counts tpr-member-counts">' + _tprCounts(m.counts, true) + '</span>' : '') +
+        '<span class="tpr-member-tools">' + files + '</span>';
+      head.querySelectorAll('[data-tpr-member-artifact]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          _openUrl(MM.testProjectClient.resultUrl(rec, b.getAttribute('data-tpr-member-artifact'), b.getAttribute('data-member')));
+        });
+      });
+    });
   }
 
   /** The overview's "Recent runs" card: the last few runs, live ones first. */
@@ -6946,10 +7820,11 @@
         box.innerHTML = '<div class="svc-ov-table-wrap"><table class="svc-ov-table tpr-history"><tbody>' +
           runs.map(function (r) {
             return '<tr data-tpr-run="' + _escapeHtml(r.id) + '"><td>' + _tprBadge(r, true) + '</td>' +
-              '<td><code>' + _escapeHtml(r.target_label || '') + '</code></td>' +
+              '<td>' + (r.group ? '<i class="bi bi-diagram-2 me-1" title="Run group"></i>' : '') +
+              '<code>' + _escapeHtml(r.target_label || '') + '</code></td>' +
               '<td>' + _escapeHtml(_tprWhen(r.started_at)) + '</td>' +
               '<td>' + _escapeHtml(_tprDuration(r.elapsed_s)) + '</td>' +
-              '<td class="tpr-counts">' + _tprCounts(r.counts, true) + '</td></tr>';
+              '<td>' + _tprCountsCell(r) + '</td></tr>';
           }).join('') + '</tbody></table></div>';
         box.querySelectorAll('[data-tpr-run]').forEach(function (row) {
           row.addEventListener('click', function () { _showTpvRuns(row.getAttribute('data-tpr-run')); });
@@ -6978,7 +7853,9 @@
 
   function _showTpvNewSuite(data) {
     _tpView.selected = null;
+    _tpView.group = null;
     _tpvEditor = null;
+    _tpvDropFileView();
     _renderTpvSidebar(data);
     var content = document.getElementById('testProjectContent');
     var layout = data.layout || {};
@@ -7274,6 +8151,9 @@
     MM.endo.plugins.onChange(function (ev) {
       _syncSidebarSwitch();
       if (ev && ev.ready) return;
+      // A file view may have come or gone: draw the open one again.
+      if (_tpvViewState && _tpvViewState.tab !== 'script' && _tpvViewState.cacheRes) _tpvShowTab(_tpvViewState.tab);
+      if (_tpgState && _tpgState.tab === 'diagram' && _tpgState.res) _tpgShowTab('diagram');
       // A kind came or went: component panels in the Services view are
       // mounted again so their tiles pick it up (or show the placeholder).
       var dropActive = false;
@@ -7718,6 +8598,8 @@
 
     var ribbon = document.getElementById('ribbon');
     if (ribbon) { ribbon.style.display = 'none'; ribbon.classList.remove('peek'); }
+    // A pinned ribbon reserves its height; with the ribbon hidden, give it back.
+    document.body.classList.add('help-open');
 
     ['serviceContent', 'fleetContent', 'creatorContent', 'testProjectContent', 'benchContent'].forEach(function (id) {
       var el = document.getElementById(id);
@@ -7781,6 +8663,7 @@
 
     var ribbon = document.getElementById('ribbon');
     if (ribbon) ribbon.style.display = '';
+    document.body.classList.remove('help-open');
   }
 
   function closeHelp() {

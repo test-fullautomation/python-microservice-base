@@ -1,6 +1,7 @@
 // Plugins (milestone M4): the bundled plugins lint clean, the plugin rules
 // catch what they should, a plugin kind's schema and needs reach component
-// linting, and the charts plugin's series maths.
+// linting, the charts plugin's series maths, the flow-view layout and the
+// robot-grid markup.
 //   node test/endo/test_endo_plugins.js      (from the GUI folder)
 'use strict';
 
@@ -29,14 +30,15 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
 (async () => {
   // ---------- the bundled plugins ----------
   const index = readJson(path.join(PLUGINS, 'index.json'));
-  check('index lists the four reference plugins',
-        JSON.stringify(index.plugins.slice().sort()) === JSON.stringify(['charts', 'graph-studio', 'robot-gen', 'test-project']), index.plugins);
+  check('index lists the six reference plugins',
+        JSON.stringify(index.plugins.slice().sort()) === JSON.stringify(['charts', 'flow-view', 'graph-studio', 'robot-gen', 'robot-grid', 'test-project']), index.plugins);
   const manifests = {};
   index.plugins.forEach((id) => {
     const m = manifests[id] = readJson(path.join(PLUGINS, id, 'plugin.json'));
     check('bundled ' + id + ' lints clean', lintP(m).length === 0, lintP(m).map(C.formatIssue));
     check('bundled ' + id + ': id matches its folder', m.plugin === id);
-    ((m.contributes && m.contributes.kinds) || []).concat((m.contributes && m.contributes['drawer.tabs']) || [])
+    ((m.contributes && m.contributes.kinds) || []).concat((m.contributes && m.contributes['drawer.tabs']) || [],
+                                                     (m.contributes && m.contributes['file.views']) || [])
       .filter((e) => e.entry).forEach((e) => {
         check('bundled ' + id + ': entry ' + e.entry + ' exists', fs.existsSync(path.join(PLUGINS, id, e.entry)));
       });
@@ -71,6 +73,15 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
     check('K: renderers warn until M5', lintP(i2).some((x) => x.rule === 'K' && x.severity === 'warn'));
     const j = clone(P); j.requires.shell = '^3.0';
     check('R9: plugins version against the shell', rules(lintP(j), 'error').includes('R9'));
+    const fv = manifests['flow-view'];
+    const k = clone(fv); delete k.contributes['file.views'][0].entry; k.contributes['file.views'][0].shell = 'flow';
+    check('S: a file view is a module', lintP(k).some((x) => x.severity === 'error' && /give it an entry/.test(x.message)));
+    const l = clone(fv); l.contributes['file.views'][0].for = [];
+    check('S: a file view names the view types it draws', lintP(l).some((x) => x.severity === 'error' && /view types/.test(x.message)));
+    const m2 = clone(fv); m2.contributes['file.views'].push(clone(m2.contributes['file.views'][0]));
+    check('P2: duplicate file view ids', lintP(m2).some((x) => /duplicate id/.test(x.message)));
+    const n2 = clone(fv); n2.isolation = 'schema';
+    check('P: schema plugins cannot ship a file view module', rules(lintP(n2), 'error').includes('P'));
   }
 
   // ---------- a plugin kind's schema and needs, in component linting ----------
@@ -123,6 +134,210 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
     const cap = new S.Series(1e9, 5);
     for (let t = 0; t < 20; t++) cap.push(t, t);
     check('series caps the number of points', cap.length === 5 && cap.t[0] === 15);
+  }
+
+  // ---------- flow-view: layout (ES module, no DOM) ----------
+  const F = await import(pathToFileURL(path.join(PLUGINS, 'flow-view', 'flow.js')).href);
+  {
+    const act = (id, keyword) => ({ id, kind: 'action', keyword, args: [] });
+    const flow = {
+      name: 'sample',
+      setup: { role: 'setup', steps: [act('open', 'Open Bench')] },
+      tests: [{ role: 'test', name: 'soak', steps: [
+        { id: 'wait', kind: 'gate', keyword: 'Temp Reached', timeout: '60s' },
+        { id: 'cycle', kind: 'loop', max_loops: 3, body: [act('flash', 'Flash')] },
+        { id: 'guard', kind: 'try', then: 'abort', body: [act('read', 'Read DTC')], recovery: [act('reset', 'Reset')] },
+        { id: 'ok', kind: 'decision', condition: '${dtc} == 0', yes: [act('pass', 'Log')], no: [] }
+      ] }],
+      teardown: { role: 'teardown', steps: [act('close', 'Close Bench')] }
+    };
+    const svg = F.render(flow, { error: 'read' });
+    const ids = [...svg.matchAll(/data-node="([^"]+)"/g)].map((x) => x[1]);
+    check('flow-view: every step is a clickable node',
+          JSON.stringify(ids.slice().sort()) === JSON.stringify(['close', 'cycle', 'flash', 'guard', 'ok', 'open', 'pass', 'read', 'reset', 'wait']), ids);
+    check('flow-view: one lane per phase', (svg.match(/class="fv-lane"/g) || []).length === 3);
+    check('flow-view: the error node is marked', /fv-error" data-node="read"/.test(svg));
+    check('flow-view: recovery steps are marked', /fv-in-recovery" data-node="reset"/.test(svg));
+    check('flow-view: sizes are finite', !/NaN|undefined|Infinity/.test(svg));
+    check('flow-view: text is escaped', !F.render({ name: '<x>', tests: [{ steps: [act('a', '<b>')] }] }).includes('<b>'));
+    check('flow-view: nothing to draw gives no markup', F.render({}) === '');
+    const two = F.render(flow) + F.render(flow);
+    const markers = [...two.matchAll(/<marker id="([^"]+)"/g)].map((x) => x[1]);
+    check('flow-view: marker ids differ between drawings', new Set(markers).size === markers.length, markers);
+  }
+
+  // ---------- flow-view: a run group ----------
+  {
+    const act = (id, keyword, args) => ({ id, kind: 'action', keyword, args: args || [] });
+    const gate = (id, args) => ({ id, kind: 'gate', keyword: 'Signal Should Be', args, timeout: '5s' });
+    const flow = (name, setup, test) => ({ name, setup: { role: 'setup', steps: setup }, tests: [{ role: 'test', name: 'T', steps: test }], teardown: null });
+    const members = [
+      { id: 'IVI', target: 'pairs/r.flow.json', variables: { BLADE: 'IVI' },
+        flow: flow('R', [act('announce', 'Set Signal', ['bench.IVI.ready', '1'])], [gate('meet', ['bench.ADAS.ready', '==', '1'])]) },
+      { id: 'ADAS', target: 'pairs/r.flow.json', variables: { BLADE: '<ADAS>' },
+        flow: flow('R', [act('announce', 'Set Signal', ['bench.ADAS.ready', '1'])], [gate('meet', ['bench.IVI.ready', '==', '1'])]) }
+    ];
+    const links = [
+      { from: { member: 'IVI', node: 'announce' }, to: { member: 'ADAS', node: 'meet' }, label: 'bench.IVI.ready = 1' },
+      { from: { member: 'ADAS', node: 'announce' }, to: { member: 'IVI', node: 'meet' }, label: 'bench.ADAS.ready = 1' },
+      { from: { member: 'IVI', node: 'nope' }, to: { member: 'ADAS', node: 'meet' }, label: 'x = 1' }
+    ];
+    const svg = F.renderGroup(members, links);
+    const bands = [...svg.matchAll(/data-member="([^"]+)"/g)].map((x) => x[1]);
+    check('flow-view group: one column per member, in order', JSON.stringify(bands) === '["IVI","ADAS"]', bands);
+    check('flow-view group: every member keeps its own nodes',
+          (svg.match(/data-node="announce"/g) || []).length === 2 && (svg.match(/data-node="meet"/g) || []).length === 2);
+    check('flow-view group: a link per meeting point; one to an unknown node is left out',
+          (svg.match(/class="fv-sync"/g) || []).length === 2 && /2 meeting points/.test(svg));
+    check('flow-view group: labels are short, the tooltip has the full name',
+          /class="fv-sync-label"[^>]*>IVI\.ready = 1</.test(svg) && /IVI \u2192 ADAS: bench\.IVI\.ready = 1/.test(svg));
+    check('flow-view group: member text is escaped', svg.includes('&lt;ADAS&gt;') && !svg.includes('<ADAS>'));
+    const cols = [...svg.matchAll(/<g transform="translate\(([\d.]+),/g)].map((x) => Number(x[1]));
+    const labelsX = [...svg.matchAll(/class="fv-sync-label" x="([\d.]+)"/g)].map((x) => Number(x[1]));
+    check('flow-view group: members side by side, labels in the channel between them',
+          cols.length === 2 && cols[0] === 0 && cols[1] > 0 && labelsX.every((x) => x < cols[1]), [cols, labelsX]);
+    check('flow-view group: sizes are finite', !/NaN|undefined|Infinity/.test(svg));
+    check('flow-view group: nothing to draw is still an svg', F.renderGroup([], []).startsWith('<svg'));
+  }
+
+  // ---------- robot-grid: markup (ES module, no DOM) ----------
+  const G = await import(pathToFileURL(path.join(PLUGINS, 'robot-grid', 'render.js')).href);
+  {
+    const kw = { name: 'Wait Until Keyword Succeeds', owner: 'BuiltIn', owner_type: 'library', shortdoc: 'Runs it until it passes.',
+                 doc: 'Runs the specified keyword and retries if it fails.',
+                 args: [{ name: 'retry', kind: 'POSITIONAL_OR_NAMED', required: true, default: null, type: null },
+                        { name: 'retry_interval', kind: 'POSITIONAL_OR_NAMED', required: true, default: null, type: null },
+                        { name: 'name', kind: 'POSITIONAL_OR_NAMED', required: true, default: null, type: null },
+                        { name: 'args', kind: 'VAR_POSITIONAL', required: false, default: null, type: null }] };
+    const set = { name: 'Set Signal', owner: 'bench_signals', owner_type: 'resource', shortdoc: 'Write a setpoint.', doc: '',
+                  args: [{ name: 'name', kind: 'POSITIONAL_OR_NAMED', required: true, default: null, type: 'str' },
+                         { name: 'value', kind: 'POSITIONAL_OR_NAMED', required: false, default: '0', type: null }] };
+    const data = {
+      catalog: 227,
+      keywords: { 'builtin.waituntilkeywordsucceeds': kw, 'benchsignals.setsignal': set },
+      imports: [{ type: 'resource', name: '../res/a.resource', line: 3, ok: true, keywords: 11 },
+                { type: 'library', name: 'Nope<Lib>', line: 4, ok: false, error: 'No module named Nope' }],
+      grid: { sections: [
+        { type: 'settings', title: 'Settings', line: 1, rows: [
+          { line: 3, depth: 0, type: 'RESOURCE', label: 'Resource', keyword: null, kw: null, cells: [{ v: '../res/a.resource', p: null, kw: null }], missing: [], comment: '' }] },
+        { type: 'tests', title: 'Test Cases', line: 6, items: [{ name: 'Setpoint <Reaches> DAC', line: 7, rows: [
+          { line: 8, depth: 0, type: 'KEYWORD', label: '', assign: ['${res}'], keyword: 'Set Signal', kw: 'benchsignals.setsignal',
+            cells: [{ v: 'bench.x', p: 'name', kw: null }, { v: '${TARGET}', p: 'value', kw: null }, { v: 'oops', p: '(extra)', kw: null }], missing: [], comment: '# why' },
+          { line: 9, depth: 0, type: 'FOR', label: 'FOR', keyword: null, kw: null, cells: [{ v: '${i}', p: null, kw: null }], missing: [], comment: '' },
+          { line: 10, depth: 1, type: 'KEYWORD', label: '', assign: [], keyword: 'Wait Until Keyword Succeeds', kw: 'builtin.waituntilkeywordsucceeds',
+            cells: [{ v: '3s', p: 'retry', kw: null }, { v: 'Set Signal', p: 'name', kw: 'benchsignals.setsignal' }], missing: ['retry_interval'], comment: '' },
+          { line: 11, depth: 1, type: 'KEYWORD', label: '', assign: [], keyword: 'No Such Keyword', kw: null, cells: [], missing: [], comment: '' },
+          { line: 12, depth: 0, type: 'END', label: 'END', keyword: null, kw: null, cells: [], missing: [], comment: '' }] }] }] }
+    };
+    const html = G.renderGrid(data);
+    check('robot-grid: every row carries its line', ['3', '8', '9', '10', '11', '12'].every((l) => html.includes('data-line="' + l + '"')));
+    check('robot-grid: cells are labelled with their parameters',
+          /class="rg-p">name<\/span><span class="rg-v">bench\.x/.test(html) && html.includes('class="rg-p">retry<'));
+    check('robot-grid: extra values, missing parameters and unknown keywords are marked',
+          html.includes('rg-cell-extra') && html.includes('needs retry_interval') && /rg-kw rg-unknown"[^>]*>No Such Keyword/.test(html));
+    check('robot-grid: a keyword named in a cell is hoverable too',
+          /rg-nested" data-kw="benchsignals\.setsignal">Set Signal/.test(html));
+    check('robot-grid: blocks are indented', /data-line="10"><td class="rg-line">10<\/td><td class="rg-kwcell" style="padding-left:1\.6rem"/.test(html));
+    check('robot-grid: variables, assignments and comments show', html.includes('<span class="rg-var">${TARGET}</span>') &&
+          html.includes('class="rg-assign"') && html.includes('rg-comment"># why'));
+    check('robot-grid: a broken import is listed', html.includes('rg-imports-bad') && html.includes('No module named Nope'));
+    check('robot-grid: text is escaped', html.includes('Setpoint &lt;Reaches&gt; DAC') && html.includes('Nope&lt;Lib&gt;') && !html.includes('<Reaches>'));
+    check('robot-grid: the count of usable keywords', html.includes('227 keywords available'));
+    const card = G.renderCard(kw);
+    check('robot-grid: the card shows parameters in call order', G.signature(kw) === 'retry, retry_interval, name, *args' &&
+          card.indexOf('retry_interval') < card.indexOf('*args') && card.includes('required'));
+    check('robot-grid: the card shows types and defaults', G.renderCard(set).includes('rg-card-type">str') && G.renderCard(set).includes('= 0'));
+    check('robot-grid: an empty file', G.renderGrid({ grid: { sections: [] } }).includes('Nothing in this file yet'));
+  }
+
+  // ---------- robot-grid: editing a step (ES module, no DOM) ----------
+  const E = await import(pathToFileURL(path.join(PLUGINS, 'robot-grid', 'edit.js')).href);
+  const G2 = E;
+  {
+    const P = (name, required, def) => ({ name, kind: 'POSITIONAL_OR_NAMED', required, default: def === undefined ? null : def });
+    const wuks = { name: 'Wait Until Keyword Succeeds', args: [P('retry', true), P('retry_interval', true), P('name', true), { name: 'args', kind: 'VAR_POSITIONAL' }] };
+    const rv = { name: 'Read Voltage', args: [P('channel', true), P('gain', false, '1'), { name: 'unit', kind: 'NAMED_ONLY', required: false, default: 'V' }] };
+    const three = { name: 'X', args: [P('a', true), P('b', false, '1'), P('c', false, '2')] };
+    const logAll = { name: 'Log All', args: [{ name: 'values', kind: 'VAR_POSITIONAL' }, { name: 'options', kind: 'VAR_NAMED' }] };
+
+    const s = E.slotsFor(wuks, [{ v: '3s', p: 'retry' }, { v: '0.2s', p: 'retry_interval' }, { v: 'Signal Should Be', p: 'name', kw: 'k' },
+      { v: 'bench.x', p: 'name' }, { v: '==', p: 'op' }, { v: '2', p: 'expected' }]);
+    check('robot-grid edit: the cells after a named keyword stay its arguments',
+          JSON.stringify(s.varargs.values) === '["bench.x","==","2"]' && s.positional[2].value === 'Signal Should Be');
+    check('robot-grid edit: an unchanged call gives the same cells back',
+          JSON.stringify(E.argsFromSlots(wuks, s).args) === '["3s","0.2s","Signal Should Be","bench.x","==","2"]');
+
+    const n = E.slotsFor(rv, [{ v: 'ch0', p: 'channel' }, { v: 'unit=mV', p: 'unit' }]);
+    check('robot-grid edit: named values fill their parameter, without the name',
+          n.named[0].value === 'mV' && JSON.stringify(E.argsFromSlots(rv, n).args) === '["ch0","unit=mV"]');
+    check('robot-grid edit: a missing required parameter is refused', /Fill in channel/.test(E.argsFromSlots(rv, E.slotsFor(rv, [])).error));
+    const g = E.slotsFor(three, []); g.positional[0].value = 'A'; g.positional[2].value = 'C';
+    check('robot-grid edit: after a skipped optional parameter the rest go by name',
+          JSON.stringify(E.argsFromSlots(three, g).args) === '["A","c=C"]');
+    const e = E.slotsFor(rv, []); e.positional[0].value = 'channel=5';
+    check('robot-grid edit: a value that looks named is escaped', E.argsFromSlots(rv, e).args[0] === 'channel\\=5');
+    const kw = E.slotsFor(logAll, [{ v: 'a', p: '*values' }, { v: 'level=INFO', p: '**options' }]);
+    check('robot-grid edit: *args and **kwargs round-trip',
+          JSON.stringify(E.argsFromSlots(logAll, kw).args) === '["a","level=INFO"]' && kw.kwargs.pairs[0].key === 'level');
+
+    const free = E.slotsFor(null, [{ v: 'x', p: null }, { v: 'y', p: null }]);
+    check('robot-grid edit: an unknown keyword keeps its values as written', JSON.stringify(E.argsFromSlots(null, free).args) === '["x","y"]');
+    const carried = E.carrySlots(free, three);
+    check('robot-grid edit: choosing a keyword carries the values over',
+          carried.positional[0].value === 'x' && carried.positional[1].value === 'y');
+    const byName = E.carrySlots(E.slotsFor(rv, [{ v: 'ch1', p: 'channel' }]), { name: 'Other', args: [P('gain', false), P('channel', true)] });
+    check('robot-grid edit: values carry over by parameter name', byName.positional[1].value === 'ch1' && byName.positional[0].value === '');
+
+    const lst = [{ name: 'Log', owner: 'BuiltIn' }, { name: 'Log Many', owner: 'BuiltIn' }, { name: 'Set Signal', owner: 'bench' },
+      { name: 'Should Be Equal', owner: 'BuiltIn' }, { name: 'Signal Should Be', owner: 'bench' }];
+    check('robot-grid edit: completion puts names starting with the text first',
+          JSON.stringify(E.filterKeywords(lst, 'log').map((k) => k.name)) === '["Log","Log Many"]');
+    check('robot-grid edit: completion matches words anywhere',
+          JSON.stringify(E.filterKeywords(lst, 'sh be').map((k) => k.name)) === '["Should Be Equal","Signal Should Be"]');
+    check('robot-grid edit: "Owner." narrows to one library or resource',
+          JSON.stringify(E.filterKeywords(lst, 'bench.s').map((k) => k.name)) === '["Set Signal","Signal Should Be"]');
+    check('robot-grid edit: names match like Robot does', E.norm('Set_Signal') === E.norm(' set signal '));
+    const eq = ['Should Not Be Equal', 'Lists Should Be Equal', 'Should Be Equal As Numbers', 'Should Be Equal']
+      .map((name) => ({ name, owner: 'BuiltIn' }));
+    check('robot-grid edit: typed words lined up with the name rank first',
+          JSON.stringify(E.filterKeywords(eq, 'sh be eq').map((k) => k.name)) ===
+          '["Should Be Equal","Should Be Equal As Numbers","Should Not Be Equal","Lists Should Be Equal"]');
+  }
+
+  // ---------- robot-grid: variables in scope, block headers ----------
+  {
+    const cell = (v) => ({ v, p: null, kw: null });
+    const data = {
+      variables: [{ name: '${LIMIT}', source: 's.robot' }, { name: '${FROM_RES}', source: 'vars.resource' }],
+      grid: { sections: [{ type: 'keywords', title: 'Keywords', items: [{ name: 'Helper', line: 10, rows: [
+        { line: 11, type: 'ARGUMENTS', label: '[Arguments]', cells: [cell('${x}'), cell('${y}=2'), cell('@{rest}')] },
+        { line: 12, type: 'KEYWORD', keyword: 'Get Count', assign: ['${count}='], cells: [] },
+        { line: 13, type: 'FOR', label: 'FOR', cells: [cell('${i}'), cell('IN RANGE'), cell('${count}')] },
+        { line: 14, type: 'KEYWORD', keyword: 'Set Test Variable', assign: [], cells: [cell('\\${shared}'), cell('1')] },
+        { line: 15, type: 'END', label: 'END', cells: [] },
+        { line: 16, type: 'EXCEPT', label: 'EXCEPT', cells: [cell('boom'), cell('AS'), cell('${err}')] },
+        { line: 17, type: 'KEYWORD', keyword: 'Log', assign: ['${late}='], cells: [] }] }] }] }
+    };
+    const at16 = G2.variablesInScope(data, 16).map((v) => v.name);
+    check('robot-grid scope: arguments, assignments, FOR and Set Test Variable above the line',
+          ['${x}', '${y}', '@{rest}', '${count}', '${i}', '${shared}'].every((n) => at16.includes(n)) && !at16.includes('${late}'), at16.slice(0, 8));
+    check('robot-grid scope: nearest first, then the file, then Robot',
+          at16[0] === '${shared}' && at16.indexOf('${LIMIT}') > at16.indexOf('${x}') && at16.indexOf('${EMPTY}') > at16.indexOf('${FROM_RES}'));
+    check('robot-grid scope: EXCEPT AS counts below it', G2.variablesInScope(data, 17).some((v) => v.name === '${err}'));
+    const found = G2.variableAt('Log    ${co', 10, G2.variablesInScope(data, 16));
+    check('robot-grid scope: the variable being typed is completed', found && found.start === 7 && found.hits[0].insert === '${count}', found);
+    const list = G2.variableAt('x @{LI}', 5, [{ name: '${LIMIT}', source: '' }]);
+    check('robot-grid scope: the typed sigil is kept, the closing brace replaced', list.hits[0].insert === '@{LIMIT}' && list.end === 7);
+    check('robot-grid scope: nothing typed, nothing offered', G2.variableAt('plain text', 5, [{ name: '${A}' }]) === null);
+    check('robot-grid headers: FOR', JSON.stringify(G2.parseFor([cell('${i}'), cell('${j}'), cell('IN ZIP'), cell('@{a}'), cell('@{b}')])) ===
+          JSON.stringify({ variables: ['${i}', '${j}'], flavor: 'IN ZIP', values: ['@{a}', '@{b}'] }));
+    check('robot-grid headers: WHILE with a limit', JSON.stringify(G2.parseWhile([cell('${n} < 3'), cell('limit=10')])) ===
+          JSON.stringify({ condition: '${n} < 3', limit: '10' }));
+    check('robot-grid headers: THREAD name and daemon (RobotFramework AIO)',
+          JSON.stringify(G2.parseThread([cell('WORKER1'), cell('False')])) === JSON.stringify({ name: 'WORKER1', daemon: false }) &&
+          G2.parseThread([cell('W')]).daemon === true);
+    check('robot-grid headers: EXCEPT patterns, type and AS', JSON.stringify(G2.parseExcept([cell('Err*'), cell('type=glob'), cell('AS'), cell('${e}')])) ===
+          JSON.stringify({ patterns: ['Err*'], type: 'glob', variable: '${e}' }));
   }
 
   console.log('\n' + passes + ' passed, ' + failures + ' failed');

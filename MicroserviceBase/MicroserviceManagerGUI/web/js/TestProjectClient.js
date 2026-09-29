@@ -154,7 +154,8 @@
     run: function (root, path, opts) {
       opts = opts || {};
       return _post('/api/test-project/run', {
-        root: root, path: path || '', variables: opts.variables || {}, dryrun: !!opts.dryrun
+        root: root, path: path || '', variables: opts.variables || {}, dryrun: !!opts.dryrun,
+        resources: !!opts.resources
       });
     },
 
@@ -194,9 +195,41 @@
       return _post('/api/test-project/inspect', body);
     },
 
-    /** Absolute URL of a file a run left behind (results_url + name). */
-    resultUrl: function (run, name) {
-      return _bridgeOrigin() + run.results_url + encodeURIComponent(name);
+    /**
+     * Apply an edit made in a file view (e.g. a Grid step) to `content`, the
+     * editor's text. @returns {Promise<{ok, text, line, error}>} the new text
+     */
+    viewEdit: function (root, path, view, content, edit) {
+      return _post('/api/test-project/view-edit', { root: root, path: path, view: view, content: content, edit: edit });
+    },
+
+    /** Start every member of a run group at once (opts: {dryrun}). */
+    runGroup: function (root, group, opts) {
+      opts = opts || {};
+      return _post('/api/test-project/run', { root: root, group: group, dryrun: !!opts.dryrun,
+                                               resources: !!opts.resources });
+    },
+
+    /** Read (groups omitted) or replace the project's run groups. */
+    groups: function (root, groups) {
+      var body = { root: root };
+      if (groups) body.groups = groups;
+      return _post('/api/test-project/groups', body);
+    },
+
+    /**
+     * A run group's views from the project's runner: every member's flow and
+     * where the members meet.
+     * @returns {Promise<{ok: boolean, views: object, error: string, member: string}>}
+     */
+    inspectGroup: function (root, group) {
+      return _post('/api/test-project/group/inspect', { root: root, group: group });
+    },
+
+    /** Absolute URL of a file a run left behind (results_url + name); `member` for a group run. */
+    resultUrl: function (run, name, member) {
+      return _bridgeOrigin() + run.results_url + (member ? encodeURIComponent(member) + '/' : '') +
+        encodeURIComponent(name);
     }
   };
 

@@ -1,0 +1,14 @@
+{
+  "$schema": "../../js/endo/contract/plugin.schema.json",
+  "plugin": "robot-grid",
+  "version": "1.0.0",
+  "title": "Robot grid",
+  "description": "The Grid tab of Robot Framework suites and resources in the project view: one row per step, the keyword it calls and one cell per argument labelled with its parameter, resolved from the file's imports. Hover a keyword for its arguments and documentation; click a row to change it -- steps with keyword completion and one input per parameter, FOR / IF / WHILE / TRY blocks, settings, variables, tests and keywords, with ${variable} completion. Changes land in Script as unsaved edits.",
+  "requires": { "shell": "^2.3", "capabilities": [] },
+  "isolation": "frame",
+  "contributes": {
+    "file.views": [
+      { "id": "grid", "title": "Grid", "icon": "grid-3x3", "entry": "grid.js", "for": ["robot-grid"] }
+    ]
+  }
+}
