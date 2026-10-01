@@ -556,6 +556,8 @@
 
   var managerModal = null;
   function openManager() {
+    // Turning plugins on or off is an administrator's job (settings "view").
+    if (MM.viewHas && !MM.viewHas('admin')) return;
     var el = document.getElementById('pluginsModal');
     if (!el) {
       el = document.createElement('div');
