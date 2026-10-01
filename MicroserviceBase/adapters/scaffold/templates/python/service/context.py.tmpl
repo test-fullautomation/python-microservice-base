@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adapters.api.grpc_adapter import @@{svc}GrpcAdapter
+from adapters.inbound.api.grpc_adapter import @@{svc}GrpcAdapter
 from config import Settings
-from domain.@@{sn}_service import @@{cls}
+from core.domain.@@{sn}_service import @@{cls}
 
 
 @dataclass

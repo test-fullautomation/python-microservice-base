@@ -76,6 +76,26 @@ service's name (e.g. ``HELLO_``).
 
   Python logging level name (``DEBUG``, ``INFO``, ``WARNING``,
   ``ERROR``, ``CRITICAL``).
+
+* ``gui``
+
+  / *Type*: str / *Default*: "" /
+
+  Name of the GUI plugin folder the Manager GUI should show for this
+  service, e.g. ``HelloService1.0.0``. Registered in Consul as
+  ``Meta.gui``; the Manager GUI loads ``web/services/<gui>/`` with its
+  usual tiers (schema, QML, Widget, Qt WASM, HTML). Empty = no GUI, the
+  service is listed with a "No GUI" marker.
+
+* ``gui_dir``
+
+  / *Type*: str / *Default*: "" /
+
+  Folder on disk holding those files. Set it to serve the GUI over gRPC
+  (``ServiceGui``), so the Manager GUI fetches the folder from the
+  service instead of needing it copied there by hand. Empty = look for
+  ``gui/<gui>``, ``ui/<gui>``, ``GUIs/<gui>`` or ``<gui>`` next to the
+  service's entry module; nothing found = nothing served.
     """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -89,3 +109,6 @@ service's name (e.g. ``HELLO_``).
     consul_token: str = ""
 
     log_level: str = "INFO"
+
+    gui: str = ""
+    gui_dir: str = ""

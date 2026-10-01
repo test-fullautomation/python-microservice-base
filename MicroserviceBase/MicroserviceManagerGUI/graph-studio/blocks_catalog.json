@@ -1,0 +1,497 @@
+{
+    "catalog_version": "generated-2026-09-25",
+    "generated_from": [
+        "signal_graph/core/domain/blocks.py",
+        "uds_blocks/__init__.py",
+        "uds_blocks/adapters/__init__.py",
+        "uds_blocks/adapters/mock.py",
+        "uds_blocks/adapters/registry.py",
+        "uds_blocks/adapters/request_service_grpc.py",
+        "uds_blocks/adapters/tester_grpc.py",
+        "uds_blocks/blocks.py",
+        "uds_blocks/ports/__init__.py",
+        "uds_blocks/ports/uds_blocks_port.py",
+        "uds_blocks/proto/__init__.py",
+        "uds_blocks/proto/uds_tester_pb2.py",
+        "uds_blocks/proto/uds_tester_pb2_grpc.py",
+        "uds_blocks/scripts/generate_protos.py"
+    ],
+    "generator": "graph-studio/tools/generate_catalog.py (AST, no imports)",
+    "blocks": [
+        {
+            "type": "AdcBlock",
+            "family": "source",
+            "doc": "Reads an analog input channel from a device service each cycle.",
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "channel",
+                    "type": "int",
+                    "required": true
+                },
+                {
+                    "name": "unit",
+                    "type": "string",
+                    "required": false
+                },
+                {
+                    "name": "device",
+                    "type": "device_ref",
+                    "required": true
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "SetpointBlock",
+            "family": "source",
+            "doc": "Holds a controllable value updated via SetSignal; emits it each cycle.",
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "signal_name",
+                    "type": "string",
+                    "required": true
+                },
+                {
+                    "name": "unit",
+                    "type": "string",
+                    "required": false
+                },
+                {
+                    "name": "initial_value",
+                    "type": "float",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "SubscriberSourceBlock",
+            "family": "source",
+            "doc": "Consumes a signal owned by another ``signal_graph`` service.",
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "signal_name",
+                    "type": "signal_ref",
+                    "required": true
+                },
+                {
+                    "name": "unit",
+                    "type": "string",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "LinearScaleBlock",
+            "family": "function",
+            "doc": "``out = gain * in + offset`` (linear calibration / unit conversion).",
+            "inputs": [
+                {
+                    "name": "in",
+                    "type": "float"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "gain",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "offset",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "out_unit",
+                    "type": "string",
+                    "required": false
+                },
+                {
+                    "name": "in_unit",
+                    "type": "string",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "ClampBlock",
+            "family": "function",
+            "doc": "Clamps its input to ``[min_value, max_value]``.",
+            "inputs": [
+                {
+                    "name": "in",
+                    "type": "float"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "min_value",
+                    "type": "float",
+                    "required": true
+                },
+                {
+                    "name": "max_value",
+                    "type": "float",
+                    "required": true
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "DecimatorBlock",
+            "family": "function",
+            "doc": "Passes every ``n``-th sample; emits ``None`` otherwise (rate reduction).",
+            "inputs": [
+                {
+                    "name": "in",
+                    "type": "float"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "n",
+                    "type": "int",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "ThresholdBlock",
+            "family": "function",
+            "doc": "Emits ``1.0`` when ``in`` crosses ``threshold``, else ``0.0``.",
+            "inputs": [
+                {
+                    "name": "in",
+                    "type": "float"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "threshold",
+                    "type": "float",
+                    "required": true
+                },
+                {
+                    "name": "unit",
+                    "type": "string",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "RecordSignalBlock",
+            "family": "sink",
+            "doc": "Batches incoming samples and flushes them to the measurement store.",
+            "inputs": [
+                {
+                    "name": "in",
+                    "type": "float"
+                }
+            ],
+            "outputs": [],
+            "params": [
+                {
+                    "name": "signal_name",
+                    "type": "string",
+                    "required": true
+                },
+                {
+                    "name": "batch_size",
+                    "type": "int",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "DacBlock",
+            "family": "sink",
+            "doc": "Writes its input to an analog output channel on a device service.",
+            "inputs": [
+                {
+                    "name": "in",
+                    "type": "float"
+                }
+            ],
+            "outputs": [],
+            "params": [
+                {
+                    "name": "channel",
+                    "type": "int",
+                    "required": true
+                },
+                {
+                    "name": "device",
+                    "type": "device_ref",
+                    "required": true
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "UdsPeriodicSourceBlock",
+            "family": "source",
+            "doc": "Extracts one parameter from the tester's decoded 0x2A periodic values as a scaled signal.",
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                },
+                {
+                    "name": "last_nrc",
+                    "type": "float"
+                },
+                {
+                    "name": "age_s",
+                    "type": "float"
+                },
+                {
+                    "name": "update_count",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "tester",
+                    "type": "device_ref",
+                    "required": true
+                },
+                {
+                    "name": "periodic_id",
+                    "type": "int",
+                    "required": true
+                },
+                {
+                    "name": "parameter",
+                    "type": "string",
+                    "required": true
+                },
+                {
+                    "name": "scale",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "offset",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "on_nrc",
+                    "type": "enum",
+                    "required": false,
+                    "choices": [
+                        "none",
+                        "hold"
+                    ]
+                },
+                {
+                    "name": "unit",
+                    "type": "string",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "UdsDidSourceBlock",
+            "family": "source",
+            "doc": "Extracts one PDX parameter from the responses of a named UDS request (manual/cyclic lane).",
+            "inputs": [],
+            "outputs": [
+                {
+                    "name": "out",
+                    "type": "float"
+                },
+                {
+                    "name": "last_nrc",
+                    "type": "float"
+                },
+                {
+                    "name": "age_s",
+                    "type": "float"
+                },
+                {
+                    "name": "update_count",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "request_service",
+                    "type": "device_ref",
+                    "required": true
+                },
+                {
+                    "name": "service_name",
+                    "type": "string",
+                    "required": true
+                },
+                {
+                    "name": "parameter",
+                    "type": "string",
+                    "required": true
+                },
+                {
+                    "name": "scale",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "offset",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "on_nrc",
+                    "type": "enum",
+                    "required": false,
+                    "choices": [
+                        "none",
+                        "hold"
+                    ]
+                },
+                {
+                    "name": "unit",
+                    "type": "string",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        },
+        {
+            "type": "UdsWriteSinkBlock",
+            "family": "function",
+            "doc": "Embeds a signal into the DUT: writes the scaled input to a memory address through the tester (0x3D).",
+            "inputs": [
+                {
+                    "name": "in",
+                    "type": "float"
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "ack",
+                    "type": "float"
+                },
+                {
+                    "name": "last_nrc",
+                    "type": "float"
+                },
+                {
+                    "name": "age_s",
+                    "type": "float"
+                },
+                {
+                    "name": "write_count",
+                    "type": "float"
+                }
+            ],
+            "params": [
+                {
+                    "name": "tester",
+                    "type": "device_ref",
+                    "required": true
+                },
+                {
+                    "name": "address",
+                    "type": "int",
+                    "required": true
+                },
+                {
+                    "name": "size",
+                    "type": "int",
+                    "required": false
+                },
+                {
+                    "name": "scale",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "offset",
+                    "type": "float",
+                    "required": false
+                },
+                {
+                    "name": "trigger",
+                    "type": "enum",
+                    "required": false,
+                    "choices": [
+                        "on_change",
+                        "every_tick"
+                    ]
+                },
+                {
+                    "name": "min_interval_s",
+                    "type": "float",
+                    "required": false
+                }
+            ],
+            "origin": "generated",
+            "source": "blocks.py"
+        }
+    ]
+}

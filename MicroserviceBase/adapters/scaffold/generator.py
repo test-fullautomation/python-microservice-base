@@ -10,7 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from . import shared, python_tmpl, cpp_tmpl
+from . import shared, python_tmpl, cpp_tmpl, wasm_panel
+
+#: Package of a single-layout Python service that holds its protoc output:
+#: main.py and the gRPC adapter import `from generated import ...`,
+#: BUILD.bazel globs it, scripts/generate_protos.py writes into it.
+_STUB_DIR = "generated"
 
 
 @dataclass
@@ -128,6 +133,11 @@ class ScaffoldSpec:
     # Empty string = fall back to the computed `<snake_name>.v1`.
     proto_package_override: str = ""
 
+    # Layer of the TAG layer chart the service's Manager GUI component
+    # declares (ui/<Service><version>/component.json). One of
+    # operator | session | config | execution | runner | signals | bits.
+    ui_layer: str = "bits"
+
     # Multi-service mode: when non-empty, emit a single project folder
     # holding N gRPC services.  ``service_name`` then acts as the
     # *project* folder name.  How they're laid out depends on ``layout``:
@@ -178,7 +188,17 @@ def generate_scaffold(spec: ScaffoldSpec) -> Dict[str, str]:
     """Return ``{path: content}`` for every file in the scaffold.
 
     Paths are relative to the project root (e.g. ``src/main.cpp``).
+    ``gui_type == "wasm"`` adds the Manager GUI panel (``gui_wasm/``) and
+    its components (``ui/``) to every layout and language.
     """
+    files = _generate_project(spec)
+    if spec.gui_type == "wasm":
+        files.update(wasm_panel.generate(spec, files))
+    return files
+
+
+def _generate_project(spec: ScaffoldSpec) -> Dict[str, str]:
+    """Every file of the scaffold except the WebAssembly panel."""
     # Multi-service path: one project folder, N gRPC services.  Layout
     # decides whether they share a process (multi_proto) or each get
     # their own (monorepo).
@@ -218,6 +238,9 @@ def generate_scaffold(spec: ScaffoldSpec) -> Dict[str, str]:
         files[f"{spec.snake_name}.nomad.hcl"] = shared.gen_nomad(spec)
 
     files["service_config.json"] = shared.gen_service_config(spec)
+
+    # Manager GUI component: language-neutral, so Python and C++ get the same.
+    files.update(shared.gen_ui_component(spec, files[f"proto/{spec.snake_name}.proto"]))
 
     # ---- Language-specific files ----------------------------------------
     if spec.language == "python":
@@ -306,13 +329,16 @@ def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, 
             )
             return {}
 
-        # Read generated files
+        # Read generated files. They go where the service imports them from
+        # (main.py / the gRPC adapter: `from generated import ...`), where
+        # BUILD.bazel globs them and where scripts/generate_protos.py
+        # rewrites them -- the package generated/, not proto/.
         pb2_path = os.path.join(tmpdir, f"{sn}_pb2.py")
         grpc_path = os.path.join(tmpdir, f"{sn}_pb2_grpc.py")
 
         if os.path.isfile(pb2_path):
             with open(pb2_path, "r", encoding="utf-8") as f:
-                stubs[f"proto/{sn}_pb2.py"] = f.read()
+                stubs[f"{_STUB_DIR}/{sn}_pb2.py"] = f.read()
         else:
             log.warning("protoc succeeded but %s_pb2.py was not produced.", sn)
 
@@ -325,7 +351,7 @@ def _generate_python_stubs(spec: ScaffoldSpec, proto_content: str) -> Dict[str, 
                 f"import {sn}_pb2 as {sn.replace('_', '__')}__pb2",
                 f"from . import {sn}_pb2 as {sn.replace('_', '__')}__pb2",
             )
-            stubs[f"proto/{sn}_pb2_grpc.py"] = content
+            stubs[f"{_STUB_DIR}/{sn}_pb2_grpc.py"] = content
         else:
             log.warning("protoc succeeded but %s_pb2_grpc.py was not produced.", sn)
 

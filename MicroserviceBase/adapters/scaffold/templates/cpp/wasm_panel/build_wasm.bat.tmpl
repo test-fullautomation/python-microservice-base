@@ -1,0 +1,101 @@
+@echo off
+rem ==========================================================================
+rem  @@{title} - Manager GUI panel (Qt WebAssembly)
+rem
+rem    build_wasm.bat            Release build
+rem    build_wasm.bat debug      Debug build
+rem    build_wasm.bat clean      delete the build folder
+rem
+rem  Output: build\wasm\@@{target}.js + @@{target}.wasm
+rem  Install: set MM_SERVICES to the Manager GUI's web\services folder and
+rem  this script copies the panel next to each component (<folder>\qt\) with
+rem  its component.json from ..\ui\<folder>\.
+rem
+rem  Qt 6.11 wasm_singlethread needs Emscripten 4.0.7 exactly (another Qt
+rem  version: see QT_EMCC_RECOMMENDED_VERSION in its lib\cmake\Qt6).
+rem ==========================================================================
+setlocal enabledelayedexpansion
+
+if not defined QT_WASM_DIR  set "QT_WASM_DIR=C:\Qt\6.11.0\wasm_singlethread"
+if not defined QT_HOST_DIR  set "QT_HOST_DIR=C:\Qt\6.11.0\msvc2022_64"
+if not defined QT_CMAKE_DIR set "QT_CMAKE_DIR=C:\Qt\Tools\CMake_64\bin"
+if not defined QT_NINJA_DIR set "QT_NINJA_DIR=C:\Qt\Tools\Ninja"
+if not defined EMSDK_DIR    set "EMSDK_DIR=C:\emsdk"
+
+set "SCRIPT_DIR=%~dp0"
+rem %~dp0 ends with "\", which would escape the closing quote of a cmake argument.
+if "!SCRIPT_DIR:~-1!"=="\" set "SCRIPT_DIR=!SCRIPT_DIR:~0,-1!"
+set "BUILD_DIR=!SCRIPT_DIR!\build\wasm"
+set "EMSCRIPTEN_DIR=!EMSDK_DIR!\upstream\emscripten"
+
+set "BUILD_TYPE=Release"
+if /I "%~1"=="debug" set "BUILD_TYPE=Debug"
+if /I "%~1"=="clean" (
+    if exist "!BUILD_DIR!" rd /s /q "!BUILD_DIR!"
+    echo Removed !BUILD_DIR!
+    exit /b 0
+)
+
+if not exist "%QT_WASM_DIR%\lib\cmake\Qt6\qt.toolchain.cmake" (
+    echo ERROR: Qt WebAssembly kit not found at %QT_WASM_DIR% ^(set QT_WASM_DIR^).
+    exit /b 1
+)
+if not exist "%QT_HOST_DIR%\bin\moc.exe" if not exist "%QT_HOST_DIR%\libexec\moc.exe" (
+    echo ERROR: Qt host kit not found at %QT_HOST_DIR% ^(set QT_HOST_DIR; moc/uic/rcc come from it^).
+    exit /b 1
+)
+if not exist "!EMSCRIPTEN_DIR!\emcc.bat" (
+    echo ERROR: Emscripten not found at !EMSCRIPTEN_DIR! ^(set EMSDK_DIR^).
+    exit /b 1
+)
+
+rem Emscripten without emsdk_env.bat (it clears variables and misbehaves in Git Bash):
+rem put emcc on PATH and use emsdk's own Python.
+set "PATH=!EMSCRIPTEN_DIR!;!EMSDK_DIR!;%QT_CMAKE_DIR%;%QT_NINJA_DIR%;!PATH!"
+set "EMSDK=!EMSDK_DIR!"
+if not defined EMSDK_PYTHON (
+    for /f "delims=" %%P in ('dir /b /s "!EMSDK_DIR!\python\python.exe" 2^>nul') do set "EMSDK_PYTHON=%%P"
+)
+if not defined EMSDK_PYTHON (
+    echo ERROR: emsdk's Python not found under !EMSDK_DIR!\python ^(set EMSDK_PYTHON^).
+    exit /b 1
+)
+
+echo ===== Configure [!BUILD_TYPE!] =====
+cmake -G Ninja -S "!SCRIPT_DIR!" -B "!BUILD_DIR!" ^
+    -DCMAKE_MAKE_PROGRAM="%QT_NINJA_DIR%\ninja.exe" ^
+    -DCMAKE_TOOLCHAIN_FILE="%QT_WASM_DIR%\lib\cmake\Qt6\qt.toolchain.cmake" ^
+    -DQT_CHAINLOAD_TOOLCHAIN_FILE="!EMSCRIPTEN_DIR!\cmake\Modules\Platform\Emscripten.cmake" ^
+    -DQT_HOST_PATH="%QT_HOST_DIR%" ^
+    -DCMAKE_BUILD_TYPE=!BUILD_TYPE!
+if errorlevel 1 (
+    echo ERROR: configure failed.
+    exit /b 1
+)
+
+echo ===== Build =====
+cmake --build "!BUILD_DIR!"
+if errorlevel 1 (
+    echo ERROR: build failed.
+    exit /b 1
+)
+
+echo.
+echo Built: !BUILD_DIR!\@@{target}.js
+echo        !BUILD_DIR!\@@{target}.wasm
+
+if defined MM_SERVICES (
+@@{install_calls}
+)
+exit /b 0
+
+rem The build goes in <folder>\qt\: a .wasm at the folder top would also be
+rem offered as a classic (broker) panel, which cannot reach a gRPC service.
+:install
+set "DEST=!MM_SERVICES!\%~1"
+if not exist "!DEST!\qt" mkdir "!DEST!\qt"
+copy /y "!BUILD_DIR!\@@{target}.js"   "!DEST!\qt\" >nul
+copy /y "!BUILD_DIR!\@@{target}.wasm" "!DEST!\qt\" >nul
+copy /y "!SCRIPT_DIR!\..\ui\%~1\component.json" "!DEST!\" >nul
+echo Installed into !DEST!
+exit /b 0

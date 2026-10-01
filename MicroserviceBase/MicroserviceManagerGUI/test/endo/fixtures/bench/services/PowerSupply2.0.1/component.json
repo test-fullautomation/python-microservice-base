@@ -1,0 +1,68 @@
+{
+  "component": "bits.power-supply",
+  "version": "2.0.1",
+  "layer": "bits",
+  "title": "DUT supply",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": [
+      "grpc.call",
+      "signals.subscribe"
+    ]
+  },
+  "binds": {
+    "consul": "@self",
+    "grpc": "device.v1.PowerSupply"
+  },
+  "tiles": [
+    {
+      "id": "out",
+      "size": "1x1",
+      "kind": "live-status",
+      "title": "DUT supply",
+      "fields": [
+        {
+          "label": "Voltage",
+          "signal": "bench.psu.voltage.V",
+          "unit": "V"
+        },
+        {
+          "label": "Current",
+          "signal": "bench.psu.current.A",
+          "unit": "A",
+          "warnAbove": 2.5
+        }
+      ]
+    }
+  ],
+  "ribbon": [
+    {
+      "tab": "user",
+      "group": "Supply",
+      "commands": [
+        {
+          "label": "Output on",
+          "icon": "power",
+          "call": "SetOutput",
+          "args": {
+            "on": true
+          },
+          "confirm": "Switch the DUT supply on?"
+        },
+        {
+          "label": "Output off",
+          "icon": "stop-circle",
+          "call": "SetOutput",
+          "args": {
+            "on": false
+          }
+        }
+      ]
+    }
+  ],
+  "dock": [
+    "api",
+    "details"
+  ],
+  "renderer": "schema"
+}

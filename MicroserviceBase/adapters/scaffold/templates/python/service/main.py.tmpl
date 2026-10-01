@@ -14,7 +14,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 from context import create_context
-from proto import @@{sn}_pb2, @@{sn}_pb2_grpc  # type: ignore[import-not-found]
+from generated import @@{sn}_pb2, @@{sn}_pb2_grpc  # type: ignore[import-not-found]
 
 from MicroserviceBase.runtime import ServiceRunner, ServicerEntry
 

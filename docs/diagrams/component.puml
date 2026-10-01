@@ -2,7 +2,7 @@
 title MicroserviceBase — Component diagram (one workload, post-migration)
 
 ' Modeled on the TA reference's 01_component_diagram.puml
-' (https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal),
+' (taf_repo_proposal),
 ' adapted to this repo.  Sibling of 00_canonical_architecture.puml:
 '   - 00_canonical_architecture.puml = full cluster topology (3 of each)
 '   - component.puml (this file)     = one workload, vertically arranged

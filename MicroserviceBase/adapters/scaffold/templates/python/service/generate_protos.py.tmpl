@@ -11,17 +11,23 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SERVICE_ROOT = HERE.parent
+# .proto sources are authored in proto/; the stubs protoc emits land in
+# generated/ and are checked in, so neither Bazel nor a fresh clone needs
+# protoc just to import the service.
 PROTO_DIR = SERVICE_ROOT / "proto"
+GENERATED_DIR = SERVICE_ROOT / "@@{stub_dir}"
 
 
 def main() -> int:
     """
 Run grpc_tools.protoc on the service's .proto file.
 
+Reads ``proto/<name>.proto`` and writes the stubs into ``generated/``.
+
 Patches the generated ``_pb2_grpc.py`` so its import of the matching
 ``_pb2`` module uses a package-relative path — needed because the
-service runs the ``proto/`` directory as a package, not as a top-level
-import root.
+service runs the ``generated/`` directory as a package, not as a
+top-level import root.
 
 **Returns:**
 
@@ -37,11 +43,16 @@ import root.
         print(f"ERROR: {proto_file} not found", file=sys.stderr)
         return 1
 
+    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    init_py = GENERATED_DIR / "__init__.py"
+    if not init_py.exists():
+        init_py.write_text("", encoding="utf-8")
+
     cmd = [
         sys.executable, "-m", "grpc_tools.protoc",
         f"-I{PROTO_DIR}",
-        f"--python_out={PROTO_DIR}",
-        f"--grpc_python_out={PROTO_DIR}",
+        f"--python_out={GENERATED_DIR}",
+        f"--grpc_python_out={GENERATED_DIR}",
         str(proto_file),
     ]
     print("Running:", " ".join(cmd))
@@ -49,7 +60,7 @@ import root.
     if result.returncode != 0:
         return result.returncode
 
-    grpc_stub = PROTO_DIR / "@@{sn}_pb2_grpc.py"
+    grpc_stub = GENERATED_DIR / "@@{sn}_pb2_grpc.py"
     if grpc_stub.exists():
         text = grpc_stub.read_text(encoding="utf-8")
         patched = text.replace(

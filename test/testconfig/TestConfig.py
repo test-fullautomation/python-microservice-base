@@ -51,7 +51,7 @@ dictUsecase['HINT']              = None
 dictUsecase['COMMENT']           = "L1 static check"
 dictUsecase['TESTFILE']          = r"MSB_0001.py"
 dictUsecase['EXPECTEDEXCEPTION'] = None
-dictUsecase['EXPECTEDRETURN']    = "OK: 15 expected files present; markers verified in main.py, calculator.proto, calculator.nomad.hcl"
+dictUsecase['EXPECTEDRETURN']    = "OK: 33 expected files present; markers verified in main.py, calculator.proto, calculator.nomad.hcl"
 listofdictUsecases.append(dictUsecase)
 del dictUsecase
 # --------------------------------------------------------------------------------------------------------------
@@ -79,7 +79,7 @@ dictUsecase['HINT']              = None
 dictUsecase['COMMENT']           = "L3 build check"
 dictUsecase['TESTFILE']          = r"MSB_0003.py"
 dictUsecase['EXPECTEDEXCEPTION'] = None
-dictUsecase['EXPECTEDRETURN']    = "OK: generate_protos.py exit 0; calculator_pb2.py + calculator_pb2_grpc.py present in proto/"
+dictUsecase['EXPECTEDRETURN']    = "OK: generate_protos.py exit 0; calculator_pb2.py + calculator_pb2_grpc.py present in generated/"
 listofdictUsecases.append(dictUsecase)
 del dictUsecase
 # --------------------------------------------------------------------------------------------------------------

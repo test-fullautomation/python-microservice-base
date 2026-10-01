@@ -1,0 +1,43 @@
+{
+  "component": "bench-heater",
+  "version": "0.9.0",
+  "layer": "operator",
+  "title": "Bench heater",
+  "description": "Deliberately broken: breaks S, R1, R2, R3, R7, R8 and R9.",
+  "requires": {
+    "shell": "^3.0",
+    "capabilities": [
+      "grpc.call",
+      "telemetry.raw"
+    ]
+  },
+  "binds": {
+    "consul": "bench-heater",
+    "address": "10.40.2.17:50051"
+  },
+  "tiles": [
+    {
+      "id": "state",
+      "size": "3x1",
+      "kind": "live-status",
+      "title": "Heater",
+      "fields": [
+        {
+          "label": "Heater",
+          "device": "nidaq_dev0/ai3",
+          "unit": "°C"
+        }
+      ]
+    },
+    {
+      "id": "trend",
+      "size": "2x1",
+      "kind": "signal-strip",
+      "title": "Heater trend",
+      "signals": [
+        "bench.heater.temp.degC"
+      ]
+    }
+  ],
+  "renderer": "schema"
+}

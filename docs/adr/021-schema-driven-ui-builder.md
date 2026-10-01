@@ -18,6 +18,7 @@ Nguyen Huynh Tri Cuong (MS/EMC51)
 |------|---------|-------------|
 | 2026-02-25 | 1.0 | Initial version — schema-driven UI builder |
 | 2026-03-10 | 2.0 | Merged ADR-022 — added Qt C++ service template UI loading (Widget / QML / WASM) |
+| 2026-09-27 | 2.1 | Qt UIs as bench component tiles over gRPC; the scaffold generates a WASM panel |
 
 ## Context
 
@@ -382,6 +383,31 @@ Rejected because:
 - Would introduce a build step and Node.js dependency
 - Breaks the existing pattern of vanilla JS, browser-compatible, no modules
 - Overkill for rendering forms from a JSON descriptor
+
+## Update 2.1: Qt UIs in bench components
+
+The tiers above serve classic panels, which call their service through
+the broker. Bench components (`component.json`) reach services over gRPC
+with declared capabilities. Qt UIs now fit there too:
+
+- **Tile kinds.** `qml`, `widget` and `wasm` (`web/js/endo/kinds-qt.js`)
+  each run their own Qt instance in a tile.
+  - **Calls:** the UI's `ServiceBridge` calls go through the component's
+    `ctx` to `binds.grpc`. `binds.grpc` may list several services, called
+    as `"<service>/<Method>"`.
+  - **Routing:** one `window.callMicroservice` serves every Qt UI
+    (`web/js/QtBridge.js`). It routes each call to its tile by the tile's
+    token, which a per-service build gets as `Module.endoToken`.
+- **The scaffold.** `gui_type = "wasm"` generates a GUI-only Qt for
+  WebAssembly project (`gui_wasm/`, `adapters/scaffold/wasm_panel.py`).
+  - **The panel:** one group per RPC, built from the project's protos.
+  - **Components:** one per service registration, with a `wasm` tile.
+  - **Nomad:** `<PREFIX>GUI` in the Nomad jobs, which the Python and C++
+    runtimes register as `Meta.gui`.
+  - **Monorepos:** one build serves every service's component. The GUI
+    passes the bound services as `Module.endoServices`.
+  - **What it replaces:** the per-service WASM template of 1c, which called
+    the broker, is no longer generated.
 
 ## References
 

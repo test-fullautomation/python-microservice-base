@@ -11,7 +11,7 @@ Proposed
 ## Author
 
 Audit follow-up.  Aligns with the TA reference at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+`taf_repo_proposal`.
 
 ## Reviewer
 
@@ -133,7 +133,7 @@ Python + a few wheels (grpcio, protobuf, fastapi).
 ## References
 
 - Reference architecture:
-  [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+  `taf_repo_proposal`
 - [ADR-025 Wrapper layer for raw_exec](025-wrapper-layer-for-raw-exec.md) — wrapper activates the uv venv
 - uv documentation: <https://docs.astral.sh/uv/>
 - uv vs pip benchmarks: <https://github.com/astral-sh/uv#performance>

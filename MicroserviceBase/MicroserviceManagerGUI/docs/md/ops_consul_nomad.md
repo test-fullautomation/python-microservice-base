@@ -6,7 +6,7 @@ on-ramp to:
 
 - **Start, stop, and inspect** the Consul service registry and the
   Nomad orchestrator without remembering CLI flags.
-- See live infrastructure status at a glance (LEDs in the navbar).
+- See live infrastructure status at a glance (LEDs on the ribbon's User tab).
 - Browse registered services, running jobs, and per-job logs in one
   place.
 - Generate new service scaffolds (the
@@ -29,12 +29,12 @@ Two equivalent ways to run it:
 Both modes are fed by the same FastAPI bridge — what you do in one is
 visible in the other.
 
-![Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar](../img/gui_overview.png)
-*Manager GUI on first launch — mode toggle (Services / Service Network /
-Service Creator) on the left of the navbar; Bridge LED + Start/Stop,
-Consul + Nomad infra pills, and the connected-cluster chip on the right.*
+![Manager GUI overview — ribbon with the User tab open (Bridge, Consul and Nomad LEDs, Bench, Service registry), services sidebar, a service's GUI](../img/gui_overview.png)
+*The main window — ribbon tabs (User / Developer / Administrator) in the
+navbar; on the User tab the Bridge LED with Start/Stop, the Consul and
+Nomad LEDs, the Bench group and the connected-cluster chip.*
 
-The first thing the GUI shows in the navbar is the **Bridge LED**:
+The first thing the GUI shows on the User tab is the **Bridge LED**:
 
 ![Three Bridge chip states: green Bridge up, amber Starting bridge…, red Bridge down](../img/bridge_led_states.png)
 *The three Bridge LED states — green "Bridge up", amber "Starting bridge…",
@@ -48,15 +48,20 @@ red "Bridge down". Use the ▶ / ■ buttons to start or stop the bridge.*
 
 ---
 
-## The three top-level modes
+## The ribbon: User, Developer, Administrator
 
-The mode toggle in the navbar switches between:
+The navbar holds three ribbon tabs; each opens a band of commands grouped
+by task. The left pane's switcher (Services / Bench / Project) picks what
+the pane lists.
 
-| Mode | What it's for |
+| Tab | What it's for |
 |---|---|
-| **Services** | Runtime management — view registered services, send test gRPC calls, watch real-time updates. |
-| **Service Network** | Operate the infrastructure — start/stop Consul + Nomad, view jobs, view nodes. **This guide focuses here.** |
-| **Service Creator** | Generate a new service scaffold via the 4-step wizard.  See [service_creator.md](service_creator.md). |
+| **User** (default) | Operate: the *Bridge* LED with start / stop, the *Consul* and *Nomad* LEDs, the *Bench* group and *Service registry* (Connect). The Services view is the runtime view — active services and their GUIs, real-time updates. A service without a GUI is marked *No GUI* and shows an overview (health, instances and their checks, address, tags) plus an *Actions* section: one typed form per method, so operators can invoke the service without developer tooling. The app always starts here. |
+| **Developer** | *Developer mode* docks an inspector on the right — amber accent and a *DEV* pill make the mode unmistakable — with the selected service's *API* (reflection, raw JSON calls), *Details* (instances, checks, Consul metadata) and *Code* (Python / C++ / Robot). The service stays in the main view. The tab also holds *Service Creator* (see [service_creator.md](service_creator.md)), *Robot Resources* (see [robot_generator.md](robot_generator.md)), *Graph Studio*, the *Test project* group, and *API Explorer*, *Classic panel*, *Code Examples*, *Add to project* and *Download files* for the selected service. |
+| **Administrator** | Configure: *Consul agent* and *Nomad agent* open the Service Network view on that tab — start/stop agents, view jobs, view nodes (**this guide focuses here**); *Plugins* turns plugins on or off. |
+
+Switching tabs or views does not touch a running service GUI; switching back
+to **Services** shows it exactly as it was left.
 
 ---
 
@@ -87,7 +92,7 @@ Defaults that match the rest of the framework:
 - **Consul binary**: `consul` (resolved on `%PATH%`; override under
   **Advanced**)
 
-Click **Start Agent** — the Consul pill in the navbar turns green
+Click **Start Agent** — the Consul LED on the User tab turns green
 within a few seconds and the panel switches to the Connected dashboard.
 
 ### State 2 — Connected dashboard
@@ -127,6 +132,17 @@ Existing Cluster). Dev Mode just needs Node Name and Datacenter; click
 | **Dev Mode** | Single-node, in-memory. Equivalent to `nomad agent -dev` with `raw_exec` enabled. |
 | **Config File** | Loads an `.hcl` config (`-config <file>`) |
 | **Connect to Existing Cluster** | Just point at a running Nomad HTTP URL |
+
+The **Config File** field wants an *agent* configuration, not a job file —
+a job (`.nomad`) handed to the agent makes it exit at once, and the GUI
+then shows the agent's own parse error. Submit jobs through **Submit Job**
+instead.
+
+The **Config File** and **Data Directory** fields have a 📂 button in the
+desktop app that opens the native picker, so the paths need not be typed.
+The Consul **Config Directory** and **Data directory** fields have the
+same. In a browser the button is not shown — a web page is not allowed to
+learn a file's absolute path, which is what the agent needs.
 
 Defaults:
 
@@ -245,6 +261,6 @@ agents survive bridge restarts and a fresh GUI session can re-attach.
 | Bridge LED stays red after `npm start` | Bridge port (1112) already in use. Run `netstat -ano \| findstr :1112` and kill the holder, or set `MB_BRIDGE_URL` to a different port. |
 | "Port 8500 is already in use" when starting Consul | Another Consul instance is running. Stop it (`tasklist \| findstr consul`) or use **Connect to existing** with the running URL. |
 | Same for port 4646 (Nomad) | Same fix pattern — stop the existing one or connect to it. |
-| Consul LED green but no services listed | The service registered with a different Consul (check its `CONSUL_ADDR` env). The GUI shows the cluster the bridge is currently pointed at — switch via **Connect** in the navbar. |
+| Consul LED green but no services listed | The service registered with a different Consul (check its `CONSUL_ADDR` env). The GUI shows the cluster the bridge is currently pointed at — switch via **Connect** on the User tab. |
 | Nomad job stays "pending" | Driver mismatch (Windows can't run `exec`/`docker` jobs without setup). Generated scaffolds use `raw_exec` which dev mode enables automatically; if you bring your own config, add the `raw_exec` plugin block. |
 | GUI shows "Agent already running (PID …)" but the LED is gray | Stale PID file at `%TEMP%\msbase_consul_agent.pid` or `msbase_nomad_agent.pid`. Delete it and click Start again. |

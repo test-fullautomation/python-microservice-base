@@ -1,0 +1,108 @@
+// ServiceBridge.cpp - calls the service's gRPC methods through the Manager GUI.
+//
+// A call is fire-and-forget in JavaScript: the promise of
+// window.callMicroservice pushes { id, json | error } onto a queue that
+// belongs to this module (Module._mbBridgeResults), and a timer here pops
+// it while calls are pending. The id matches each answer to its call.
+//
+// The service name sent with a call is Module.endoToken: the Manager GUI
+// gives every wasm tile its own token, so calls made from a timer reach
+// this tile and no other one.
+
+#include "ServiceBridge.h"
+
+#include <QJsonDocument>
+#include <QTimer>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/val.h>
+
+EM_JS(int, js_bridge_available, (), {
+    return (typeof window !== 'undefined' && typeof window.callMicroservice === 'function') ? 1 : 0;
+});
+
+EM_JS(void, js_bridge_call, (int id, const char *method, const char *requestJson), {
+    var results = Module._mbBridgeResults || (Module._mbBridgeResults = []);
+    var done = function (r) { results.push(r); };
+    var m = UTF8ToString(method);
+    var req;
+    try { req = JSON.parse(UTF8ToString(requestJson)); } catch (e) { req = {}; }
+    if (typeof window.callMicroservice !== 'function') {
+        done({ id: id, error: 'not running inside the Manager GUI' });
+        return;
+    }
+    try {
+        Promise.resolve(window.callMicroservice(Module.endoToken || "", m, [req])).then(function (data) {
+            if (data && typeof data === 'object' && data.result && data.result !== 'pass') {
+                done({ id: id, error: String(data.result_data !== undefined ? data.result_data : data.result) });
+                return;
+            }
+            // result_json: the whole response (Manager GUI 2.3+); older GUIs send result_data only.
+            var json = data && data.result_json;
+            if (json === undefined) {
+                json = JSON.stringify({ value: data && data.result_data !== undefined ? data.result_data : data });
+            }
+            done({ id: id, json: json });
+        }, function (err) {
+            done({ id: id, error: String((err && err.message) || err) });
+        });
+    } catch (e) {
+        done({ id: id, error: 'JS: ' + String(e) });
+    }
+});
+#endif
+
+ServiceBridge::ServiceBridge(QObject *parent)
+    : QObject(parent)
+    , m_timer(new QTimer(this))
+{
+    m_timer->setInterval(40);
+    connect(m_timer, &QTimer::timeout, this, &ServiceBridge::poll);
+}
+
+bool ServiceBridge::available() const
+{
+#ifdef __EMSCRIPTEN__
+    return js_bridge_available() != 0;
+#else
+    return false;
+#endif
+}
+
+void ServiceBridge::call(const QString &method, const QJsonObject &request, Reply onReply)
+{
+    const int id = m_nextId++;
+    m_pending.insert(id, std::move(onReply));
+#ifdef __EMSCRIPTEN__
+    const QByteArray m = method.toUtf8();
+    const QByteArray body = QJsonDocument(request).toJson(QJsonDocument::Compact);
+    js_bridge_call(id, m.constData(), body.constData());
+    if (!m_timer->isActive()) m_timer->start();
+#else
+    // A desktop build of the panel has no Manager GUI to call through.
+    Reply r = m_pending.take(id);
+    if (r) r(QJsonObject(), QStringLiteral("the panel only works as WebAssembly inside the Manager GUI"));
+#endif
+}
+
+void ServiceBridge::poll()
+{
+#ifdef __EMSCRIPTEN__
+    using emscripten::val;
+    val results = val::module_property("_mbBridgeResults");
+    while (!results.isUndefined() && results["length"].as<int>() > 0) {
+        val item = results.call<val>("shift");
+        const int id = item["id"].as<int>();
+        Reply reply = m_pending.take(id);
+        if (!reply) continue;
+        if (item.hasOwnProperty("error")) {
+            reply(QJsonObject(), QString::fromStdString(item["error"].as<std::string>()));
+        } else {
+            const QByteArray json = QByteArray::fromStdString(item["json"].as<std::string>());
+            reply(QJsonDocument::fromJson(json).object(), QString());
+        }
+    }
+#endif
+    if (m_pending.isEmpty()) m_timer->stop();
+}

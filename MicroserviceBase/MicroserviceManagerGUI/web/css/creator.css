@@ -31,11 +31,11 @@
 }
 
 .creator-step:hover {
-  background-color: var(--sidebar-hover, #34495e);
+  background-color: var(--sidebar-hover, var(--sidebar-hover));
 }
 
 .creator-step.active {
-  background-color: var(--sidebar-active, #3498db);
+  background-color: var(--sidebar-active, var(--accent));
 }
 
 .creator-step.completed {
@@ -92,7 +92,7 @@
 
 .creator-header h4 {
   margin-bottom: 0.25rem;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
 }
 
 .creator-header p {
@@ -130,7 +130,7 @@
 .creator-method-card .method-header h6 {
   margin: 0;
   font-size: 0.9rem;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
 }
 
 .creator-method-card .btn-remove-method {
@@ -178,8 +178,8 @@
 
 /* ---------- File Tree Preview ---------- */
 .creator-preview {
-  background: #1a252f;
-  color: #ecf0f1;
+  background: var(--navbar-bg);
+  color: var(--sidebar-text);
   padding: 1rem;
   border-radius: 6px;
   font-family: monospace;
@@ -199,7 +199,7 @@
 }
 
 .creator-summary-header {
-  background: var(--navbar-bg, #1a252f);
+  background: var(--navbar-bg, var(--navbar-bg));
   color: #fff;
   padding: 0.75rem 1rem;
   font-weight: 600;
@@ -229,7 +229,7 @@
 }
 
 .creator-summary-value {
-  color: #2c3e50;
+  color: var(--sidebar-bg);
   flex: 1;
 }
 
@@ -247,7 +247,7 @@
 
 .creator-summary-method code {
   font-size: 0.85em;
-  color: #2c3e50;
+  color: var(--sidebar-bg);
 }
 
 .creator-summary-method .text-muted {
@@ -296,9 +296,9 @@
   min-height: 280px;
   max-height: 500px;
   resize: vertical;
-  background: #1a252f;
-  color: #ecf0f1;
-  border: 1px solid #2c3e50;
+  background: var(--navbar-bg);
+  color: var(--sidebar-text);
+  border: 1px solid var(--sidebar-bg);
   border-radius: 6px;
   padding: 0.75rem;
   font-family: monospace;
@@ -311,8 +311,8 @@
 
 .gui-html-editor:focus {
   outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.25);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .gui-preview-render {
@@ -339,11 +339,11 @@
 }
 
 .gui-js-dropzone:hover {
-  border-color: #3498db;
-  background-color: rgba(52, 152, 219, 0.04);
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 .gui-js-dropzone.dragover {
-  border-color: #3498db;
-  background-color: rgba(52, 152, 219, 0.08);
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
 }

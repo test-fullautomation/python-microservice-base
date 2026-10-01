@@ -1,0 +1,29 @@
+{
+  "$schema": "../../js/endo/contract/plugin.schema.json",
+  "plugin": "test-project",
+  "version": "1.0.0",
+  "title": "Test projects",
+  "description": "Robot Framework test projects: the Project tab under the left pane, the project view, and the Test project group on the Developer tab.",
+  "requires": { "shell": "^2.3", "capabilities": ["files.project"] },
+  "isolation": "schema",
+  "contributes": {
+    "navigators": [
+      { "id": "project", "title": "Project", "icon": "folder2-open", "shell": "testproject" }
+    ],
+    "stage.views": [
+      { "id": "project", "title": "Project view", "shell": "testproject" }
+    ],
+    "commands": [
+      { "id": "test-project.view", "title": "Project view", "shell": "testProjectView" },
+      { "id": "test-project.open", "title": "Open project", "shell": "openTestProject" }
+    ],
+    "ribbon.groups": [
+      { "tab": "dev", "group": "Test project", "commands": [
+        { "id": "test-project.view", "label": "Project view", "icon": "kanban",
+          "title": "Files, exported services and their sync state; re-export or add services" },
+        { "id": "test-project.open", "label": "Open project", "icon": "folder2-open",
+          "title": "Choose the folder services are exported into (Robot Framework AIO)" }
+      ] }
+    ]
+  }
+}

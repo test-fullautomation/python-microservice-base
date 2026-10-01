@@ -201,14 +201,23 @@ def wait_for_port(host, port, timeout=15.0, interval=0.2):
     raise TimeoutError(f"port {host}:{port} not reachable after {timeout:.1f}s (last error: {last_err})")
 
 
-def wait_for_http(url, timeout=15.0, interval=0.3, expected_status=(200, 204)):
-    """Poll an HTTP URL until it returns one of ``expected_status``."""
+def wait_for_http(url, timeout=15.0, interval=0.3, expected_status=(200, 204),
+                  request_timeout=3.0):
+    """Poll an HTTP URL until it returns one of ``expected_status``.
+
+    ``request_timeout`` is deliberately separate from ``interval``: this
+    used to pass the 0.3 s poll interval as the per-request timeout, so a
+    Nomad agent that was already leader but answered ``/v1/status/leader``
+    in 0.5 s on a busy Windows box "timed out" on every poll for the full
+    budget -- while Consul, which answers faster, passed. The failure
+    then looked like an agent that never came up.
+    """
     deadline = time.monotonic() + timeout
     last_err = None
     while time.monotonic() < deadline:
         try:
             req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=interval) as resp:
+            with urllib.request.urlopen(req, timeout=request_timeout) as resp:
                 if resp.status in expected_status:
                     return True
                 last_err = f"HTTP {resp.status}"
@@ -344,7 +353,7 @@ def spawn_consul_dev(http_port=None, log_path=None):
     _active.append((proc, "consul"))
 
     try:
-        wait_for_http(f"{url}/v1/status/leader", timeout=20.0)
+        wait_for_http(f"{url}/v1/status/leader", timeout=60.0)
     except TimeoutError:
         _terminate(proc, "consul")
         raise
@@ -403,8 +412,12 @@ def spawn_nomad_dev(http_port=None, log_path=None):
     )
     _active.append((proc, "nomad"))
 
+    # Generous on purpose: on Windows the agent's network fingerprinter
+    # shells out to PowerShell once per interface (5-8 s each on a laptop
+    # with VPN / VirtualBox / WSL adapters), and agent init itself is
+    # sometimes slow to bind HTTP under load.
     try:
-        wait_for_http(f"{url}/v1/status/leader", timeout=30.0)
+        wait_for_http(f"{url}/v1/status/leader", timeout=120.0)
     except TimeoutError:
         _terminate(proc, "nomad")
         raise

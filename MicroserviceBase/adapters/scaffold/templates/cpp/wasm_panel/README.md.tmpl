@@ -1,0 +1,59 @@
+# @@{title}: Manager GUI panel (Qt WebAssembly)
+
+This folder builds the service's panel for the Manager GUI as a Qt for
+WebAssembly module. The GUI shows it in a tile of the service's component
+(`../ui/<folder>/component.json`, tile kind `wasm`). The panel never talks to
+the service itself: it calls the service's gRPC methods through the GUI, which
+answers with the component's capabilities. It links Qt Widgets only, with no
+gRPC, protobuf or vcpkg.
+
+| File | What it is |
+|---|---|
+| `panel_spec.h` | the services and RPCs the panel shows (generated from the proto) |
+| `ServicePanel.cpp/.h` | the window: one group per RPC, with its request fields, a Call button and the response |
+| `ServiceBridge.cpp/.h` | sends calls to the GUI (`window.callMicroservice`) and matches the answers to them |
+| `main.cpp` | the window in a scroll area that fills the tile |
+| `build_wasm.bat` / `.sh` | build, and install into the GUI when `MM_SERVICES` is set |
+
+## Build
+
+```bat
+build_wasm.bat                 :: Release -> build\wasm\@@{target}.js + .wasm
+set MM_SERVICES=<gui>\web\services && build_wasm.bat    :: build and install
+```
+
+The scripts default to `C:\Qt\6.11.0\wasm_singlethread` (Linux:
+`~/Qt/6.11.0/wasm_singlethread`), the host kit next to it, and `C:\emsdk`
+(`~/emsdk`). Override them with `QT_WASM_DIR`, `QT_HOST_DIR` and `EMSDK_DIR`.
+Each Qt WebAssembly kit needs one Emscripten version: 4.0.7 for Qt 6.11.
+
+## Install
+
+@@{install_layout}
+
+The build goes in `qt/` on purpose: a `.wasm` at the top of the folder would
+also be offered as a classic (broker) panel, which cannot reach a gRPC service.
+
+The service declares its folder in Consul as `Meta.gui`:
+@@{gui_env}
+Check a component from the Manager GUI folder with
+`node tools/endo-lint.js web/services/<folder>/component.json`. Expect one
+warning: a wasm tile runs its script in the GUI page.
+
+## Make it yours
+
+- **Calls:** `ServiceBridge::call("<package.Service>/<Method>", request,
+  reply)`. The request is the proto message as JSON (proto field names), and
+  the reply gets the whole response message.
+- **Timers:** calls carry the tile's token (`Module.endoToken`), so calls
+  from a timer (polling a status, for example) reach this tile even when
+  another tile was clicked last.
+- **Several components, one build:** the GUI tells the build which proto
+  services the component binds (`Module.endoServices`). The panel shows
+  only those.
+- **Your own window:** replace `ServicePanel` with a Qt Designer `.ui` and
+  your own class, and keep calling through `ServiceBridge`.
+- **Tile height:** a Qt canvas does not make its tile grow. Adjust
+  `minHeight` (px) of the tile in `component.json` to your window.
+- **Server-streaming RPCs:** the panel lists them, and the component shows
+  their messages in `log` tiles.

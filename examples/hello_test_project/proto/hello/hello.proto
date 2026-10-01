@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package hello.v1;
+
+// HelloService — minimal demo service for the new MicroserviceBase runtime.
+//
+// Every RPC uses typed request/response messages.  The old `svc_api_*` naming
+// convention is gone; method discovery is handled via gRPC reflection.
+service HelloService {
+  // Return a friendly greeting.
+  rpc Greet (GreetRequest) returns (GreetResponse);
+
+  // Echo the input back unchanged.  Useful for latency measurement.
+  rpc Echo (EchoRequest) returns (EchoResponse);
+
+  // Stream N ticks, one per second.  Demonstrates server streaming and is how
+  // real-time updates (e.g. Cleware switch state changes) will be delivered
+  // now that the RabbitMQ fanout exchange is gone.
+  rpc Tick (TickRequest) returns (stream TickEvent);
+}
+
+message GreetRequest {
+  string name = 1;
+}
+
+message GreetResponse {
+  string message = 1;
+}
+
+message EchoRequest {
+  string payload = 1;
+}
+
+message EchoResponse {
+  string payload = 1;
+}
+
+message TickRequest {
+  int32 count    = 1;  // how many ticks to emit; 0 = unlimited
+  int32 interval_ms = 2;  // delay between ticks (default 1000 ms)
+}
+
+message TickEvent {
+  int32 sequence = 1;
+  string message = 2;
+}

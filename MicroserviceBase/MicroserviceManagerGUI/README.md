@@ -132,8 +132,8 @@ visible in the other.
 MicroserviceManagerGUI/
 ├── README.md / README.html         ← you are here
 ├── docs/                           ← long-form, GitHub-renderable
-│   ├── md/   index.md   ops_consul_nomad.md   service_creator.md
-│   ├── html/ index.html ops_consul_nomad.html service_creator.html
+│   ├── md/   index.md   ops_consul_nomad.md   service_creator.md   bench_demo.md
+│   ├── html/ index.html ops_consul_nomad.html service_creator.html bench_demo.html tour.html
 │   └── img/  (18 screenshots used by the docs above)
 └── web/
     └── docs/
@@ -161,6 +161,11 @@ beyond a quick lookup.
   REST API equivalents
 - **[Service Creator wizard](docs/md/service_creator.md)** — the 4-step
   scaffold-generation wizard, with screenshots of each step
+- **[Bench demo](docs/md/bench_demo.md)** — a ten-minute walkthrough of
+  the bench on live services, with the job that deploys them
+- **[Guided tour](docs/html/tour.html)** — a tour program for an audience:
+  the GUI, its configuration, what a service must provide, and building one
+  live
 - **HTML twins** — every `.md` has a `.html` sibling under `docs/html/`
   with sidebar nav, copy-to-clipboard buttons, and active-section
   highlighting

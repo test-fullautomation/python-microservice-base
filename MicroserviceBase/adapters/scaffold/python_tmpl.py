@@ -49,17 +49,44 @@ For multi-service / monorepo layouts use :func:`generate_monorepo`.
     prefix = spec.env_prefix
     svc = spec.service_name
 
+    # ---- composition root -------------------------------------------
     files["main.py"] = _main_py(spec)
     files["config.py"] = _config_py(spec)
     files["context.py"] = _context_py(spec)
     files["pyproject.toml"] = _pyproject(spec)
-    files["domain/__init__.py"] = ""
-    files[f"domain/{sn}_service.py"] = _domain_service(spec)
+    files["BUILD.bazel"] = _build_bazel(spec)
+
+    # ---- core/ — pure: domain + the ports it declares ----------------
+    files["core/__init__.py"] = ""
+    files["core/domain/__init__.py"] = ""
+    files[f"core/domain/{sn}_service.py"] = _domain_service(spec)
+    files["core/ports/__init__.py"] = ""
+    files["core/ports/inbound/__init__.py"] = ""
+    files[f"core/ports/inbound/{sn}_port.py"] = _port_inbound(spec)
+    files["core/ports/outbound/__init__.py"] = ""
+    files[f"core/ports/outbound/{sn}_backend_port.py"] = _port_outbound(spec)
+
+    # ---- adapters/ — infrastructure, split by direction --------------
     files["adapters/__init__.py"] = ""
-    files["adapters/api/__init__.py"] = ""
-    files["adapters/api/grpc_adapter.py"] = _grpc_adapter(spec)
+    files["adapters/inbound/__init__.py"] = ""
+    files["adapters/inbound/api/__init__.py"] = ""
+    files["adapters/inbound/api/grpc_adapter.py"] = _grpc_adapter(spec)
+    files["adapters/outbound/__init__.py"] = ""
+
+    # ---- generated/ — checked-in proto stubs -------------------------
+    files["generated/__init__.py"] = ""
     files["proto/__init__.py"] = ""
     files["scripts/generate_protos.py"] = _gen_protos_script(spec)
+
+    # ---- tests/ — unit + executable architecture rules ---------------
+    files["tests/__init__.py"] = ""
+    files["tests/pytest.ini"] = _tests_pytest_ini(spec)
+    files["tests/pytest_wrapper.py"] = _tests_pytest_wrapper(spec)
+    files["tests/BUILD.bazel"] = _tests_build_bazel(spec)
+    files["tests/unit/__init__.py"] = ""
+    files[f"tests/unit/test_{sn}_service.py"] = _tests_unit_service(spec)
+    files["tests/architecture/__init__.py"] = ""
+    files["tests/architecture/test_core_purity.py"] = _tests_core_purity(spec)
 
     if spec.gui_type == "html":
         files[f"GUIs/{svc}.html"] = _gui_html(spec)
@@ -188,10 +215,12 @@ def _grpc_adapter(spec: "ScaffoldSpec") -> str:
     svc = spec.service_name
     cls = f"{svc}Service"
 
+    # Stubs live in generated/ and the domain under core/ -- see the
+    # nested-hexagonal layout emitted by generate().
     imports = (
-        f"from proto import {sn}_pb2, {sn}_pb2_grpc  "
+        f"from generated import {sn}_pb2, {sn}_pb2_grpc  "
         f"# type: ignore[import-not-found]\n"
-        f"from domain.{sn}_service import {cls}\n"
+        f"from core.domain.{sn}_service import {cls}\n"
     )
 
     methods = ""
@@ -239,7 +268,19 @@ def _grpc_adapter(spec: "ScaffoldSpec") -> str:
 # scripts/generate_protos.py
 # -----------------------------------------------------------------------
 
-def _gen_protos_script(spec: "ScaffoldSpec") -> str:
+def _gen_protos_script(spec: "ScaffoldSpec", stub_dir: str = "generated") -> str:
+    """Render scripts/generate_protos.py.
+
+    ``stub_dir`` is where protoc's output lands, relative to the service
+    root.  The two layouts differ:
+
+    * single service (nested hexagonal) -> ``generated/``, keeping
+      authored ``.proto`` sources separate from emitted stubs, which is
+      what the Bazel ``generated_lib`` target globs.
+    * monorepo -> ``proto/``, alongside the sources.  That layout has not
+      been migrated to the nested shape, and moving its stubs alone would
+      leave it half-converted.
+    """
     sn = spec.snake_name
     header = python_file_header(
         "generate_protos.py",
@@ -250,6 +291,7 @@ def _gen_protos_script(spec: "ScaffoldSpec") -> str:
     return load_template(
         "python/service/generate_protos.py.tmpl",
         header=header, sn=sn, sn_dunder=sn.replace("_", "__"),
+        stub_dir=stub_dir,
     )
 
 
@@ -281,6 +323,167 @@ def _gui_js(spec: "ScaffoldSpec") -> str:
 # =======================================================================
 # Monorepo: one project, N services sharing one .proto
 # =======================================================================
+
+# -----------------------------------------------------------------------
+# BUILD.bazel
+# -----------------------------------------------------------------------
+
+def _build_bazel(spec: "ScaffoldSpec") -> str:
+    return load_template(
+        "python/service/BUILD.bazel.tmpl",
+        svc=spec.service_name, sn=spec.snake_name,
+    )
+
+
+# -----------------------------------------------------------------------
+# core/ports/inbound/<snake>_port.py
+# -----------------------------------------------------------------------
+
+def _port_inbound(spec: "ScaffoldSpec") -> str:
+    svc = spec.service_name
+    sn = spec.snake_name
+    cls = f"{svc}Service"
+
+    # One Protocol method per RPC, mirroring the domain signatures so the
+    # domain satisfies the Protocol without an explicit `implements`.
+    body = ""
+    for m in spec.methods:
+        params = ", ".join(f"{p.name}: str" for p in m.params)
+        if params:
+            params = ", " + params
+        ret = "AsyncIterator[str]" if m.server_streaming else "str"
+        body += (
+            f"    def {_snake(m.name)}(self{params}) -> {ret}:\n"
+            f'        """TODO: describe {m.name}."""\n'
+            f"        ...\n\n"
+        )
+    if not body:
+        body = "    ...\n"
+
+    header = python_file_header(
+        f"{sn}_port.py",
+        f"Inbound port for the {svc} service.\n"
+        f"Declares the operations the domain offers to driving adapters,\n"
+        f"so the gRPC servicer depends on this Protocol rather than on the\n"
+        f"concrete domain class.",
+    )
+    return load_template(
+        "python/service/port_inbound.py.tmpl",
+        header=header, svc=svc, sn=sn, cls=cls,
+        port_methods=body.rstrip("\n"),
+    )
+
+
+# -----------------------------------------------------------------------
+# core/ports/outbound/<snake>_backend_port.py
+# -----------------------------------------------------------------------
+
+def _port_outbound(spec: "ScaffoldSpec") -> str:
+    svc = spec.service_name
+    header = python_file_header(
+        f"{spec.snake_name}_backend_port.py",
+        f"Outbound port for the {svc} service.\n"
+        f"Declares what the domain needs from its environment.  A driven\n"
+        f"adapter under adapters/outbound/ implements it, so swapping real\n"
+        f"hardware for a mock is a composition-root change only.",
+    )
+    return load_template(
+        "python/service/port_outbound.py.tmpl",
+        header=header, svc=svc, cls=f"{svc}Service",
+    )
+
+
+# -----------------------------------------------------------------------
+# tests/
+# -----------------------------------------------------------------------
+
+def _tests_pytest_ini(spec: "ScaffoldSpec") -> str:
+    return load_template(
+        "python/service/tests_pytest.ini.tmpl",
+        svc=spec.service_name,
+    )
+
+
+def _tests_pytest_wrapper(spec: "ScaffoldSpec") -> str:
+    header = python_file_header(
+        "pytest_wrapper.py",
+        "Bazel entry point for pytest.\n"
+        "py_test runs a script rather than a pytest session, so every\n"
+        "test target points its `main` here.",
+    )
+    return load_template(
+        "python/service/tests_pytest_wrapper.py.tmpl",
+        header=header,
+    )
+
+
+def _tests_build_bazel(spec: "ScaffoldSpec") -> str:
+    # Bazel label of the service package. Scaffolds are generated into an
+    # arbitrary folder, so we emit a relative-looking placeholder the user
+    # retargets when the service is dropped into the monorepo.
+    return load_template(
+        "python/service/tests_BUILD.bazel.tmpl",
+        svc=spec.service_name, sn=spec.snake_name,
+        bazel_pkg=f"services/{spec.snake_name}",
+    )
+
+
+def _tests_unit_service(spec: "ScaffoldSpec") -> str:
+    svc = spec.service_name
+    sn = spec.snake_name
+    cls = f"{svc}Service"
+
+    tests = ""
+    for m in spec.methods:
+        call_args = ", ".join(f'"{p.name}"' for p in m.params)
+        sm = _snake(m.name)
+        if m.server_streaming:
+            tests += (
+                f"@pytest.mark.asyncio\n"
+                f"async def test_{sm}_yields_results(service: {cls}) -> None:\n"
+                f'    """TODO: assert what {m.name} streams."""\n'
+                f"    results = [item async for item in service.{sm}({call_args})]\n"
+                f"    assert results is not None\n\n\n"
+            )
+        else:
+            tests += (
+                f"def test_{sm}_returns_a_result(service: {cls}) -> None:\n"
+                f'    """TODO: assert what {m.name} returns."""\n'
+                f"    result = service.{sm}({call_args})\n"
+                f"    assert result is not None\n\n\n"
+            )
+    if not tests:
+        tests = (
+            "# TODO: add a test per domain method once the domain does\n"
+            "# something worth asserting.\n"
+        )
+
+    header = python_file_header(
+        f"test_{sn}_service.py",
+        f"Unit tests for the {svc} domain.\n"
+        f"Exercises the pure domain directly — no gRPC server, no Consul,\n"
+        f"no hardware.",
+    )
+    return load_template(
+        "python/service/tests_unit_service.py.tmpl",
+        header=header, svc=svc, sn=sn, cls=cls,
+        test_methods=tests.rstrip("\n"),
+    )
+
+
+def _tests_core_purity(spec: "ScaffoldSpec") -> str:
+    header = python_file_header(
+        "test_core_purity.py",
+        "Architecture test: core/ must not import infrastructure.\n"
+        "AST-scans every module under core/ and fails on transport or\n"
+        "vendor imports, so the hexagonal rule is enforced rather than\n"
+        "merely documented.",
+    )
+    return load_template(
+        "python/service/tests_arch_core_purity.py.tmpl",
+        header=header,
+    )
+
 
 def generate_monorepo(spec: "ScaffoldSpec", services) -> Dict[str, str]:
     """
@@ -364,7 +567,9 @@ all entry points so ``pip install .`` produces N CLI commands.
 
     # ---- Top-level package files -------------------------------------
     files["pyproject.toml"] = _mono_pyproject(spec, services)
-    files["scripts/generate_protos.py"] = _gen_protos_script(spec)
+    # Monorepo keeps stubs beside their sources in proto/; only the
+    # single-service layout moved them to generated/.
+    files["scripts/generate_protos.py"] = _gen_protos_script(spec, stub_dir="proto")
     files[f"src/{proj_snake}/__init__.py"] = ""
 
     # ---- Per-service module tree -------------------------------------

@@ -1,0 +1,29 @@
+{
+  "composition": "bench07-test/dev",
+  "title": "Bench 07 · test development",
+  "shell": "^2.3",
+  "role": "dev",
+  "plugins": [
+    "test-project",
+    "uds-console",
+    "robot-gen"
+  ],
+  "components": [
+    {
+      "from": "consul",
+      "service": "testflow-execution"
+    },
+    {
+      "from": "consul",
+      "service": "robot-runner"
+    },
+    {
+      "from": "consul",
+      "service": "uds-request-service"
+    },
+    {
+      "from": "consul",
+      "service": "dlt-service"
+    }
+  ]
+}

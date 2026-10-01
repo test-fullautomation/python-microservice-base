@@ -1,0 +1,12 @@
+{
+  "session-service": "SessionHeader0.1.0",
+  "testbench-climate-chamber-sim": "ClimateChamber1.3.0",
+  "testbench-device-psu": "PowerSupply2.0.1",
+  "signal-discovery": "SignalMonitor1.0.0",
+  "testflow-execution": "Testflow0.4.0",
+  "robot-runner": "RobotResults1.1.0",
+  "uds-request-service": "UdsTester0.9.2",
+  "dlt-service": "DltViewer0.0.1",
+  "signal-graph-signal-in": "GraphView0.3.0",
+  "bench-heater": "BenchHeater0.9.0"
+}

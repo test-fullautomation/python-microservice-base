@@ -226,7 +226,7 @@
   </div>
   <div class="branch">
     <div class="q">⏱ Want vcpkg + Qt MinGW but don&rsquo;t want the 30&ndash;60 min compile?</div>
-    <div class="a">→ Download the prebuilt artifacts from <a href="https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x" target="_blank">SharePoint</a> and run <code>import_prebuilt.bat &lt;path&gt;.zip</code> at your project root.  See the <em>Use prebuilt libraries</em> section in any vcpkg project&rsquo;s <code>README.html</code>.</div>
+    <div class="a">→ Download the prebuilt artifacts from your team&rsquo;s shared folder (a teammate makes it with <code>export_prebuilt.bat</code>) and run <code>import_prebuilt.bat &lt;path&gt;.zip</code> at your project root.  See the <em>Use prebuilt libraries</em> section in any vcpkg project&rsquo;s <code>README.html</code>.</div>
   </div>
   <div class="branch">
     <div class="q">🌐 Adding a browser-rendered UI (WASM)?</div>
@@ -302,9 +302,8 @@
       instant via the binary cache.  Includes the gcc 13.1.0 ICE
       workaround patch and <code>export_prebuilt.bat</code> /
       <code>import_prebuilt.bat</code> for sharing built artifacts with
-      teammates &mdash; download the prebuilt zip from
-      <a href="https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x"
-         target="_blank">SharePoint</a> and skip the rebuild.  Each
+      teammates &mdash; download the prebuilt zip from your
+      team&rsquo;s shared folder and skip the rebuild.  Each
       generated project&rsquo;s <code>README.html</code> includes the
       full kit-flow walkthrough plus a <em>Common issues</em> section
       (Qt Creator <code>VCPKG_ROOT</code> quirks, F5 missing-DLL fix,

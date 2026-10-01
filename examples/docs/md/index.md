@@ -36,7 +36,7 @@ building:
 | 📦 Building a service (server) in C++ on Windows | [MinGW setup with MSYS2](mingw_setup.md) — the standard server toolchain (Google grpc++, Google libprotobuf). |
 | 🖼 Want a Qt-native GUI client (signals/slots, QML) | [Qt6::Grpc client setup](qt_grpc_setup.md) — uses the Qt-installer toolchain, separate from the server's MSYS2 build. Server stays on Google grpc++ (Qt has no server module). |
 | 🔧 Want one toolchain for client AND server (Qt MinGW everywhere) | [vcpkg + Qt MinGW setup](vcpkg_setup.md) — Google grpc++ for both sides, built by vcpkg with the Qt-installer MinGW. ~30–60 min first build, instant after. **Recommended for new teams** — one ABI end-to-end, no MSYS2 / Qt MinGW mismatches. |
-| ⏱ Want vcpkg + Qt MinGW but don't want the 30–60 min compile | Download prebuilt artifacts from [SharePoint](https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x) and run `import_prebuilt.bat <path>.zip` at your project root. See the *Use prebuilt libraries* section in any vcpkg project's `README.html`. |
+| ⏱ Want vcpkg + Qt MinGW but don't want the 30–60 min compile | Download prebuilt artifacts from your team's shared folder (a teammate makes it with `export_prebuilt.bat`) and run `import_prebuilt.bat <path>.zip` at your project root. See the *Use prebuilt libraries* section in any vcpkg project's `README.html`. |
 | 🌐 Adding a browser-rendered UI (WASM) | [WASM Cleware service guide](wasm_cleware_service_guide.md) — full walkthrough of building a service with a Qt-WebAssembly UI. |
 | 🛠 Already have the toolchain — want to write the service code | [Service creation guide](service_creation.md) — the long tutorial: proto, domain, adapter, settings, main, build, run, debug. |
 | 🪄 Want the boilerplate generated for you | [Service Creator wizard guide](../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) — drive the Manager GUI's 4-step wizard, or use the `mb-scaffold` CLI. |
@@ -69,7 +69,7 @@ building:
   ~30–60 min); subsequent builds are instant via the binary cache.
   Covers `export_prebuilt.bat` / `import_prebuilt.bat` for sharing
   built artifacts with teammates — download the prebuilt zip from
-  [SharePoint](https://bosch-my.sharepoint.com/:f:/p/ugc1hc/IgAuLLzLlXVnS6lFL3KREFfNAbw2m_51U7sqOkO8f-mnDrY?e=b43r9x)
+  your team's shared folder
   and skip the rebuild. Each generated project's `README.html`
   includes the full kit-flow walkthrough plus a *Common issues*
   section (Qt Creator `VCPKG_ROOT` quirks, F5 missing-DLL fix,

@@ -1,0 +1,17 @@
+// RobotFramework AIO configuration for this test project.
+//
+// Found automatically at configuration level 3 (config/robot_config.jsonp
+// next to the suites). Keys under params.global become global Robot
+// variables, e.g. ${CONSUL_ADDR}.
+//
+// Created by Microservice Manager and never overwritten by it: edit freely.
+{
+  "Project"       : "hello_test_project",
+  "WelcomeString" : "hello_test_project: microservice tests",
+  "TargetName"    : "bench",
+  "params"        : {
+    "global" : {
+      "CONSUL_ADDR" : "http://127.0.0.1:8500"
+    }
+  }
+}

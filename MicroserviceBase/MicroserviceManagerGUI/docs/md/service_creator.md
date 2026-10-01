@@ -133,6 +133,18 @@ Pick the language, GUI variant, and infrastructure files to generate.
 | **QML** *(C++)* | Qt Quick UI in C++ client | [MinGW setup](../../../../examples/docs/md/mingw_setup.md) |
 | **WASM** *(C++)* | Qt Widgets compiled to WebAssembly | [WASM service guide](../../../../examples/docs/md/wasm_cleware_service_guide.md) |
 
+### Manager GUI component layer
+
+Every single-service scaffold also gets `ui/<Service><version>/component.json`,
+a declarative Manager GUI panel: one command form per unary RPC and one log
+per server-streaming RPC. It needs no GUI code and works with any GUI Type,
+including **None**. Pick the layer the service belongs to in the TAG layer
+chart (`operator`, `session`, `config`, `execution`, `runner`, `signals` or
+`bits`; default `bits`). `ui/README.md` in the output explains how to install
+and lint it; the contract is described in
+[Component manifests](index.md#component-manifests-componentjson).
+Multi-service layouts don't get a component yet.
+
 ### Client gRPC Stack *(C++ only, when GUI ≠ None)*
 
 Three options, all wire-compatible (you can mix any client variant
@@ -439,6 +451,9 @@ DemoService/
 │   ├── Settings.h
 │   ├── domain/DemoService.h / .cpp
 │   └── adapters/api/DemoServiceGrpcAdapter.h / .cpp
+├── ui/
+│   ├── README.md
+│   └── DemoService1.0.0/component.json
 └── client/
     ├── CMakeLists.txt
     ├── README.md
@@ -658,6 +673,7 @@ services:                       # ← list of services instead of `methods`
 | `monorepo` | bool | `false` | |
 | `proto_content_override` | str | `""` | Verbatim `.proto` text |
 | `proto_package` | str | `""` | When overriding proto |
+| `ui_layer` | str | `"bits"` | Layer of the generated `ui/<Service><version>/component.json` |
 
 **Method object**:
 

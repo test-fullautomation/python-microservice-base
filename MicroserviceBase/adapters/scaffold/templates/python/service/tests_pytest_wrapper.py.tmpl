@@ -1,0 +1,30 @@
+@@{header}"""
+Bazel entry point for pytest.
+
+`py_test` runs a Python file, not a pytest session, so each test target
+points its `main` at this wrapper. It invokes pytest on the test files
+Bazel passed in `sys.argv` and forwards pytest's exit status.
+
+Under plain `uv run pytest` this file is unused -- pytest collects the
+test modules directly.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+import pytest
+
+if __name__ == "__main__":
+    # Bazel hands us the srcs of the target; drop this wrapper itself so
+    # pytest does not try to collect it.
+    args = [a for a in sys.argv[1:] if not a.endswith("pytest_wrapper.py")]
+
+    # Fall back to the whole directory when the target passed no files.
+    if not args:
+        args = [os.path.dirname(os.path.abspath(__file__))]
+
+    # -ra surfaces skip/xfail reasons in the Bazel log, which is
+    # otherwise the only record of why a test did not run.
+    sys.exit(pytest.main(["-ra", *args]))

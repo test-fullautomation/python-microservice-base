@@ -100,6 +100,7 @@ nav:
       - Service Creator wizard: gui/service_creator.md
       - Robot resource generator: gui/robot_generator.md
       - "Operating Consul + Nomad": gui/ops_consul_nomad.md
+      - "Bench demo": gui/bench_demo.md
   - Examples and toolchain:
       - Overview: examples/index.md
       - Creating a service: examples/service_creation.md
@@ -144,6 +145,7 @@ nav:
       - "028 · gRPC + reflection as the primary RPC layer": adr/028-grpc-reflection-primary-rpc.md
       - "029 · Robot Framework as the primary test client": adr/029-robot-framework-primary-test-client.md
       - "030 · Per-user authorisation via delegated authority service + JWT interceptor": adr/030-delegated-authority-jwt-interceptor.md
+      - "031 · Service-delivered GUI over gRPC": adr/031-grpc-service-delivered-gui.md
       - "ADR audit (post-migration alignment)": adr/AUDIT.md
   - Plans:
       - "Plans": plans/README.md

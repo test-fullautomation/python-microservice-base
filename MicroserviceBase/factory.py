@@ -177,7 +177,8 @@ Create a ServiceRegistryPort implementation.
       raise ValueError(f"Unknown transport type: {transport_type}")
 
 
-def create_ui_bridge(bridge_type='fastapi', host='localhost', port=8000):
+def create_ui_bridge(bridge_type='fastapi', host='localhost', port=8000,
+                     allowed_origins=None):
    """
 Create a UIBridgePort implementation.
 
@@ -201,6 +202,15 @@ Create a UIBridgePort implementation.
 
   Port to bind to.
 
+* ``allowed_origins``
+
+  / *Condition*: optional / *Type*: list[str] | str / *Default*: None /
+
+  Browser origins the bridge answers. ``None`` falls back to the
+  ``MB_BRIDGE_ALLOWED_ORIGINS`` environment variable, then to a default
+  covering the bridge's own address (plus the Electron GUI when bound
+  to loopback).
+
 **Returns:**
 
   / *Type*: UIBridgePort /
@@ -209,6 +219,6 @@ Create a UIBridgePort implementation.
    """
    if bridge_type == 'fastapi':
       from .adapters.ui_bridge.fastapi_bridge import FastAPIBridge
-      return FastAPIBridge(host=host, port=port)
+      return FastAPIBridge(host=host, port=port, allowed_origins=allowed_origins)
    else:
       raise ValueError(f"Unknown UI bridge type: {bridge_type}")

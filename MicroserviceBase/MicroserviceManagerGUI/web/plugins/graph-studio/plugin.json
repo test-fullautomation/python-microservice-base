@@ -1,0 +1,22 @@
+{
+  "$schema": "../../js/endo/contract/plugin.schema.json",
+  "plugin": "graph-studio",
+  "version": "1.0.0",
+  "title": "Signal Graph Studio",
+  "description": "Edit Signals & Blocks graph.json, generate a deployable graph service, run a local cluster and watch its signals, in its own window.",
+  "requires": { "shell": "^2.3", "capabilities": ["process.spawn"] },
+  "isolation": "window",
+  "main": "graph-studio/ipc.js",
+  "preload": "graph-studio/preload.js",
+  "contributes": {
+    "commands": [
+      { "id": "graph-studio.open", "title": "Graph Studio", "shell": "openGraphStudio" }
+    ],
+    "ribbon.groups": [
+      { "tab": "dev", "group": "Build", "commands": [
+        { "id": "graph-studio.open", "label": "Graph Studio", "icon": "diagram-2",
+          "title": "Edit Signals & Blocks graph.json, generate a deployable graph service, watch its signals live" }
+      ] }
+    ]
+  }
+}

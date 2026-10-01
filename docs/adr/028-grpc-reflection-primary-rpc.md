@@ -11,7 +11,7 @@ Proposed (consolidates the gRPC migration formalised piecemeal across ADR-016/01
 ## Author
 
 Audit follow-up.  Aligns with the TA reference at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+`taf_repo_proposal`.
 
 ## Reviewer
 
@@ -138,7 +138,7 @@ upside over gRPC.
 ## References
 
 - Reference architecture:
-  [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+  `taf_repo_proposal`
 - [`docs/diagrams/sequence_communication.puml`](../diagrams/sequence_communication.puml) — end-to-end gRPC + Consul flow
 - [`docs/diagrams/sequence_rpc.puml`](../diagrams/sequence_rpc.puml) — unary + server-streaming
 - Supersedes (consolidates) the rationale in:

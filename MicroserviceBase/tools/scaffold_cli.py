@@ -118,6 +118,7 @@ def _defaults() -> Dict[str, Any]:
         "monorepo": False,
         "services": [],
         "proto_package": "",
+        "ui_layer": "bits",
     }
 
 

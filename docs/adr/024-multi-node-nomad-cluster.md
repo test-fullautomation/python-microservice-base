@@ -11,7 +11,7 @@ Proposed
 ## Author
 
 Audit follow-up.  Aligns with the TA reference at
-[`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal).
+`taf_repo_proposal`.
 
 ## Reviewer
 
@@ -152,7 +152,7 @@ Was the original plan.  Replaced by Nomad in the migration.
 ## References
 
 - Reference architecture:
-  [`taf_repo_proposal`](https://github.boschdevcloud.com/BITS-Test-Automation-Solutions/taf_repo_proposal)
+  `taf_repo_proposal`
 - [`docs/diagrams/00_canonical_architecture.puml`](../diagrams/00_canonical_architecture.puml)
 - [ADR-022 Nomad Orchestrator Integration](022-nomad-orchestrator-integration.md) — establishes Nomad as the orchestrator
 - [ADR-023 Multi-node Consul cluster](023-multi-node-consul-cluster.md) — discovery side of the same topology

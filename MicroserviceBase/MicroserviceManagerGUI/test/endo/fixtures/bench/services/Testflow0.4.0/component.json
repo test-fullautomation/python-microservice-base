@@ -1,0 +1,58 @@
+{
+  "component": "execution.testflow",
+  "version": "0.4.0",
+  "layer": "execution",
+  "title": "Testflow",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": [
+      "grpc.call",
+      "session.read"
+    ]
+  },
+  "binds": {
+    "consul": "@self",
+    "grpc": "execution.v1.TestflowService"
+  },
+  "tiles": [
+    {
+      "id": "run",
+      "size": "2x1",
+      "kind": "run-status",
+      "title": "Run",
+      "flow": "climate_soak_B3",
+      "steps": [
+        "Precondition",
+        "Soak -20 °C",
+        "Soak 85 °C",
+        "Wake-up",
+        "Readout"
+      ],
+      "current": 2
+    }
+  ],
+  "ribbon": [
+    {
+      "tab": "user",
+      "group": "Run",
+      "commands": [
+        {
+          "label": "Start run",
+          "icon": "play-fill",
+          "call": "Start"
+        },
+        {
+          "label": "Abort",
+          "icon": "x-octagon",
+          "call": "Abort",
+          "confirm": "Abort the running testflow?"
+        }
+      ]
+    }
+  ],
+  "dock": [
+    "api",
+    "details"
+  ],
+  "renderer": "schema"
+}

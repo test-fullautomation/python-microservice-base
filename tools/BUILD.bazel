@@ -1,0 +1,7 @@
+# Repo-level helper scripts.
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "verify_diagrams.py",
+])

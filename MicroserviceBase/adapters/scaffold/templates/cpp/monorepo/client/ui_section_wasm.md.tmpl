@@ -1,3 +1,5 @@
 
-To build the WASM target run `client/build_wasm.bat` (Windows) or
-`client/build_wasm.sh` (Linux) - requires the Qt for WebAssembly SDK.
+The Manager GUI panel of these services is not this client: it is the Qt for
+WebAssembly module in `../gui_wasm/` (see its README), shown in each service's
+component (`../ui/<Service><version>/component.json`). This desktop client
+links grpc++, which cannot be compiled to WebAssembly.
