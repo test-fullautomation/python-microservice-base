@@ -517,6 +517,13 @@
       <h2><i class="bi bi-gear"></i>Settings</h2>
       <p>The <i class="bi bi-gear"></i> in the navbar opens them:</p>
       <ul>
+        <li><strong>View</strong> &mdash; what the GUI offers, as roles you combine:
+          <ul>
+            <li><em>User</em> (always on): the Services and Bench views.</li>
+            <li><em>Administrator</em>: the Administrator tab &mdash; Consul, Nomad (start agents, submit and stop jobs) and the plugin manager; the Consul/Nomad status pills open them.</li>
+            <li><em>Developer</em>: the Developer tab &mdash; Service Creator, test projects, the plugin views (such as Project) and the inspector.</li>
+          </ul>
+          It takes effect as soon as you save.  In <code>settings.json</code> it is the <code>view</code> key: <code>"user"</code>, <code>"user+admin"</code>, <code>"user+developer"</code>, <code>"user+admin+developer"</code> (or <code>"all"</code>; a list such as <code>["user", "admin"]</code> works too).  Without the key the GUI shows everything.  A browser-hosted GUI can also be opened with <code>?view=user+admin</code> in its address, which wins over the setting.  The view tidies the GUI for its audience; it does not restrict what the bridge allows.</li>
         <li><strong>Python Path</strong> &mdash; the interpreter the desktop app starts the bridge with; also the default interpreter for test runs.</li>
         <li><strong>Consul executable</strong> / <strong>Nomad executable</strong> &mdash; used when starting a local agent from the Service Network view.  Looked up in this order: this setting, <code>PATH</code>, <code>%ProgramFiles%\HashiCorp\</code>.  Leave empty to use <code>PATH</code>.</li>
         <li><strong>Broker Host</strong> / <strong>Broker Port</strong> &mdash; the RabbitMQ broker of the legacy transport.</li>

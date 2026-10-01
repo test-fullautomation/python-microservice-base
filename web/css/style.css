@@ -3176,3 +3176,17 @@ body.dev-mode .app-navbar {
   font-family: Consolas, "Courier New", monospace;
   font-size: 0.8rem;
 }
+
+/* View roles (settings "view"): without "developer" or "admin" their tabs
+   and entry points go. app.js also refuses those views; this just takes
+   the ways in away. */
+body.view-no-dev #btnDevTools,
+body.view-no-dev #devModePill,
+body.view-no-dev #ribbonDev,
+body.view-no-dev #devInspector,
+body.view-no-dev #sidebarSwitch .sidebar-switch-tab:not([data-mode="services"]):not([data-mode="bench"]),
+body.view-no-admin #btnAdminTools,
+body.view-no-admin #ribbonAdmin {
+  display: none !important;
+}
+body.view-no-admin .infra-pill { cursor: default; }

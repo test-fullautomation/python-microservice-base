@@ -4807,6 +4807,9 @@
   var _modeBeforeHelp = null;
 
   function switchMode(mode) {
+    // Views outside the configured roles stay shut, whatever asks for them
+    // (pills, plugin commands, restored state).
+    if (!_viewAllows(mode)) return;
     // If help overlay is open, close it first then switch
     if (_helpVisible) {
       _closeHelpOverlay();
@@ -8015,6 +8018,7 @@
    */
   function _setRibbonTab(tab, opts) {
     if (!RIBBON_TABS[tab]) return;
+    if (!_ribbonTabAllowed(tab)) tab = 'user';
     _ribbonTab = tab;
     Object.keys(RIBBON_TABS).forEach(function (key) {
       var on = key === tab;
@@ -8227,8 +8231,13 @@
   function setDevMode(on, opts) {
     opts = opts || {};
     on = !!on;
+    if (on && _roles && !_roles.developer) return;   // the inspector is a developer tool
     _devMode = on;
-    try { localStorage.setItem(DEV_MODE_KEY, on ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    // keep: losing the developer role turns the inspector off without
+    // forgetting that it was on.
+    if (!opts.keep) {
+      try { localStorage.setItem(DEV_MODE_KEY, on ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    }
     document.body.classList.toggle('dev-mode', on);
     var sw = document.getElementById('devModeSwitch');
     if (sw) sw.checked = on;
@@ -8464,6 +8473,7 @@
    * Also used by the infra status pills in the navbar.
    */
   function switchToFleetSubTab(tabId) {
+    if (!_viewAllows('fleet')) return;
     switchMode('fleet');
     var tab = document.getElementById(tabId);
     if (tab && window.bootstrap && window.bootstrap.Tab) {
@@ -8809,8 +8819,29 @@
     var body = document.getElementById('settingsModalBody');
     if (!body) return;
 
+    // Show what is in effect: the address wins over the saved setting.
+    var viewNow = _viewFromUrl || _parseView(_settings.view) || VIEW_ALL;
+    var roleBox = function (id, label, on, desc, disabled) {
+      return '<div class="form-check">' +
+          '<input class="form-check-input" type="checkbox" id="' + id + '"' + (on ? ' checked' : '') +
+            (disabled ? ' disabled' : '') + '>' +
+          '<label class="form-check-label" for="' + id + '"><strong>' + label + '</strong> &mdash; ' + desc + '</label>' +
+        '</div>';
+    };
     body.innerHTML =
       '<form id="settingsForm">' +
+        '<div class="mb-3">' +
+          '<div class="form-label fw-semibold">View</div>' +
+          roleBox('settingViewUser', 'User', true, 'Services and Bench (always on)', true) +
+          roleBox('settingViewAdmin', 'Administrator', viewNow.admin,
+                  'Consul, Nomad jobs and plugins', !!_viewFromUrl) +
+          roleBox('settingViewDev', 'Developer', viewNow.developer,
+                  'Service Creator, test projects, plugin views and the inspector', !!_viewFromUrl) +
+          '<div class="form-text">' + (_viewFromUrl
+            ? 'Set by the page address (<code>?view=' + _viewString(_viewFromUrl) + '</code>).'
+            : 'Takes effect when you save.') +
+          '</div>' +
+        '</div>' +
         '<div class="mb-3">' +
           '<label for="settingPythonPath" class="form-label fw-semibold">Python Path</label>' +
           '<input type="text" class="form-control" id="settingPythonPath" ' +
@@ -8943,8 +8974,14 @@
       brokerPort: brokerPortInput ? brokerPortInput.value.trim() : '',
       bridgePort: bridgePortInput ? bridgePortInput.value.trim() : ''
     };
+    var viewAdmin = document.getElementById('settingViewAdmin');
+    var viewDev = document.getElementById('settingViewDev');
+    if (viewAdmin && viewDev && !_viewFromUrl) {
+      newSettings.view = _viewString({ admin: viewAdmin.checked, developer: viewDev.checked });
+    }
 
     _settings = Object.assign(_settings, newSettings);
+    _applyConfiguredView();
 
     if (window.electronAPI && window.electronAPI.saveSettings) {
       window.electronAPI.saveSettings(_settings)
@@ -8990,10 +9027,12 @@
         .then(function (settings) {
           _settings = settings || {};
           console.log('[app] Settings loaded from file:', Object.keys(_settings));
+          _applyConfiguredView();
           _fetchBaseVersion();
         })
         .catch(function () {
           _settings = {};
+          _applyConfiguredView();
           _fetchBaseVersion();
         });
     } else {
@@ -9006,9 +9045,97 @@
       } catch (e) {
         _settings = {};
       }
+      _applyConfiguredView();
       _fetchBaseVersion();
     }
   }
+
+  /************************************************************
+   *               View: user, admin, developer                *
+   ************************************************************/
+  // settings.json "view" picks what the GUI offers. "user" (always in):
+  // Services and Bench. "admin" adds the Administrator tab (Consul, Nomad
+  // jobs, plugins). "developer" adds the Developer tab, the plugin views
+  // and the inspector. Combine them: "user+admin", ["user", "admin"];
+  // "all" or no setting shows everything. A browser-hosted GUI can also be
+  // opened with ?view=user+admin, which wins over the setting. This tidies
+  // the GUI for its audience; it is not access control.
+
+  var VIEW_KEY = 'mm_view';   // last configured view: applied before settings load, no flash
+  var VIEW_ALL = { admin: true, developer: true };
+  var _roles = null;          // null until the first applyView: everything allowed
+
+  // "user+admin" | "user admin" | "user,admin" | ["user", "admin"] | "all"
+  // -> { admin, developer }, or null when it names no role at all.
+  function _parseView(v) {
+    if (v === null || v === undefined || v === '') return null;
+    var list = Array.isArray(v) ? v : String(v).split(/[\s+,]+/);
+    var r = { admin: false, developer: false };
+    var known = false;
+    list.forEach(function (t) {
+      t = String(t || '').toLowerCase();
+      if (t === 'all') { r.admin = true; r.developer = true; known = true; }
+      else if (t === 'admin' || t === 'administrator') { r.admin = true; known = true; }
+      else if (t === 'developer' || t === 'dev') { r.developer = true; known = true; }
+      else if (t === 'user') { known = true; }
+    });
+    return known ? r : null;
+  }
+
+  function _viewString(r) {
+    return ['user'].concat(r.admin ? ['admin'] : [], r.developer ? ['developer'] : []).join('+');
+  }
+
+  var _viewFromUrl = (function () {
+    try { return _parseView(new URLSearchParams(window.location.search).get('view')); }
+    catch (e) { return null; }
+  })();
+
+  function _viewAllows(mode) {
+    if (!_roles) return true;
+    if (mode === 'services' || mode === 'bench' || mode === '__help__') return true;
+    if (mode === 'fleet') return _roles.admin;
+    return _roles.developer;   // Service Creator, test projects, plugin views
+  }
+
+  function _ribbonTabAllowed(tab) {
+    if (!_roles || tab === 'user') return true;
+    if (tab === 'admin') return _roles.admin;
+    if (tab === 'dev') return _roles.developer;
+    return false;
+  }
+
+  function applyView(r) {
+    _roles = { admin: !!r.admin, developer: !!r.developer };
+    document.body.classList.toggle('view-no-admin', !_roles.admin);
+    document.body.classList.toggle('view-no-dev', !_roles.developer);
+    if (!_roles.developer) {
+      // keep: the inspector comes back with the developer role.
+      if (_devMode) setDevMode(false, { silent: true, keep: true });
+    } else {
+      try {
+        if (!_devMode && localStorage.getItem(DEV_MODE_KEY) === '1') setDevMode(true, { silent: true });
+      } catch (e) { /* storage unavailable */ }
+    }
+    if (!_viewAllows(_currentMode)) switchMode('services');
+    if (!_ribbonTabAllowed(_ribbonTab)) _setRibbonTab('user');
+  }
+
+  // After settings load (or are saved): the setting, unless the URL says otherwise.
+  function _applyConfiguredView() {
+    var configured = _parseView(_settings && _settings.view) || VIEW_ALL;
+    try { localStorage.setItem(VIEW_KEY, _viewString(configured)); } catch (e) { /* storage unavailable */ }
+    applyView(_viewFromUrl || configured);
+  }
+
+  MM.getView = function () { return _viewString(_roles || VIEW_ALL); };
+  MM.viewHas = function (role) { return role === 'user' || !_roles || !!_roles[role]; };
+
+  (function () {
+    var cached = null;
+    try { cached = _parseView(localStorage.getItem(VIEW_KEY)); } catch (e) { /* storage unavailable */ }
+    applyView(_viewFromUrl || cached || VIEW_ALL);
+  })();
 
   // Wire settings button and save button
   var btnSettings = document.getElementById('btnSettings');
