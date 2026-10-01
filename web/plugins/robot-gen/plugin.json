@@ -1,0 +1,20 @@
+{
+  "$schema": "../../js/endo/contract/plugin.schema.json",
+  "plugin": "robot-gen",
+  "version": "1.0.0",
+  "title": "Robot resources",
+  "description": "One Robot Framework .resource per service, generated from a .proto folder.",
+  "requires": { "shell": "^2.3", "capabilities": [] },
+  "isolation": "schema",
+  "contributes": {
+    "commands": [
+      { "id": "robot-gen.run", "title": "Robot Resources", "shell": "robotGen" }
+    ],
+    "ribbon.groups": [
+      { "tab": "dev", "group": "Build", "commands": [
+        { "id": "robot-gen.run", "label": "Robot Resources", "icon": "robot",
+          "title": "One Robot Framework .resource per service, from a .proto folder" }
+      ] }
+    ]
+  }
+}

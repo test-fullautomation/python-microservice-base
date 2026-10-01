@@ -1,0 +1,31 @@
+<!--
+  Service-provided GUI for the hello sample (examples/hello_service).
+
+  Shown by the Manager GUI because the service registers Meta.gui =
+  "HelloService1.0.0" in Consul (settings.gui / HELLO_GUI). The companion
+  HelloService.js calls the service through the bridge's reflection-based
+  gRPC endpoint, so no generated stubs are needed on the GUI side.
+-->
+<div class="p-3" id="helloGui">
+  <div class="d-flex align-items-center mb-3">
+    <h5 class="mb-0 me-2"><i class="bi bi-chat-dots me-2"></i>Hello service</h5>
+    <span class="badge bg-secondary" id="helloGuiTarget">…</span>
+  </div>
+
+  <p class="text-muted small">
+    This panel ships <em>with the service</em> (<code>web/services/HelloService1.0.0</code>)
+    and appears because the service declared it in Consul. Each instance
+    answers with its own index, so calling twice against a scaled job
+    shows load distribution.
+  </p>
+
+  <div class="input-group mb-3" style="max-width: 460px;">
+    <span class="input-group-text">Name</span>
+    <input type="text" class="form-control" id="helloGuiName" value="PO" spellcheck="false">
+    <button class="btn btn-primary" id="helloGuiGreet" type="button">
+      <i class="bi bi-send me-1"></i>Greet
+    </button>
+  </div>
+
+  <div id="helloGuiResult" class="alert alert-light py-2 small mb-0">No call yet.</div>
+</div>

@@ -201,9 +201,9 @@
   <a href="#troubleshooting">Troubleshooting</a>
 
   <div class="nav-group">Companion docs</div>
-  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/index.html">&larr; Docs index</a>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/html/index.html">&larr; Docs index</a>
   <a href="service_creator.html">Service Creator wizard</a>
-  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/service_creation.html">Service creation tutorial</a>
+  <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/html/service_creation.html">Service creation tutorial</a>
 </nav>
 
 <main>
@@ -219,7 +219,7 @@
 <ul>
   <li><strong>Start, stop, and inspect</strong> the Consul service
       registry and the Nomad orchestrator without remembering CLI flags.</li>
-  <li>See live infrastructure status at a glance (LEDs in the navbar).</li>
+  <li>See live infrastructure status at a glance (LEDs on the ribbon's User tab).</li>
   <li>Browse registered services, running jobs, and per-job logs in
       one place.</li>
   <li>Generate new service scaffolds — the
@@ -255,12 +255,12 @@
 </p>
 
 <figure>
-  <img src="../img/gui_overview.png" alt="Manager GUI overview — navbar with mode toggle, Bridge / Consul / Nomad LEDs, services sidebar">
-  <figcaption>Manager GUI on first launch — mode toggle (Services / Service Network / Service Creator) on the left of the navbar; Bridge LED + Start/Stop, Consul + Nomad infra pills, and the connected-cluster chip on the right.</figcaption>
+  <img src="../img/gui_overview.png" alt="Manager GUI overview — ribbon with the User tab open (Bridge, Consul and Nomad LEDs, Bench, Service registry), services sidebar, a service's GUI">
+  <figcaption>The main window — ribbon tabs (User / Developer / Administrator) in the navbar; on the User tab the Bridge LED with Start/Stop, the Consul and Nomad LEDs, the Bench group and the connected-cluster chip on the right.</figcaption>
 </figure>
 
 <h3>Bridge LED</h3>
-<p>The first thing the GUI shows in the navbar is the Bridge status:</p>
+<p>The first thing the GUI shows on the User tab is the Bridge status:</p>
 <figure class="crop">
   <img src="../img/bridge_led_states.png" alt="Three Bridge chip states: green Bridge up, amber Starting bridge..., red Bridge down">
   <figcaption>The three Bridge LED states — green &ldquo;Bridge up&rdquo;, amber &ldquo;Starting bridge…&rdquo;, red &ldquo;Bridge down&rdquo;.  Use the ▶ / ■ buttons to start or stop the bridge process.</figcaption>
@@ -275,13 +275,13 @@
 
 <!-- ============================ Modes ============================ -->
 <section id="modes">
-<h2>The three top-level modes</h2>
-<p>The mode toggle in the navbar switches between:</p>
+<h2>The ribbon: User, Developer, Administrator</h2>
+<p>The navbar holds three ribbon tabs; each opens a band of commands grouped by task. The left pane's switcher (Services / Bench / Project) picks what the pane lists.</p>
 <table>
-  <tr><th>Mode</th><th>What it's for</th></tr>
-  <tr><td><strong>Services</strong></td><td>Runtime management — view registered services, send test gRPC calls, watch real-time updates.</td></tr>
-  <tr><td><strong>Service Network</strong></td><td>Operate the infrastructure — start/stop Consul + Nomad, view jobs, view nodes.  <strong>This guide focuses here.</strong></td></tr>
-  <tr><td><strong>Service Creator</strong></td><td>Generate a new service scaffold via the 4-step wizard.  See <a href="service_creator.html">service_creator.html</a>.</td></tr>
+  <tr><th>Tab</th><th>What it's for</th></tr>
+  <tr><td><strong>User</strong></td><td>Operate — the Bridge, Consul and Nomad LEDs, the bench, and connecting to Consul. The Services view shows registered services and their GUIs.</td></tr>
+  <tr><td><strong>Developer</strong></td><td>Build and test — the developer inspector, Service Creator (see <a href="service_creator.html">service_creator.html</a>), Robot resources, Graph Studio, test projects, and tools for the selected service.</td></tr>
+  <tr><td><strong>Administrator</strong></td><td>Configure — <em>Consul agent</em> and <em>Nomad agent</em> open the Service Network view: start/stop agents, view jobs, view nodes.  <strong>This guide focuses here.</strong>  <em>Plugins</em> turns plugins on or off.</td></tr>
 </table>
 </section>
 
@@ -310,7 +310,7 @@
   <li><strong>Consul binary</strong>: <code>consul</code> (resolved on <code>%PATH%</code>; override under <strong>Advanced</strong>)</li>
 </ul>
 <p>
-  Click <strong>Start Agent</strong> — the Consul pill in the navbar
+  Click <strong>Start Agent</strong> — the Consul LED on the User tab
   turns green within a few seconds and the panel switches to the
   Connected dashboard.
 </p>
@@ -493,7 +493,7 @@
       <td>The service registered with a different Consul (check its
           <code>CONSUL_ADDR</code> env).  The GUI shows the cluster the
           bridge is currently pointed at — switch via <strong>Connect</strong>
-          in the navbar.</td></tr>
+          on the User tab.</td></tr>
   <tr><td>Nomad job stays "pending"</td>
       <td>Driver mismatch (Windows can't run <code>exec</code>/<code>docker</code>
           jobs without setup).  Generated scaffolds use <code>raw_exec</code>
@@ -511,7 +511,7 @@
 <footer>
   Source: <code>MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md</code> &middot;
   GUI doc index: <a href="index.html">index.html</a> &middot;
-  Repo docs: <a href="https://github.com/test-fullautomation/python-microservice-base/blob/ugc1hc/feat/migrate_to_ta_architecture/examples/docs/html/index.html">examples/docs/html/index.html</a>
+  Repo docs: <a href="https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/html/index.html">examples/docs/html/index.html</a>
 </footer>
 
 </body>
