@@ -161,6 +161,58 @@ def _prepare_sys_path(root: str) -> None:
         sys.path.insert(0, root)
 
 
+def _serve_reflection() -> None:
+    """Every gRPC server this process starts also answers server reflection.
+
+    signal_graph and signal_discovery register only their own services, so
+    the Manager GUI could not list a graph's methods (it fell back to
+    compiling .proto files it does not have). The servers are created inside
+    their apps, so wrap ``grpc.aio.server``: remember the services added to
+    it and enable reflection for them just before it starts.
+    Without grpcio-reflection the cluster runs as before.
+    """
+    try:
+        import grpc
+        from grpc_reflection.v1alpha import reflection
+    except ImportError:
+        print("  grpcio-reflection not installed: the Manager GUI cannot list this "
+              "cluster's methods (pip install grpcio-reflection)", flush=True)
+        return
+    make_server = grpc.aio.server
+
+    def server(*args, **kwargs):
+        srv = make_server(*args, **kwargs)
+        names: list[str] = []
+        add_generic, add_registered = srv.add_generic_rpc_handlers, \
+            getattr(srv, "add_registered_method_handlers", None)
+        start = srv.start
+
+        def add_generic_rpc_handlers(handlers):
+            for h in handlers:
+                name = getattr(h, "service_name", lambda: None)()
+                if name and name not in names:
+                    names.append(name)
+            return add_generic(handlers)
+
+        def add_registered_method_handlers(service_name, method_handlers):
+            if service_name not in names:
+                names.append(service_name)
+            return add_registered(service_name, method_handlers)
+
+        async def start_with_reflection():
+            if names:
+                reflection.enable_server_reflection(names + [reflection.SERVICE_NAME], srv)
+            return await start()
+
+        srv.add_generic_rpc_handlers = add_generic_rpc_handlers
+        if add_registered is not None:
+            srv.add_registered_method_handlers = add_registered_method_handlers
+        srv.start = start_with_reflection
+        return srv
+
+    grpc.aio.server = server
+
+
 def _graph_settings(graph_settings_cls, discovery_port: int):
     s = graph_settings_cls()
     s.storage_backend = "mock"
@@ -401,6 +453,7 @@ if __name__ == "__main__":
     if not paths:
         parser.error("give --all and/or --config <graph.json>")
     print(f"signals root: {root}", flush=True)
+    _serve_reflection()
     try:
         asyncio.run(main(paths, args.discovery_port, args.exit_on_stdin_close))
     except KeyboardInterrupt:

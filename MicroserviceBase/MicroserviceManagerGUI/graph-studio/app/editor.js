@@ -1185,11 +1185,14 @@ async function runCluster(mode) {
     return toast("no signals root — set \"signals root\" in the Service panel (Live) to <repo>/services/signals", true);
   }
   const python = state.live.python || "python";
-  let opts = { mode: "all", python, signalsRoot };
+  // The local cluster's signal-discovery listens where the Live panel says,
+  // so a bench that already owns 50210 can be avoided (e.g. 127.0.0.1:50290).
+  const discoveryPort = state.live.discoveryPort || 50210;
+  let opts = { mode: "all", python, signalsRoot, discoveryPort };
   if (mode === "graph") {
     if (!state.filePath) return toast("save the graph to a file first — Run graph starts the saved graph.json", true);
     if (state.dirty) return toast("unsaved edits — save first so the running graph matches the canvas", true);
-    opts = { mode: "configs", configs: [state.filePath], python, signalsRoot };
+    opts = { mode: "configs", configs: [state.filePath], python, signalsRoot, discoveryPort };
   }
   document.getElementById("logdrawer").classList.remove("collapsed");
   const res = await window.bridge.runStart(opts);
