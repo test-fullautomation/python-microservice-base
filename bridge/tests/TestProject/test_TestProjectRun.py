@@ -490,6 +490,43 @@ class Test_FileViews:
         assert "Run settings" in res["error"]
 
 
+class Test_NewFlow:
+
+    def test_creates_a_flow_in_the_flows_folder(self, project):
+        _write(project, "testsuites/power.resource", "*** Keywords ***\nPower On\n    Log    on\n")
+        assert tp.project_tree(str(project))["can_new_flow"] is True
+        res = tp.create_flow(str(project), "climate_check.flow.json", resources=["testsuites/power.resource"])
+        assert res["path"] == "flows/climate_check.flow.json"
+        with open(os.path.join(str(project), "flows", "climate_check.flow.json"), encoding="utf-8") as fh:
+            data = json.load(fh)
+        assert data["flow"]["name"] == "Climate Check"
+        assert data["imports"] == {"resources": ["../testsuites/power.resource"]}
+        files = {f["path"]: f for f in tp.project_tree(str(project))["files"]}
+        assert files["flows/climate_check.flow.json"]["kind"] == "flow"
+
+    def test_refusals(self, project):
+        with pytest.raises(tp.TestProjectError, match="Invalid flow name"):
+            tp.create_flow(str(project), "has space")
+        with pytest.raises(tp.TestProjectError, match="not a file"):
+            tp.create_flow(str(project), "ok", resources=["testsuites/missing.resource"])
+        with pytest.raises(tp.TestProjectError):
+            tp.create_flow(str(project), "ok", resources=["../outside.resource"])
+        tp.create_flow(str(project), "ok")
+        with pytest.raises(tp.TestProjectError):
+            tp.create_flow(str(project), "ok")          # already there
+
+    @pytest.mark.skipif(not HAS_FLOW, reason="RobotFramework AIO fork with robot.flow not found (MB_FLOW_SRC)")
+    def test_new_flow_draws_and_runs(self, project):
+        tp.set_run_settings(str(project), {"pythonpath": [FLOW_SRC]})
+        _write(project, "testsuites/power.resource", "*** Keywords ***\nPower On\n    Log    on\n")
+        path = tp.create_flow(str(project), "fresh", resources=["testsuites/power.resource"])["path"]
+        res = tp.inspect_file(str(project), path)
+        assert res["ok"] is True, res
+        assert [s["id"] for s in res["views"]["diagram"]["flow"]["tests"][0]["steps"]] == ["first"]
+        st = _wait(project, tp.RUNS.start(str(project), path)["id"])
+        assert st["verdict"] == "pass", st["all_lines"]
+
+
 class Test_BridgeEndpoints:
 
     @pytest.fixture
@@ -544,4 +581,11 @@ class Test_BridgeEndpoints:
         assert [v["id"] for v in res["available"]] == ["diagram", "robot"]
         err = client.post("/api/test-project/inspect",
                           json={"root": root, "path": "testsuites/config/robot_config.jsonp"}).json()
+        assert err["status"] == "error"
+
+    def test_new_flow(self, client, project):
+        root = str(project)
+        res = client.post("/api/test-project/flow", json={"root": root, "name": "made_here"}).json()
+        assert res["path"] == "flows/made_here.flow.json", res
+        err = client.post("/api/test-project/flow", json={"root": root, "name": "bad name"}).json()
         assert err["status"] == "error"

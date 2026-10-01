@@ -3211,6 +3211,11 @@ Generate scaffolding for a new microservice project.
          name: str
          service: str = ""
 
+      class TestProjectNewFlowBody(BaseModel):
+         root: str
+         name: str
+         resources: List[str] = []
+
       @app.post("/api/test-project/file/save")
       def test_project_file_save(body: TestProjectSaveBody):
          """Save a user-owned project file; generated files and the manifest are refused."""
@@ -3234,6 +3239,15 @@ Generate scaffolding for a new microservice project.
          from ..test_project import TestProjectError, create_suite
          try:
             return create_suite(body.root, body.name, service=body.service or None)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/flow")
+      def test_project_new_flow(body: TestProjectNewFlowBody):
+         """Create a flow file from the runner's template, importing the given resources."""
+         from ..test_project import TestProjectError, create_flow
+         try:
+            return create_flow(body.root, body.name, resources=body.resources)
          except TestProjectError as exc:
             return _tp_error(exc)
 

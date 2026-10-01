@@ -316,6 +316,15 @@ empty string when the runner cannot create suites (the default).
       """
       return ""
 
+   def flow_template(self, layout: Dict[str, str], flow_path: str, name: str,
+                     resource_paths: List[str]) -> str:
+      """
+Content of a new flow file at ``flow_path`` (project-relative), titled
+``name`` and importing the project-relative ``resource_paths``. Return an
+empty string when the runner has no flow files (the default).
+      """
+      return ""
+
    @abstractmethod
    def run_hint(self, layout: Dict[str, str], export: ServiceExport) -> str:
       """

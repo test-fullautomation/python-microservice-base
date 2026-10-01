@@ -663,6 +663,7 @@ def project_tree(root: str) -> dict:
         "truncated": truncated,
         "run_hint": runner.project_run_hint(layout),
         "can_run": runner.can_run(""),
+        "can_new_flow": bool(runner.flow_template(layout, "flows/new.flow.json", "New", [])),
         "run_settings": asdict(run_settings_of(manifest)),
         "groups": [_group_entry(runner, g) for g in groups_of(manifest)],
     }
@@ -1042,8 +1043,8 @@ def write_project_file(root: str, rel: str, content: str, *,
     if create:
         if os.path.exists(full):
             raise TestProjectError(f"{rel} already exists.")
-        if not rel.lower().endswith((".robot", ".resource")):
-            raise TestProjectError("New files must be .robot or .resource files.")
+        if not rel.lower().endswith((".robot", ".resource", ".flow.json")):
+            raise TestProjectError("New files must be .robot, .resource or .flow.json files.")
     elif not exists:
         raise TestProjectError(f"No such file in the test project: {rel}")
     elif expected_sha256 and not force:
@@ -1099,4 +1100,35 @@ def create_suite(root: str, name: str, *, service: Optional[str] = None) -> dict
     content = runner.suite_template(layout, rel, service, resources, consul_addr, proto_rel_dir)
     if not content:
         raise TestProjectError(f"{runner.display_name} projects cannot create suites here.")
+    return write_project_file(root, rel, content, create=True)
+
+
+def create_flow(root: str, name: str, *, resources: Optional[List[str]] = None) -> dict:
+    """Create a new flow file in the project's flows folder from the runner's template.
+
+    ``resources``: project-relative resource files the flow imports, so their
+    keywords can be its steps.
+    """
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    runner = get_runner(manifest["runner"])
+    layout = _layout(runner, manifest)
+    stem = re.sub(r"\.flow\.json$|\.json$", "", str(name or "").strip(), flags=re.I)
+    if not _NEW_SUITE_RE.match(stem):
+        raise TestProjectError(
+            f"Invalid flow name {name!r}: use letters, digits, '_' or '-' (no spaces).")
+    rel = f"{layout.get('flows') or 'flows'}/{stem}.flow.json"
+    picked = []
+    for path in resources or []:
+        path = str(path).replace("\\", "/").strip("/")
+        _safe_join(root, path)
+        if not os.path.isfile(os.path.join(root, *path.split("/"))):
+            raise TestProjectError(f"{path} is not a file of this project.")
+        picked.append(path)
+    title = stem.replace("_", " ").replace("-", " ").strip().title()
+    content = runner.flow_template(layout, rel, title, picked)
+    if not content:
+        raise TestProjectError(f"{runner.display_name} projects have no flow files.")
     return write_project_file(root, rel, content, create=True)
