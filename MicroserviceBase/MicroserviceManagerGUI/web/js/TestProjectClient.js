@@ -140,6 +140,15 @@
       return _post('/api/test-project/suite', { root: root, name: name, service: service || '' });
     },
 
+    /**
+     * Create a flow file (*.flow.json) from the runner template, importing
+     * the given project-relative resource files.
+     * @returns {Promise<object>} same shape as saveFile, plus path.
+     */
+    newFlow: function (root, name, resources) {
+      return _post('/api/test-project/flow', { root: root, name: name, resources: resources || [] });
+    },
+
     exportService: function (opts) {
       return _post('/api/test-project/export', opts);
     },

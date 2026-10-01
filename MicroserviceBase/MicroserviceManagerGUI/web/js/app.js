@@ -5530,11 +5530,16 @@
 
     TPV_GROUPS.forEach(function (g) {
       var files = data.files.filter(function (f) { return _tpvGroupOf(f) === g.kind; });
-      if (!files.length) return;
+      var newFlow = g.kind === 'flow' && data.can_new_flow;
+      if (!files.length && !newFlow) return;
       html += '<div class="tpv-group"><div class="tpv-group-title"><span><i class="bi ' + g.icon + ' me-1"></i>' +
               g.title + '</span><span>' +
               (g.kind === 'suite'
                 ? '<button type="button" class="tpv-add" data-tpv-new-suite="1" title="New suite">' +
+                  '<i class="bi bi-plus-lg"></i></button>'
+                : '') +
+              (newFlow
+                ? '<button type="button" class="tpv-add" data-tpv-new-flow="1" title="New flow">' +
                   '<i class="bi bi-plus-lg"></i></button>'
                 : '') +
               files.length + '</span></div>';
@@ -5652,6 +5657,12 @@
       b.addEventListener('click', function (e) {
         e.stopPropagation();
         _tpvGuard(function () { _showTpvNewSuite(data); });
+      });
+    });
+    sidebar.querySelectorAll('[data-tpv-new-flow]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        _tpvGuard(function () { _showTpvNewFlow(data); });
       });
     });
   }
@@ -6278,6 +6289,7 @@
   var TPV_TAB_KEY = 'mm_tpv_tab';
   var _tpvViewState = null;   // { path, views, getText, tab, cacheText, cacheRes }
   var _tpvFileView = null;    // the plugin view mounted in the pane (file.views)
+  var _tpvOpenTab = null;     // the tab the next opened file starts on (a new flow: its Diagram)
 
   function _tpvDropFileView() {
     if (_tpvFileView) { try { _tpvFileView.destroy(); } catch (e) { /* already gone */ } }
@@ -6296,6 +6308,7 @@
     });
     var saved = '';
     try { saved = localStorage.getItem(TPV_TAB_KEY) || ''; } catch (e) { /* storage unavailable */ }
+    if (_tpvOpenTab) { saved = _tpvOpenTab; _tpvOpenTab = null; }   // a file just created: its first view
     if (saved !== 'script' && views.some(function (v) { return v.id === saved; })) _tpvShowTab(saved);
   }
 
@@ -7918,6 +7931,75 @@
     });
     name.focus();
   }
+  function _showTpvNewFlow(data) {
+    _tpView.selected = null;
+    _tpView.group = null;
+    _tpvEditor = null;
+    _tpvDropFileView();
+    _renderTpvSidebar(data);
+    var content = document.getElementById('testProjectContent');
+    var layout = data.layout || {};
+    var resources = data.files.filter(function (f) { return f.kind === 'resource'; });
+    var checks = resources.map(function (f, i) {
+      return '<div class="form-check">' +
+        '<input class="form-check-input tpv-flow-res" type="checkbox" id="tpvFlowRes' + i + '" value="' + _escapeHtml(f.path) + '">' +
+        '<label class="form-check-label small" for="tpvFlowRes' + i + '"><code>' + _escapeHtml(f.path) + '</code></label></div>';
+    }).join('');
+
+    content.innerHTML =
+      '<div class="tpv-view">' +
+      '  <div class="tpv-file-head">' +
+      '    <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
+      '    <strong>New flow</strong>' +
+      '  </div>' +
+      '  <section class="svc-ov-card tpv-new-suite">' +
+      '    <div class="mb-3">' +
+      '      <label class="form-label small" for="tpvFlowName">Name</label>' +
+      '      <div class="input-group input-group-sm">' +
+      '        <input type="text" class="form-control" id="tpvFlowName" placeholder="e.g. climate_debounce" spellcheck="false">' +
+      '        <span class="input-group-text">.flow.json</span>' +
+      '      </div>' +
+      '      <div class="form-text">Created in <code>' + _escapeHtml(layout.flows || 'flows') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
+      '    </div>' +
+      (resources.length
+        ? '    <div class="mb-3">' +
+          '      <div class="form-label small">Keywords from</div>' + checks +
+          '      <div class="form-text">The flow imports the ticked resource files, so their keywords can be its steps.</div>' +
+          '    </div>'
+        : '') +
+      '    <div id="tpvFlowError"></div>' +
+      '    <button type="button" class="btn btn-sm btn-primary" id="tpvFlowCreate">' +
+      '      <i class="bi bi-file-earmark-plus me-1"></i>Create and open the diagram</button>' +
+      '  </section>' +
+      '</div>';
+
+    _tpvWireBack(data);
+    var name = document.getElementById('tpvFlowName');
+    var create = document.getElementById('tpvFlowCreate');
+    function submit() {
+      create.disabled = true;
+      document.getElementById('tpvFlowError').innerHTML = '';
+      var picked = Array.prototype.slice.call(content.querySelectorAll('.tpv-flow-res:checked'))
+        .map(function (c) { return c.value; });
+      MM.testProjectClient.newFlow(_getTestProject(), name.value.trim(), picked)
+        .then(function (res) {
+          showToast('New flow', res.path + ' created.', 'success');
+          _tpView.selected = res.path;
+          _tpvOpenTab = 'diagram';
+          renderTestProjectView();
+        })
+        .catch(function (err) {
+          create.disabled = false;
+          document.getElementById('tpvFlowError').innerHTML = _devAlert('warning', 'Not created', err.message || err);
+        });
+    }
+    create.addEventListener('click', submit);
+    name.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+    name.focus();
+  }
+
   // Signal Graph Studio: its own window (own preload + "gs:" IPC), so it
   // is Electron-only. Seed its live panel with the Consul we are on and the
   // interpreter from Settings — the studio runs Python for "Run cluster"

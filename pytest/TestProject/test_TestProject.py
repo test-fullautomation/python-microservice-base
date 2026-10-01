@@ -520,7 +520,7 @@ class Test_Editing:
             tp.write_project_file(root, "testsuites/nope.robot", "x")
         with pytest.raises(tp.TestProjectError, match="already exists"):
             tp.write_project_file(root, SUITE, "x", create=True)
-        with pytest.raises(tp.TestProjectError, match=r"\.robot or \.resource"):
+        with pytest.raises(tp.TestProjectError, match=r"\.robot, \.resource or \.flow\.json"):
             tp.write_project_file(root, "testsuites/notes.txt", "x", create=True)
 
     def test_syntax_problems_are_reported_with_lines(self):

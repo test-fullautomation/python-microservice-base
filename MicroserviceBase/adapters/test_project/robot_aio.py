@@ -531,6 +531,38 @@ class RobotAioRunner(TestProjectRunner):
             message = "Stopped on request. " + message
         return RunResult(verdict, counts, tests, message.strip())
 
+    def flow_template(self, layout, flow_path, name, resource_paths) -> str:
+        """A flow that runs as it is: one test, one step to replace -- so its
+        Diagram draws at once and Edit flow can take it from there."""
+        here = posixpath.dirname(flow_path)
+        imports = [posixpath.relpath(p, here or ".") for p in resource_paths]
+        data = {
+            "flow": {"name": name, "version": 1},
+            **({"imports": {"resources": imports}} if imports else {}),
+            "nodes": [
+                {"id": "start", "kind": "start"},
+                {"id": "test", "kind": "phase", "role": "test", "name": name},
+                {"id": "first", "kind": "keyword", "keyword": "Log",
+                 "args": ["Replace me: open the Diagram tab and use Edit flow to add steps."]},
+                {"id": "end", "kind": "end"},
+            ],
+            "edges": [["start", "test"], ["test", "first"], ["first", "end"]],
+        }
+        lines = ["{"]
+        for key in ("flow", "imports"):
+            if key in data:
+                lines.append(f'  "{key}": {json.dumps(data[key], ensure_ascii=False)},')
+        lines.append('  "nodes": [')
+        lines += [f"    {json.dumps(n, ensure_ascii=False)}," for n in data["nodes"]]
+        lines[-1] = lines[-1].rstrip(",")
+        lines.append("  ],")
+        lines.append('  "edges": [')
+        lines += [f"    {json.dumps(e)}," for e in data["edges"]]
+        lines[-1] = lines[-1].rstrip(",")
+        lines.append("  ]")
+        lines.append("}")
+        return "\n".join(lines) + "\n"
+
     def suite_template(self, layout, suite_path, service, resource_paths,
                        consul_addr, proto_rel_dir) -> str:
         suites_dir = posixpath.dirname(suite_path)
