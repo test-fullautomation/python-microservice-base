@@ -216,6 +216,8 @@ generate, instead of the service refusing the graph at start-up.
 | Live signals empty but bench runs | discovery may not serve gRPC reflection — set the *proto dir* field, or leave it empty to use the bundled `reference/protos` |
 | "no signals root" | ▶ Run needs the Live panel's *signals root* (or `MB_SIGNALS_ROOT`) pointing at `<repo>/services/signals` (must contain `signal_graph/` and `signal_discovery/`) — Monitor against a deployed service needs none of this |
 | ▶ Run fails instantly (`ModuleNotFoundError: grpc`) | the *python for ▶ Run* setting points at an interpreter without the deps |
+| ▶ Run exits at once: `Failed to bind to address 127.0.0.1:50210`; Monitor: `Failed to dial target host "127.0.0.1:50220"` | something else (a bench job) already owns the discovery port — set the Live panel's *signal-discovery host:port* to a free one, e.g. `127.0.0.1:50290`; ▶ Run starts its discovery there |
+| Manager GUI, the graph's service: *No actions available — Reflection unavailable* | the cluster runs without `grpcio-reflection` (its console says so at start) — `pip install grpcio-reflection` into the interpreter set for Graph Studio, then ▶ Run again; meanwhile point the panel's proto path at the folder with `signal.proto` |
 | Monitor shows "waiting…" forever | the service isn't running on `service.grpc_port`, or grpcurl can't dial — check the log drawer; use `127.0.0.1`, not `localhost` (IPv6 resolves to `::1`, the services bind IPv4) |
 | Monitor works but no pulse on some blocks | only blocks upstream of a **tapped** port pulse — add observe taps where you want visibility |
 | Chart says "no monitored signals yet" | monitoring isn't running (pill shows *idle*) — press ◉ Monitor or ▶ Run |
