@@ -372,7 +372,15 @@
       </p>
       <ul>
         <li><strong>Script</strong> &mdash; the JSON, the only thing you edit.</li>
-        <li><strong>Diagram</strong> &mdash; the flow drawn from the text in Script, unsaved changes included: a lane per phase, gates as hexagons, loops and tries as frames with their recovery, decisions with their yes / no branches.  Click a node to find it in Script.  Drawn by the <em>Flow view</em> plugin; with the plugin off, the tab says so.</li>
+        <li><strong>Diagram</strong> &mdash; the flow drawn from the text in Script, unsaved changes included: a lane per phase, gates as hexagons, loops and tries as frames with their recovery, decisions with their yes / no branches, a <em>sub-flow</em> (a call of another flow file) as a box with a bar on each side whose <strong>+</strong> opens its steps in place.  Click a node to find it in Script.  Drawn by the <em>Flow view</em> plugin; with the plugin off, the tab says so.
+          <br><strong>Edit flow</strong> (above the drawing, while the file is open in Script) changes the flow by drag and drop:
+          <ul>
+            <li>drag a step from the palette &mdash; Keyword, Gate, Sleep, Sub-flow, Decision, Loop, Try, Test &mdash; onto a <strong>+</strong> to add it there (a new loop or try comes with a <code>No Operation</code> step to replace; a sub-flow asks for its file);</li>
+            <li>drag a step onto another <strong>+</strong> to move it;</li>
+            <li>click a step for its fields &mdash; <em>Apply</em> changes them, <em>Delete</em> removes it (a loop or try with everything in it), <em>Wrap in loop</em> / <em>Wrap in try</em> puts it in a new one; <kbd>Delete</kbd> and <kbd>Esc</kbd> work too;</li>
+            <li><em>Undo</em> puts back the text before the last change.</li>
+          </ul>
+          Every change goes through the runner, which rewires the flow and checks it before it is accepted &mdash; a change that would break the flow is refused with the reason, and the file stays as it was. Accepted changes land in Script as unsaved changes: Script, the diagram and the run always read the same text.</li>
         <li><strong>Robot</strong> &mdash; the suite the flow becomes (read-only).</li>
       </ul>
       <p>A flow the runner refuses shows its message with a link to the node or line it names.</p>

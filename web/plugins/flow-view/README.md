@@ -10,6 +10,22 @@ The **Diagram** tab of flow files in the project view.
   diamonds whose yes / no branches re-join below.
 - Clicking a node (or Enter on it) asks the project view to show that node
   in Script (`ctx.reveal({ node })`).
+- **Sub-flows** (`kind: "flow"`, a call of another flow file): a box with a
+  bar on each side ("predefined process"), its arguments underneath and a
+  **+** that opens the sub-flow's steps in place (`render(flow, { expanded })`).
+  Opened steps carry the runner's ids `'<sub-flow name>::<id>'` -- the same
+  the live position reports -- and are not revealed or edited here: they
+  belong to the sub-flow's own file. Live, a closed sub-flow lights its box.
+- **Editing** (`editable: true` -- the file open in Script; `edit.js`):
+  *Edit flow* shows a palette and drop zones (`render(flow, { edit: true })`
+  draws a **+** before every step, after the last step of a region and in an
+  empty decision branch). Dragging a palette item onto a **+** inserts that
+  kind of step; dragging a step moves it; clicking a step opens its fields
+  (Apply, Delete, Wrap in loop / try). Every change is one `ctx.edit()`:
+  `{op: insert | move | delete | update | wrap, ...place}`, applied by the
+  runner (`flow_edit.py`, checked by the fork's validator) to the text in
+  Script, which pushes the redrawn flow back; `{op: 'undo'}` is the host's.
+  One edit at a time; a drop while one is in flight says so.
 - **File view `group`** (`for: ["flow-group"]`): the Diagram of a run group
   -- processes started together that wait for each other through the bench.
   One column per member, read top to bottom, and a dashed arrow across the

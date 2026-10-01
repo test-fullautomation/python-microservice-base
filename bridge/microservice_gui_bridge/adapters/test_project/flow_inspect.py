@@ -39,11 +39,12 @@ def _text(value):
     return str(value)
 
 
-def _steps(steps):
-    return [_step(s) for s in steps or []]
+def _steps(steps, where):
+    return [_step(s, where) for s in steps or []]
 
 
-def _step(step):
+def _step(step, where):
+    """``where``: (folder sub-flow files resolve from, files of the calls above)."""
     from robot.flow import graph
     node = step.node
     out = {"id": node.id, "kind": node.kind, "label": getattr(node, "label", node.id)}
@@ -54,21 +55,41 @@ def _step(step):
     if isinstance(step, graph.SleepStep):
         out.update(duration=_text(step.duration))
     if isinstance(step, graph.Decision):
-        out.update(condition=_text(step.condition), yes=_steps(step.yes), no=_steps(step.no))
+        out.update(condition=_text(step.condition), yes=_steps(step.yes, where), no=_steps(step.no, where))
     if isinstance(step, graph.Guarded):
-        out.update(body=_steps(step.body),
-                   recovery=_steps(step.recovery) if step.recovery is not None else None,
+        out.update(body=_steps(step.body, where),
+                   recovery=_steps(step.recovery, where) if step.recovery is not None else None,
                    then=_text(step.then))
     if isinstance(step, graph.Loop):
         out.update(max_loops=_text(step.max_loops), max_seconds=_text(step.max_seconds), every=_text(step.every))
+    if getattr(graph, "FlowStep", None) and isinstance(step, graph.FlowStep):
+        out.update(file=step.file, args={str(k): _text(v) for k, v in (step.args or {}).items()},
+                   subflow=_subflow(step.file, where))
     return out
 
 
-def _phase(phase):
+def _subflow(file, where):
+    """The called sub-flow's name and steps, for the diagram to open in place."""
+    from robot.flow import load_flow, structure
+    from robot.errors import DataError
+    folder, calling = where
+    path = os.path.normcase(os.path.abspath(os.path.join(folder, file)))
+    if path in calling:
+        return {"name": None, "error": "calls itself (a cycle of sub-flows)"}
+    try:
+        flow = structure(load_flow(path))
+    except DataError as exc:
+        return {"name": None, "error": str(exc)}
+    return {"name": flow.name, "file": file,
+            "steps": _steps(flow.tests[0].steps if flow.tests else [],
+                            (os.path.dirname(path), calling | {path}))}
+
+
+def _phase(phase, where):
     if phase is None:
         return None
     return {"id": phase.node.id if phase.node is not None else None,
-            "role": phase.role, "name": phase.name, "steps": _steps(phase.steps)}
+            "role": phase.role, "name": phase.name, "steps": _steps(phase.steps, where)}
 
 
 def main():
@@ -96,14 +117,35 @@ def main():
                  or re.match(r"Unreachable node\(s\): ([^,.\s]+)", message))
         return {"ok": False, "node": match.group(1) if match else None, "error": message}
     variables = data.get("variables") if isinstance(data.get("variables"), dict) else {}
+    here = os.path.abspath(path)
+    where = (os.path.dirname(here), frozenset({os.path.normcase(here)}))
     return {"ok": True, "robot": robot, "flow": {
         "name": flow.name,
         "variables": {str(k): _text(v) for k, v in variables.items()},
-        "setup": _phase(flow.setup),
-        "tests": [_phase(p) for p in flow.tests],
-        "teardown": _phase(flow.teardown),
+        "setup": _phase(flow.setup, where),
+        "tests": [_phase(p, where) for p in flow.tests],
+        "teardown": _phase(flow.teardown, where),
     }}
 
 
+def edit():
+    """``--edit``: stdin is {"text": ..., "edit": {...}}; the answer is the new text."""
+    import importlib.util
+    try:
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8-sig", errors="replace"))
+        text, change = payload["text"], payload["edit"]
+    except (ValueError, KeyError, TypeError) as exc:
+        return {"ok": False, "error": f"Bad edit request: {exc}"}
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_edit.py")
+    spec = importlib.util.spec_from_file_location("mm_flow_edit", here)
+    flow_edit = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(flow_edit)
+    try:
+        new_text, node = flow_edit.apply_edit(text, change)
+    except flow_edit.FlowEditError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "text": new_text, "node": node}
+
+
 if __name__ == "__main__":
-    sys.stdout.write(json.dumps(main()))
+    sys.stdout.write(json.dumps(edit() if "--edit" in sys.argv[1:] else main()))

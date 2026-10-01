@@ -18,7 +18,7 @@
 var FAILED_FOR_S = 8;
 var MARKS = ['fv-now', 'fv-on-path', 'fv-just-failed', 'fv-now-recovery'];
 // Frames of loops and tries hold other steps: their counts say little.
-var COUNTED = { keyword: 1, gate: 1, sleep: 1, decision: 1 };
+var COUNTED = { keyword: 1, gate: 1, sleep: 1, decision: 1, flow: 1 };
 
 function kindOf(g) {
   var m = /(?:^|\s)fv-(keyword|gate|sleep|decision|loop|try)(?:\s|$)/.exec(g.getAttribute('class') || '');
@@ -63,8 +63,11 @@ export function mark(scope, position) {
   });
   if (!position) return null;
   var stack = position.done ? [] : (position.stack || (position.node ? [position.node] : []));
-  stack.slice(0, -1).forEach(function (id) { if (nodes[id]) nodes[id].classList.add('fv-on-path'); });
-  var now = stack.length ? nodes[stack[stack.length - 1]] : null;
+  // The deepest node that is drawn: inside a closed sub-flow, its call box.
+  var deepest = -1;
+  stack.forEach(function (id, i) { if (nodes[id]) deepest = i; });
+  stack.slice(0, deepest).forEach(function (id) { if (nodes[id]) nodes[id].classList.add('fv-on-path'); });
+  var now = deepest >= 0 ? nodes[stack[deepest]] : null;
   if (now) {
     now.classList.add('fv-now');
     if (now.classList.contains('fv-in-recovery')) now.classList.add('fv-now-recovery');

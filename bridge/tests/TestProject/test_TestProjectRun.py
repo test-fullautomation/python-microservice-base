@@ -90,6 +90,40 @@ FLOW_FAILING_LOOP = {
               {"from": "loop", "to": "end", "label": "done"}],
 }
 
+# A decision whose 'yes' branch is not taken.
+FLOW_DECISION = {
+    "flow": {"name": "Decision", "version": 1},
+    "variables": {"MODE": "ENV"},
+    "nodes": [
+        {"id": "start", "kind": "start"},
+        {"id": "choose", "kind": "decision", "condition": "$MODE == 'EMC'"},
+        {"id": "taken_yes", "kind": "keyword", "keyword": "Log", "args": ["EMC"]},
+        {"id": "skipped_no", "kind": "keyword", "keyword": "Log", "args": ["ENV"]},
+        {"id": "end", "kind": "end"},
+    ],
+    "edges": [["start", "choose"], {"from": "choose", "to": "taken_yes", "label": "yes"},
+              {"from": "choose", "to": "skipped_no", "label": "no"},
+              ["taken_yes", "end"], ["skipped_no", "end"]],
+}
+
+# A sub-flow called twice.
+SUBFLOW_POWER = {
+    "flow": {"name": "Power"},
+    "variables": {"VOLTS": 12},
+    "nodes": [{"id": "start", "kind": "start"},
+              {"id": "on", "kind": "keyword", "keyword": "Log", "args": ["on at ${VOLTS} V"]},
+              {"id": "end", "kind": "end"}],
+    "edges": [["start", "on"], ["on", "end"]],
+}
+FLOW_CALLS_SUBFLOW = {
+    "flow": {"name": "Calls A Subflow"},
+    "nodes": [{"id": "start", "kind": "start"},
+              {"id": "first", "kind": "flow", "file": "sub/power.flow.json"},
+              {"id": "second", "kind": "flow", "file": "sub/power.flow.json", "args": {"VOLTS": 9}},
+              {"id": "end", "kind": "end"}],
+    "edges": [["start", "first"], ["first", "second"], ["second", "end"]],
+}
+
 
 def _write(root, rel, text):
     path = os.path.join(str(root), *rel.split("/"))
@@ -338,6 +372,29 @@ class Test_Flow:
         assert st["verdict"] == "pass", st["all_lines"]
         assert not any("Unexpected error" in line for line in st["all_lines"]), st["all_lines"]
         assert st["position"]["done"] is True
+
+    def test_position_shows_the_decision_not_the_branch_it_skipped(self, project):
+        """Robot reports the steps of a branch it does not take too ('NOT RUN');
+        they were never entered. The decision itself is shown."""
+        tp.set_run_settings(str(project), {"pythonpath": [FLOW_SRC]})
+        _write(project, "testsuites/plan.flow.json", json.dumps(FLOW_DECISION))
+        st = _wait(project, tp.RUNS.start(str(project), "testsuites/plan.flow.json")["id"])
+        assert st["verdict"] == "pass", st["all_lines"]
+        pos = st["position"]
+        assert [n for _, n in pos["trail"]] == ["choose", "skipped_no"]
+        assert "taken_yes" not in pos["counts"]
+        assert pos["counts"]["choose"] == {"pass": 1, "fail": 0}
+
+    def test_position_inside_a_subflow_names_it(self, project):
+        """Steps of a sub-flow are '<sub-flow name>::<id>': its ids are its own file's."""
+        tp.set_run_settings(str(project), {"pythonpath": [FLOW_SRC]})
+        _write(project, "testsuites/sub/power.flow.json", json.dumps(SUBFLOW_POWER))
+        _write(project, "testsuites/plan.flow.json", json.dumps(FLOW_CALLS_SUBFLOW))
+        st = _wait(project, tp.RUNS.start(str(project), "testsuites/plan.flow.json")["id"])
+        assert st["verdict"] == "pass", st["all_lines"]
+        trail = [n for _, n in st["position"]["trail"]]
+        assert trail == ["first", "Power::on", "second", "Power::on"]
+        assert st["position"]["counts"]["Power::on"] == {"pass": 2, "fail": 0}
 
     def test_dry_run_has_no_position(self, project):
         tp.set_run_settings(str(project), {"pythonpath": [FLOW_SRC]})

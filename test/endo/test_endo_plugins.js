@@ -166,6 +166,33 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
     check('flow-view: marker ids differ between drawings', new Set(markers).size === markers.length, markers);
   }
 
+  // ---------- flow-view: sub-flows ----------
+  {
+    const act = (id, keyword) => ({ id, kind: 'keyword', keyword, args: [] });
+    const inner = { id: 'deep', kind: 'flow', file: 'deeper.flow.json', args: {},
+                    subflow: { name: 'Deeper', steps: [act('z', 'Log')] } };
+    const call = { id: 'power', kind: 'flow', file: 'sub/power.flow.json', args: { VOLTS: '${V}' },
+                   subflow: { name: 'Power', steps: [act('on', 'Power On'),
+                     { id: 'd', kind: 'decision', condition: '$X', yes: [act('y', 'Log')], no: [] }, inner] } };
+    const broken = { id: 'bad', kind: 'flow', file: 'nope.flow.json', args: {}, subflow: { name: null, error: 'not found' } };
+    const flow = { name: 's', tests: [{ role: 'test', name: 't', steps: [call, broken] }] };
+    const ids = (svg) => [...svg.matchAll(/data-node="([^"]+)"/g)].map((x) => x[1]);
+    const closed = F.render(flow);
+    check('flow-view sub-flow: closed, only the call box is drawn', JSON.stringify(ids(closed)) === '["power","bad"]', ids(closed));
+    check('flow-view sub-flow: drawn as a predefined process with its arguments',
+          (closed.match(/class="fv-bar"/g) || []).length === 4 && closed.includes('VOLTS=${V}'));
+    check('flow-view sub-flow: an opener only where the sub-flow could be read',
+          /data-toggle="power"/.test(closed) && !/data-toggle="bad"/.test(closed));
+    check('flow-view sub-flow: a sub-flow that cannot be read shows why', /fv-error[^>]*data-node="bad"/.test(closed) && closed.includes('not found'));
+    const open = F.render(flow, { expanded: { power: true } });
+    check('flow-view sub-flow: opened, its steps carry the runner\'s "<name>::<id>"',
+          JSON.stringify(ids(open)) === '["power","Power::on","Power::d","Power::y","Power::deep","bad"]', ids(open));
+    check('flow-view sub-flow: a nested sub-flow stays closed until opened itself', /data-toggle="Power::deep"/.test(open) && !open.includes('Deeper::z'));
+    const both = F.render(flow, { expanded: { power: true, 'Power::deep': true } });
+    check('flow-view sub-flow: a nested one opens with its own name', ids(both).includes('Deeper::z'), ids(both));
+    check('flow-view sub-flow: sizes are finite', !/NaN|undefined|Infinity/.test(open + both));
+  }
+
   // ---------- flow-view: a run group ----------
   {
     const act = (id, keyword, args) => ({ id, kind: 'action', keyword, args: args || [] });

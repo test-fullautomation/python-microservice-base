@@ -74,7 +74,7 @@ check('normalize refuses leaving the root', SDK.normalize('../x.js') === null &&
   const files = {};
   const load = (p) => { if (files[p]) return; files[p] = fs.readFileSync(path.join(base, p), 'utf-8'); SDK.importsOf(p, files[p]).forEach(load); };
   load('view.js');
-  check('flow-view ships view, flow, style and live', Object.keys(files).sort().join() === 'flow.js,live.js,style.js,view.js', Object.keys(files));
+  check('flow-view ships view, flow, style, live and edit', Object.keys(files).sort().join() === 'edit.js,flow.js,live.js,style.js,view.js', Object.keys(files));
   const host = fs.readFileSync(path.join(GUI, 'web', 'js', 'endo', 'frame-host.js'), 'utf-8');
   check('reveal reaches the host view as plain data, also while suspended',
         /case 'reveal':[\s\S]{0,200}spec\.onReveal\(JSON\.parse\(JSON\.stringify/.test(host) && /msg\.method !== 'reveal'/.test(host));
