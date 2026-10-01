@@ -6456,7 +6456,7 @@
         st.cacheRes = fresh;
         if (fresh.ok && _tpvFileView && _tpvFileView.setData) _tpvFileView.setData(_tpvViewData(view, fresh));
         else if (!fresh.ok) _tpvDrawView(view, fresh);
-        return { ok: true, line: res.line, undo: (ed.viewUndo || []).length };
+        return { ok: true, line: res.line, node: res.node, undo: (ed.viewUndo || []).length };
       });
     });
   }

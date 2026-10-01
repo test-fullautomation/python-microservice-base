@@ -37,6 +37,44 @@ const STYLE = `
 .flow-view .fv-frame { fill: none; stroke-width: 1.3; stroke-dasharray: 6 4; }
 .flow-view .fv-frame-loop { stroke: #b9a3d6; }
 .flow-view .fv-frame-try { stroke: #aab7c4; }
+.flow-view .fv-flow rect { fill: #eef3fb; stroke: #4a6fa5; stroke-width: 1.8; }
+.flow-view .fv-flow .fv-bar { stroke: #4a6fa5; stroke-width: 1.4; }
+.flow-view .fv-frame-flow { stroke: #9fb4d6; }
+.flow-view .fv-toggle { cursor: pointer; }
+.flow-view .fv-toggle rect { fill: #ffffff; stroke: #4a6fa5; stroke-width: 1.2; }
+.flow-view .fv-toggle text { font: 700 14px system-ui, sans-serif; fill: #4a6fa5; text-anchor: middle; pointer-events: none; }
+.flow-view .fv-toggle:hover rect, .flow-view .fv-toggle:focus-visible rect { fill: #e3ecf8; stroke-width: 2; }
+/* Editing (edit.js) */
+.fv-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; font: 13px system-ui, sans-serif; }
+.fv-palette { display: flex; flex-wrap: wrap; gap: 5px; margin-right: 6px; }
+.fv-chip { padding: 3px 10px; border: 1px solid #b8c4cc; border-radius: 14px; background: #fff; cursor: grab; user-select: none; touch-action: none; }
+.fv-chip:hover { border-color: #127A69; color: #127A69; }
+.fv-chip-gate { border-color: #1a9c83; } .fv-chip-decision { border-color: #c9a227; }
+.fv-chip-loop { border-color: #7d5ba6; } .fv-chip-flow { border-color: #4a6fa5; }
+.fv-btn { font: 13px system-ui, sans-serif; padding: 3px 10px; border: 1px solid #b8c4cc; border-radius: 6px; background: #fff; cursor: pointer; }
+.fv-btn:hover:not([disabled]) { border-color: #127A69; }
+.fv-btn[disabled] { opacity: .45; cursor: default; }
+.fv-btn-primary { background: #127A69; border-color: #127A69; color: #fff; }
+.fv-btn-danger { color: #b3261e; border-color: #e3b6b2; }
+.fv-msg { color: #5d6d7e; margin-left: 4px; }
+.fv-msg-error { color: #b3261e; font-weight: 600; }
+.fv-panel { border: 1px solid #dfe6ea; border-radius: 8px; background: #f8fafb; padding: 8px 10px; margin: 0 0 8px; font: 13px system-ui, sans-serif; }
+.fv-fields { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0; }
+.fv-field { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
+.fv-field span { color: #5d6d7e; font-size: 12px; }
+.fv-field input, .fv-field select, .fv-field textarea { font: 13px Consolas, monospace; padding: 3px 5px; border: 1px solid #b8c4cc; border-radius: 4px; }
+.fv-field textarea { min-width: 260px; }
+.fv-actions { display: flex; gap: 6px; }
+.fv-muted { color: #8a99a6; font-family: Consolas, monospace; }
+.flow-view .fv-drop { cursor: copy; }
+.flow-view .fv-drop circle { fill: #ffffff; stroke: #127A69; stroke-width: 1.4; stroke-dasharray: 3 2; }
+.flow-view .fv-drop text { font: 700 13px system-ui, sans-serif; fill: #127A69; text-anchor: middle; pointer-events: none; }
+.fv-dragging .flow-view .fv-drop circle { fill: #e6f5f1; stroke-dasharray: none; }
+.flow-view .fv-drop.fv-drop-hot circle { fill: #127A69; r: 12; }
+.flow-view .fv-drop.fv-drop-hot text { fill: #ffffff; }
+.fv-edit .flow-view .fv-node { cursor: grab; }
+.flow-view .fv-selected rect, .flow-view .fv-selected polygon { stroke: #127A69 !important; stroke-width: 3 !important; }
+.fv-ghost { position: fixed; z-index: 10; pointer-events: none; padding: 4px 10px; border-radius: 6px; background: #127A69; color: #fff; font: 600 12px system-ui, sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
 .flow-view .fv-rec-zone { fill: #fffaf0; stroke: #e8c690; stroke-dasharray: 4 4; }
 
 .flow-view .fv-pill rect { fill: #ffffff; stroke: #1a252f; stroke-width: 1.3; }

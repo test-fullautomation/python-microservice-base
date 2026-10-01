@@ -391,10 +391,16 @@ class RobotAioRunner(TestProjectRunner):
 
     def edit_view(self, root, layout, rel_path, content, view_id, edit, settings: RunSettings):
         """A step changed in the Grid: Robot's own model applies it (``robot_grid.py
-        --edit``), so what the edit does not touch is written back as it was."""
-        if view_id != "grid" or not str(rel_path).lower().endswith(_GRID_SUFFIXES):
-            return {"ok": False, "error": f"{rel_path} is not edited in a {view_id} view."}
+        --edit``), so what the edit does not touch is written back as it was.
+        A step dropped or changed in a flow's Diagram: ``flow_inspect.py --edit``
+        rewires the flow and has the fork's validator accept it first."""
+        lower = str(rel_path).lower()
         payload = json.dumps({"text": content, "edit": edit})
+        if view_id == "diagram" and lower.endswith(FLOW_SUFFIX):
+            data = self._run_helper(_INSPECT, root, rel_path, payload, settings, "the edit", flags=["--edit"])
+            return {k: data.get(k) for k in ("ok", "text", "node", "error", "missing") if k in data}
+        if view_id != "grid" or not lower.endswith(_GRID_SUFFIXES):
+            return {"ok": False, "error": f"{rel_path} is not edited in a {view_id} view."}
         data = self._run_helper(_GRID, root, rel_path, payload, settings, "the edit", flags=["--edit"])
         return {k: data.get(k) for k in ("ok", "text", "line", "error", "missing") if k in data}
 

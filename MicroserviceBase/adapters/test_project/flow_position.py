@@ -88,6 +88,12 @@ def _stamping(emit):
         node = getattr(step, "id", None) or getattr(getattr(step, "node", None), "id", None)
         if node is None:
             return
+        # Inside a sub-flow the ids are the sub-flow file's own; its name is
+        # unique in the suite, so '<name>::<id>' tells them apart.
+        calling = getattr(self, "_calling", None)
+        if calling:
+            name = getattr(self, "_subflows", {}).get(calling[-1], ("",))[0]
+            node = "%s::%s" % (name[len("Flow: "):] if name.startswith("Flow: ") else name, node)
         # A loop builds its deadline, the WHILE and nothing else at this level;
         # every other kind builds exactly one item. Nested steps were stamped
         # by their own emitter already.
@@ -95,6 +101,12 @@ def _stamping(emit):
             if getattr(item, "lineno", None) is None or item.lineno < BASE:
                 item.lineno = BASE + len(NODES)
                 NODES.append(str(node))
+                # Listeners never hear of an IF's root, only of its branches:
+                # they carry the decision's node, so the taken one shows it.
+                if getattr(item, "type", None) == "IF/ELSE ROOT":
+                    for branch in item.body:
+                        if getattr(branch, "lineno", None) is None or branch.lineno < BASE:
+                            branch.lineno = item.lineno
     return wrapper
 
 
@@ -172,10 +184,16 @@ def start_suite(name, attrs):
         _state["source"] = attrs["source"]
 
 
+def _not_run(attrs):
+    # Robot reports the steps of a branch it does not take as well, 'NOT RUN'
+    # already at their start: they were never entered.
+    return attrs.get("status") == "NOT RUN"
+
+
 def start_keyword(name, attrs):
     global _step
     node = _node(attrs)
-    if node is None or not _main_thread():
+    if node is None or not _main_thread() or _not_run(attrs):
         return
     stack = _state["stack"]
     if not stack or stack[-1] != node:
@@ -189,7 +207,7 @@ def start_keyword(name, attrs):
 
 def end_keyword(name, attrs):
     node = _node(attrs)
-    if node is None or not _main_thread():
+    if node is None or not _main_thread() or _not_run(attrs):
         return
     stack = _state["stack"]
     if stack and stack[-1] == node:

@@ -3,7 +3,7 @@
   "plugin": "flow-view",
   "version": "1.0.0",
   "title": "Flow view",
-  "description": "The Diagram tab of flow files and run groups in the project view: phases, loops, tries and decisions drawn from the runner's own structure of the flow; for a run group, every member's flow and where they wait for each other. Click a node to find it in the file.",
+  "description": "The Diagram tab of flow files and run groups in the project view: phases, loops, tries and decisions drawn from the runner's own structure of the flow; for a run group, every member's flow and where they wait for each other. Click a node to find it in the file; a sub-flow opens in place with its + button. With the file open in Script, Edit flow lets you drag steps in from a palette, move them, change their fields, delete them or wrap them in a loop or try -- every change is checked by the runner and lands in Script as an unsaved edit.",
   "requires": { "shell": "^2.3", "capabilities": [] },
   "isolation": "frame",
   "contributes": {

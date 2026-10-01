@@ -51,16 +51,32 @@ function max(list, fn) {
 // Every layout is { w, h, cx, kind, svg(x, y) }: cx is where the incoming
 // arrow enters (top) and the outgoing one leaves (bottom).
 
+// Edit mode: a place a step can be dropped -- before a node, after the last
+// one of a region, or into an empty decision branch (flow_edit.py's places).
+function dropZone(ctx, x, y, place) {
+  if (!ctx.edit) return '';
+  return '<g class="fv-drop" data-drop="' + esc(JSON.stringify(place)) + '"><title>Drop a step here</title>' +
+    '<circle cx="' + x + '" cy="' + y + '" r="9"/><text x="' + x + '" y="' + (y + 4) + '">+</text></g>';
+}
+
+function ownId(id) {
+  // Steps of an opened sub-flow belong to its own file: not edited here.
+  return id != null && String(id).indexOf('::') < 0;
+}
+
 function sequence(steps, ctx, inRecovery) {
-  var items = (steps || []).map(function (s) { return step(s, ctx, inRecovery); });
+  steps = steps || [];
+  var items = steps.map(function (s) { return step(s, ctx, inRecovery); });
   if (!items.length) {
     return { w: 40, h: 0, cx: 20, empty: true, svg: function () { return ''; } };
   }
   var cx = max(items, function (i) { return i.cx; });
   var right = max(items, function (i) { return i.w - i.cx; });
   var h = items.reduce(function (a, i) { return a + i.h; }, 0) + VG * (items.length - 1);
+  var last = steps[steps.length - 1];
+  var tail = ctx.edit && ownId(last.id) && last.kind !== 'decision';
   return {
-    w: cx + right, h: h, cx: cx,
+    w: cx + right, h: h + (tail ? VG : 0), cx: cx,
     svg: function (x, y) {
       var out = '';
       var yy = y;
@@ -69,8 +85,13 @@ function sequence(steps, ctx, inRecovery) {
           out += ctx.arrow(x + cx, yy - VG, x + cx, yy, items[k - 1].kind === 'loop' ? 'done' : '', '');
         }
         out += it.svg(x + cx - it.cx, yy);
+        if (ownId(steps[k].id)) {
+          // Drawn after the step so the frame of a loop or try does not cover it.
+          out += dropZone(ctx, x + cx, yy - VG / 2, { before: steps[k].id });
+        }
         yy += it.h + VG;
       });
+      if (tail) out += dropZone(ctx, x + cx, yy - VG / 2, { after: last.id });
       return out;
     }
   };
@@ -79,11 +100,24 @@ function sequence(steps, ctx, inRecovery) {
 function step(s, ctx, inRecovery) {
   if (s.kind === 'loop' || s.kind === 'try') return guarded(s, ctx, inRecovery);
   if (s.kind === 'decision') return decision(s, ctx, inRecovery);
+  if (s.kind === 'flow') return subflow(s, ctx, inRecovery);
   return action(s, ctx, inRecovery);
+}
+
+function callArgs(s) {
+  var args = s.args && !Array.isArray(s.args) ? s.args : {};
+  return Object.keys(args).map(function (k) { return k + '=' + args[k]; }).join('  ');
 }
 
 function tip(s) {
   var parts = [s.id + ' (' + s.kind + ')'];
+  if (s.kind === 'flow') {
+    parts.push('sub-flow ' + ((s.subflow && s.subflow.name) || '') + ' · ' + (s.file || ''));
+    if (callArgs(s)) parts.push(callArgs(s));
+    if (s.subflow && s.subflow.error) parts.push('problem: ' + s.subflow.error);
+    parts.push('Click to find it in the file; ＋ / − opens or closes it here');
+    return parts.join('\n');
+  }
   if (s.keyword) parts.push(s.keyword + ((s.args || []).length ? '  ' + s.args.join('  ') : ''));
   if ((s.assign || []).length) parts.push('assign ' + s.assign.join(', '));
   if (s.kind === 'gate') parts.push('timeout ' + s.timeout + ', every ' + (s.interval || '2s') + ', else ' + (s.on_timeout || 'unknown'));
@@ -149,7 +183,7 @@ function decision(s, ctx, inRecovery) {
   var cx = (ax + bx) / 2;                          // diamond between the branches
   var w = aw + CG + bw;
   var top = NH + VG;
-  var bh = Math.max(A.h, B.h);
+  var bh = Math.max(A.h, B.h, ctx.edit && (A.empty || B.empty) ? 20 : 0);
   var h = top + bh + VG;
   return {
     w: w, h: h, cx: cx, kind: 'decision',
@@ -167,6 +201,10 @@ function decision(s, ctx, inRecovery) {
       out += ctx.path('M' + (dx + NW / 2) + ',' + (y + NH / 2) + ' H' + noX + ' V' + (y + top), '', 'no',
                       dx + NW / 2 + 8, y + NH / 2 - 6);
       out += A.svg(yesX - A.cx, y + top) + B.svg(noX - B.cx, y + top);
+      if (ownId(s.id)) {
+        if (A.empty) out += dropZone(ctx, yesX, y + top + 6, { branch: { decision: s.id, label: 'yes' } });
+        if (B.empty) out += dropZone(ctx, noX, y + top + 6, { branch: { decision: s.id, label: 'no' } });
+      }
       out += ctx.line('M' + yesX + ',' + (y + top + A.h) + ' V' + joinY + ' H' + dx + ' V' + (y + h), '');
       out += ctx.line('M' + noX + ',' + (y + top + B.h) + ' V' + joinY + ' H' + dx, '');
       return out;
@@ -232,7 +270,70 @@ function guarded(s, ctx, inRecovery) {
   };
 }
 
-function makeCtx(errorNode) {
+// A sub-flow's steps carry ids of their own file. The runner reports a
+// position inside a sub-flow as '<sub-flow name>::<id>' (the name is unique
+// in a suite), so the drawn ids get the same prefix. A nested sub-flow keeps
+// its own steps unprefixed here; they get its name when it is opened.
+function prefixed(steps, name) {
+  return (steps || []).map(function (s) {
+    var c = Object.assign({}, s, { id: name + '::' + s.id });
+    ['yes', 'no', 'body', 'recovery'].forEach(function (k) {
+      if (Array.isArray(s[k])) c[k] = prefixed(s[k], name);
+    });
+    return c;
+  });
+}
+
+// "Predefined process": a box with a bar inside each side.
+function subflowShape(x, y) {
+  return '<rect x="' + x + '" y="' + y + '" width="' + NW + '" height="' + NH + '" rx="4"/>' +
+    '<line class="fv-bar" x1="' + (x + 10) + '" y1="' + y + '" x2="' + (x + 10) + '" y2="' + (y + NH) + '"/>' +
+    '<line class="fv-bar" x1="' + (x + NW - 10) + '" y1="' + y + '" x2="' + (x + NW - 10) + '" y2="' + (y + NH) + '"/>';
+}
+
+function toggle(id, x, y, open) {
+  return '<g class="fv-toggle" data-toggle="' + esc(id) + '" tabindex="0" role="button" aria-label="' +
+    (open ? 'Close' : 'Open') + ' the sub-flow"><title>' + (open ? 'Close' : 'Open') + ' the sub-flow here</title>' +
+    '<rect x="' + (x + NW - 36) + '" y="' + (y + 5) + '" width="20" height="20" rx="4"/>' +
+    '<text x="' + (x + NW - 26) + '" y="' + (y + 20) + '">' + (open ? '−' : '+') + '</text></g>';
+}
+
+function subflow(s, ctx, inRecovery) {
+  var info = s.subflow || {};
+  var name = info.name || s.file || s.id;
+  var sub = info.error ? '⚠ ' + info.error : (callArgs(s) || 'sub-flow');
+  var canOpen = !info.error && Array.isArray(info.steps);
+  var open = canOpen && !!(ctx.expanded || {})[s.id];
+  var extra = (inRecovery ? ' fv-in-recovery' : '') + (info.error ? ' fv-error' : '');
+  function head(x, y) {
+    ctx.at(s.id, x, y, NW, NH);
+    return nodeOpen(s, ctx, extra) + subflowShape(x, y) + labels(x, y, NW, NH, name, sub) + '</g>' +
+      (canOpen ? toggle(s.id, x, y, open) : '');
+  }
+  if (!open) {
+    return { w: NW, h: NH, cx: NW / 2, kind: 'flow', svg: head };
+  }
+  var body = sequence(prefixed(info.steps, name), ctx, inRecovery);
+  var cx = Math.max(PAD + body.cx, NW / 2 + PAD);
+  var w = cx + Math.max(body.w - body.cx, NW / 2) + PAD;
+  var bodyY = NH + VG;
+  var h = bodyY + body.h + PAD + 10;
+  return {
+    w: w, h: h, cx: cx, kind: 'flow',
+    svg: function (x, y) {
+      var bodyTop = y + bodyY;
+      var out = '<rect class="fv-frame fv-frame-flow" x="' + x + '" y="' + (y + NH / 2) +
+        '" width="' + w + '" height="' + (h - NH / 2) + '" rx="10"/>';
+      out += head(x + cx - NW / 2, y);
+      out += ctx.arrow(x + cx, y + NH, x + cx, bodyTop, '', '');
+      out += body.svg(x + cx - body.cx, bodyTop);
+      out += ctx.line('M' + (x + cx) + ',' + (bodyTop + body.h) + ' V' + (y + h), '');
+      return out;
+    }
+  };
+}
+
+function makeCtx(errorNode, expanded, edit) {
   var id = 'fv' + (++_renders);
   var markers = { '': id + 'm', next: id + 'n', fail: id + 'f', cont: id + 'f' };
   function marker(kind) { return 'url(#' + markers[kind || ''] + ')'; }
@@ -244,6 +345,8 @@ function makeCtx(errorNode) {
   }
   return {
     error: errorNode,
+    expanded: expanded || {},   // sub-flow call id -> true when opened in place
+    edit: !!edit,               // draw drop zones
     pos: {},
     at: function (nodeId, x, y, w, h) { this.pos[nodeId] = { x: x, y: y, w: w, h: h }; },
     syncMarker: 'url(#' + id + 's)',
@@ -329,12 +432,12 @@ function layoutFlow(flow, ctx) {
 /**
  * SVG markup of a flow.
  * @param {object} flow  {name, setup, tests[], teardown} as the runner reports it
- * @param {object} [opts] {error: node id to mark}
+ * @param {object} [opts] {error: node id to mark, expanded: {sub-flow call id: true}, edit: drop zones}
  * @returns {string}
  */
 export function render(flow, opts) {
   opts = opts || {};
-  var ctx = makeCtx(opts.error || null);
+  var ctx = makeCtx(opts.error || null, opts.expanded, opts.edit);
   var lay = layoutFlow(flow, ctx);
   if (!lay) return '';
   return '<svg class="flow-view" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + lay.W + ' ' + lay.H +
