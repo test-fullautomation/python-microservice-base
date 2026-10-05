@@ -46,6 +46,14 @@ The **Diagram** tab of flow files in the project view.
   bottom })`, for a group `{ follow, nodes }`) so the host can keep it in
   view; sideways, at 75% / 100%, the frame does that itself.
 
+- **Breakpoints** (a host that debugs, such as the VS Code extension):
+  `breakpoints` (ids of the steps that have one, an opened sub-flow's as
+  `<sub-flow>::<id>`) and `paused` (the step the run is stopped at) with the
+  data, and `ctx.breakpoint(id)`. Every step gets a dot at its top-left
+  corner -- faint on hover, red when set -- that asks the host to set or
+  remove one; the paused step is drawn amber (`breakpoints.js`). Without
+  `breakpoints` nothing is drawn, so the Manager GUI looks as before.
+
 Runs in a sandboxed frame and needs no capability: the project view pushes
 the runner's data as the frame's selection (`{ flow, error?, live?, zoom? }`,
 or `{ members, links, live?, zoom? }` for a group), and the view only draws
