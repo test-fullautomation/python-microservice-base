@@ -400,11 +400,12 @@
    */
   function applyGroups(stage, entries, groups, opts) {
     opts = opts || {};
-    var byTile = {};
+    // Keyed by ids from component.json: no inherited keys ("constructor", ...).
+    var byTile = Object.create(null);
     (groups || []).forEach(function (g) {
       (g && Array.isArray(g.tiles) ? g.tiles : []).forEach(function (t) { if (!byTile[t]) byTile[t] = g; });
     });
-    var state = {};   // group id -> { open, members: [{ section, gate }], head }
+    var state = Object.create(null);   // group id -> { open, members: [{ section, gate }], head }
     var out = entries.map(function (e) {
       var g = byTile[e.tileId];
       if (!g) return e.instance;

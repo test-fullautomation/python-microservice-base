@@ -299,7 +299,7 @@
                manifest.component.indexOf(manifest.layer + '.') !== 0) {
       add('R8', 'error', 'component', 'must start with "' + manifest.layer + '." (its layer)');
     }
-    var seenTiles = {};
+    var seenTiles = Object.create(null);
     (manifest.tiles || []).forEach(function (t, i) {
       if (t && t.id) {
         if (seenTiles[t.id]) add('R8', 'error', 'tiles[' + i + '].id', 'duplicate tile id "' + t.id + '"');
@@ -308,7 +308,7 @@
     });
 
     // Groups (rule S): unique ids, each naming tiles of this component, a tile in one group at most.
-    var seenGroups = {}, groupOf = {};
+    var seenGroups = Object.create(null), groupOf = Object.create(null);
     (Array.isArray(manifest.groups) ? manifest.groups : []).forEach(function (g, gi) {
       if (!g || typeof g !== 'object') return;
       var gp = 'groups[' + gi + ']';
@@ -448,7 +448,7 @@
   /** Lint several components together: adds cross-component duplicates (R8). */
   function lintComponents(manifests, opts) {
     var issues = [];
-    var seen = {};
+    var seen = Object.create(null);
     (manifests || []).forEach(function (m) {
       issues = issues.concat(lintComponent(m, opts));
       var id = m && m.component;
@@ -487,7 +487,7 @@
 
     // P2: namespaced ids; ribbon commands name declared commands.
     var c = manifest.contributes || {};
-    var cmdIds = {};
+    var cmdIds = Object.create(null);
     (Array.isArray(c.commands) ? c.commands : []).forEach(function (cmd, i) {
       var p = 'contributes.commands[' + i + ']';
       if (!cmd || typeof cmd.id !== 'string') return;
@@ -506,7 +506,7 @@
       });
     });
     ['navigators', 'stage.views', 'dock.sections', 'drawer.tabs', 'file.views'].forEach(function (point) {
-      var seen = {};
+      var seen = Object.create(null);
       (Array.isArray(c[point]) ? c[point] : []).forEach(function (e, i) {
         if (!e || !e.id) return;
         if (seen[e.id]) add('P2', 'error', 'contributes["' + point + '"][' + i + '].id', 'duplicate id "' + e.id + '"');
@@ -521,7 +521,7 @@
       if (!e.entry) add('S', 'error', p, 'a file view is a module: give it an entry');
       if (!Array.isArray(e.for) || !e.for.length) add('S', 'error', p + '.for', 'name the view types it draws, e.g. ["flow-graph"]');
     });
-    var kseen = {};
+    var kseen = Object.create(null);
     (Array.isArray(c.kinds) ? c.kinds : []).forEach(function (k, i) {
       if (!k || !k.kind) return;
       if (CORE_KINDS.indexOf(k.kind) >= 0) add('P2', 'error', 'contributes.kinds[' + i + '].kind', '"' + k.kind + '" is a core kind');
@@ -575,7 +575,7 @@
       else if (!sat) add('R9', 'error', 'shell', 'needs shell ' + comp.shell + ', this shell is ' + shell);
     }
 
-    var seen = {};
+    var seen = Object.create(null);
     (Array.isArray(comp.components) ? comp.components : []).forEach(function (e, i) {
       var p = 'components[' + i + ']';
       if (typeOf(e) !== 'object') return;
@@ -588,7 +588,7 @@
       var key = e.service + '|' + (e.gui || '');
       if (seen[key]) add('C', 'warn', p, 'lists ' + e.service + ' again; its tiles would appear twice');
       seen[key] = true;
-      var tseen = {};
+      var tseen = Object.create(null);
       (Array.isArray(e.tiles) ? e.tiles : []).forEach(function (t, j) {
         if (tseen[t]) add('C', 'warn', p + '.tiles[' + j + ']', 'tile "' + t + '" is listed twice');
         tseen[t] = true;
@@ -597,7 +597,7 @@
     if (Array.isArray(comp.components) && !comp.components.length) {
       add('C', 'warn', 'components', 'is empty; the bench shows nothing');
     }
-    var oseen = {};
+    var oseen = Object.create(null);
     (Array.isArray(comp.order) ? comp.order : []).forEach(function (o, i) {
       if (oseen[o]) add('C', 'warn', 'order[' + i + ']', '"' + o + '" is listed twice');
       oseen[o] = true;

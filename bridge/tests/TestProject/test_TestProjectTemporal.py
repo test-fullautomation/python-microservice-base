@@ -222,6 +222,17 @@ class Test_RunSide:
         assert bad["message"] == "AssertionError: assert 1 == 2" and bad["elapsed_s"] == 1.25
         assert tp.get_runner(RUNNER).read_results(str(tmp_path / "none"), None).verdict == "error"
 
+    def test_a_stopped_run_is_not_a_pass(self, tmp_path):
+        """Stop ends a pytest run after the running test: the ones before passed,
+        the rest never ran -- that is no pass."""
+        _write(tmp_path, "junit.xml", """<?xml version="1.0"?>
+<testsuites><testsuite name="pytest" tests="1">
+  <testcase classname="tests.a_test" name="test_ok" time="0.5"/>
+</testsuite></testsuites>""")
+        res = tp.get_runner(RUNNER).read_results(str(tmp_path), None)
+        assert res.verdict == "unknown" and res.counts["pass"] == 1
+        assert res.message.startswith("Stopped on request")
+
     def test_dry_run_through_the_run_manager(self, project):
         """The engine runs whatever the runner plans: pytest collects the tests."""
         run = tp.RUNS.start(str(project), TEST, dryrun=True)

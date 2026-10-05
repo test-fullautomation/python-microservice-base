@@ -163,6 +163,11 @@
             };
             document.head.appendChild(script);
           });
+        })
+        .catch(function (err) {
+          // It did not start: its gRPC route must not outlive it.
+          if (route && !(_instances[serviceName] && _instances[serviceName].route === route)) route.remove();
+          throw err;
         });
     },
 

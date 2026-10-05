@@ -203,7 +203,7 @@
       });
     })).then(function (mods) {
       // Two services must not bring the same component id (R8).
-      var seen = {};
+      var seen = Object.create(null);   // component ids: no inherited keys
       mods.forEach(function (m) {
         if (m.state !== 'ok') return;
         var id = m.manifest.component;
