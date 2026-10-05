@@ -172,11 +172,13 @@ instead of showing an empty panel.
 **A folder may ship both.** When it holds a `component.json` *and* a
 classic panel (`<Name>.html`, `ServiceUI.qml`, `ServiceUI.ui`, a Qt WASM
 build or `gui_schema.json`), the component is what opens, and
-**Developer → Selected service → Classic panel** switches that service to
-the other one. The choice is remembered per service (`mm_classic_panel` in
-local storage), so the service opens that way from the sidebar until it is
-switched back; the button is greyed out for a folder that ships only one
-kind. The bench dock offers the same switch through **Open classic
+**User → Service view → Tiles | Service window** switches that service
+between the two; the pressed button shows which is on screen. The choice is
+remembered per service (`mm_classic_panel` in local storage), so the service
+opens that way from the sidebar until it is switched back; both buttons are
+greyed out for a folder that ships only one kind. They sit on the User tab
+because the service window is an operator's screen (e.g. a Qt service's own
+window built for WebAssembly), available in every view role. The bench dock offers the same switch through **Open classic
 panel**.
 
 ### Component manifests (`component.json`)
@@ -206,6 +208,72 @@ chart, the capabilities it uses and the tiles it shows:
   (rows from an RPC, or static `rows`), `log` (server-streaming RPC) and
   `run-status`. **Sizes** on the 4-column stage: `1x1`, `2x1`, `2x2` and
   `4x1`.
+- **Dropdowns in a form.** A form field (of a `command-form` tile or a ribbon
+  command) becomes a dropdown with `options`, a fixed list, or with
+  `optionsFrom`, a list the service gives. `current` preselects the
+  service's present value; a ↻ next to the dropdown reads it again.
+
+  ```json
+  "form": {
+    "type":  { "type": "int",
+               "options": [{ "value": 0, "label": "RS232" }, { "value": 1, "label": "client" }] },
+    "index": { "type": "int",
+               "optionsFrom": { "count": { "rpc": "GetDeviceType_ListCount", "path": "index" },
+                                "name":  { "rpc": "GetDeviceType_Name", "arg": "index", "path": "name" } },
+               "current": { "rpc": "GetDeviceType", "path": "index" },
+               "reloadAfter": ["SetDeviceType"] },
+    "mode":  { "type": "string",
+               "optionsFrom": { "rpc": "ListModes", "path": "modes", "value": "id", "label": "name" } }
+  }
+  ```
+
+  `optionsFrom` is either a list RPC (`rpc`, `path` to the array, `value`
+  / `label` paths per item) or a range of indexes from a count RPC (`count`;
+  indexes 0 to count−1, or set `first`, and `inclusive` when the count is
+  the highest index), each named by an optional `name` RPC. An argument can
+  come from another RPC:
+  `"args": { "index": { "$from": { "rpc": "GetDeviceType", "path": "index" } } }`
+  — the sub-device list of the selected device type. Lists stop at 256
+  choices, and names are read one at a time (a device may not take parallel
+  requests).
+- **Linked dropdowns.** `reloadAfter` lists RPCs after whose successful call
+  the dropdown reads its choices and current value again — from its own tile,
+  another tile of the same component or a ribbon command. Give the
+  sub-device dropdown `"reloadAfter": ["SetDeviceType"]` and it follows a new
+  device type as soon as *Set device type* is run, with no ↻ needed.
+  The link follows what the service has **set**, not what is picked in
+  another tile: services such as the BITS ones list the sub-device types of
+  the device type they currently have.
+- `python -m MicroserviceBase.tools.ui_component` writes dropdowns from a
+  service's protos: choices listed in a field's comment
+  (`0-> RS232; 1-> client`), `Get<X>_ListCount` / `Get<X>_Name` / `Get<X>`
+  RPCs (indexes 0 to count−1, as the service's own combo boxes fill them;
+  "max index" or "1-n" comments are not trusted, because an index past the
+  end can crash a service that does not check it), and `reloadAfter` links:
+  `Set<X>` for a list whose count takes `<X>`, and a dropdown's own setter.
+- **Tile groups.** `groups` puts tiles under a full-width header that
+  expands and collapses (click it, or Enter on it):
+
+  ```json
+  "groups": [
+    { "id": "commands", "title": "Commands",    "tiles": ["init-device", "set-voltage"] },
+    { "id": "device",   "title": "Device type", "tiles": ["set-device-type", "get-device-type"], "collapsed": true }
+  ]
+  ```
+
+  The header sits where the group's first tile is; keep a group's tiles
+  together, and put tiles in no group first (they are not under a header).
+  A collapsed group's tiles are hidden **and suspended** (R5): their polling
+  and signal streams stop until it opens, and a component that is hidden and
+  shown again resumes only its open groups. `collapsed` is how a group starts;
+  the user's choice is remembered per component (and, on the bench, per
+  composition). The linter refuses a group naming a missing tile, a tile in
+  two groups and duplicate group ids. A grouped stage packs its rows in order
+  (no dense back-fill), so no tile moves above its header. A shell without
+  groups shows every tile flat. The generator groups a component of 7 tiles
+  or more: the service's own RPCs as *Commands*, *Readings* and *Streams*
+  (open), every other bound service by topic — *Device type*, *Interface*,
+  *Connect*, in its proto's order — collapsed.
 - **Frame tiles** (`"kind": "frame", "entry": "panel.html"`) show an HTML
   page of the component folder in a **sandboxed frame**: its own process,
   no access to the GUI's page, storage or the network. Its scripts reach

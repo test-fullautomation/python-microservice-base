@@ -66,7 +66,7 @@
   // Developer tab and by the bench dock; remembered per service.
   var CLASSIC_PREF_KEY = 'mm_classic_panel';
   var CLASSIC_FILE_RE = /(\.html|\.qml|\.ui|\.wasm|^gui_schema\.json)$/i;
-  var _bothKinds = {};         // { folder: Promise<boolean> } -- folder listings are stable
+  var _bothKinds = {};         // { folder: Promise<boolean> } -- until the service sends new files
   var _guiChecked = {};        // { folder: true } -- compared with its service once per window
   var _guiFetchFailedAt = {};  // { serviceName: ms } -- a failed download is retried after a pause
   var GUI_FETCH_RETRY_MS = 15000;
@@ -101,24 +101,50 @@
   }
 
   /**
-   * Enable the Developer tab's "Classic panel" button for a service whose
-   * folder ships both kinds, and show whether the classic one is on screen.
+   * The User tab's "Service view" pair (Tiles | Service window): enabled for
+   * a service whose folder ships both kinds, the one on screen pressed.
    */
   function _refreshClassicPanelBtn(sel) {
-    var btn = document.getElementById('btnDevClassicPanel');
-    if (!btn) return;
-    var showing = !!(sel && _classicPanels[sel.name]);
-    btn.setAttribute('aria-pressed', showing ? 'true' : 'false');
-    btn.title = showing
-      ? 'Back to the component tiles of this service'
-      : 'Show the service\'s classic panel instead of its component tiles';
+    var tiles = document.getElementById('btnViewTiles');
+    var own = document.getElementById('btnViewServiceWindow');
+    if (!tiles || !own) return;
+    var classic = !!(sel && _classicPanels[sel.name]);
+    function set(both) {
+      tiles.disabled = own.disabled = !both;
+      tiles.setAttribute('aria-pressed', both && !classic ? 'true' : 'false');
+      own.setAttribute('aria-pressed', both && classic ? 'true' : 'false');
+      tiles.title = both ? 'Show ' + sel.name + ' as tiles'
+                         : 'The selected service has one screen only';
+      own.title = both ? 'Show ' + sel.name + '\'s own window'
+                       : 'The selected service has one screen only';
+    }
     var svc = sel && sel.consul;
-    if (!svc || !svc.gui) { btn.disabled = true; return; }
+    if (!svc || !svc.gui) { set(false); return; }
     _folderHasBothKinds(svc.gui).then(function (both) {
       // The user may have picked another service while the listing ran.
       if (_selectedService !== sel) return;
-      btn.disabled = !both;
-      if (!both) btn.title = 'This service ships only one kind of GUI';
+      set(both);
+    });
+  }
+
+  /** Show the selected service as tiles (classic false) or as its own window (true). */
+  function _showServiceView(classic) {
+    _withSelectedService('Service view', function (sel) {
+      var svc = sel.consul;
+      if (!svc || !svc.gui) {
+        showToast('Service view', sel.name + ' does not declare a GUI.', 'info');
+        return;
+      }
+      _folderHasBothKinds(svc.gui).then(function (both) {
+        if (!both) {
+          showToast('Service view', sel.name + ' has one screen only.', 'info');
+          _refreshClassicPanelBtn(sel);
+          return;
+        }
+        switchMode('services');
+        if (!!_classicPanels[sel.name] === classic && _servicePanels[sel.name]) return;   // already showing
+        _openConsulServiceGui(sel, { classic: classic });
+      });
     });
   }
 
@@ -513,6 +539,7 @@
 
     var serviceInfo = MM.servicesInfor[serviceName];
     _selectedService = { name: serviceName, infoKey: serviceName, consul: null, info: serviceInfo };
+    _refreshClassicPanelBtn(_selectedService);   // a broker service: one screen
     if (_devMode) _renderInspector(_selectedService);
 
     if (serviceInfo.gui_support === true) {
@@ -2582,7 +2609,7 @@
         row.addEventListener('click', function () {
           _selectedService = { name: svc.name, infoKey: infoKey, consul: svcWithUrl, info: null };
           if (svc.gui) _openConsulServiceGui(_selectedService);
-          else _showServiceOverview(_selectedService);
+          else { _showServiceOverview(_selectedService); _refreshClassicPanelBtn(_selectedService); }
           if (_devMode) _renderInspector(_selectedService);
           // Visual selection across all groups
           document
@@ -2623,7 +2650,7 @@
       function (el) { return el.getAttribute('data-service-name') === svc.name; })[0];
     if (row) row.classList.add('active');
     if (svc.gui) _openConsulServiceGui(_selectedService, opts);
-    else _showServiceOverview(_selectedService);
+    else { _showServiceOverview(_selectedService); _refreshClassicPanelBtn(_selectedService); }
     if (_devMode) _renderInspector(_selectedService);
   }
 
@@ -2650,7 +2677,8 @@
       address: svc.address,
       port: svc.port,
       grpcServices: svc.grpcServices,
-      gui: svc.gui
+      gui: svc.gui,
+      protoPath: _getStoredProtoPath(svc.name)   // for a classic Qt WASM panel's gRPC calls
     };
 
     // One cached panel per service: drop it when the other kind is wanted
@@ -2682,7 +2710,8 @@
     // Bring the folder up to date from the service first (ADR-031): it
     // arrives when missing and is replaced when the service's copy moved
     // on. Whichever kind is shown then reads files that are current.
-    _fetchGuiFromService(sel, svc, folder).then(function () {
+    _fetchGuiFromService(sel, svc, folder).then(function (wrote) {
+      if (wrote) _refreshClassicPanelBtn(sel);   // the button was set from the folder as it was
       if (classic) {
         _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
         return;
@@ -2788,6 +2817,9 @@
           })
           .then(function (wrote) {
             if (wrote) {
+              // The folder may now ship another kind of GUI (a classic panel
+              // next to the component): list it again.
+              delete _bothKinds[folder];
               delete _guiFetchFailedAt[sel.name];
               delete _guiFetchNotified[sel.name];
               showToast('Service GUI', (present ? 'Updated' : 'Loaded') + ' the GUI of ' +
@@ -4978,27 +5010,11 @@
     switchMode('services');
     setDevMode(true, { tab: 'api', silent: true });
   });
-  // Switch the selected service between its component tiles and the
-  // classic panel its folder also ships. The choice sticks for that
-  // service until it is switched back.
-  _wire('btnDevClassicPanel', function () {
-    _withSelectedService('Classic panel', function (sel) {
-      var svc = sel.consul;
-      if (!svc || !svc.gui) {
-        showToast('Classic panel', sel.name + ' does not declare a GUI.', 'info');
-        return;
-      }
-      _folderHasBothKinds(svc.gui).then(function (both) {
-        if (!both) {
-          showToast('Classic panel', svc.gui + ' ships only one kind of GUI.', 'info');
-          _refreshClassicPanelBtn(sel);
-          return;
-        }
-        switchMode('services');
-        _openConsulServiceGui(sel, { classic: !_classicPanels[sel.name] });
-      });
-    });
-  });
+  // User tab, "Service view": the selected service as its component tiles
+  // or as its own window (the classic panel its folder also ships). The
+  // choice sticks for that service until it is switched back.
+  _wire('btnViewTiles', function () { _showServiceView(false); });
+  _wire('btnViewServiceWindow', function () { _showServiceView(true); });
   _wire('btnDevCodeExamples', function () {
     _withSelectedService('Code Examples', function (sel) {
       switchMode('services');

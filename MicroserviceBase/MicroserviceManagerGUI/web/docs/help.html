@@ -157,8 +157,8 @@
       <h3>The ribbon</h3>
       <p>The navbar holds three ribbon tabs; each opens a band of commands grouped by task:</p>
       <ul>
-        <li><strong>User</strong> &mdash; operate: <em>Bridge</em> (LED, start / stop), <em>Infrastructure</em> (Consul and Nomad LEDs; click one to open its agent view), <em>Bench</em> (show the bench, pick a composition, Edit, Reload), <em>Service registry</em> (Connect, and one chip per connected Consul with &times; to disconnect).  While the bench is shown, components add their own groups here.</li>
-        <li><strong>Developer</strong> &mdash; build and test: <em>Inspector</em> (Developer mode), <em>Build</em> (Service Creator, Robot Resources, Graph Studio), <em>Test project</em> (Project view, Open project), <em>Selected service</em> (API Explorer, Classic panel, Code Examples, Add to project, Download files).</li>
+        <li><strong>User</strong> &mdash; operate: <em>Bridge</em> (LED, start / stop), <em>Infrastructure</em> (Consul and Nomad LEDs; click one to open its agent view), <em>Service view</em> (Tiles or Service window, for a service that ships both), <em>Bench</em> (show the bench, pick a composition, Edit, Reload), <em>Service registry</em> (Connect, and one chip per connected Consul with &times; to disconnect).  While the bench is shown, components add their own groups here.</li>
+        <li><strong>Developer</strong> &mdash; build and test: <em>Inspector</em> (Developer mode), <em>Build</em> (Service Creator, Robot Resources, Graph Studio), <em>Test project</em> (Project view, Open project), <em>Selected service</em> (API Explorer, Code Examples, Add to project, Download files).</li>
         <li><strong>Administrator</strong> &mdash; configure: <em>Service Network</em> (Consul agent, Nomad agent) and <em>Shell</em> (Plugins).</li>
       </ul>
       <p>
@@ -195,7 +195,7 @@
       <h3>What opens for a service</h3>
       <ul>
         <li><strong>Its component</strong> &mdash; a service that declares a GUI with a <code>component.json</code> opens as tiles (status, command forms, tables, logs, framed panels).  The badge at the top right says whether the manifest passes the contract.</li>
-        <li><strong>Its classic panel</strong> &mdash; an HTML / JS, QML, Qt Widgets, Qt WASM or schema GUI.  A folder that ships both opens the component; <em>Developer &rarr; Classic panel</em> switches that service to the other one, and the choice is remembered.</li>
+        <li><strong>Its classic panel</strong> &mdash; an HTML / JS, QML, Qt Widgets, Qt WASM or schema GUI.  A folder that ships both opens the component; <em>User &rarr; Service view &rarr; Tiles | Service window</em> switches that service between the two, and the choice is remembered.</li>
         <li><strong>No GUI</strong> &mdash; the service is marked <em>No GUI</em> and shows an overview (health, instances with their checks, address, tags) plus an <em>Actions</em> section: one typed form per method, so operators can call it without developer tooling.</li>
       </ul>
       <p>

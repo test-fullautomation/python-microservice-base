@@ -24,6 +24,22 @@ this is the chronological summary.
   from `<PREFIX>GUI` and serves the folder over `ServiceGui` (ADR-031),
   with the same checksum as the Python runtime; `<PREFIX>GUI_DIR` or the
   folders beside the executable, `../interfaces/gui/<gui>` included.
+- **A Qt service's own window.** The classic Qt WebAssembly panel of a
+  Consul gRPC service now reaches the service over gRPC
+  (`Module.endoToken`, methods found by reflection). **User → Service
+  view → Tiles | Service window** switches a service between its component
+  and that window; it moved from the Developer tab, and the button now
+  enables itself once a downloaded folder ships both.
+- **Dropdowns in forms.** A form field can be a dropdown: fixed `options`,
+  or `optionsFrom` the service (a list RPC, or a count RPC with a name per
+  index), `current` preselected; `reloadAfter` reads it again after a
+  call it depends on, from any tile of the component.
+- **Tile groups.** `groups` puts tiles under headers that expand and
+  collapse; a collapsed group's tiles are suspended, and the choice is
+  remembered.
+- **Components from protos.** `python -m MicroserviceBase.tools.ui_component`
+  writes a `component.json` from a service's protos: forms, dropdowns
+  (indexes 0 to count−1), `reloadAfter` links and groups.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 

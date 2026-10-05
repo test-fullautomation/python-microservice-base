@@ -217,8 +217,117 @@
     return Object.keys(form || {}).map(function (name) {
       var spec = form[name];
       if (typeof spec === 'string') spec = { type: spec };
-      return { name: name, type: spec.type, label: spec.label || name, min: spec.min, max: spec.max, def: spec['default'] };
+      return { name: name, type: spec.type, label: spec.label || name, min: spec.min, max: spec.max, def: spec['default'],
+               options: spec.options, optionsFrom: spec.optionsFrom, current: spec.current,
+               reloadAfter: spec.reloadAfter };
     });
+  }
+
+  // ---- dropdown fields: a fixed list (options) or one read from the service (optionsFrom)
+
+  var MAX_OPTIONS = 256;
+
+  function optionItem(o) {
+    return (o && typeof o === 'object') ? { value: o.value, label: o.label != null ? o.label : String(o.value) }
+                                        : { value: o, label: String(o) };
+  }
+
+  function optionTags(items, selected) {
+    return items.map(function (o) {
+      var v = String(o.value);
+      return '<option value="' + esc(v) + '"' + (selected != null && String(selected) === v ? ' selected' : '') + '>' +
+             esc(o.label) + '</option>';
+    }).join('');
+  }
+
+  /** args with { "$from": { rpc, args, path } } values read from those RPCs first. */
+  function resolveArgs(ctx, args) {
+    var keys = Object.keys(args || {});
+    return Promise.all(keys.map(function (k) {
+      var v = args[k];
+      if (!(v && typeof v === 'object' && v.$from)) return v;
+      return readValue(ctx, v.$from);
+    })).then(function (vals) {
+      var out = {};
+      keys.forEach(function (k, i) { out[k] = vals[i]; });
+      return out;
+    });
+  }
+
+  function readValue(ctx, spec) {
+    return resolveArgs(ctx, spec.args).then(function (args) {
+      return ctx.call(spec.rpc, args);
+    }).then(function (d) { return getPath(d.result, spec.path); });
+  }
+
+  /** The choices of an optionsFrom field: [{ value, label }]. */
+  function readOptions(ctx, from) {
+    if (from.rpc) {
+      return resolveArgs(ctx, from.args).then(function (args) { return ctx.call(from.rpc, args); }).then(function (d) {
+        var list = getPath(d.result, from.path);
+        if (!Array.isArray(list)) throw new Error(from.rpc + (from.path ? ' ' + from.path : '') + ' is not a list');
+        return list.slice(0, MAX_OPTIONS).map(function (it) {
+          if (it === null || typeof it !== 'object') return { value: it, label: String(it) };
+          var v = getPath(it, from.value || 'value');
+          var l = getPath(it, from.label || 'label');
+          return { value: v, label: l != null ? String(l) : String(v) };
+        });
+      });
+    }
+    // A range of indexes from a count RPC, each named by an optional name RPC.
+    return readValue(ctx, from.count).then(function (count) {
+      var n = Number(count) || 0;
+      var first = from.first || 0;
+      var last = from.inclusive ? n : first + n - 1;
+      var idx = [];
+      for (var i = first; i <= last && idx.length < MAX_OPTIONS; i++) idx.push(i);
+      if (!from.name) return idx.map(function (i) { return { value: i, label: String(i) }; });
+      // One at a time: a device behind the service may not take parallel requests.
+      var items = [];
+      return idx.reduce(function (p, i) {
+        return p.then(function () {
+          return resolveArgs(ctx, from.name.args).then(function (base) {
+            var args = Object.assign({}, base);
+            args[from.name.arg] = i;
+            return ctx.call(from.name.rpc, args);
+          }).then(function (d) {
+            var label = getPath(d.result, from.name.path);
+            items.push({ value: i, label: label != null && label !== '' ? i + ' · ' + label : String(i) });
+          }, function () { items.push({ value: i, label: String(i) }); });
+        });
+      }, Promise.resolve()).then(function () { return items; });
+    });
+  }
+
+  /**
+   * Fill the dropdowns of a rendered form that read their choices (or
+   * their current value) from the service. Called once when the form is
+   * shown and by each dropdown's reload button.
+   */
+  function loadOptions(form, fields, ctx, only) {
+    return Promise.all(fields.map(function (f) {
+      if (!(f.optionsFrom || f.current) || (only && only !== f.name)) return null;
+      var sel = form.querySelector('select[data-name="' + f.name + '"]');
+      if (!sel) return null;
+      var keep = sel.value;
+      var listP = f.optionsFrom
+        ? (sel.disabled = true, sel.innerHTML = '<option value="">Loading…</option>', readOptions(ctx, f.optionsFrom))
+        : Promise.resolve(null);
+      var currentP = f.current ? readValue(ctx, f.current).catch(function () { return undefined; }) : Promise.resolve(undefined);
+      return Promise.all([listP, currentP]).then(function (r) {
+        var items = r[0], current = r[1];
+        if (items) {
+          var pick = current != null ? current : (keep !== '' ? keep : f.def);
+          sel.innerHTML = items.length ? optionTags(items, pick) : '<option value="">(none)</option>';
+        } else if (current != null) {
+          sel.value = String(current);
+        }
+        sel.title = '';
+      }, function (err) {
+        sel.innerHTML = '<option value="">could not load</option>';
+        sel.title = (err && err.message) || String(err);
+      }).then(function () { sel.disabled = false; });
+    }));
   }
 
   function formFromReflection(inputFields) {
@@ -239,6 +348,17 @@
     var lbl = '<label class="endo-field-label" for="' + id + '">' + esc(f.label) +
               '<span class="endo-type">' + esc(f.type) + '</span></label>';
     var common = ' id="' + id + '" data-name="' + esc(f.name) + '" data-type="' + esc(f.type) + '"';
+    if (f.options || f.optionsFrom) {
+      var initial = f.options ? optionTags(f.options.slice(0, MAX_OPTIONS).map(optionItem), f.def)
+                              : '<option value="">Loading…</option>';
+      return '<div class="endo-field">' + lbl + '<div class="endo-select-row">' +
+             '<select class="form-select form-select-sm"' + common + '>' + initial + '</select>' +
+             (f.optionsFrom || f.current
+               ? '<button type="button" class="btn btn-sm btn-outline-secondary endo-reload" data-reload="' + esc(f.name) +
+                 '" title="Read the choices from the service again" aria-label="Reload ' + esc(f.label) + '">↻</button>'
+               : '') +
+             '</div></div>';
+    }
     if (f.type === 'bool') {
       return '<div class="form-check form-switch endo-field"><input class="form-check-input" type="checkbox"' + common +
              (f.def ? ' checked' : '') + '><label class="form-check-label" for="' + id + '">' + esc(f.label) + '</label></div>';
@@ -259,6 +379,10 @@
     form.querySelectorAll('[data-name]').forEach(function (inp) {
       var name = inp.getAttribute('data-name');
       var type = inp.getAttribute('data-type');
+      if (inp.tagName === 'SELECT' && type === 'bool') {
+        if (inp.value !== '') args[name] = inp.value === 'true';
+        return;
+      }
       if (type === 'bool') { args[name] = !!inp.checked; return; }
       var v = inp.value;
       if (v === '') return;
@@ -280,7 +404,27 @@
   }
 
   // Ribbon commands (bench.js) build the same forms.
-  MM.endo.util.form = { fromManifest: formFromManifest, fieldHtml: fieldHtml, collect: collect };
+  MM.endo.util.form = { fromManifest: formFromManifest, fieldHtml: fieldHtml, collect: collect,
+                        loadOptions: loadOptions, wireReload: wireReload };
+
+  /**
+   * The reload buttons of a form's dropdowns, and the automatic reload of a
+   * dropdown after a call it depends on (reloadAfter: e.g. the sub-device
+   * types after SetDeviceType, from this tile or another one of the
+   * component). Returns off() for the automatic part.
+   */
+  function wireReload(form, fields, ctx) {
+    form.querySelectorAll('[data-reload]').forEach(function (b) {
+      b.addEventListener('click', function () { loadOptions(form, fields, ctx, b.getAttribute('data-reload')); });
+    });
+    var linked = fields.filter(function (f) { return f.reloadAfter && f.reloadAfter.length && (f.optionsFrom || f.current); });
+    if (!linked.length || !ctx || typeof ctx.onCall !== 'function') return function () {};
+    return ctx.onCall(function (method) {
+      linked.forEach(function (f) {
+        if (f.reloadAfter.indexOf(method) >= 0) loadOptions(form, fields, ctx, f.name);
+      });
+    });
+  }
 
   var formSeq = 0;
   kinds['command-form'] = {
@@ -303,11 +447,16 @@
             return formFromReflection(m.input_fields);
           });
 
+      var unlink = function () {};
+      var gone = false;
       fieldsP.then(function (fields) {
+        if (gone) return;
         box.innerHTML = fields.length
           ? fields.map(function (f, i) { return fieldHtml(id + '_' + i, f); }).join('')
           : '<span class="endo-muted">No input needed.</span>';
         btn.disabled = false;
+        unlink = wireReload(form, fields, ctx);
+        loadOptions(form, fields, ctx);
       }, function (err) { box.innerHTML = errorLine(err); });
 
       function run() {
@@ -340,7 +489,8 @@
         else run();
       });
       // A form is idle until submitted: nothing to suspend.
-      return { suspend: function () {}, resume: function () {}, destroy: function () {} };
+      return { suspend: function () {}, resume: function () {},
+               destroy: function () { gone = true; unlink(); } };
     }
   };
 
