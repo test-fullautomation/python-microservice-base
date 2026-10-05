@@ -52,6 +52,11 @@ this is the chronological summary.
   `robot-grid` and `flow-view` styles are CSS variables (`--rg-*`,
   `--fv-*`) with the current light colours as fallback: the GUI looks the
   same, and a host such as an editor extension can give them a dark palette.
+- **Where a keyword is defined.** `robot_grid.py --define` answers where a
+  keyword called in a suite, resource or flow file is defined (file and
+  line), resolved like the Grid and the run; Libdoc's `source` and
+  `lineno` are kept in the keyword catalog. Editors use it for Go to
+  Definition.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 
