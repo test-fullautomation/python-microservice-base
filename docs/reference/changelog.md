@@ -57,6 +57,10 @@ this is the chronological summary.
   line), resolved like the Grid and the run; Libdoc's `source` and
   `lineno` are kept in the keyword catalog. Editors use it for Go to
   Definition.
+- **Breakpoints on the Diagram.** The `flow-view` plugin draws a breakpoint
+  dot on each step and marks the step a debugger paused at, when the host
+  sends `breakpoints` / `paused` and gives `ctx.breakpoint(id)` (the VS Code
+  extension does; the Manager GUI does not, and looks as before).
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 

@@ -117,6 +117,11 @@ const STYLE = `
 .flow-view .fv-just-failed rect,
 .flow-view .fv-just-failed polygon { fill: var(--fv-failed-bg, #fdecea); stroke: #e74c3c; stroke-width: 3; }
 .flow-view .fv-count { font: 600 10px Consolas, "Courier New", monospace; fill: var(--fv-count-pass, #1a7f4b); text-anchor: end; pointer-events: none; }
+.flow-view .fv-bp { fill: transparent; cursor: pointer; }
+.flow-view [data-node]:hover > .fv-bp { fill: var(--fv-bp-hint, rgba(229, 20, 0, 0.35)); }
+.flow-view .fv-has-bp > .fv-bp { fill: #e51400; stroke: var(--fv-surface, #ffffff); stroke-width: 1.5; }
+.flow-view .fv-paused > rect, .flow-view .fv-paused > polygon { stroke: #e5a400 !important; stroke-width: 3.5 !important; animation: none !important; }
+.flow-view .fv-paused > rect, .flow-view .fv-paused > polygon { fill: var(--fv-paused-bg, #fff6d6); }
 .flow-view .fv-count.fv-count-fail { fill: #c0392b; }
 /* replay (live.js): the steps since the last push, in order. */
 .flow-view .fv-trail rect,
