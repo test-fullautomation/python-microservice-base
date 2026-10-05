@@ -207,6 +207,30 @@ cmake --build /tmp/check-mb/build
 
 Should print "MicroserviceBase runtime found + linkable."
 
+## The service's GUI
+
+A service built on the runtime can declare and serve its Manager GUI folder
+(ADR-031), with no extra code and no extra dependency. Set, with the
+service's settings prefix:
+
+| Variable | Meaning |
+|---|---|
+| `<PREFIX>GUI` | the GUI folder name, e.g. `PowerService1.0.0`. `ServiceRunner` registers it as Consul `Meta.gui` and serves the folder over `microservicebase.gui.v1.ServiceGui`. Unset: nothing changes. |
+| `<PREFIX>GUI_DIR` | where that folder is. Unset: `gui/<gui>`, `ui/<gui>`, `GUIs/<gui>`, `<gui>` or `../interfaces/gui/<gui>` beside the executable, then the same under the working folder. |
+
+The start-up log says `Serving GUI folder <gui> from <dir>`, or that no
+folder was found (the service still runs; the Manager GUI then needs the
+files locally). The same fields are on `BaseServiceSettings` (`gui`,
+`gui_dir`) for a service that sets them in code.
+
+**Reflection.** The runtime turns gRPC server reflection on when the gRPC
+package provides `gRPC::grpc++_reflection` (CMake defines
+`MB_HAVE_GRPC_REFLECTION`). A vcpkg grpc built with only the `core`
+feature lacks it; the service then answers UNIMPLEMENTED to reflection and
+the Manager GUI needs the `.proto` files to list its methods. Build grpc
+with the `codegen` feature (the scaffold's overlay port forces
+`gRPC_BUILD_CODEGEN=ON`) and check for `lib/libgrpc++_reflection.a`.
+
 ## Troubleshooting
 
 ### `Could not find a package configuration file provided by "MicroserviceBase"`

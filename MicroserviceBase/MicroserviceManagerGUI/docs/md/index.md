@@ -285,8 +285,33 @@ WebAssembly panel. It is built from `gui_wasm/` with `build_wasm.bat` or
 `.sh`, which also install it when `MM_SERVICES` points at `web/services`.
 The panel shows one group per RPC and calls the service over gRPC.
 **C++ services** declare their folder the same way: the C++ runtime reads
-`<PREFIX>GUI` (e.g. `HELLO_GUI=HelloService1.0.0`) into the `gui` setting
-and registers it as `Meta.gui`.
+`<PREFIX>GUI` (e.g. `HELLO_GUI=HelloService1.0.0`) into the `gui` setting,
+registers it as `Meta.gui` and serves the folder over `ServiceGui`
+(ADR-031), with the same checksum as a Python service. It finds the folder
+in `<PREFIX>GUI_DIR`, else `gui/<gui>`, `ui/<gui>`, `GUIs/<gui>`, `<gui>`
+or `../interfaces/gui/<gui>` beside the executable (or the working
+folder).
+
+**A Qt service's own window as its classic panel.** A Qt Widgets service
+can ship its desktop window, ported to WebAssembly, as the classic panel
+next to its `component.json`: put the Emscripten `.js` and `.wasm` at the
+top of the GUI folder. Operators switch with **User → Service view →
+Tiles | Service window**. For a service that is on Consul and not on the
+broker, the classic loader routes the panel's `window.callMicroservice`
+calls over gRPC:
+
+- the panel gets a token as `Module.endoToken`; it sends that as the
+  service name, so its calls (timer-driven ones included) reach it;
+- `"Method"` goes to whichever bound service has that method, found by
+  reflection; `"<package.Service>/Method"` to that service;
+- the request is the proto message as JSON (`args[0]`), the reply has a
+  broker reply's shape (`{ result: 'pass', result_data }`) plus
+  `result_json`, the whole response.
+
+A broker (Python) service's panel is called through the broker, as before.
+The port keeps the window's `.ui` and replaces each device call with an
+RPC; it links Qt Widgets only. WebAssembly has no nested event loop, so a
+dialog opens with `open()`, never `exec()`.
 
 ### The bench: one screen from many services
 

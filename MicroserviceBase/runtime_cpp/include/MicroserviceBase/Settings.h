@@ -40,6 +40,11 @@ struct BaseServiceSettings {
     // loads web/services/<gui>/ when the service is selected.
     std::string gui;
 
+    // Folder holding the GUI files, served to the Manager GUI over gRPC
+    // (ServiceGui).  Empty = look for gui/<gui>, ui/<gui>, GUIs/<gui>, <gui>
+    // or ../interfaces/gui/<gui> next to the executable or the working folder.
+    std::string gui_dir;
+
     // Read an environment variable into *out* if set.  Subclasses call this
     // from their own loadFromEnv() with the service-specific prefix.
     static void readEnv(const std::string& key, std::string& out) {
@@ -67,6 +72,7 @@ struct BaseServiceSettings {
         readEnv(prefix + "CONSUL_TOKEN",  consul_token);
         readEnv(prefix + "LOG_LEVEL",     log_level);
         readEnv(prefix + "GUI",           gui);
+        readEnv(prefix + "GUI_DIR",       gui_dir);
     }
 };
 

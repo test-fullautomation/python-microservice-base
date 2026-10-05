@@ -20,6 +20,10 @@ this is the chronological summary.
 - **Signal Graph Studio.** *Run cluster* uses the Live panel's discovery
   port and serves gRPC reflection from the clusters it starts.
 - **Docs.** Diagrams of the host bus and the bridge for live signals.
+- **C++ services serve their GUI.** The C++ runtime registers `Meta.gui`
+  from `<PREFIX>GUI` and serves the folder over `ServiceGui` (ADR-031),
+  with the same checksum as the Python runtime; `<PREFIX>GUI_DIR` or the
+  folders beside the executable, `../interfaces/gui/<gui>` included.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 

@@ -32,6 +32,7 @@
 
 #include "Settings.h"
 #include "ConsulRegistration.h"
+#include "ServiceGui.h"
 
 namespace microservice_base {
 
@@ -82,6 +83,8 @@ private:
     int                                               m_boundPort = 0;
     std::atomic<bool>                                 m_stopRequested{false};
     std::unique_ptr<ConsulRegistration>               m_consul;
+    // The service's own GUI folder, served to the Manager GUI (ServiceGui).
+    std::unique_ptr<ServiceGuiService>                m_guiService;
 };
 
 }  // namespace microservice_base
