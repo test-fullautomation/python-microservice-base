@@ -48,6 +48,10 @@ this is the chronological summary.
   pytest tests running workflows, generated activities per service, JUnit
   results (ADR-032, guide *Adding a test runner*). `describe()`'s
   `detected` is now per runner.
+- **Themeable Grid and Diagram.** The neutrals and tints of the shared
+  `robot-grid` and `flow-view` styles are CSS variables (`--rg-*`,
+  `--fv-*`) with the current light colours as fallback: the GUI looks the
+  same, and a host such as an editor extension can give them a dark palette.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 
