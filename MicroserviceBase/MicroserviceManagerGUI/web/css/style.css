@@ -3254,3 +3254,7 @@ body.view-no-admin #ribbonAdmin {
   display: none !important;
 }
 body.view-no-admin .infra-pill { cursor: default; }
+
+/* A flow's own state in a group member's header (pause / resume). */
+.tpr-member-flow { font-size: 0.75rem; color: #5d6d7e; margin-left: 0.4rem; }
+.tpr-member-flow.tpr-paused { color: #9a6700; font-weight: 600; }

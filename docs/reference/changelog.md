@@ -57,6 +57,14 @@ this is the chronological summary.
   line), resolved like the Grid and the run; Libdoc's `source` and
   `lineno` are kept in the keyword catalog. Editors use it for Go to
   Definition.
+- **Pause, resume, stop and continue flow runs.** With the fork's flow
+  control: *Pause* / *Resume* a running flow (or one member of a run
+  group), where it holds shown in Runs and on the Diagram; *Stop* writes a
+  checkpoint; *Continue from checkpoint* starts a run that goes on where it
+  stopped; step mode from the Run dialog. Runner port: `can_pause`,
+  `control`, `control_state`, `member_env`, `restart_variables`,
+  `RunOptions.step`. The live position also follows the fork's checkpointed
+  loops, and step mode works with it.
 - **Debugging and Go to Definition in the project view.** *Debug* runs a
   suite or flow with breakpoints (the editor's line numbers, the Diagram's
   step dots, sub-flows included), stops on a failed keyword, steps over,

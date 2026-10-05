@@ -3264,6 +3264,13 @@ Generate scaffolding for a new microservice project.
          group: str = ""                # run this run group instead of ``path``
          # Debug it: {breakpoints: {path: [lines]}, filters: [...], stop_on_entry}
          debug: Optional[Dict[str, Any]] = None
+         step: bool = False             # step mode: pause before every step
+
+      class TestProjectControlBody(BaseModel):
+         root: str
+         run_id: str
+         command: str                   # pause | resume | stop
+         member: str = ""               # one member of a group run
 
       class TestProjectDebugBody(BaseModel):
          root: str
@@ -3310,7 +3317,7 @@ Generate scaffolding for a new microservice project.
                run = RUNS.start_group(body.root, body.group, dryrun=body.dryrun, resources=body.resources)
             else:
                run = RUNS.start(body.root, body.path, variables=body.variables, dryrun=body.dryrun,
-                                resources=body.resources, debug=body.debug)
+                                resources=body.resources, debug=body.debug, step=body.step)
             run["root"] = os.path.abspath(body.root.strip())
             return _tp_with_url(run)
          except TestProjectError as exc:
@@ -3322,6 +3329,28 @@ Generate scaffolding for a new microservice project.
          from ..test_project import RUNS, TestProjectError
          try:
             run = RUNS.status(body.root, body.run_id, body.since)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/control")
+      def test_project_run_control(body: TestProjectControlBody):
+         """Pause, resume or stop a running flow (all processes, or one member of a group)."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.control(body.root, body.run_id, body.command, body.member)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/restart")
+      def test_project_run_restart(body: TestProjectRunRefBody):
+         """A new run continuing a stopped one from its checkpoint."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.restart(body.root, body.run_id)
             run["root"] = os.path.abspath(body.root.strip())
             return _tp_with_url(run)
          except TestProjectError as exc:

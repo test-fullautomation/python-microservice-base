@@ -61,6 +61,8 @@ Optional — each default does nothing runner-specific, so a runner opts in:
 | `check_syntax(rel, text)` | `[{"line", "message"}]` for *Check* and every save. |
 | `file_run_hint(layout, rel)` | The *Run command* button's command. |
 | `suite_template(...)`, `flow_template(...)` | Content of a new test / flow; returning `""` hides the *New …* button. |
+| `can_pause(rel)`, `control(...)`, `control_state(out_dir)` | Pause / resume / stop a running run (all processes, or one member of a group) and what its processes say (state, phase, loop, iteration) for the Runs view; `RunOptions.step` starts it in step mode. Robot: the fork's flow control through the run's signal store. |
+| `member_env(member_id)`, `restart_variables(out_dir, target)` | How a group member is addressed (Robot: `ROBOT_FLOW_RIG`); the variables a new run needs to continue a stopped one (Robot: its `FLOW_CHECKPOINT`). |
 | `can_debug(rel)` | The run can be debugged: `RunOptions.debug_port` is then set, and the runner adds its debug listener (Robot: `flow_debug.py`), which connects to the bridge's `debugging.py`. |
 | `define(root, layout, rel, content, name, settings)` | Go to Definition: the file and line where `name` (as called in `content`) is defined. |
 | `can_run(rel)`, `run_plan(...)` | What has a ▶, and the exact process: `RunPlan(argv, cwd, env, artifacts, stop_file)`. The engine spawns it and keeps the console; with `stop_file`, *Stop* creates that file and waits before killing. |

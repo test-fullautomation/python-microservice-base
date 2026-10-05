@@ -713,6 +713,36 @@ under `"run"`, so a project runs the same way for everyone who opens it:
 | Extra arguments | Added to every run (one per line). |
 | Environment | `NAME=value` pairs for every run. |
 
+### Pause, resume, stop and continue a flow
+
+With a RobotFramework AIO fork that has flow control (`robot/flow/control.py`),
+a running flow can be held and let go from **Runs**:
+
+- **Pause** holds it at the next step boundary — between two steps, at a
+  loop iteration, between two polls of a gate, never inside a keyword (a
+  running `Sleep` ends first). Loop deadlines, gate timeouts and watchdogs do
+  not run on while it is paused. The meta line says where it holds (phase,
+  loop and iteration) and the Diagram marks the step in amber. **Resume**
+  lets it go on.
+- **Stop** on a flow is the flow's own: it ends at the next step boundary,
+  writes a **checkpoint**, ends the running test UNKNOWN, runs the teardown
+  and starts no further test. If a step runs on for more than a minute, the
+  usual graceful stop follows; a second **Stop** kills.
+- **Continue from checkpoint** (on a flow run that was stopped or broke off)
+  starts a new run that skips the test phases already finished and goes on
+  with the interrupted loop where it stopped, with its saved variables; the
+  setup phase runs again. The new run says which run it continues.
+- **Step mode** (the Run dialog of a flow) pauses before every step of the
+  test phases; **Next step** goes on one step.
+- **Run groups**: Pause / Resume act on every member; each member's header
+  has its own, for that member alone (its gates' partners may then time
+  out waiting for it).
+
+Under the hood the run's signal store is the control channel (the fork's
+`python -m robot.flow control <store> pause|resume|stop [--rig member]`, sent
+with the project's interpreter); every flow process publishes its state
+there. Group members run as rigs named after their ids.
+
 ### Debugging
 
 **Debug** next to *Run…* in a suite's or flow's editor runs it under the

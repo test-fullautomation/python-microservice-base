@@ -7321,6 +7321,8 @@
         ? ' · PYTHONPATH <code>' + _escapeHtml(settings.pythonpath.join(';')) + '</code>' : '') +
       ((settings.args || []).length ? ' · arguments <code>' + _escapeHtml(settings.args.join(' ')) + '</code>' : '');
 
+    var fileEntry = (data.files || []).filter(function (x) { return x.path === path; })[0];
+    var pausable = !!(fileEntry && fileEntry.pausable);
     _tpState = { action: 'run', root: root, path: path };
     _tpShow('<i class="bi bi-play-fill me-2"></i>Run',
       '<div class="tpr-form">' +
@@ -7335,6 +7337,12 @@
       '    <input class="form-check-input" type="checkbox" id="tprDry">' +
       '    <label class="form-check-label small" for="tprDry">Dry run: check keywords and arguments, execute nothing</label>' +
       '  </div>' +
+      (pausable
+        ? '  <div class="form-check mb-3">' +
+          '    <input class="form-check-input" type="checkbox" id="tprStep">' +
+          '    <label class="form-check-label small" for="tprStep">Step mode: pause before every step of the test phases; <em>Resume</em> goes on one step at a time</label>' +
+          '  </div>'
+        : '') +
       '  <div class="form-check mb-2">' +
       '    <input class="form-check-input" type="checkbox" id="tprRes">' +
       '    <label class="form-check-label small" for="tprRes">Record RAM and CPU of the run: a <em>Resources</em> report with a verdict per process, for long runs</label>' +
@@ -7346,6 +7354,7 @@
     document.getElementById('tprVars').value = saved.vars || '';
     document.getElementById('tprDry').checked = !!saved.dryrun;
     document.getElementById('tprRes').checked = !!saved.resources;
+    if (pausable) document.getElementById('tprStep').checked = !!saved.step;
     document.getElementById('tprOpenSettings').addEventListener('click', function (e) {
       e.preventDefault();
       _tpvRunSettingsDialog(function () { _tpvRunDialog(path); });
@@ -7360,20 +7369,27 @@
     var varsText = document.getElementById('tprVars').value;
     var dryrun = document.getElementById('tprDry').checked;
     var resources = document.getElementById('tprRes').checked;
+    var stepBox = document.getElementById('tprStep');
+    var step = !!(stepBox && stepBox.checked) && !dryrun;
     var parsed = _tprParsePairs(varsText, 'Variables');
     if (parsed.error) {
       document.getElementById('tprDialogError').innerHTML = _devAlert('warning', 'Not started', parsed.error);
       return;
     }
-    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun, resources: resources });
+    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun, resources: resources, step: step });
     st.action = 'done';
     _afterModalHidden(function () {
-      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun, resources: resources });
+      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun, resources: resources, step: step });
     });
   }
 
   function _tprStart(root, path, opts) {
-    return MM.testProjectClient.run(root, path, opts)
+    return _tprFollow(root, MM.testProjectClient.run(root, path, opts), 'Run not started');
+  }
+
+  /** A run the bridge just started: poll it and show it in Runs. */
+  function _tprFollow(root, started, failure) {
+    return started
       .then(function (rec) {
         var e = _tprRuns[_tprKey(root, rec.id)] =
           { root: root, id: rec.id, record: rec, lines: [], since: 0, polling: false };
@@ -7382,8 +7398,47 @@
         return rec;
       })
       .catch(function (err) {
-        showToast('Run not started', err.message || String(err), 'danger');
+        showToast(failure, err.message || String(err), 'danger');
       });
+  }
+
+  // ---- pause, resume, stop with a checkpoint (a runner that can pause: flows) ----
+
+  /** What the run's processes say: { names, paused: [names], text } (or null). */
+  function _tprFlowState(rec, member) {
+    var procs = (rec.control && rec.control.processes) || {};
+    var names = Object.keys(procs).filter(function (n) { return !member || n === member; });
+    if (!names.length) return null;
+    var paused = names.filter(function (n) { return procs[n].state === 'paused'; });
+    var p = procs[names[0]];
+    var where = [];
+    if (p.phase) where.push('phase ' + p.phase);
+    if (p.loop) where.push('loop ' + p.loop + ' iteration ' + ((p.iteration || 0) + 1));
+    var text = (paused.length ? (paused.length === names.length ? 'paused' : paused.length + ' of ' + names.length + ' paused')
+                              : (p.state || 'running')) + (where.length && names.length === 1 ? ' · ' + where.join(', ') : '');
+    return { names: names, paused: paused, text: text, all: paused.length === names.length };
+  }
+
+  /** Pause or resume a running flow (`member`: one member of a group). */
+  function _tprControl(e, command, member) {
+    MM.testProjectClient.control(e.root, e.id, command, member || '')
+      .then(function (st) {
+        e.record = Object.assign({}, e.record, { control: st.control || e.record.control });
+        e.toolsState = null;
+        e.memberTools = [];
+        _tprUpdateShown(e, null);
+      })
+      .catch(function (err) { showToast(command === 'pause' ? 'Pause' : 'Resume', err.message || String(err), 'warning'); });
+  }
+
+  /** A new run continuing this one from its checkpoint. */
+  function _tprContinue(e) {
+    var live = _tprLiveRun(e.root);
+    if (live) {
+      showToast('Continue', 'A run is already in progress: ' + live.record.target_label + '.', 'warning');
+      return;
+    }
+    _tprFollow(e.root, MM.testProjectClient.restart(e.root, e.id), 'Not continued');
   }
 
   function _tpvRunSettingsDialog(then) {
@@ -7792,6 +7847,10 @@
     if (rec.elapsed_s != null) meta.push((state === 'running' || state === 'stopping' ? 'running for ' : 'took ') + _tprDuration(rec.elapsed_s));
     if (rec.runner_name) meta.push(rec.runner_name);
     if (opts.dryrun) meta.push('dry run');
+    if (opts.step) meta.push('step mode');
+    if (rec.continues) meta.push('continues ' + rec.continues);
+    var flowState = !rec.group && state !== 'done' ? _tprFlowState(rec) : null;
+    if (flowState) meta.push('flow ' + flowState.text);
     if (opts.resources) meta.push('recording RAM and CPU');
     var vars = Object.keys(opts.variables || {});
     if (vars.length) meta.push(vars.map(function (k) { return k + '=' + opts.variables[k]; }).join(', '));
@@ -7799,15 +7858,34 @@
     document.getElementById('tprMeta').textContent = meta.join(' · ');
 
     var done = rec.run_state === 'done';
-    var toolsState = state + '|' + (rec.results_url ? 1 : 0);
+    var anyFlow = rec.pausable && !done ? _tprFlowState(rec) : null;
+    var toolsState = state + '|' + (rec.results_url ? 1 : 0) + '|' + (anyFlow ? anyFlow.paused.length + '/' + anyFlow.names.length : '-') +
+      '|' + (rec.restartable ? 1 : 0);
     if (e.toolsState !== toolsState) {
       e.toolsState = toolsState;
       var hasFiles = done && rec.verdict !== 'error' || done && (rec.tests || []).length;
       var html = '';
+      if (!done && anyFlow && state !== 'stopping') {
+        html += anyFlow.paused.length
+          ? '<button type="button" class="btn btn-sm btn-success" id="tprResume" title="Go on' +
+            ((rec.options || {}).step ? ' to the next step (step mode)' : '') + '"><i class="bi bi-play-fill me-1"></i>' +
+            ((rec.options || {}).step ? 'Next step' : 'Resume') + '</button>'
+          : '';
+        html += !anyFlow.all
+          ? '<button type="button" class="btn btn-sm btn-outline-warning" id="tprPause" title="Hold the flow at the next step boundary; loop deadlines and gate timeouts do not run on while it is paused">' +
+            '<i class="bi bi-pause-fill me-1"></i>Pause</button>'
+          : '';
+      }
       if (!done) {
         html += '<button type="button" class="btn btn-sm btn-outline-danger" id="tprStop" title="' +
-          (state === 'stopping' ? 'Kill it now: no teardown, no reports' : 'Stop after the running keyword; teardowns and reports still run') + '">' +
+          (state === 'stopping' ? 'Kill it now: no teardown, no reports'
+            : anyFlow ? 'Stop at the next step: a checkpoint is written to continue from later, the teardown runs'
+            : 'Stop after the running keyword; teardowns and reports still run') + '">' +
           '<i class="bi bi-stop-fill me-1"></i>' + (state === 'stopping' ? 'Force stop' : 'Stop') + '</button>';
+      }
+      if (done && rec.restartable) {
+        html += '<button type="button" class="btn btn-sm btn-success" id="tprContinue" title="A new run that skips the finished phases and goes on with the interrupted loop where it stopped">' +
+          '<i class="bi bi-skip-end-fill me-1"></i>Continue from checkpoint</button>';
       }
       if (hasFiles) {
         (rec.artifacts || []).forEach(function (a) {
@@ -7845,6 +7923,12 @@
       tools.querySelectorAll('[data-tpr-artifact]').forEach(function (b) {
         b.addEventListener('click', function () { _tprOpenArtifact(e.record, b.getAttribute('data-tpr-artifact')); });
       });
+      var pause = document.getElementById('tprPause');
+      if (pause) pause.addEventListener('click', function () { pause.disabled = true; _tprControl(e, 'pause'); });
+      var resume = document.getElementById('tprResume');
+      if (resume) resume.addEventListener('click', function () { resume.disabled = true; _tprControl(e, 'resume'); });
+      var cont = document.getElementById('tprContinue');
+      if (cont) cont.addEventListener('click', function () { cont.disabled = true; _tprContinue(e); });
       var again = document.getElementById('tprAgain');
       if (again) {
         again.addEventListener('click', function () {
@@ -7956,6 +8040,11 @@
   function _tprViewData(d) {
     var data = Object.assign({}, d.base, { live: d.live, zoom: _tprZoom(), motion: _tprMotion() });
     var e = _tprRuns[d.key];
+    var held = e && !e.record.debug && !e.record.group && e.record.run_state !== 'done' ? _tprFlowState(e.record) : null;
+    if (held && held.paused.length) {
+      var pos = e.record.position || {};
+      data.paused = pos.node || (pos.last && pos.last.node) || null;
+    }
     if (e && e.record.debug && !e.record.group && MM.tpDebug && d.flowText != null) {
       var dbg = typeof e.record.debug === 'object' ? e.record.debug : {};
       var top = dbg.stopped && dbg.stopped.frames.filter(function (f) { return f.node; })[0];
@@ -8107,7 +8196,7 @@
     var d = _tprDiagram;
     if (!d || !d.view || d.key !== _tprKey(e.root, e.id)) return;
     var live = _tprLivePositions(e.record);
-    var liveKey = JSON.stringify([live, e.record.debug && e.record.debug.seq]);
+    var liveKey = JSON.stringify([live, e.record.debug && e.record.debug.seq, _tprFlowState(e.record)]);
     if (liveKey === d.liveKey) return;
     d.live = live;
     d.liveKey = liveKey;
@@ -8161,7 +8250,8 @@
       }
       var state = _tprState(m);
       var done = m.state === 'done';
-      var key = state + '|' + (rec.results_url ? 1 : 0) + '|' + (m.elapsed_s | 0);
+      var mFlow = rec.pausable && !done && rec.run_state !== 'stopping' ? _tprFlowState(rec, m.id) : null;
+      var key = state + '|' + (rec.results_url ? 1 : 0) + '|' + (m.elapsed_s | 0) + '|' + (mFlow ? mFlow.text : '');
       if (e.memberTools[i] === key) return;
       e.memberTools[i] = key;
       var vars = Object.keys(m.variables || {}).map(function (k) { return k + '=' + m.variables[k]; }).join(', ');
@@ -8178,7 +8268,18 @@
           _escapeHtml(m.target) + (vars ? ' · ' + _escapeHtml(vars) : '') +
           (m.elapsed_s != null ? ' · ' + _escapeHtml(_tprDuration(m.elapsed_s)) : '') + '</span>' +
         (done ? '<span class="tpr-counts tpr-member-counts">' + _tprCounts(m.counts, true) + '</span>' : '') +
-        '<span class="tpr-member-tools">' + files + '</span>';
+        (mFlow ? '<span class="tpr-member-flow' + (mFlow.paused.length ? ' tpr-paused' : '') + '">' + _escapeHtml(mFlow.text) + '</span>' : '') +
+        '<span class="tpr-member-tools">' + files +
+        (mFlow ? (mFlow.paused.length
+          ? '<button type="button" class="btn btn-sm btn-success" data-tpr-member-control="resume" data-member="' + _escapeHtml(m.id) + '" title="Resume ' + _escapeHtml(m.id) + ' only"><i class="bi bi-play-fill"></i></button>'
+          : '<button type="button" class="btn btn-sm btn-outline-warning" data-tpr-member-control="pause" data-member="' + _escapeHtml(m.id) + '" title="Pause ' + _escapeHtml(m.id) + ' only; the others run on (their gates may time out waiting for it)"><i class="bi bi-pause-fill"></i></button>')
+          : '') + '</span>';
+      head.querySelectorAll('[data-tpr-member-control]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true;
+          _tprControl(e, b.getAttribute('data-tpr-member-control'), b.getAttribute('data-member'));
+        });
+      });
       head.querySelectorAll('[data-tpr-member-artifact]').forEach(function (b) {
         b.addEventListener('click', function () {
           _openUrl(MM.testProjectClient.resultUrl(rec, b.getAttribute('data-tpr-member-artifact'), b.getAttribute('data-member')));
