@@ -49,6 +49,15 @@ process.env.DASGUI_IS_PACKAGED = '0';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * A value as a JavaScript literal to put into code run in the page: JSON,
+ * with the characters that could end a script or a line in it escaped.
+ */
+function literal(value) {
+  return JSON.stringify(value).replace(/[<>/\u2028\u2029]/g,
+    (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+}
+
 // The page talks to electron/main.js through the preload. A probe runs only
 // the page, so the main-process calls the GUI makes on its own get neutral
 // answers here: no window plugins, nothing opened, dialogs cancelled.
@@ -141,14 +150,14 @@ class Gui {
 
   /** The element exists, is displayed and has a size. */
   visible(sel) {
-    return this.js(`(function(){ var e = document.querySelector(${JSON.stringify(sel)});
+    return this.js(`(function(){ var e = document.querySelector(${literal(sel)});
       if (!e) return false; var r = e.getBoundingClientRect(); var s = getComputedStyle(e);
       return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; })()`);
   }
 
   /** Click the element's centre with real mouse events. */
   async click(sel) {
-    const at = await this.js(`(function(){ var e = document.querySelector(${JSON.stringify(sel)});
+    const at = await this.js(`(function(){ var e = document.querySelector(${literal(sel)});
       if (!e) return null; e.scrollIntoView({ block: 'center' }); var r = e.getBoundingClientRect();
       return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
     if (!at || at.__error) throw new Error('no element to click: ' + sel);
@@ -162,7 +171,7 @@ class Gui {
   /** Focus the field, select its text and type over it. */
   async type(sel, text) {
     await this.click(sel);
-    await this.js(`(function(){ var e = document.querySelector(${JSON.stringify(sel)}); e.select && e.select(); return true; })()`);
+    await this.js(`(function(){ var e = document.querySelector(${literal(sel)}); e.select && e.select(); return true; })()`);
     this.win.webContents.insertText(text);
     await sleep(80);
   }
@@ -217,7 +226,7 @@ class Probe {
     await win.loadFile(page, { query });
     if (opts.storage && Object.keys(opts.storage).length) {
       await win.webContents.executeJavaScript(
-        `(function(s){ Object.keys(s).forEach(function(k){ localStorage.setItem(k, s[k]); }); return true; })(${JSON.stringify(opts.storage)})`);
+        `(function(s){ Object.keys(s).forEach(function(k){ localStorage.setItem(k, s[k]); }); return true; })(${literal(opts.storage)})`);
       await win.loadFile(page, { query });
     }
     const g = new Gui(win, this);
@@ -227,7 +236,7 @@ class Probe {
       // The isolated bridge runs on its own port; the desktop app's default
       // ("file://" -> localhost:<settings.bridgePort>) would reach the
       // user's bridge instead.
-      await g.js(`window.MicroserviceManager.serviceClient.apiUrl = ${JSON.stringify(opts.bridge)}; true`);
+      await g.js(`window.MicroserviceManager.serviceClient.apiUrl = ${literal(opts.bridge)}; true`);
     }
     this.gui = g;
     return g;

@@ -18,7 +18,7 @@ function shape(g) {
 /** Draw the dots and the paused mark on the nodes under `scope`. */
 export function markBreakpoints(scope, data, toggle) {
   var on = Array.isArray(data && data.breakpoints);
-  var set = {};
+  var set = Object.create(null);   // ids from the flow: no inherited keys
   (on ? data.breakpoints : []).forEach(function (id) { set[id] = true; });
   var paused = data && data.paused;
   scope.querySelectorAll('[data-node]').forEach(function (g) {

@@ -628,5 +628,8 @@ class TemporalPythonRunner(TestProjectRunner):
             verdict = "error"
             message = f"pytest ended with code {returncode}; the console shows why."
         if returncode is None:
-            message = "Stopped on request. " + message
+            # Stopped: the tests after the stop never ran, so it is no pass.
+            if verdict in ("pass", "skip"):
+                verdict = "unknown"
+            message = "Stopped on request before every test ran. " + message
         return RunResult(verdict, counts, tests, message.strip())

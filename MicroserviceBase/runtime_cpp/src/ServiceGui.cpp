@@ -197,12 +197,26 @@ bool skipFile(const std::string& name) {
     return false;
 }
 
+// A symbolic link, or on Windows a junction (a mount point): it may point
+// outside the GUI folder, so it is never followed nor shipped.
+bool isLink(const fs::directory_entry& e) {
+    std::error_code ec;
+    if (e.is_symlink(ec)) return true;
+#ifdef _WIN32
+    const DWORD attrs = GetFileAttributesW(e.path().c_str());
+    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_REPARSE_POINT)) return true;
+#endif
+    return false;
+}
+
 // (absolute path, archive path) of every file worth shipping: the files of a
-// folder in name order, then its subfolders in name order (as os.walk).
+// folder in name order, then its subfolders in name order (as os.walk), links
+// left out -- the same rules as runtime/gui_server.py, so the same checksum.
 void walk(const fs::path& dir, const std::string& prefix, std::vector<std::pair<fs::path, std::string>>& out) {
     std::vector<fs::directory_entry> files, dirs;
     std::error_code ec;
     for (const auto& e : fs::directory_iterator(dir, ec)) {
+        if (isLink(e)) continue;
         if (e.is_directory(ec)) { if (!skipDir(e.path().filename().string())) dirs.push_back(e); }
         else if (e.is_regular_file(ec)) { if (!skipFile(e.path().filename().string())) files.push_back(e); }
     }

@@ -267,6 +267,12 @@ check('SHELL_VERSION is 2.3.x', /^2\.3\./.test(C.SHELL_VERSION));
   check('groups: a tile in two groups is refused',
         lint(withGroups([{ id: 'a', title: 'A', tiles: [ids[0]] }, { id: 'b', title: 'B', tiles: [ids[0]] }]))
           .some((i) => i.rule === 'S' && /already in group "a"/.test(i.message)));
+  // Ids are data: one named like a property every object has is no duplicate.
+  const odd = clone(GOOD);
+  odd.tiles = odd.tiles.concat([{ id: 'constructor', size: '1x1', kind: 'text', text: 'a' }]);
+  odd.groups = [{ id: 'constructor', title: 'Odd', tiles: ['constructor'] }];
+  const oddIssues = lint(odd);
+  check('groups: ids named like object properties are plain ids', oddIssues.length === 0, oddIssues.map(C.formatIssue));
   check('groups: a duplicate group id is refused',
         lint(withGroups([{ id: 'a', title: 'A', tiles: [ids[0]] }, { id: 'a', title: 'B', tiles: [ids[1] || ids[0]] }]))
           .some((i) => i.rule === 'S' && /duplicate group id/.test(i.message)));
