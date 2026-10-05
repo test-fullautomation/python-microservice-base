@@ -65,11 +65,10 @@ def _now() -> str:
 
 
 def _stem(target: str) -> str:
+    """A run's name from its target: the file name up to its first dot
+    (``climate.flow.json`` -> ``climate``), whatever the runner's file types."""
     base = os.path.basename(target.rstrip("/")) if target else "project"
-    for suffix in (".flow.json", ".robot", ".json"):
-        if base.lower().endswith(suffix):
-            base = base[: -len(suffix)]
-            break
+    base = base.split(".", 1)[0] or base
     return re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("_") or "run"
 
 
@@ -172,7 +171,7 @@ class RunManager:
         with self._lock:
             self._runs[(root, run_id)] = run
         if options.resources:
-            self._start_monitor(run, {_stem(target) or "robot": run.proc.pid}, settings.env)
+            self._start_monitor(run, {_stem(target) or "run": run.proc.pid}, settings.env)
         self._save(run)
         threading.Thread(target=self._pump, args=(run, runner), name=f"run-{run_id}",
                          daemon=True).start()

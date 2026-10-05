@@ -593,12 +593,54 @@ Resources connect through Consul by service name, never by host and port —
 Nomad assigns a new port on every placement. Generated resources should not
 be edited; put your own keywords in a separate resource.
 
-**Other test runners.** `testproject.json` names the runner, and everything
-runner-specific sits behind one interface
-(`MicroserviceBase/ports/test_project.py`). Supporting another runner means
-adding an adapter next to `adapters/test_project/robot_aio.py` and
-registering it; the manifest, proto handling and the plan/apply safety rules
-stay the same — and so does running, below.
+### Test runners
+
+`testproject.json` names the project's **runner**, and everything
+runner-specific comes from it: which files are tests, flows and resources
+(and what the sidebar calls them), the starter files, the syntax check, the
+command a run starts and how its results are read. The GUI, the manifest,
+proto handling, the plan/apply safety rules and running stay the same for
+every runner. Two come with the Manager GUI:
+
+| Runner | Tests | Calls the services through | Results |
+|---|---|---|---|
+| **Robot Framework AIO** (`robotframework-aio`) | `.robot` suites and `*.flow.json` flows | generated keyword resources | `output.xml`, Log, Report |
+| **Temporal (Python SDK)** (`temporal-python`) | pytest files (`*_test.py`, `test_*.py`) that run Temporal workflows | generated activities | JUnit XML |
+
+**Choose one** when you initialize a folder: the dialog lists the runners
+with the structure each one writes, and preselects the runner whose files
+the folder already holds. A project keeps its runner; to move a suite to
+another runner, initialize a new project with it and export the services
+again.
+
+Structure for **Temporal (Python SDK)**:
+
+```text
+<project>/
+├─ testproject.json                   manifest: runner, layout, what was exported
+├─ conftest.py                        Temporal server + worker for the tests (starter)
+├─ pytest.ini, requirements.txt       test discovery; temporalio, pytest (starter)
+├─ activities/<service>/*.py          one activity per RPC, ACTIVITIES in __init__.py (generated)
+├─ workflows/<service>_smoke.py       starter workflow per service
+├─ tests/<service>_smoke_test.py      starter test per service
+└─ proto/<service>/*.proto            copied protos, when available
+```
+
+The activities find the service by name through Consul (`CONSUL_ADDR`), or
+at `<SERVICE>_ADDR` (e.g. `HELLO_ADDR=127.0.0.1:50051`) when set. A test
+runs a workflow with the `temporal` fixture —
+`temporal(Greet.run, "bench", workflows=[Greet], activities=ACTIVITIES)` —
+against the Temporal server at `TEMPORAL_ADDRESS` or, when that is not set,
+a local dev server (the `temporal` CLI at `TEMPORAL_CLI`, else downloaded by
+the SDK once). Put these variables, and an interpreter with `temporalio`,
+in the project's **Run settings**. Run variables reach the tests as
+environment variables; *Stop* lets the running test end and skips the rest.
+
+**Another runner** is one class implementing
+`MicroserviceBase/ports/test_project.py`'s `TestProjectRunner`, registered
+in code or — from its own package, without changing this one — as an entry
+point in the group `microservicebase.test_runners`. See the guide *Adding a
+test runner* and ADR-032.
 
 ### Running tests
 

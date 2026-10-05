@@ -41,6 +41,7 @@ from typing import Dict, List
 
 from ...ports.test_project import (
     POSITION_FILE,
+    FileType,
     PlannedFile,
     RunGroup,
     RunArtifact,
@@ -209,9 +210,68 @@ class RobotAioRunner(TestProjectRunner):
 
     runner_id = "robotframework-aio"
     display_name = "Robot Framework AIO"
+    description = ("Robot Framework suites and flow files; generated keyword resources per "
+                   "service reach it through Consul.")
+    # A generated resource carries its generation date in its documentation.
+    generated_stamp = r"^\.\.\.\s+Generated:.*\n?"
 
     def default_layout(self) -> Dict[str, str]:
         return {"suites": "testsuites", "resources": "resources", "proto": "proto"}
+
+    # ---- files -------------------------------------------------------------
+
+    def file_types(self) -> List[FileType]:
+        return [
+            FileType("suite", ".robot", "Suites", "suite", "suites", creatable=True),
+            FileType("flow", FLOW_SUFFIX, "Flows", "flow", "flows", creatable=True),
+            FileType("resource", ".resource", "Resources", "resource", "resources", creatable=True),
+        ]
+
+    def structure(self, layout: Dict[str, str]) -> List[List[str]]:
+        suites, res = layout["suites"], layout["resources"]
+        return [
+            ["testproject.json", "manifest: runner, layout, what was exported"],
+            [f"{suites}/{_CONFIG_REL}", "RF AIO config (level 3), CONSUL_ADDR in params.global"],
+            [f"{suites}/<service>_smoke.robot", "starter suite per service — yours to edit"],
+            [f"{res}/<service>/*.resource", "generated keywords — refreshed on export"],
+            [f"{layout['proto']}/<service>/*.proto", "copied protos, when available"],
+        ]
+
+    def detect(self, root: str) -> Dict[str, object]:
+        from .engine import walk_files
+        count, config = 0, False
+        for dirpath, files in walk_files(root):
+            count += sum(1 for f in files if f.lower().endswith(".robot"))
+            config = config or (os.path.basename(dirpath) == "config" and "robot_config.jsonp" in files)
+        if not count and not config:
+            return {}
+        return {"count": count, "summary": f"{count} .robot file{'' if count == 1 else 's'}",
+                "aio_config": config}
+
+    def check_syntax(self, rel_path: str, content: str) -> List[Dict[str, object]]:
+        """Robot Framework's parse problems of a ``.robot`` / ``.resource``
+        text; none when Robot Framework is not installed. Keyword names are
+        not resolved."""
+        lower = str(rel_path).lower()
+        if not lower.endswith(_GRID_SUFFIXES):
+            return []
+        try:
+            import io
+            from robot.api import Token, get_resource_tokens, get_tokens
+        except ImportError:
+            return []
+        tokenize = get_resource_tokens if lower.endswith(".resource") else get_tokens
+        problems = []
+        for token in tokenize(io.StringIO(content)):
+            if token.type in (Token.ERROR, Token.FATAL_ERROR) or getattr(token, "error", None):
+                problems.append({"line": token.lineno,
+                                 "message": token.error or f"Invalid syntax: {token.value!r}"})
+        return problems
+
+    def file_run_hint(self, layout: Dict[str, str], rel_path: str) -> str:
+        if str(rel_path).lower().endswith(FLOW_SUFFIX):
+            return f"python -m robot --parser robot.flow -d results {rel_path}"
+        return f"python -m robot -d results {rel_path}"
 
     def _config_path(self, layout: Dict[str, str]) -> str:
         return f"{layout['suites']}/{_CONFIG_REL}"
