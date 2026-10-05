@@ -83,8 +83,10 @@
       var moduleArgs = { qtContainerElements: [qtContainer] };
       if (route) moduleArgs.endoToken = route.token;
 
-      // Find the Emscripten loader JS file
-      return MM.listServiceFiles(folderPath)
+      // Find the Emscripten loader JS file (a synchronous throw becomes a
+      // rejection too, so the cleanup below sees every failure).
+      return Promise.resolve()
+        .then(function () { return MM.listServiceFiles(folderPath); })
         .then(function (files) {
           // Find the emscripten-generated .wasm file
           var wasmFile = files.find(function (f) { return f.endsWith('.wasm'); });

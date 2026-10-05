@@ -3151,6 +3151,10 @@ Generate scaffolding for a new microservice project.
          overwrite_modified: bool = False
 
       def _tp_error(exc):
+         # A TestProjectError's message is written for the user ("A run is
+         # already in progress", "Invalid suite name ...") and the GUI shows
+         # it: only the message goes out, never a traceback. Other exceptions
+         # are logged and answered with a plain message where they are caught.
          from ..test_project import TestProjectConflict
          out = {"status": "error", "error": str(exc)}
          if isinstance(exc, TestProjectConflict):
@@ -3588,8 +3592,9 @@ Generate scaffolding for a new microservice project.
          except TestProjectError as exc:
             return _tp_error(exc)
          except Exception as exc:    # noqa: BLE001
+            # Not a TestProjectError: its details stay in the bridge's log.
             logger.exception("[test-project] export failed: %s", exc)
-            return _tp_error("Unexpected failure: %s: %s" % (type(exc).__name__, exc))
+            return _tp_error("The export failed unexpectedly; the bridge's log has the details.")
 
       @app.post("/api/scaffold/generate-v2")
       def scaffold_generate_v2(body: ScaffoldV2Request):
