@@ -401,6 +401,13 @@
       </ul>
       <p>Each run gets its own folder, <code>results/&lt;date-time&gt;_&lt;name&gt;/</code>, so the history survives restarts.</p>
 
+      <h3>Debug</h3>
+      <ul>
+        <li><em>Debug</em> next to <em>Run&hellip;</em> runs a suite or flow under the debugger.  Click a line number in the editor, or the dot on a step of the Diagram, to set a breakpoint.</li>
+        <li>When it stops, <strong>Runs</strong> shows the source at the line, the call stack, the variables and a console (<code>${var}</code>, a keyword call, or a Python expression when stopped in Python).  <em>Continue</em> (F5), <em>Step Over</em> (F10), <em>Step Into</em> (F11 &mdash; also into the Python function of your own library's keyword), <em>Step Out</em> (Shift+F11), <em>Pause</em>, and <em>Stop when a keyword fails</em>.</li>
+        <li><strong>Go to Definition</strong>: F12 or Ctrl+Click on a keyword, an import or a sub-flow in the editor.</li>
+      </ul>
+
       <h3>Run groups</h3>
       <p>
         Processes that run at the same time and wait for each other through the bench &mdash; two blades running one flow

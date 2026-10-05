@@ -61,6 +61,8 @@ Optional — each default does nothing runner-specific, so a runner opts in:
 | `check_syntax(rel, text)` | `[{"line", "message"}]` for *Check* and every save. |
 | `file_run_hint(layout, rel)` | The *Run command* button's command. |
 | `suite_template(...)`, `flow_template(...)` | Content of a new test / flow; returning `""` hides the *New …* button. |
+| `can_debug(rel)` | The run can be debugged: `RunOptions.debug_port` is then set, and the runner adds its debug listener (Robot: `flow_debug.py`), which connects to the bridge's `debugging.py`. |
+| `define(root, layout, rel, content, name, settings)` | Go to Definition: the file and line where `name` (as called in `content`) is defined. |
 | `can_run(rel)`, `run_plan(...)` | What has a ▶, and the exact process: `RunPlan(argv, cwd, env, artifacts, stop_file)`. The engine spawns it and keeps the console; with `stop_file`, *Stop* creates that file and waits before killing. |
 | `read_results(output_dir, returncode)` | `RunResult(verdict, counts, tests, message)` in runner-neutral words (`pass`, `fail`, `unknown`, `skip`, `error`). |
 | `file_views`, `inspect_file`, `edit_view` | Extra tabs next to a file's text, drawn by a GUI plugin (`robot-grid`, `flow-graph`, `code`). |

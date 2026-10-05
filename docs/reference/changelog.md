@@ -57,10 +57,21 @@ this is the chronological summary.
   line), resolved like the Grid and the run; Libdoc's `source` and
   `lineno` are kept in the keyword catalog. Editors use it for Go to
   Definition.
+- **Debugging and Go to Definition in the project view.** *Debug* runs a
+  suite or flow with breakpoints (the editor's line numbers, the Diagram's
+  step dots, sub-flows included), stops on a failed keyword, steps over,
+  into (keywords, sub-flows, the Python function of a keyword of the user's
+  library) and out, shows the call stack, variables and a console, and marks
+  the stopped line and step in the editor and the Diagram. F12 / Ctrl+Click
+  goes to where Robot finds a keyword. The editor colours keyword calls,
+  control words, imports and named arguments too. The listener
+  (`flow_debug.py`) is shared with the VS Code extension; the runner port
+  gains `can_debug` and `define`.
 - **Breakpoints on the Diagram.** The `flow-view` plugin draws a breakpoint
   dot on each step and marks the step a debugger paused at, when the host
-  sends `breakpoints` / `paused` and gives `ctx.breakpoint(id)` (the VS Code
-  extension does; the Manager GUI does not, and looks as before).
+  sends `breakpoints` / `paused` and gives `ctx.breakpoint(id)` (the project
+  view's debugger and the VS Code extension do; without them it looks as
+  before).
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 

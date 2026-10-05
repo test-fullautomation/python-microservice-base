@@ -3262,6 +3262,24 @@ Generate scaffolding for a new microservice project.
          dryrun: bool = False
          resources: bool = False        # record RAM / CPU of the run (resources.html)
          group: str = ""                # run this run group instead of ``path``
+         # Debug it: {breakpoints: {path: [lines]}, filters: [...], stop_on_entry}
+         debug: Optional[Dict[str, Any]] = None
+
+      class TestProjectDebugBody(BaseModel):
+         root: str
+         run_id: str
+         command: str = ""              # continue | next | stepIn | stepOut | pause
+         path: str = ""                 # breakpoints: the file
+         lines: List[int] = []          # breakpoints: its lines
+         filters: Optional[List[str]] = None
+         ref: int = 0                   # variables
+         expression: str = ""           # evaluate
+
+      class TestProjectDefineBody(BaseModel):
+         root: str
+         path: str
+         content: str
+         name: str
 
       class TestProjectRunRefBody(BaseModel):
          root: str
@@ -3292,7 +3310,7 @@ Generate scaffolding for a new microservice project.
                run = RUNS.start_group(body.root, body.group, dryrun=body.dryrun, resources=body.resources)
             else:
                run = RUNS.start(body.root, body.path, variables=body.variables, dryrun=body.dryrun,
-                                resources=body.resources)
+                                resources=body.resources, debug=body.debug)
             run["root"] = os.path.abspath(body.root.strip())
             return _tp_with_url(run)
          except TestProjectError as exc:
@@ -3306,6 +3324,33 @@ Generate scaffolding for a new microservice project.
             run = RUNS.status(body.root, body.run_id, body.since)
             run["root"] = os.path.abspath(body.root.strip())
             return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/debug")
+      def test_project_run_debug(body: TestProjectDebugBody):
+         """Drive a debugged run: a command, the breakpoints of one file, the
+         exception filters, a frame's variables (``ref``) or an evaluation."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            if body.command:
+               return {"status": "ok", "debug": RUNS.debug_command(body.root, body.run_id, body.command)}
+            if body.path:
+               return {"status": "ok", "breakpoints": RUNS.debug_breakpoints(body.root, body.run_id, body.path, body.lines)}
+            if body.filters is not None:
+               return {"status": "ok", "debug": RUNS.debug_filters(body.root, body.run_id, body.filters)}
+            if body.expression:
+               return {"status": "ok", **RUNS.debug_evaluate(body.root, body.run_id, body.expression)}
+            return {"status": "ok", **RUNS.debug_variables(body.root, body.run_id, body.ref)}
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/define")
+      def test_project_define(body: TestProjectDefineBody):
+         """Where a keyword (or import) used in a file is defined (Go to Definition)."""
+         from ..test_project import TestProjectError, define
+         try:
+            return define(body.root, body.path, body.content, body.name)
          except TestProjectError as exc:
             return _tp_error(exc)
 

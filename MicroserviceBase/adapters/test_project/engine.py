@@ -766,6 +766,7 @@ def project_tree(root: str) -> dict:
         "truncated": truncated,
         "run_hint": runner.project_run_hint(layout),
         "can_run": runner.can_run(""),
+        "can_debug": runner.can_debug(""),
         "can_new_suite": _can_create(runner, layout, "suite"),
         "can_new_flow": _can_create(runner, layout, "flow"),
         "kinds": _kinds_info(runner),
@@ -1078,6 +1079,42 @@ def edit_file_view(root: str, rel: str, view_id: str, content: str, edit: dict) 
                               run_settings_of(manifest))
     out = {"status": "ok", "path": rel}
     out.update(result)
+    return out
+
+
+def define(root: str, rel: str, content: str, name: str) -> dict:
+    """Where keyword (or import) ``name`` used in ``rel`` (the editor's ``content``)
+    is defined, by the project's runner: ``found``, ``path`` (project-relative,
+    when inside the project), ``abs``, ``line``, ``owner`` -- and for a file
+    outside the project ``snippet``: ``{"first": n, "lines": [...]}`` around
+    the line, read-only."""
+    root = _abs_root(root)
+    manifest = _load_manifest(root)
+    if manifest is None:
+        raise TestProjectError(f"{root} is not a test project.")
+    runner = get_runner(manifest["runner"])
+    layout = _layout(runner, manifest)
+    rel = str(rel).replace("\\", "/")
+    _safe_join(root, rel)
+    res = dict(runner.define(root, layout, rel, content, str(name or ""), run_settings_of(manifest)) or {})
+    source = res.get("source")
+    if not res.get("found") or not source:
+        return {"status": "ok", "found": False, "name": name, **({"error": res["error"]} if res.get("error") else {})}
+    full = os.path.abspath(str(source))
+    out = {"status": "ok", "found": True, "name": res.get("name") or name, "owner": res.get("owner") or "",
+           "abs": full, "line": res.get("line"), "path": None}
+    inside = os.path.normcase(full).startswith(os.path.normcase(root) + os.sep)
+    if inside:
+        out["path"] = os.path.relpath(full, root).replace(os.sep, "/")
+    else:
+        try:
+            with open(full, encoding="utf-8", errors="replace") as fh:
+                lines = fh.read().splitlines()
+        except OSError:
+            lines = []
+        at = max(1, int(res.get("line") or 1))
+        first = max(1, at - 3)
+        out["snippet"] = {"first": first, "lines": lines[first - 1:first - 1 + 40]}
     return out
 
 
