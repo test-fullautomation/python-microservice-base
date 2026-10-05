@@ -151,11 +151,16 @@ Per-run choices made when starting a run.
 * ``dryrun`` -- check the tests without executing them, when supported.
 * ``resources`` -- record RAM and CPU of the run's processes (the engine's
   monitor, ``resources.html``); not for a dry run.
+* ``debug_port`` -- debug the run: the runner adds its debug listener,
+  which connects to this port (see :meth:`TestProjectRunner.can_debug`).
    """
 
    variables: Dict[str, str] = field(default_factory=dict)
    dryrun: bool = False
    resources: bool = False
+   #: A debugger listens on this local port (``debugging.py``): the run's
+   #: debug listener connects to it. 0: not debugged.
+   debug_port: int = 0
 
 
 @dataclass
@@ -457,6 +462,23 @@ project) and writes its results into ``output_dir``, which exists.
 Raise :class:`TestProjectError` when it cannot be run.
       """
       raise TestProjectError(f"{self.display_name or self.runner_id} cannot run tests.")
+
+   def can_debug(self, rel_path: str) -> bool:
+      """
+Whether ``rel_path`` can be run under the debugger (``RunOptions.debug_port``):
+breakpoints, stepping, variables. Default: no.
+      """
+      return False
+
+   def define(self, root: str, layout: Dict[str, str], rel_path: str, content: str,
+              name: str, settings: RunSettings) -> Dict[str, object]:
+      """
+Where ``name`` -- a keyword as called in ``content`` (the editor's text of
+``rel_path``), or an import -- is defined: ``{"ok": True, "found": bool,
+"source": absolute path, "line": n or None, "name", "owner"}``. Default:
+nothing found.
+      """
+      return {"ok": True, "found": False}
 
    # ---- extra file views (optional) -------------------------------------------
 

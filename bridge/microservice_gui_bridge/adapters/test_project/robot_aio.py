@@ -70,6 +70,8 @@ FLOW_SUFFIX = ".flow.json"
 # robot.flow.signals' store of a run, in its output folder (ROBOT_FLOW_SIGNALS).
 SIGNALS_FILE = "signals.json"
 _BOOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_boot.py")
+# The debug listener: breakpoints, stepping, variables (debugging.py is its other end).
+_DEBUG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_debug.py")
 _INSPECT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_inspect.py")
 # Suites and resources as a grid: rows, and the keyword each calls (robot_grid.py).
 _GRID = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_grid.py")
@@ -376,12 +378,18 @@ class RobotAioRunner(TestProjectRunner):
             argv += ["--variable", f"{name}:{value}"]
         if options.dryrun:
             argv.append("--dryrun")
+        if options.debug_port:
+            if options.dryrun:
+                raise TestProjectError("A dry run cannot be debugged.")
+            argv += ["--listener", _DEBUG]
         argv += [str(a) for a in settings.args]
         argv.append(target_abs)
 
         env = self._env(root, settings)
         stop_file = os.path.join(output_dir, ".stop")
         env["MM_RUN_STOP_FILE"] = stop_file
+        if options.debug_port:
+            env["MM_DEBUG_PORT"] = str(options.debug_port)
         if self._uses_flows(target_abs):
             # The fork's robot.flow.signals: this run's own store (a group run
             # shares one, see group_env). The settings' environment wins.
@@ -396,6 +404,17 @@ class RobotAioRunner(TestProjectRunner):
                        RunArtifact("report.html", "Report"),
                        RunArtifact("output.xml", "output.xml")],
         )
+
+    def can_debug(self, rel_path: str) -> bool:
+        return self.can_run(rel_path)
+
+    def define(self, root, layout, rel_path, content, name, settings: RunSettings):
+        """Robot's own answer (``robot_grid.py --define``): the keyword resolved
+        like the Grid and the run -- for a flow file through its imports."""
+        payload = json.dumps({"text": content, "name": name})
+        data = self._run_helper(_GRID, root, rel_path, payload, settings, "the definition", flags=["--define"])
+        return {k: data.get(k) for k in ("ok", "found", "source", "line", "name", "owner", "owner_type", "error", "missing")
+                if k in data}
 
     @staticmethod
     def _env(root: str, settings: RunSettings) -> Dict[str, object]:

@@ -533,9 +533,15 @@ change, and *Undo last change* takes a grid change back. Generated files
 stay read-only (`robot-grid` plugin; `/api/test-project/view-edit`).
 
 **Edit suites in place.** Selecting a suite, a starter file or one of your
-own files opens it in an editor with Robot Framework highlighting and line
-numbers (Tab inserts four spaces, Enter keeps the indentation, **Ctrl+S**
-saves). A save refuses to overwrite a file that changed on disk since you
+own files opens it in an editor with Robot Framework highlighting — section
+headers, test and keyword names, the keyword each line calls, `[Settings]`,
+control words (FOR, IF, TRY, WHILE, THREAD, …), imports, named arguments,
+variables, comments — and line numbers (Tab inserts four spaces, Enter
+keeps the indentation, **Ctrl+S** saves). **Go to Definition** (**F12**, or
+**Ctrl+Click**) on a keyword, an import or a flow's `"keyword"` or
+sub-flow `"file"` opens where Robot finds it — the file's own keywords, its
+resources and theirs, its Python libraries, BuiltIn — at its line; a
+definition outside the project (a library, BuiltIn) is shown read-only. A save refuses to overwrite a file that changed on disk since you
 opened it, and offers *Overwrite* or *Reload* instead. On save — or with
 **Check** — the bridge parses the file with Robot Framework and lists syntax
 problems by line; click one to jump there. Unsaved text survives a reload
@@ -706,6 +712,41 @@ under `"run"`, so a project runs the same way for everyone who opens it:
 | PYTHONPATH | Folders put in front of the path, relative to the project root — e.g. the `src` of a RobotFramework AIO checkout that brings `robot.flow`. |
 | Extra arguments | Added to every run (one per line). |
 | Environment | `NAME=value` pairs for every run. |
+
+### Debugging
+
+**Debug** next to *Run…* in a suite's or flow's editor runs it under the
+debugger, with the variables of its last run.
+
+- **Breakpoints**: click a line number in the editor (a red dot), or the dot
+  at the top-left corner of a step on the Diagram. A breakpoint anywhere in a
+  step of a flow file is the step's; in a sub-flow's file it stops in every
+  call of that sub-flow. Breakpoints are kept per project in the browser and
+  can be set or removed while a run is being debugged.
+- When the run stops, **Runs** shows the debug panel: the source with the
+  line it stopped at (and its breakpoints, which can be clicked there too),
+  the **call stack** — flow steps, sub-flow steps (`<sub-flow>::<step>`),
+  keywords, Python functions — with their files and lines, the
+  **variables** of the selected frame (lists and dictionaries expand), and a
+  **console**: `${var}` shows a value, any other line runs a keyword (cells
+  separated by two spaces), and where the run is stopped in Python, a Python
+  expression. The editor and the Diagram of that file mark the line and the
+  step.
+- **Continue** (F5), **Step Over** (F10), **Step Into** (F11: into a
+  keyword, a sub-flow or the Python function of a keyword of your library),
+  **Step Out** (Shift+F11), **Pause**; **Stop** ends the run gracefully, also
+  while it is stopped.
+- **Into Python**: Step Into on a keyword of your own Python library stops at
+  the first line of its function; Step Over / Into / Out then move through
+  the Python code (yours, not Robot Framework's or installed packages), and
+  when the function returns the run stops at Robot's next step.
+- **Stop when a keyword fails** stops where a keyword fails, before its
+  callers report the failure.
+
+Debugging is the runner's (`TestProjectRunner.can_debug`): for Robot
+Framework AIO, `flow_debug.py` is the listener in the Robot process and
+`debugging.py` the bridge's side. The VS Code extension uses the same
+listener.
 
 ### Run groups: processes that meet
 

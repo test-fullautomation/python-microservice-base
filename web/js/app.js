@@ -5961,6 +5961,10 @@
       ? '<button type="button" class="btn btn-sm btn-success" id="tpvRunFile" title="Run it here and follow the console">' +
         '<i class="bi bi-play-fill me-1"></i>Run…</button>'
       : '') +
+      (f.runnable && (_tpView.data || {}).can_debug && MM.tpDebug
+      ? '<button type="button" class="btn btn-sm btn-outline-success" id="tpvDebugFile" title="Debug it: stop at breakpoints (click a line number, or a step\'s dot on the Diagram), step, see variables">' +
+        '<i class="bi bi-bug me-1"></i>Debug</button>'
+      : '') +
       (f.run_hint
       ? '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyRun" title="' +
         _escapeHtml('Copy the command that runs it: ' + f.run_hint) + '" data-run-hint="' + _escapeHtml(f.run_hint) + '">' +
@@ -5977,6 +5981,160 @@
     }
     var run = document.getElementById('tpvRunFile');
     if (run) run.addEventListener('click', function () { _tpvRunDialog(path); });
+    var debug = document.getElementById('tpvDebugFile');
+    if (debug) debug.addEventListener('click', function () { _tpvDebug(path); });
+  }
+
+  // ---- Debugging and Go to Definition in the project view (js/tp-debug.js) ----
+
+  var _tpvPendingLine = null;    // the line to show once the file opens
+
+  /** Breakpoints make sense in the project's suites, resources and flows (a runner that debugs). */
+  function _tpvBreakable(path) {
+    var data = _tpView.data || {};
+    if (!data.can_debug || !MM.tpDebug) return false;
+    var f = (data.files || []).filter(function (x) { return x.path === path; })[0];
+    return !!f && (f.kind === 'suite' || f.kind === 'resource' || f.kind === 'flow');
+  }
+
+  /** Open a project file in the project view at `line` (Go to Definition, the call stack). */
+  function _tpvOpenAt(path, line) {
+    if (_tpvEditor && _tpvEditor.textarea && _tpvEditor.path === path && _tpView.selected === path && !_tpView.runs) {
+      _tpvShowTab('script');
+      if (line) _tpvGotoLine(line);
+      return;
+    }
+    _tpvGuard(function () {
+      _tpvPendingLine = line || null;
+      _tpvOpenTab = 'script';
+      _tpView.selected = path;
+      _tpView.runs = false;
+      _tpView.group = null;
+      if (_currentMode !== 'testproject') switchMode('testproject');
+      else renderTestProjectView();
+    });
+  }
+
+  function _tpvTakePendingLine() {
+    var line = _tpvPendingLine;
+    _tpvPendingLine = null;
+    if (line) setTimeout(function () { _tpvGotoLine(line); }, 0);
+  }
+
+  /** The run being debugged in this project, if any: its _tprRuns entry. */
+  function _tpdLiveRun(root) {
+    var live = _tprLiveRun(root);
+    return live && live.record && live.record.debug ? live : null;
+  }
+
+  /** The line of `path` a debugged run of this project is stopped at, or 0. */
+  function _tpdStoppedAt(path) {
+    var e = _tpdLiveRun(_getTestProject());
+    var dbg = e && typeof e.record.debug === 'object' ? e.record.debug : null;
+    var top = dbg && dbg.stopped && dbg.stopped.frames[0];
+    return top && top.path === path ? top : null;
+  }
+
+  function _tpvDebugLine(path) {
+    var top = _tpdStoppedAt(path);
+    return top && top.line ? top.line : 0;
+  }
+
+  /** Every poll of a run: the editor, the Diagrams and the debug panel follow where it stopped. */
+  function _tpdOnPoll(e) {
+    if (!e.record || !e.record.debug) return;
+    var key = JSON.stringify(typeof e.record.debug === 'object' ? [e.record.debug.seq, e.record.run_state] : e.record.run_state);
+    if (key === e.debugKey) return;
+    e.debugKey = key;
+    if (_tpvEditor && _tpvEditor.textarea) _tpvRefreshEditor();
+    _tpvRefreshViewMarks();
+    if (e.debugPanel) e.debugPanel.update();
+    var d = _tprDiagram;
+    if (d && d.view && d.key === _tprKey(e.root, e.id)) d.view.setData(_tprViewData(d));
+    // Stopped in a file the editor shows: bring the line into view.
+    var top = typeof e.record.debug === 'object' && e.record.debug.stopped && e.record.debug.stopped.frames[0];
+    if (top && _tpvEditor && _tpvEditor.textarea && _tpvEditor.path === top.path && !_tpView.runs) _tpvGotoLine(top.line);
+  }
+
+  /** Breakpoints changed (editor, Diagram, debug panel): a debugged run gets them; everything shows them. */
+  function _tpdBreakpointsChanged(root, path) {
+    var e = _tpdLiveRun(root);
+    if (e) {
+      MM.testProjectClient.debug(root, e.id, { path: path, lines: MM.tpDebug.breakpoints.lines(root, path) })
+        .catch(function () { /* the run just ended */ });
+    }
+    if (_tpvEditor && _tpvEditor.textarea && _tpvEditor.path === path) _tpvRefreshEditor();
+    _tpvRefreshViewMarks();
+    var d = _tprDiagram;
+    if (d && d.view) d.view.setData(_tprViewData(d));
+    Object.keys(_tprRuns).forEach(function (k) { if (_tprRuns[k].debugPanel) _tprRuns[k].debugPanel.refresh(); });
+  }
+
+  /** Debug a file with the options of its last run (variables), the breakpoints and the filter. */
+  function _tpvDebug(path) {
+    var root = _getTestProject();
+    if (!root) return;
+    var live = _tprLiveRun(root);
+    if (live) {
+      showToast('Debug', 'A run is already in progress: ' + live.record.target_label + '.', 'warning');
+      _tpvGuard(function () { _showTpvRuns(live.id); });
+      return;
+    }
+    if (path && _tpvDirty() && _tpvEditor.path === path) {
+      showToast('Debug', 'Save ' + path + ' first (Ctrl+S): a run uses the file as it is on disk.', 'warning');
+      return;
+    }
+    var saved = _tprLoadOptions(root, path);
+    var vars = (_tprParsePairs(saved.vars || '', 'Variables') || {}).vars || {};
+    _tprStart(root, path, {
+      variables: vars,
+      debug: { breakpoints: MM.tpDebug.breakpoints.all(root), filters: MM.tpDebug.storedFilters(), stop_on_entry: false }
+    });
+  }
+
+  /** Go to Definition at offset `pos` of the editor's text: open it, or show where it is. */
+  function _tpvGotoDefinition(ed, pos) {
+    var q = MM.tpDebug && MM.tpDebug.lookupAt(ed.path, ed.textarea.value, pos);
+    if (!q) { showToast('Go to Definition', 'Put the caret on a keyword, an import or a sub-flow.', 'info'); return; }
+    var files = ((_tpView.data || {}).files || []).map(function (f) { return f.path; });
+    if (q.file) {
+      var target = MM.tpDebug.resolveRelative(ed.path, q.file);
+      if (files.indexOf(target) >= 0) { _tpvOpenAt(target, 1); return; }
+    }
+    MM.testProjectClient.define(ed.root, ed.path, ed.textarea.value, q.name)
+      .then(function (res) {
+        if (!res.found) {
+          showToast('Go to Definition', res.error || ('Robot finds no keyword ' + q.name + ' here.'), 'info');
+        } else if (res.path) {
+          _tpvOpenAt(res.path, res.line || 1);
+        } else {
+          _tpvShowDefinition(res);
+        }
+      })
+      .catch(function (err) { showToast('Go to Definition', err.message || String(err), 'warning'); });
+  }
+
+  /** A definition outside the project (a library, BuiltIn): where, and the lines around it. */
+  function _tpvShowDefinition(res) {
+    var snip = res.snippet || { first: 1, lines: [] };
+    var html = MM.tpDebug.highlight(res.abs, snip.lines.join('\n')).replace(/\n$/, '').split('\n').map(function (l, i) {
+      var n = snip.first + i;
+      return '<div class="tpd-line' + (n === res.line ? ' tpd-current' : '') + '"><span class="tpd-ln">' + n +
+        '</span><span class="tpd-text">' + (l || ' ') + '</span></div>';
+    }).join('');
+    _tpState = { action: 'define' };
+    _tpShow('<i class="bi bi-box-arrow-up-right me-2"></i>' + _escapeHtml(res.name || 'Definition'),
+      '<p class="small mb-2">' + (res.owner ? 'In <strong>' + _escapeHtml(res.owner) + '</strong>, ' : '') +
+      'outside the project (read-only): <code>' + _escapeHtml(res.abs) + (res.line ? ':' + res.line : '') + '</code></p>' +
+      '<div class="tpd-code tpd-snippet">' + html + '</div>', null);
+  }
+
+  /** The Diagram of the open file: its breakpoints and the step a debugged run stopped at. */
+  function _tpvRefreshViewMarks() {
+    var st = _tpvViewState;
+    if (!st || !_tpvFileView || !_tpvFileView.setData || !st.cacheRes || st.tab === 'script') return;
+    var view = (st.views || []).filter(function (v) { return v.id === st.tab; })[0];
+    if (view && view.type === 'flow-graph' && st.cacheRes.ok) _tpvFileView.setData(_tpvViewData(view, st.cacheRes));
   }
 
   function _tpvShowPreview(f, res) {
@@ -5985,6 +6143,7 @@
       '<i class="bi bi-clipboard me-1"></i>Copy</button>';
     document.getElementById('tpvFileBody').innerHTML =
       '<pre class="helper-code-pre tpv-preview">' + _numberedCode(res.content) + '</pre>';
+    setTimeout(_tpvTakePendingLine, 0);
     _tpvWireCopyRun(res.path);
     document.getElementById('tpvCopyFile').addEventListener('click', function () { _copyText(res.content, 'File'); });
     _tpvWireViews(f, function () { return res.content; });
@@ -6003,8 +6162,10 @@
 
     document.getElementById('tpvFileBody').innerHTML =
       '<div class="tpv-editor">' +
-      '  <div class="tpv-gutter"><div id="tpvGutter"></div></div>' +
+      '  <div class="tpv-gutter' + (_tpvBreakable(res.path) ? ' tpv-breakable' : '') + '"' +
+      (_tpvBreakable(res.path) ? ' title="Click a line number to set or remove a breakpoint"' : '') + '><div id="tpvGutter"></div></div>' +
       '  <div class="tpv-code">' +
+      '    <div class="tpv-curline" id="tpvCurLine" hidden></div>' +
       '    <pre class="tpv-hl" id="tpvHl" aria-hidden="true"></pre>' +
       '    <textarea class="tpv-input" id="tpvInput" spellcheck="false" wrap="off" autocomplete="off"' +
       '              autocapitalize="off" aria-label="' + _escapeHtml(res.path) + '"></textarea>' +
@@ -6026,6 +6187,15 @@
     });
     ta.addEventListener('scroll', _tpvSyncScroll);
     ta.addEventListener('keydown', _tpvKeydown);
+    // Go to Definition: Ctrl+Click (the caret is where it was clicked) or F12.
+    ta.addEventListener('click', function (e) {
+      if ((e.ctrlKey || e.metaKey) && _tpvEditor === ed) _tpvGotoDefinition(ed, ta.selectionStart);
+    });
+    document.getElementById('tpvGutter').addEventListener('click', function (e) {
+      var ln = e.target.closest && e.target.closest('[data-line]');
+      if (!ln || _tpvEditor !== ed || !_tpvBreakable(ed.path)) return;
+      MM.tpDebug.breakpoints.toggle(ed.root, ed.path, Number(ln.getAttribute('data-line')), ta.value);
+    });
     document.getElementById('tpvSave').addEventListener('click', function () { _tpvSave(false); });
     document.getElementById('tpvCheck').addEventListener('click', _tpvCheck);
     document.getElementById('tpvRevert').addEventListener('click', function () {
@@ -6040,6 +6210,7 @@
     });
     _tpvWireCopyRun(res.path);
     _tpvWireViews(f, function () { return ta.value; });
+    _tpvTakePendingLine();
 
     // Offer unsaved changes left over from an earlier session.
     var draft = _tpvLoadDraft(root, res.path);
@@ -6074,11 +6245,28 @@
     var value = ed.textarea.value;
     hl.innerHTML = /\.json$/i.test(ed.path) ? _jsonHighlight(value) : _rfHighlight(value);
     var lines = value.split('\n').length;
-    if (lines !== ed.lines) {
+    // The gutter: line numbers, breakpoints, the line a debugged run stopped at.
+    var marks = _tpvBreakable(ed.path) ? MM.tpDebug.breakpoints.lines(ed.root, ed.path) : [];
+    var at = _tpvDebugLine(ed.path);
+    var gutterKey = lines + '|' + marks.join(',') + '|' + at;
+    if (gutterKey !== ed.gutterKey) {
+      ed.gutterKey = gutterKey;
       ed.lines = lines;
       var nums = [];
-      for (var i = 1; i <= lines; i++) nums.push(i);
-      document.getElementById('tpvGutter').textContent = nums.join('\n');
+      for (var i = 1; i <= lines; i++) {
+        nums.push('<div data-line="' + i + '"' + (marks.indexOf(i) >= 0 || i === at
+          ? ' class="' + (marks.indexOf(i) >= 0 ? 'tpv-bp' : '') + (i === at ? ' tpv-at' : '') + '"' : '') + '>' + i + '</div>');
+      }
+      document.getElementById('tpvGutter').innerHTML = nums.join('');
+    }
+    var cur = document.getElementById('tpvCurLine');
+    if (cur) {
+      cur.hidden = !at;
+      if (at) {
+        var cs = getComputedStyle(ed.textarea);
+        cur.style.top = (parseFloat(cs.paddingTop) + (at - 1) * (parseFloat(cs.lineHeight) || 18)) + 'px';
+        cur.style.height = (parseFloat(cs.lineHeight) || 18) + 'px';
+      }
     }
     _tpvSyncScroll();
     var dirty = value !== ed.original;
@@ -6109,10 +6297,17 @@
     var gutter = document.getElementById('tpvGutter');
     if (hl) hl.style.transform = 'translate(' + (-ed.textarea.scrollLeft) + 'px,' + (-ed.textarea.scrollTop) + 'px)';
     if (gutter) gutter.style.transform = 'translateY(' + (-ed.textarea.scrollTop) + 'px)';
+    var cur = document.getElementById('tpvCurLine');
+    if (cur) cur.style.transform = 'translateY(' + (-ed.textarea.scrollTop) + 'px)';
   }
 
   function _tpvKeydown(e) {
     var ta = e.target;
+    if (e.key === 'F12' && !e.ctrlKey && !e.altKey && _tpvEditor && _tpvEditor.textarea === ta) {
+      e.preventDefault();
+      _tpvGotoDefinition(_tpvEditor, ta.selectionStart);
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
       _tpvSave(false);
@@ -6304,15 +6499,36 @@
    * Output must stay character-for-character aligned with the textarea, so
    * only spans are added -- never text.
    */
+  // Robot Framework text as coloured HTML, cell by cell (cells: two or more
+  // spaces, a tab, or " | "): section headers, test and keyword names, the
+  // keyword each line calls (after its ${assignments}), [Settings], control
+  // words (FOR, IF, TRY, WHILE, THREAD, ...), imports, named arguments,
+  // variables, continuation and comments -- the same pieces the VS Code
+  // extension's grammar colours.
+  var RF_CONTROL = /^(FOR|END|IF|ELSE IF|ELSE|WHILE|TRY|EXCEPT|FINALLY|BREAK|CONTINUE|RETURN|VAR|GROUP|THREAD)$/;
+  var RF_INLINE = /^(IN|IN RANGE|IN ENUMERATE|IN ZIP|AND|ELSE|ELSE IF|AS)$/;
+  var RF_CALLS_NEXT = /^\[(Setup|Teardown|Template)\]$/i;
+  var RF_SETTING_CALL = /^((Suite|Test|Task) (Setup|Teardown)|(Test|Task) Template)$/i;
+  var RF_IMPORT = /^(Library|Resource|Variables)$/i;
+
+  function _rfVars(html) {
+    return html.replace(/((?:[$@%]|&amp;)\{[^}\n]*\})/g, '<span class="rf-var">$1</span>');
+  }
+
+  function _rfCell(cls, text) {
+    var html = _rfVars(_escapeHtml(text));
+    return cls ? '<span class="' + cls + '">' + html + '</span>' : html;
+  }
+
   function _rfHighlight(text) {
     var section = '';
     return text.split('\n').map(function (line) {
-      var head = /^\s*\*{3}\s*([^*]+?)\s*\*{3}/.exec(line);
-      if (head) {
+      var head = /^\s*\*{1,3}\s*([^*]+?)\s*\**\s*$/.exec(line);
+      if (head && /^\s*\*/.test(line)) {
         section = head[1].toLowerCase();
         return '<span class="rf-sec">' + _escapeHtml(line) + '</span>';
       }
-      if (/^\s*#/.test(line)) return '<span class="rf-com">' + _escapeHtml(line) + '</span>';
+      if (/^\s*#/.test(line) || section.indexOf('comment') === 0) return '<span class="rf-com">' + _escapeHtml(line) + '</span>';
 
       var code = line;
       var comment = '';
@@ -6321,20 +6537,61 @@
         code = line.slice(0, cm.index);
         comment = '<span class="rf-com">' + _escapeHtml(line.slice(cm.index)) + '</span>';
       }
-      var out = _escapeHtml(code)
-        .replace(/((?:[$@%]|&amp;)\{[^}\n]*\})/g, '<span class="rf-var">$1</span>')
-        // [Tags] etc. are settings only at the start of a cell; ${d}[key] is item access.
-        .replace(/(^\s+|\t| {2,})(\[[A-Za-z][A-Za-z ]*\])/g, '$1<span class="rf-set">$2</span>')
-        .replace(/^(\s*)(\.\.\.)/, '$1<span class="rf-cont">$2</span>');
-
-      if (code.trim() && !/^\s/.test(code) && !/^\.\.\./.test(code)) {
-        if (section.indexOf('setting') === 0) {
-          out = out.replace(/^(\S(?:.*?\S)?)( {2,}|\t|$)/, '<span class="rf-key">$1</span>$2');
-        } else if (section.indexOf('test case') === 0 || section.indexOf('task') === 0 ||
-                   section.indexOf('keyword') === 0) {
-          out = '<span class="rf-name">' + out + '</span>';
+      var body = section.indexOf('test case') === 0 || section.indexOf('task') === 0 || section.indexOf('keyword') === 0;
+      var settings = section.indexOf('setting') === 0;
+      var variables = section.indexOf('variable') === 0;
+      // cells and separators alternate: parts[0] is '' on an indented line
+      var parts = code.split(/( {2,}|\t+| \| )/);
+      var out = '';
+      var cellNo = 0;          // cells seen, the leading empty one included
+      var callNext = false;    // the next cell is a keyword call
+      var sawCall = false;
+      var indented = parts[0] === '';
+      parts.forEach(function (part, i) {
+        if (i % 2 === 1) { out += _escapeHtml(part); return; }
+        var t = part;
+        var n = cellNo++;
+        if (!t) return;
+        if (n === 0) {
+          if (t === '...') { out += _rfCell('rf-cont', t); return; }
+          if (body) { out += _rfCell('rf-name', t); return; }
+          if (settings) {
+            out += _rfCell('rf-key', t);
+            if (RF_SETTING_CALL.test(t)) callNext = 'call';
+            else if (RF_IMPORT.test(t)) callNext = 'import';
+            return;
+          }
+          if (variables) { out += _rfCell('rf-var', t); return; }
+          out += _rfCell('', t);
+          return;
         }
-      }
+        if (callNext) {
+          out += _rfCell(callNext === 'import' ? 'rf-imp' : 'rf-call', t);
+          callNext = false;
+          sawCall = true;
+          return;
+        }
+        if (n === 1 && t === '...') { out += _rfCell('rf-cont', t); return; }
+        if (body && indented && !sawCall) {
+          if (/^[$@&]\{[^}]*\}\s?=?$/.test(t)) { out += _rfCell('', t); return; }   // ${assignment}=
+          if (/^\[[^\]]+\]$/.test(t)) {
+            out += _rfCell('rf-set', t);
+            if (RF_CALLS_NEXT.test(t)) callNext = 'call'; else sawCall = true;
+            return;
+          }
+          if (RF_CONTROL.test(t)) { out += _rfCell('rf-ctl', t); sawCall = true; return; }
+          out += _rfCell('rf-call', t);
+          sawCall = true;
+          return;
+        }
+        if (RF_INLINE.test(t)) { out += _rfCell('rf-ctl', t); return; }
+        var named = /^([A-Za-z_][\w ]*?)=(?!=)/.exec(t);
+        if (named) {
+          out += '<span class="rf-arg">' + _escapeHtml(named[1]) + '</span>=' + _rfVars(_escapeHtml(t.slice(named[0].length)));
+          return;
+        }
+        out += _rfCell('', t);
+      });
       return out + comment;
     }).join('\n') + '\n';
   }
@@ -6468,7 +6725,8 @@
           _tpvShowTab('script');
           _tpvGotoLine(Number(target.line));
         }
-      }, _tpvEditable() ? function (change) { return _tpvViewEdit(view, change); } : null);
+      }, _tpvEditable() ? function (change) { return _tpvViewEdit(view, change); } : null,
+      view.type === 'flow-graph' && _tpvBreakable(st.path) ? _tpvViewBreakpoint : null);
     } else if (view.type === 'code') {
       pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-code-slash me-1"></i>What the runner builds from the text in Script; read-only.' + note + '</div>' +
         '<pre class="tpv-code-view">' + (view.language === 'robot' ? _rfHighlight(data.text || '') : _escapeHtml(data.text || '')) + '</pre>';
@@ -6488,7 +6746,22 @@
     var data = Object.assign({}, (res.views || {})[view.id] || {});
     data.editable = _tpvEditable();
     data.undo = data.editable ? (_tpvEditor.viewUndo || []).length : 0;
+    var st = _tpvViewState;
+    if (view.type === 'flow-graph' && st && _tpvBreakable(st.path)) {
+      var top = _tpdStoppedAt(st.path);
+      data.breakpoints = MM.tpDebug.breakpoints.steps(_getTestProject(), st.path, st.getText());
+      data.paused = top && top.node ? top.node : null;
+    }
     return data;
+  }
+
+  /** A step's breakpoint dot on the project view's Diagram. */
+  function _tpvViewBreakpoint(id) {
+    var st = _tpvViewState;
+    if (!st || String(id).indexOf('::') >= 0) return;
+    var text = st.getText();
+    var line = MM.tpDebug.breakpoints.lineOfStep(text, id);
+    if (line) MM.tpDebug.breakpoints.toggle(_getTestProject(), st.path, line, text);
   }
 
   /**
@@ -7221,6 +7494,7 @@
           });
           e.record = st;
           e.since = st.next || e.since;
+          _tpdOnPoll(e);
           e.error = '';
           if (st.dropped) fresh.unshift('… ' + st.dropped + ' earlier lines are only in console.log …');
           Array.prototype.push.apply(e.lines, fresh);
@@ -7412,6 +7686,7 @@
       '</div>' +
       '<div class="tpr-counts" id="tprCounts"></div>' +
       '<div class="tpr-message" id="tprMessage" hidden></div>' +
+      (e.record.debug && e.record.run_state !== 'done' && MM.tpDebug ? '<div class="tpd" id="tpdPanel"></div>' : '') +
       '<div class="tpr-tabs" role="tablist">' +
       '  <button type="button" class="tpr-tab active" data-tpr-tab="console">Console</button>' +
       '  <button type="button" class="tpr-tab" data-tpr-tab="results">Results <span id="tprResultsN"></span></button>' +
@@ -7442,6 +7717,14 @@
     });
     var toggle = document.getElementById('tprDiagramToggle');
     if (toggle) toggle.addEventListener('click', function () { _tprToggleDiagram(e); });
+    var dbgEl = document.getElementById('tpdPanel');
+    e.debugPanel = dbgEl ? MM.tpDebug.panel(dbgEl, {
+      root: e.root, runId: e.id,
+      state: function () { return typeof e.record.debug === 'object' ? e.record.debug : {}; },
+      openFile: function (path, line) { _tpvOpenAt(path, line); },
+      toast: showToast
+    }) : null;
+    if (e.debugPanel) e.debugPanel.update();
     if (drawable) _tprWireSplit(e);
     _tprDropDiagram();
     if (showDiagram) _tprMountDiagram(e);
@@ -7671,7 +7954,26 @@
 
   /** What the Diagram view gets: the runner's drawing data, where the run is, and the view settings. */
   function _tprViewData(d) {
-    return Object.assign({}, d.base, { live: d.live, zoom: _tprZoom(), motion: _tprMotion() });
+    var data = Object.assign({}, d.base, { live: d.live, zoom: _tprZoom(), motion: _tprMotion() });
+    var e = _tprRuns[d.key];
+    if (e && e.record.debug && !e.record.group && MM.tpDebug && d.flowText != null) {
+      var dbg = typeof e.record.debug === 'object' ? e.record.debug : {};
+      var top = dbg.stopped && dbg.stopped.frames.filter(function (f) { return f.node; })[0];
+      data.breakpoints = MM.tpDebug.breakpoints.steps(e.root, e.record.target, d.flowText);
+      data.paused = top ? top.node : null;
+    }
+    return data;
+  }
+
+  /** A step's breakpoint dot on the Runs view's Diagram: toggle it in the flow file. */
+  function _tprDiagramBreakpoint(e, d, id) {
+    if (!MM.tpDebug || d.flowText == null) return;
+    if (String(id).indexOf('::') >= 0) {
+      showToast('Breakpoint', 'Set it in the sub-flow\'s own file (open it, then click its line or its step).', 'info');
+      return;
+    }
+    var line = MM.tpDebug.breakpoints.lineOfStep(d.flowText, id);
+    if (line) MM.tpDebug.breakpoints.toggle(e.root, e.record.target, line, d.flowText);
   }
 
   /** The Diagram's size as the view takes it: 'fit', 'natural' or a share (0.75). */
@@ -7770,7 +8072,11 @@
             e.diagramData = data;
             return data;
           });
-    Promise.all([ask, pluginsReady])
+    // A debugged flow: its text too, for its breakpoints' lines.
+    var text = rec.debug && !rec.group
+      ? MM.testProjectClient.file(e.root, rec.target).then(function (res) { return res.content; }, function () { return null; })
+      : Promise.resolve(null);
+    Promise.all([ask, pluginsReady, text])
       .then(function (r) {
         if (_tprDiagram !== d || !document.getElementById('tprDiagramBody')) return;
         var plugged = MM.endo && MM.endo.plugins ? MM.endo.plugins.fileViews(type)[0] : null;
@@ -7783,9 +8089,11 @@
           // Our own scrolling (follow) is not the user's.
           if (Date.now() - d.followedAt > 150) d.userScrolledAt = Date.now();
         });
+        d.flowText = r[2];
         d.view = plugged.mount(document.getElementById('tprDiagramFrame'),
           _tprViewData(d),
-          function (target) { _tprDiagramReveal(e, d, target); });
+          function (target) { _tprDiagramReveal(e, d, target); }, null,
+          rec.debug ? function (id) { _tprDiagramBreakpoint(e, d, id); } : null);
       })
       .catch(function (err) {
         if (_tprDiagram === d && document.getElementById('tprDiagramBody')) {
@@ -7799,7 +8107,7 @@
     var d = _tprDiagram;
     if (!d || !d.view || d.key !== _tprKey(e.root, e.id)) return;
     var live = _tprLivePositions(e.record);
-    var liveKey = JSON.stringify(live);
+    var liveKey = JSON.stringify([live, e.record.debug && e.record.debug.seq]);
     if (liveKey === d.liveKey) return;
     d.live = live;
     d.liveKey = liveKey;
@@ -8650,6 +8958,8 @@
   MM.loadContent = loadContent;
   MM.changeConnectButtonState = changeConnectButtonState;
   MM.showToast = showToast;
+  MM.tpHighlight = { robot: _rfHighlight, json: _jsonHighlight };
+  if (MM.tpDebug) MM.tpDebug.breakpoints.onChange(_tpdBreakpointsChanged);
   MM.showConfirm = showConfirm;
   MM.showWarningDialog = showWarningDialog;
   MM.activateItemAndLoadContent = activateItemAndLoadContent;

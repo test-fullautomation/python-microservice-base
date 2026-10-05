@@ -94,6 +94,7 @@ class _Run:
         self.console = None
         self.monitor: Optional[subprocess.Popen] = None
         self.monitor_interval = 0.0
+        self.debug = None          # debugging.DebugSession of a debugged run
 
 
 class _Member:
@@ -116,7 +117,11 @@ class RunManager:
     # ---- start -----------------------------------------------------------
 
     def start(self, root: str, target: str = "", *, variables: Optional[dict] = None,
-              dryrun: bool = False, resources: bool = False) -> dict:
+              dryrun: bool = False, resources: bool = False, debug: Optional[dict] = None) -> dict:
+        """Start a run of ``target``. ``debug`` (``{breakpoints: {path: [lines]},
+        filters: [...], stop_on_entry}``) runs it under the debugger
+        (:mod:`.debugging`): see :meth:`debug_command` and the ``debug`` of
+        :meth:`status`."""
         root = _abs_root(root)
         manifest = _load_manifest(root)
         if manifest is None:
@@ -130,12 +135,35 @@ class RunManager:
             raise TestProjectError(
                 f"{runner.display_name} cannot run {target or 'this project'}.")
 
-        run_id, out_dir = self._reserve(root, target)
+        session = None
+        if debug is not None:
+            if dryrun:
+                raise TestProjectError("A dry run cannot be debugged.")
+            if not runner.can_debug(target):
+                raise TestProjectError(f"{runner.display_name} cannot debug {target or 'this project'}.")
+            from .debugging import DebugSession
+            session = DebugSession(
+                root, os.path.join(root, *(target or layout.get("suites", "")).split("/")),
+                stop_on_entry=bool(debug.get("stop_on_entry")),
+                breakpoints=debug.get("breakpoints") or {}, filters=debug.get("filters") or [])
+
+        try:
+            run_id, out_dir = self._reserve(root, target)
+        except TestProjectError:
+            if session:
+                session.close()
+            raise
 
         options = RunOptions(variables={str(k): str(v) for k, v in (variables or {}).items()},
-                             dryrun=bool(dryrun), resources=bool(resources) and not dryrun)
+                             dryrun=bool(dryrun), resources=bool(resources) and not dryrun,
+                             debug_port=session.port if session else 0)
         settings = run_settings_of(manifest)
-        plan = runner.run_plan(root, layout, target, settings, options, out_dir)
+        try:
+            plan = runner.run_plan(root, layout, target, settings, options, out_dir)
+        except Exception:
+            if session:
+                session.close()
+            raise
 
         record = {
             "id": run_id,
@@ -159,6 +187,9 @@ class RunManager:
         }
         run = _Run(root, run_id, out_dir, record)
         run.stop_file = plan.stop_file
+        run.debug = session
+        if session:
+            record["debug"] = True
 
         try:
             run.proc = self._spawn(plan.argv, plan.cwd, self._merged_env(plan.env))
@@ -166,6 +197,8 @@ class RunManager:
             record.update(state="done", verdict="error", ended_at=_now(),
                           message=f"Could not start {plan.argv[0]}: {exc}")
             self._save(run)
+            if session:
+                session.close()
             raise TestProjectError(record["message"]) from exc
 
         with self._lock:
@@ -452,6 +485,8 @@ class RunManager:
             console.close()
         returncode = run.proc.wait()
         self._end_monitor(run)
+        if run.debug:
+            run.debug.close()
         try:
             result = runner.read_results(run.out_dir, None if run.stop_requested else returncode)
             outcome = {"verdict": result.verdict, "counts": result.counts,
@@ -505,7 +540,40 @@ class RunManager:
                 out["member_lines"] = [[tag, line[len(run.members[tag].id) + 3:]]
                                        for tag, line in zip(tags, batch)]
         self._add_positions(out, run.out_dir, [m.id for m in run.members])
+        if run.debug:
+            out["debug"] = run.debug.state()
         return out
+
+    # ---- debugging (a run started with ``debug``) -------------------------------
+
+    def _session(self, root: str, run_id: str):
+        run = self._runs.get((_abs_root(root), run_id))
+        if run is None or run.debug is None or run.record["state"] == "done":
+            raise TestProjectError("That run is not being debugged.")
+        return run.debug
+
+    def debug_command(self, root: str, run_id: str, command: str) -> dict:
+        """continue | next | stepIn | stepOut | pause."""
+        session = self._session(root, run_id)
+        try:
+            session.command(command)
+        except ValueError as exc:
+            raise TestProjectError(str(exc)) from exc
+        return session.state()
+
+    def debug_breakpoints(self, root: str, run_id: str, path: str, lines: List[int]) -> List[dict]:
+        return self._session(root, run_id).set_breakpoints(path, lines)
+
+    def debug_filters(self, root: str, run_id: str, filters: List[str]) -> dict:
+        session = self._session(root, run_id)
+        session.set_filters(filters)
+        return session.state()
+
+    def debug_variables(self, root: str, run_id: str, ref: int) -> dict:
+        return self._session(root, run_id).ask("variables", ref=int(ref))
+
+    def debug_evaluate(self, root: str, run_id: str, expression: str) -> dict:
+        return self._session(root, run_id).ask("evaluate", expression=str(expression))
 
     @staticmethod
     def _add_positions(out: dict, out_dir: str, member_ids: List[str]) -> None:
@@ -563,6 +631,9 @@ class RunManager:
             raise TestProjectError("That run is not running.")
         if run.members:
             return self._stop_group(run, force)
+        if run.debug:
+            # A run stopped at a breakpoint goes on, without stopping again, to its stop.
+            run.debug.command("terminate")
         proc = run.proc
         if force or not run.stop_file or run.stop_requested:
             self._kill(proc)
