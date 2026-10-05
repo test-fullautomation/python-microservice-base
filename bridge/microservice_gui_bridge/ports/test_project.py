@@ -161,6 +161,9 @@ Per-run choices made when starting a run.
    #: A debugger listens on this local port (``debugging.py``): the run's
    #: debug listener connects to it. 0: not debugged.
    debug_port: int = 0
+   #: Step mode: the run pauses before every step and goes on one step per
+   #: resume (:meth:`TestProjectRunner.control`); see ``can_pause``.
+   step: bool = False
 
 
 @dataclass
@@ -469,6 +472,51 @@ Whether ``rel_path`` can be run under the debugger (``RunOptions.debug_port``):
 breakpoints, stepping, variables. Default: no.
       """
       return False
+
+   # ---- pause, resume, stop, restart (optional) --------------------------------
+
+   def can_pause(self, rel_path: str) -> bool:
+      """
+Whether a run of ``rel_path`` can be paused, resumed and stopped through
+:meth:`control` while it runs (and started in step mode). Default: no.
+      """
+      return False
+
+   def control(self, root: str, layout: Dict[str, str], out_dir: str, command: str,
+               member: str, settings: RunSettings) -> Dict[str, object]:
+      """
+Send ``command`` -- ``pause``, ``resume`` or ``stop`` -- to the running
+run whose folder is ``out_dir`` (a group run's folder for a group);
+``member``: only that member of a group run (its id), ``""`` for all.
+``{"ok": True}`` or ``{"ok": False, "error": ...}``. ``stop`` ends at the
+next step boundary, keeps what is needed to continue later
+(:meth:`restart_variables`) and runs the teardown.
+      """
+      return {"ok": False, "error": f"{self.display_name or self.runner_id} runs cannot be paused."}
+
+   def control_state(self, out_dir: str) -> Dict[str, object]:
+      """
+What the processes of a run say about themselves, for the GUI's poll:
+``{"processes": {name: {"state": running|paused|stopped|finished, "phase",
+"loop", "iteration", "age_s"}}, "command": {"value", "age_s"} or None}``,
+``name`` being a group member's id. ``{}`` when nothing is known.
+      """
+      return {}
+
+   def member_env(self, member_id: str) -> Dict[str, str]:
+      """
+Environment of one member of a group run, besides :meth:`group_env` --
+e.g. the name :meth:`control` addresses it by. Default: nothing.
+      """
+      return {}
+
+   def restart_variables(self, out_dir: str, target: str) -> Optional[Dict[str, str]]:
+      """
+After a run of ``target`` that was stopped or broke off: the variables a
+new run needs to continue where it ended (its checkpoint), or None when
+it cannot. Default: None.
+      """
+      return None
 
    def define(self, root: str, layout: Dict[str, str], rel_path: str, content: str,
               name: str, settings: RunSettings) -> Dict[str, object]:

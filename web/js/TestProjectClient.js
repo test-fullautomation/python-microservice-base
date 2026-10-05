@@ -171,7 +171,21 @@
         resources: !!opts.resources
       };
       if (opts.debug) body.debug = opts.debug;
+      if (opts.step) body.step = true;
       return _post('/api/test-project/run', body);
+    },
+
+    /**
+     * Pause, resume or stop a running flow: every process, or one member of a
+     * group run (`member`, its id). Answers the run's state, with `control`.
+     */
+    control: function (root, runId, command, member) {
+      return _post('/api/test-project/run/control', { root: root, run_id: runId, command: command, member: member || '' });
+    },
+
+    /** A new run continuing a stopped (or broken off) flow run from its checkpoint. */
+    restart: function (root, runId) {
+      return _post('/api/test-project/run/restart', { root: root, run_id: runId });
     },
 
     /**

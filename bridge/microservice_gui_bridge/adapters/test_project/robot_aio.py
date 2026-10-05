@@ -382,6 +382,11 @@ class RobotAioRunner(TestProjectRunner):
             if options.dryrun:
                 raise TestProjectError("A dry run cannot be debugged.")
             argv += ["--listener", _DEBUG]
+        if options.step:
+            if not self._uses_flows(target_abs):
+                raise TestProjectError("Step mode is for flow files.")
+            # The fork's step mode: a pause before every step, resumed through the signal store.
+            argv += ["--variable", "FLOW_STEP:yes"]
         argv += [str(a) for a in settings.args]
         argv.append(target_abs)
 
@@ -407,6 +412,81 @@ class RobotAioRunner(TestProjectRunner):
 
     def can_debug(self, rel_path: str) -> bool:
         return self.can_run(rel_path)
+
+    # ---- pause, resume, stop, restart: the fork's flow control ----------------
+    #
+    # A flow run's signal store (ROBOT_FLOW_SIGNALS, in its folder) is also its
+    # control channel: ``python -m robot.flow control <store> pause|resume|stop
+    # [--rig NAME]`` writes the command, every flow process publishes
+    # ``flow.state.<rig or pid>`` there. A group's members share one store and
+    # run as rigs named after the members.
+
+    def can_pause(self, rel_path: str) -> bool:
+        rel = str(rel_path).lower()
+        return rel.endswith(FLOW_SUFFIX) or rel == ""
+
+    def control(self, root, layout, out_dir, command, member, settings: RunSettings):
+        if command not in ("pause", "resume", "stop"):
+            return {"ok": False, "error": f"Unknown command {command!r}."}
+        store = os.path.join(out_dir, SIGNALS_FILE)
+        argv = [settings.python.strip() or sys.executable, "-m", "robot.flow", "control", store, command]
+        if member:
+            argv += ["--rig", member]
+        import subprocess
+        env = dict(os.environ)
+        for key, value in self._env(root, settings).items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
+        try:
+            proc = subprocess.run(argv, capture_output=True, cwd=root, env=env, timeout=30,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {"ok": False, "error": f"Could not send {command}: {exc}"}
+        if proc.returncode != 0:
+            tail = proc.stderr.decode("utf-8", errors="replace").strip().splitlines()[-2:]
+            return {"ok": False, "error": " / ".join(tail) or f"exit {proc.returncode}",
+                    "missing": b"No module named" in proc.stderr}
+        return {"ok": True}
+
+    def control_state(self, out_dir):
+        import time as _time
+        try:
+            with open(os.path.join(out_dir, SIGNALS_FILE), encoding="utf-8") as fh:
+                entries = json.load(fh)
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(entries, dict):
+            return {}
+        now = _time.time()
+        processes, command = {}, None
+        for key, entry in entries.items():
+            if not isinstance(entry, dict):
+                continue
+            age = round(max(0.0, now - float(entry.get("time") or now)), 1)
+            if key.startswith("flow.state."):
+                value = entry.get("value") if isinstance(entry.get("value"), dict) else {"state": entry.get("value")}
+                processes[key[len("flow.state."):]] = {
+                    "state": value.get("state"), "phase": value.get("phase"), "loop": value.get("loop"),
+                    "iteration": value.get("iteration"), "age_s": age}
+            elif key == "flow.control" or key.startswith("flow.control."):
+                if command is None or age < command["age_s"]:
+                    command = {"value": entry.get("value"), "age_s": age,
+                               "member": key[len("flow.control."):] if key != "flow.control" else ""}
+        return {"processes": processes, "command": command} if processes or command else {}
+
+    def member_env(self, member_id):
+        return {"ROBOT_FLOW_RIG": member_id}
+
+    def restart_variables(self, out_dir, target):
+        if not str(target).lower().endswith(FLOW_SUFFIX):
+            return None
+        try:
+            found = sorted(f for f in os.listdir(out_dir) if f.endswith(".checkpoint.json"))
+        except OSError:
+            return None
+        return {"FLOW_CHECKPOINT": os.path.join(out_dir, found[0])} if found else None
 
     def define(self, root, layout, rel_path, content, name, settings: RunSettings):
         """Robot's own answer (``robot_grid.py --define``): the keyword resolved

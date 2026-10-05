@@ -52,6 +52,10 @@ RESMON_INTERVAL_S = 5.0
 STOP_GRACE_S = 30.0
 _MAX_LINES = 5000
 _MAX_BATCH = 2000
+# A flow stopped through its control channel ends at the next step boundary;
+# a step that runs longer than this gets the stop file (Robot's Ctrl-C) too.
+FLOW_STOP_GRACE_S = 60
+
 _RUN_ID_RE = re.compile(r"^\d{8}-\d{6}(?:-\d+)?_[A-Za-z0-9._-]+$")
 _ARTIFACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _MEMBER_LINE_RE = re.compile(r"^\[([A-Za-z0-9_-]+)\] ?(.*)$")
@@ -117,11 +121,13 @@ class RunManager:
     # ---- start -----------------------------------------------------------
 
     def start(self, root: str, target: str = "", *, variables: Optional[dict] = None,
-              dryrun: bool = False, resources: bool = False, debug: Optional[dict] = None) -> dict:
+              dryrun: bool = False, resources: bool = False, debug: Optional[dict] = None,
+              step: bool = False, continues: str = "") -> dict:
         """Start a run of ``target``. ``debug`` (``{breakpoints: {path: [lines]},
         filters: [...], stop_on_entry}``) runs it under the debugger
         (:mod:`.debugging`): see :meth:`debug_command` and the ``debug`` of
-        :meth:`status`."""
+        :meth:`status`. ``step``: step mode (see :meth:`control`).
+        ``continues``: the id of the run this one continues (:meth:`restart`)."""
         root = _abs_root(root)
         manifest = _load_manifest(root)
         if manifest is None:
@@ -135,6 +141,8 @@ class RunManager:
             raise TestProjectError(
                 f"{runner.display_name} cannot run {target or 'this project'}.")
 
+        if step and not runner.can_pause(target):
+            raise TestProjectError(f"{runner.display_name} has no step mode for {target or 'this project'}.")
         session = None
         if debug is not None:
             if dryrun:
@@ -156,7 +164,7 @@ class RunManager:
 
         options = RunOptions(variables={str(k): str(v) for k, v in (variables or {}).items()},
                              dryrun=bool(dryrun), resources=bool(resources) and not dryrun,
-                             debug_port=session.port if session else 0)
+                             debug_port=session.port if session else 0, step=bool(step))
         settings = run_settings_of(manifest)
         try:
             plan = runner.run_plan(root, layout, target, settings, options, out_dir)
@@ -190,6 +198,8 @@ class RunManager:
         run.debug = session
         if session:
             record["debug"] = True
+        if continues:
+            record["continues"] = continues
 
         try:
             run.proc = self._spawn(plan.argv, plan.cwd, self._merged_env(plan.env))
@@ -279,6 +289,8 @@ class RunManager:
                 os.makedirs(m_dir)
                 options = RunOptions(variables=dict(m.variables), dryrun=bool(dryrun))
                 plan = runner.run_plan(root, layout, m.target, settings, options, m_dir)
+                # How the runner addresses this member (pause one of them).
+                plan.env.update(runner.member_env(m.id))
                 plans.append(plan)
                 members.append(_Member(i, m.id, m_dir, {
                     "id": m.id, "target": m.target, "variables": dict(m.variables),
@@ -542,7 +554,85 @@ class RunManager:
         self._add_positions(out, run.out_dir, [m.id for m in run.members])
         if run.debug:
             out["debug"] = run.debug.state()
+        self._add_control(out, run)
+        if (out.get("run_state") or out.get("state")) == "done" and self.restartable(root, run_id, out):
+            out["restartable"] = True
         return out
+
+    # ---- pause, resume, stop, restart (a runner that can_pause) -------------------
+
+    def _runner_of(self, root: str):
+        manifest = _load_manifest(root)
+        if manifest is None:
+            raise TestProjectError(f"{root} is not a test project.")
+        runner = get_runner(manifest["runner"])
+        return manifest, runner, _layout(runner, manifest)
+
+    def _pausable(self, run: _Run, runner) -> bool:
+        targets = [m.record.get("target", "") for m in run.members] or [run.record.get("target", "")]
+        return all(runner.can_pause(t) for t in targets)
+
+    def _add_control(self, out: dict, run: _Run) -> None:
+        """While a pausable run runs: what its processes say (``control``)."""
+        if run.record["state"] == "done":
+            return
+        try:
+            _manifest, runner, _layout_ = self._runner_of(run.root)
+        except TestProjectError:
+            return
+        if self._pausable(run, runner):
+            out["pausable"] = True
+            state = runner.control_state(run.out_dir)
+            if state:
+                out["control"] = state
+
+    def control(self, root: str, run_id: str, command: str, member: str = "") -> dict:
+        """pause | resume | stop a running run (``member``: one member of a group run)."""
+        root = _abs_root(root)
+        run = self._runs.get((root, run_id))
+        if run is None or run.record["state"] == "done":
+            raise TestProjectError("That run is not running.")
+        manifest, runner, layout = self._runner_of(root)
+        if not self._pausable(run, runner):
+            raise TestProjectError(f"{runner.display_name} cannot pause this run.")
+        if member and member not in [m.id for m in run.members]:
+            raise TestProjectError(f"No member {member!r} in this run.")
+        res = runner.control(root, layout, run.out_dir, command, member, run_settings_of(manifest))
+        if not res.get("ok"):
+            raise TestProjectError(res.get("error") or f"{command} was not sent.")
+        if command == "stop" and not member:
+            with run.lock:
+                run.stop_requested = True
+                run.record["state"] = "stopping"
+            self._save(run)
+        out = self._public(run)
+        self._add_control(out, run)
+        return out
+
+    def restart(self, root: str, run_id: str) -> dict:
+        """A new run that continues ``run_id`` where it stopped (its checkpoint)."""
+        root = _abs_root(root)
+        record = self._read_record(root, run_id)
+        if record.get("state") != "done":
+            raise TestProjectError("That run has not ended.")
+        if record.get("group"):
+            raise TestProjectError("A run group cannot be continued; continue its members one by one.")
+        _manifest, runner, _layout_ = self._runner_of(root)
+        extra = runner.restart_variables(os.path.join(root, RESULTS_DIR, run_id), record.get("target", ""))
+        if not extra:
+            raise TestProjectError("That run left nothing to continue from.")
+        variables = dict((record.get("options") or {}).get("variables") or {})
+        variables.update(extra)
+        return self.start(root, record.get("target", ""), variables=variables, continues=run_id)
+
+    def restartable(self, root: str, run_id: str, record: dict) -> bool:
+        if (record.get("run_state") or record.get("state")) != "done" or record.get("group") or record.get("verdict") == "pass":
+            return False
+        try:
+            _manifest, runner, _layout_ = self._runner_of(root)
+        except TestProjectError:
+            return False
+        return bool(runner.restart_variables(os.path.join(root, RESULTS_DIR, run_id), record.get("target", "")))
 
     # ---- debugging (a run started with ``debug``) -------------------------------
 
@@ -595,6 +685,12 @@ class RunManager:
                 out["position"] = found
 
     def _stored(self, root: str, run_id: str, since: int) -> dict:
+        out = self._stored_record(root, run_id, since)
+        if self.restartable(root, run_id, out):
+            out["restartable"] = True
+        return out
+
+    def _stored_record(self, root: str, run_id: str, since: int) -> dict:
         record = self._read_record(root, run_id)
         lines: List[str] = []
         path = os.path.join(root, RESULTS_DIR, run_id, CONSOLE_FILE)
@@ -629,11 +725,13 @@ class RunManager:
         run = self._runs.get((root, run_id))
         if run is None or run.record["state"] == "done":
             raise TestProjectError("That run is not running.")
-        if run.members:
-            return self._stop_group(run, force)
         if run.debug:
             # A run stopped at a breakpoint goes on, without stopping again, to its stop.
             run.debug.command("terminate")
+        if not force and not run.stop_requested and self._flow_stop(run):
+            return self._public(run)
+        if run.members:
+            return self._stop_group(run, force)
         proc = run.proc
         if force or not run.stop_file or run.stop_requested:
             self._kill(proc)
@@ -658,6 +756,43 @@ class RunManager:
                 self._kill(proc)
         threading.Thread(target=later, daemon=True).start()
         return self._public(run)
+
+    def _flow_stop(self, run: _Run) -> bool:
+        """A first Stop of a run whose processes take commands (a flow): their own
+        stop -- at the next step boundary, with a checkpoint to continue from, the
+        teardown run. If it has not ended a while later, the stop file follows;
+        a second Stop kills. False: nothing listens, stop the usual way."""
+        try:
+            manifest, runner, layout = self._runner_of(run.root)
+        except TestProjectError:
+            return False
+        if not self._pausable(run, runner):
+            return False
+        states = (runner.control_state(run.out_dir) or {}).get("processes") or {}
+        if not any(p.get("state") in ("running", "paused") for p in states.values()):
+            return False
+        if not runner.control(run.root, layout, run.out_dir, "stop", "", run_settings_of(manifest)).get("ok"):
+            return False
+        with run.lock:
+            run.stop_requested = True
+            run.record["state"] = "stopping"
+        self._save(run)
+
+        def later():
+            procs = [m.proc for m in run.members] if run.members else [run.proc]
+            deadline = time.time() + FLOW_STOP_GRACE_S
+            while time.time() < deadline and any(p is not None and p.poll() is None for p in procs):
+                time.sleep(0.5)
+            stop_files = [m.stop_file for m in run.members] if run.members else [run.stop_file]
+            for proc, stop_file in zip(procs, stop_files):
+                if proc is not None and proc.poll() is None and stop_file:
+                    try:
+                        with open(stop_file, "w", encoding="utf-8") as fh:
+                            fh.write(_now())
+                    except OSError:
+                        self._kill(proc)
+        threading.Thread(target=later, daemon=True).start()
+        return True
 
     def _stop_group(self, run: _Run, force: bool) -> dict:
         """Stop every member: gracefully first; a second Stop (or force) kills."""

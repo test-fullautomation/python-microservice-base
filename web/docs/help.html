@@ -401,6 +401,13 @@
       </ul>
       <p>Each run gets its own folder, <code>results/&lt;date-time&gt;_&lt;name&gt;/</code>, so the history survives restarts.</p>
 
+      <h3>Pause, resume, continue (flows)</h3>
+      <ul>
+        <li><strong>Pause</strong> holds a running flow at the next step boundary (deadlines and timeouts wait too); <strong>Resume</strong> goes on.  For a run group, each member can also be paused alone.</li>
+        <li><strong>Stop</strong> on a flow writes a checkpoint; <strong>Continue from checkpoint</strong> then starts a run that skips the finished phases and goes on with the interrupted loop.</li>
+        <li><em>Step mode</em> in the Run dialog pauses before every step; <em>Next step</em> goes one step on.</li>
+      </ul>
+
       <h3>Debug</h3>
       <ul>
         <li><em>Debug</em> next to <em>Run&hellip;</em> runs a suite or flow under the debugger.  Click a line number in the editor, or the dot on a step of the Diagram, to set a breakpoint.</li>

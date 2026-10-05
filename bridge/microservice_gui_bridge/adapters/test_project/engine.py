@@ -676,6 +676,7 @@ def _file_entry(root: str, rel: str, tracked, runner: Optional[TestProjectRunner
              "size": os.path.getsize(full), "service": None, "runnable": runnable,
              "run_hint": (runner.file_run_hint(layout or runner.default_layout(), rel)
                           if runnable else ""),
+             "pausable": bool(runnable and runner.can_pause(rel)),
              "views": runner.file_views(rel) if own else []}
     if rel == MANIFEST_NAME:
         entry.update(role="manifest", state="ok")
