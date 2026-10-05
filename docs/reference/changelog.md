@@ -5,6 +5,22 @@ Significant changes since the framework's RabbitMQ-era origins.
 Architectural records (one file per decision) live in [`adr/`](../adr);
 this is the chronological summary.
 
+## Unreleased — Manager GUI: flows, views, live signals
+
+- **View roles.** The GUI opens in a view made of roles — *user* (Services,
+  Bench), *admin* (Nomad, plugins), *developer* (test projects, tools) —
+  from `settings.json`, *Settings → View* or `?view=` in the address.
+- **Flow Diagram editing.** *Edit flow* inserts, moves, changes, deletes and
+  wraps steps by drag and drop; each change is validated by the runner and
+  written back to the flow file.
+- **Sub-flows in the Diagram.** A `flow` step is drawn as one box that opens
+  in place; the live position follows a run into it.
+- **New flow.** A **+** on the project view's *Flows* group creates a flow
+  file from the runner's template and opens its Diagram.
+- **Signal Graph Studio.** *Run cluster* uses the Live panel's discovery
+  port and serves gRPC reflection from the clusters it starts.
+- **Docs.** Diagrams of the host bus and the bridge for live signals.
+
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 
 Manager GUI + bridge additions on top of 2.1.0. Targets the

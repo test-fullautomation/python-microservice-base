@@ -90,6 +90,39 @@ chamber, the bench signals and the hello service on one stage:
 | The lighter in-app help (loaded inside the running GUI) | `../../web/docs/help.html` (or click the **?** in the navbar when the GUI is running) |
 | Worked examples (C++ and Python services, a client, multi-proto projects) | [`../../../../examples/README.md`](../../../../examples/README.md) |
 
+## Views: user, admin, developer
+
+What the GUI offers is set by **roles** that combine. *User* is always on;
+the others add to it:
+
+| Role | Adds |
+|---|---|
+| **user** | the Services and Bench views, help |
+| **admin** | the Administrator ribbon tab: Nomad jobs and the fleet, the plugin manager |
+| **developer** | the Developer ribbon tab and everything behind it: test projects, the Service Creator, explorers, plugin views, the developer inspector |
+
+A lab operator who may start Nomad jobs gets `user+admin`; a test developer
+`user+developer`; the default is all three.
+
+Where the view comes from, highest priority first:
+
+| Where | Form |
+|---|---|
+| Address bar (browser) | `?view=user+admin` — for that window only |
+| *Settings → View* | checkboxes for *Administrator* and *Developer* |
+| `electron/settings.json` | `"view": "user+admin+developer"` |
+
+Roles may be written `user+admin`, `user admin`, `user,admin` or as a JSON
+list; `all` means every role. A view outside the roles stays shut whatever
+asks for it — a ribbon tab, a mode pill, a plugin command or a view
+restored from the last session — and the developer inspector turns off
+without the developer role.
+
+!!! note "Roles are not access control"
+    A view only hides parts of the GUI. Anyone who can reach the bridge can
+    still call its endpoints; keep the bridge on `localhost` (see
+    [Bridge security](#bridge-security-allowed-origins)).
+
 ## Providing a GUI for a gRPC service
 
 A service registered in Consul is listed in the Services view with a
@@ -305,7 +338,9 @@ services, and in which order, is a **composition**:
   the **signals** badge under the stage, or `MB_SIGNAL_DISCOVERY_ADDR`),
   keeps **one** stream per graph service that owns a shown signal, and
   closes it when no tile needs it. Names the catalog does not know show
-  *unknown signal* and fill in once their service is up.
+  *unknown signal* and fill in once their service is up. How the host bus
+  in the window and the bridge share this work is drawn in
+  [Diagrams → Live signals](../../../../docs/architecture/diagrams.md#live-signals-host-bus-and-bridge).
 - `node tools/endo-lint.js <composition.json>` lints a composition in CI.
   `test/endo/fixtures/bench/` holds the proposal's prototype modules and
   compositions; `test/endo/test_endo_bench.js` tests them.
@@ -415,6 +450,13 @@ and is offered again when you reopen the file. Generated files and the
 manifest open read-only. **New suite…** (overview, or **+** next to
 *Suites*) creates a suite already wired to an exported service's keywords.
 
+**New flow.** The **+** next to *Flows* (shown even while a project has no
+flow yet, when its runner has flow files) asks for a name and the resource
+files whose keywords the flow may use. It writes
+`flows/<name>.flow.json` from the runner's template — one test with one
+step to replace — and opens it on its *Diagram* tab, ready for
+*Edit flow* (below).
+
 **Export a service:** select a Consul-registered service, then *Developer →
 Selected service → Add to project* (or the button in the inspector's API tab).
 The GUI first shows a plan — every file with its status and a diff for
@@ -484,6 +526,21 @@ builds into a suite at run time.
   the text in *Script*, unsaved changes included. Click a node to find it in
   *Script*; a flow the fork refuses shows its message and a link to the
   node or line it names.
+- **Sub-flows** — a step of kind `flow` calls another flow file with
+  arguments (`{"kind": "flow", "file": "sub/step.flow.json", "args": {…}}`).
+  The Diagram draws it as one box with its arguments, and its **+** opens
+  the sub-flow's steps in place. Those steps belong to the sub-flow's own
+  file, so they are shown, not edited, here.
+- **Edit flow** — the button above the Diagram (while the file is open in
+  *Script*) turns on a palette and drop zones: drag a palette item —
+  Keyword, Gate, Sleep, Sub-flow, Decision, Loop, Try, Test — onto a **+**
+  to insert it; drag a step onto another **+** to move it; click a step for
+  its fields (*Apply*, *Delete*, *Wrap in loop / try*); *Undo* takes the
+  last change back. Every change goes through the runner
+  (`adapters/test_project/flow_edit.py`), which rewires the edges, has the
+  fork validate the result and writes it back to *Script* one node and one
+  edge per line; a change that would make the flow invalid is refused with
+  the reason. One edit at a time; a drop while one is in flight says so.
 - **Run dialog** — variables for this run (`NAME=value`, one per line; they
   override the file's own values) and **Dry run** (check keywords and
   arguments, execute nothing). Both are remembered per file.
@@ -621,7 +678,10 @@ flashes them in order and lets them fade, **Hop** moves the mark through
 them, **Off** shows only where the run is now. Reduced motion turns the
 replay off. The Diagram keeps the running step in view, except for a few
 seconds after you scroll it yourself. A finished run keeps its counts: where
-the deviations of a long night were.
+the deviations of a long night were. Inside a sub-flow the position names
+the step as `<sub-flow>::<step>`: an opened sub-flow marks that step, a
+closed one lights its box. Steps Robot reports as not run — the branch a
+decision did not take — never count as the position.
 
 How it knows: `robot_boot.py` (which starts every GUI run) loads
 `adapters/test_project/flow_position.py` into the Robot process. It numbers
@@ -671,11 +731,16 @@ library:
   `Set Signal` keyword takes — so write-direction graphs can be demonstrated
   end to end: set → watch the wired blocks react → see the ack.
 - **▶ Run graph / ▶ Run cluster** starts a *local, fully mocked* cluster for
-  a wiring check. It needs `run_cluster.py`, which belongs to the signals
-  repository and is deliberately not vendored here: point
-  **`MB_SIGNALS_ROOT`** at a checkout that contains it, otherwise the button
-  reports the snapshot as missing. Deploying the generated Nomad job and
-  using ◉ Monitor is the supported path for a real bench.
+  a wiring check, with the vendored runner `graph-studio/tools/run_cluster.py`.
+  The signal services it runs are not vendored: they come from the Live
+  panel's signals root, else **`MB_SIGNALS_ROOT`** (a folder containing
+  `signal_graph/`, `signal_discovery/` and `common/`); without one the button
+  says what is missing. The cluster's signal-discovery listens on the port
+  of the Live panel's *signal-discovery host:port*, so a bench job that
+  already owns the default port is no obstacle. When `grpcio-reflection` is
+  installed in the interpreter that runs it, every server of the cluster
+  also answers gRPC reflection, so the Manager GUI lists a graph's methods. Deploying the generated Nomad job
+  and using ◉ Monitor is the supported path for a real bench.
 - **Library…** has two tabs: *New block skeleton* scaffolds a block package
   (`blocks.py`, test stub, README, file header) with the catalog hints
   already in place and, with the *layout* box ticked, the hexagonal skeleton
@@ -686,7 +751,7 @@ library:
   hot-reloads the palette without a restart.
 
 Live lookups, Monitor and Set signal need `grpcurl` on `PATH` (as the API
-Explorer does). Graph services serve no gRPC reflection, so the vendored
+Explorer does). Deployed graph services serve no gRPC reflection, so the vendored
 `reference/protos/signal.proto` is passed as `-import-path`; the Live panel's
 *proto dir* overrides it.
 
