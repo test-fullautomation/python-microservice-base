@@ -42,6 +42,21 @@
       }
     },
     "tiles": { "type": "array", "items": { "$ref": "#/definitions/tile" } },
+    "groups": {
+      "description": "tiles shown under a header that expands and collapses; a tile in no group stays as it is. A collapsed group's tiles are suspended (R5). Shells without groups show every tile flat.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "tiles"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "title": { "type": "string", "minLength": 1 },
+          "tiles": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "collapsed": { "type": "boolean", "description": "how the group starts; the user's choice is remembered" }
+        }
+      }
+    },
     "ribbon": { "type": "array", "items": { "$ref": "#/definitions/ribbonGroup" } },
     "dock": { "type": "array", "items": { "type": "string", "enum": ["api", "details", "code"] } },
     "renderer": { "type": "string", "enum": ["schema", "html", "wasm", "qml", "widget"] }
@@ -82,7 +97,7 @@
     },
     "form": {
       "type": "object",
-      "description": "field name -> type name, or { type, label, min, max, default }",
+      "description": "field name -> type name, or { type, label, min, max, default, options | optionsFrom, current, reloadAfter }",
       "additionalProperties": {
         "anyOf": [
           { "type": "string", "enum": ["string", "int", "float", "bool", "json"] },
@@ -94,10 +109,71 @@
               "label": { "type": "string" },
               "min": { "type": "number" },
               "max": { "type": "number" },
-              "default": {}
+              "default": {},
+              "options": {
+                "description": "a dropdown with these choices: values, or { value, label }",
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "anyOf": [
+                    { "type": "string" }, { "type": "number" }, { "type": "boolean" },
+                    {
+                      "type": "object",
+                      "required": ["value"],
+                      "additionalProperties": false,
+                      "properties": { "value": {}, "label": { "type": "string" } }
+                    }
+                  ]
+                }
+              },
+              "optionsFrom": { "$ref": "#/definitions/optionsFrom" },
+              "current": { "$ref": "#/definitions/rpcValue" },
+              "reloadAfter": {
+                "description": "RPCs after whose successful call (from any tile of this component) the dropdown reads its choices and current value again, e.g. the sub-device types after SetDeviceType",
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              }
             }
           }
         ]
+      }
+    },
+    "rpcValue": {
+      "description": "one value read from an RPC: call rpc with args, take path from its result",
+      "type": "object",
+      "required": ["rpc"],
+      "additionalProperties": false,
+      "properties": {
+        "rpc": { "type": "string", "pattern": "^([A-Za-z_][A-Za-z0-9_.]*/)?[A-Za-z_][A-Za-z0-9_]*$" },
+        "args": { "type": "object" },
+        "path": { "type": "string" }
+      }
+    },
+    "optionsFrom": {
+      "description": "a dropdown filled from the service: a list RPC (rpc, path to the array, value/label paths per item), or a range from a count RPC (count, first, inclusive) with an optional name RPC per index (name)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rpc": { "type": "string", "pattern": "^([A-Za-z_][A-Za-z0-9_.]*/)?[A-Za-z_][A-Za-z0-9_]*$" },
+        "args": { "type": "object" },
+        "path": { "type": "string" },
+        "value": { "type": "string" },
+        "label": { "type": "string" },
+        "count": { "$ref": "#/definitions/rpcValue" },
+        "first": { "type": "integer" },
+        "inclusive": { "type": "boolean" },
+        "name": {
+          "type": "object",
+          "required": ["rpc", "arg"],
+          "additionalProperties": false,
+          "properties": {
+            "rpc": { "type": "string", "pattern": "^([A-Za-z_][A-Za-z0-9_.]*/)?[A-Za-z_][A-Za-z0-9_]*$" },
+            "arg": { "type": "string", "minLength": 1 },
+            "args": { "type": "object" },
+            "path": { "type": "string" }
+          }
+        }
       }
     },
     "refresh": { "type": "string", "pattern": "^[0-9]+(ms|s|m)$" },

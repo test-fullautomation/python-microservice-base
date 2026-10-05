@@ -195,15 +195,52 @@
 
   /** Tiles, ribbon commands and fields that call RPCs or read signals. */
   function uses(manifest) {
-    var u = { rpc: [], signals: [], devices: [], names: [] };
+    var u = { rpc: [], signals: [], devices: [], names: [], forms: [] };
     function named(path, value) {
       u.rpc.push(path);
       if (typeof value === 'string') u.names.push({ path: path, value: value });
+    }
+    // Arguments may read a value from another RPC: { "$from": { rpc, args, path } }.
+    function argRpcs(path, args) {
+      Object.keys(args || {}).forEach(function (k) {
+        var v = args[k];
+        if (v && typeof v === 'object' && v.$from && v.$from.rpc) {
+          named(path + '.' + k + '.$from.rpc', v.$from.rpc);
+          argRpcs(path + '.' + k + '.$from.args', v.$from.args);
+        }
+      });
+    }
+    // Dropdown fields of a form read RPCs too.
+    function formRpcs(path, form) {
+      Object.keys(form || {}).forEach(function (name) {
+        var f = form[name];
+        if (!f || typeof f !== 'object') return;
+        var fp = path + '.' + name;
+        var from = f.optionsFrom;
+        if (from) {
+          if (from.rpc) { named(fp + '.optionsFrom.rpc', from.rpc); argRpcs(fp + '.optionsFrom.args', from.args); }
+          if (from.count && from.count.rpc) {
+            named(fp + '.optionsFrom.count.rpc', from.count.rpc);
+            argRpcs(fp + '.optionsFrom.count.args', from.count.args);
+          }
+          if (from.name && from.name.rpc) { named(fp + '.optionsFrom.name.rpc', from.name.rpc); argRpcs(fp + '.optionsFrom.name.args', from.name.args); }
+          if (!!from.rpc === !!from.count) {
+            u.forms.push({ path: fp + '.optionsFrom', message: 'needs either rpc (a list) or count (a range), not both' });
+          }
+          if (f.options) u.forms.push({ path: fp, message: 'has both options and optionsFrom; keep one' });
+        }
+        if (f.current && f.current.rpc) { named(fp + '.current.rpc', f.current.rpc); argRpcs(fp + '.current.args', f.current.args); }
+        if (Array.isArray(f.reloadAfter)) {
+          f.reloadAfter.forEach(function (r, i) { named(fp + '.reloadAfter[' + i + ']', r); });
+          if (!from && !f.current) u.forms.push({ path: fp + '.reloadAfter', message: 'needs optionsFrom or current to reload' });
+        }
+      });
     }
     (manifest.tiles || []).forEach(function (t, i) {
       var p = 'tiles[' + i + ']';
       if (t.rpc) named(p + '.rpc', t.rpc);
       if (t.call) named(p + '.call', t.call);
+      if (t.form) formRpcs(p + '.form', t.form);
       if (QT_KINDS.indexOf(t.kind) >= 0) u.rpc.push(p + '.kind');
       if (t.device) u.devices.push({ path: p + '.device', value: t.device });
       (t.fields || []).forEach(function (f, j) {
@@ -217,6 +254,7 @@
     (manifest.ribbon || []).forEach(function (g, i) {
       (g.commands || []).forEach(function (c, j) {
         if (c.call) named('ribbon[' + i + '].commands[' + j + '].call', c.call);
+        if (c.form) formRpcs('ribbon[' + i + '].commands[' + j + '].form', c.form);
       });
     });
     return u;
@@ -269,6 +307,23 @@
       }
     });
 
+    // Groups (rule S): unique ids, each naming tiles of this component, a tile in one group at most.
+    var seenGroups = {}, groupOf = {};
+    (Array.isArray(manifest.groups) ? manifest.groups : []).forEach(function (g, gi) {
+      if (!g || typeof g !== 'object') return;
+      var gp = 'groups[' + gi + ']';
+      if (g.id) {
+        if (seenGroups[g.id]) add('S', 'error', gp + '.id', 'duplicate group id "' + g.id + '"');
+        seenGroups[g.id] = true;
+      }
+      (Array.isArray(g.tiles) ? g.tiles : []).forEach(function (tid, ti) {
+        var tp = gp + '.tiles[' + ti + ']';
+        if (!seenTiles[tid]) add('S', 'error', tp, 'no tile "' + tid + '" in this component');
+        else if (groupOf[tid]) add('S', 'error', tp, 'tile "' + tid + '" is already in group "' + groupOf[tid] + '"');
+        else groupOf[tid] = g.id || gp;
+      });
+    });
+
     // R9: version against the shell
     var req = manifest.requires || {};
     if (typeof req.shell === 'string') {
@@ -294,6 +349,7 @@
     if (u.signals.length && caps.indexOf('signals.subscribe') < 0) {
       add('R1', 'error', u.signals[0], 'reads signals but signals.subscribe is not in requires.capabilities');
     }
+    u.forms.forEach(function (p) { add('S', 'error', p.path, p.message); });
     var kinds = opts.kinds || {};
     (manifest.tiles || []).forEach(function (t, i) {
       var k = t && kinds[t.kind];
