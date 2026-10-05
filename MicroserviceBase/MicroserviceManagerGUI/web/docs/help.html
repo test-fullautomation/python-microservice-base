@@ -80,7 +80,7 @@
         operate running services through their own GUIs, put several of
         them on one bench, inspect and call any service via gRPC
         reflection, scaffold new services, export them into Robot
-        Framework test projects and run the tests, and start / stop the
+        Framework or Temporal test projects and run the tests, and start / stop the
         Consul and Nomad agents.
       </p>
       <div class="docs-project-info">
@@ -321,9 +321,13 @@
     <section class="docs-section" id="test-projects">
       <h2><i class="bi bi-folder2-open"></i>Test projects</h2>
       <p>
-        A test project is a Robot Framework AIO folder the Manager exports
-        services into, so test authors get working keywords without copying
-        generated files by hand.
+        A test project is a folder the Manager exports services into, so test
+        authors get working keywords without copying generated files by hand.
+        Its <strong>runner</strong> &mdash; chosen when the folder is initialized
+        &mdash; decides the files and how tests run: <em>Robot Framework AIO</em>
+        (suites, flows, keyword resources) or <em>Temporal (Python SDK)</em>
+        (pytest tests running workflows, generated activities).  The project
+        view groups and names the files in the runner's words.
       </p>
       <figure class="docs-figure">
         <img src="docs/img/project-view.png" alt="Project view: the project's files on the left, a flow file open on its Diagram tab showing setup, test and teardown lanes">
@@ -332,7 +336,7 @@
 
       <h3>Open, browse, export</h3>
       <ul>
-        <li><strong>Open</strong> &mdash; <em>Developer &rarr; Test project &rarr; Open project</em>.  A folder that is not a test project yet can be initialized; existing files are never moved or changed.</li>
+        <li><strong>Open</strong> &mdash; <em>Developer &rarr; Test project &rarr; Open project</em>.  A folder that is not a test project yet can be initialized with the runner of your choice (the one whose files it already holds is preselected); existing files are never moved or changed.</li>
         <li><strong>Browse</strong> &mdash; <em>Project view</em> (or <strong>Project</strong> in the left pane's switcher).  Every file is marked <em>gen</em> (generated), <em>starter</em>, <em>yours</em> or <em>manifest</em>; an amber dot means a generated file was edited since the last export, a red dot that it was deleted.</li>
         <li><strong>Export a service</strong> &mdash; select it, then <em>Developer &rarr; Add to project</em>.  You see a plan first &mdash; every file with its status and a diff for anything that would change &mdash; and nothing is written until you confirm.  The overview's <em>Re-export</em> refreshes a service later.</li>
       </ul>

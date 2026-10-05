@@ -40,6 +40,14 @@ this is the chronological summary.
 - **Components from protos.** `python -m MicroserviceBase.tools.ui_component`
   writes a `component.json` from a service's protos: forms, dropdowns
   (indexes 0 to count−1), `reloadAfter` links and groups.
+- **Pluggable test runners; Temporal.** A test project's runner now owns
+  its file types, the *Initialize* dialog's structure, folder detection,
+  *Check*, new tests and flows and the run command; the GUI shows them in
+  the runner's words. Other packages add runners as entry points
+  (`microservicebase.test_runners`). New runner **Temporal (Python SDK)**:
+  pytest tests running workflows, generated activities per service, JUnit
+  results (ADR-032, guide *Adding a test runner*). `describe()`'s
+  `detected` is now per runner.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 

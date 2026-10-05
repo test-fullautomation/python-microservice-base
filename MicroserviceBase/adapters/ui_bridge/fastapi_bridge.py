@@ -3205,6 +3205,7 @@ Generate scaffolding for a new microservice project.
       class TestProjectCheckBody(BaseModel):
          path: str
          content: str
+         root: str = ""                 # the project: its runner checks the text
 
       class TestProjectNewSuiteBody(BaseModel):
          root: str
@@ -3229,9 +3230,10 @@ Generate scaffolding for a new microservice project.
 
       @app.post("/api/test-project/file/check")
       def test_project_file_check(body: TestProjectCheckBody):
-         """Robot Framework syntax problems of unsaved text (nothing is written)."""
+         """Syntax problems of unsaved text, from the project's runner (nothing is written)."""
          from ..test_project import check_syntax
-         return {"status": "ok", "problems": check_syntax(body.path, body.content)}
+         return {"status": "ok",
+                 "problems": check_syntax(body.path, body.content, body.root or None)}
 
       @app.post("/api/test-project/suite")
       def test_project_new_suite(body: TestProjectNewSuiteBody):
@@ -3336,7 +3338,7 @@ Generate scaffolding for a new microservice project.
 
       @app.post("/api/test-project/inspect")
       def test_project_inspect(body: TestProjectInspectBody):
-         """A file's extra views from its runner (a flow's diagram and Robot text)."""
+         """A file's extra views from its runner (e.g. a flow's diagram and its text)."""
          from ..test_project import TestProjectError, inspect_file
          try:
             return inspect_file(body.root, body.path, body.content)

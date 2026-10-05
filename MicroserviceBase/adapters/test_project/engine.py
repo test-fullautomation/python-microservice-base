@@ -29,6 +29,8 @@ from dataclasses import asdict
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ...ports.test_project import (
+    RUNNER_ENTRY_POINTS,
+    FileType,
     GroupMember,
     PlannedFile,
     RunGroup,
@@ -39,6 +41,7 @@ from ...ports.test_project import (
     TestProjectRunner,
 )
 from .robot_aio import RobotAioRunner
+from .temporal import TemporalPythonRunner
 
 MANIFEST_NAME = "testproject.json"
 SCHEMA_VERSION = 1
@@ -48,31 +51,68 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _MAX_DIFF_LINES = 400
 _SKIP_DIRS = {".git", "results", "__pycache__", "node_modules", ".venv", "venv"}
 
-# A generated resource carries its generation date; two exports of an
-# unchanged API on different days must still compare equal.
-_GENERATED_STAMP = re.compile(r"^\.\.\.\s+Generated:.*\n?", re.M)
-
-
 # ---------------------------------------------------------------------------
 # Runner registry -- the door for other test runners
 # ---------------------------------------------------------------------------
 
 _RUNNERS: Dict[str, TestProjectRunner] = {}
+_PLUGINS_LOADED = False
+#: Entry points that could not be loaded: ``{name: reason}``.
+PLUGIN_ERRORS: Dict[str, str] = {}
 
 
 def register_runner(runner: TestProjectRunner) -> None:
     """Make a runner adapter available to test projects (keyed by ``runner_id``)."""
+    if not isinstance(runner, TestProjectRunner) or not runner.runner_id:
+        raise TestProjectError(f"{runner!r} is not a test runner with a runner_id.")
     _RUNNERS[runner.runner_id] = runner
 
 
 register_runner(RobotAioRunner())
+register_runner(TemporalPythonRunner())
 
 
-def available_runners() -> List[Dict[str, str]]:
-    return [{"id": r.runner_id, "name": r.display_name} for r in _RUNNERS.values()]
+def _load_plugins() -> None:
+    """Runners other packages declare as entry points (``RUNNER_ENTRY_POINTS``),
+    loaded once, on first use. A broken plugin is skipped and noted in
+    :data:`PLUGIN_ERRORS`, never fatal; it never replaces a registered runner."""
+    global _PLUGINS_LOADED
+    if _PLUGINS_LOADED:
+        return
+    _PLUGINS_LOADED = True
+    try:
+        from importlib.metadata import entry_points
+        found = entry_points()
+        found = (found.select(group=RUNNER_ENTRY_POINTS) if hasattr(found, "select")
+                 else found.get(RUNNER_ENTRY_POINTS, []))
+    except Exception as exc:   # noqa: BLE001 -- a broken environment must not stop the GUI
+        PLUGIN_ERRORS["*"] = str(exc)
+        return
+    for ep in found:
+        try:
+            obj = ep.load()
+            runner = obj if isinstance(obj, TestProjectRunner) else obj()
+            if runner.runner_id not in _RUNNERS:
+                register_runner(runner)
+        except Exception as exc:   # noqa: BLE001
+            PLUGIN_ERRORS[ep.name] = f"{type(exc).__name__}: {exc}"
+
+
+def _runner_info(runner: TestProjectRunner) -> Dict[str, object]:
+    return {"id": runner.runner_id, "name": runner.display_name,
+            "description": runner.description,
+            "structure": runner.structure(runner.default_layout())}
+
+
+def available_runners() -> List[Dict[str, object]]:
+    """Every registered runner: ``id``, ``name``, ``description`` and the
+    ``structure`` of its projects, for the GUI's runner choice."""
+    _load_plugins()
+    return [_runner_info(r) for r in _RUNNERS.values()]
 
 
 def get_runner(runner_id: str) -> TestProjectRunner:
+    _load_plugins()
     runner = _RUNNERS.get(runner_id)
     if runner is None:
         raise TestProjectError(
@@ -126,15 +166,17 @@ def _write_text(path: str, content: str) -> None:
         fh.write(content)
 
 
-def _normalize(path: str, content: str) -> str:
+def _normalize(content: str, runner: Optional[TestProjectRunner]) -> str:
     text = content.replace("\r\n", "\n")
-    if path.endswith(".resource"):
-        text = _GENERATED_STAMP.sub("", text)
+    # A generated file may carry its generation date; two exports of an
+    # unchanged API on different days must still compare equal.
+    if runner is not None and runner.generated_stamp:
+        text = re.sub(runner.generated_stamp, "", text, flags=re.M)
     return text
 
 
-def _digest(path: str, content: str) -> str:
-    return hashlib.sha256(_normalize(path, content).encode("utf-8")).hexdigest()
+def _digest(path: str, content: str, runner: Optional[TestProjectRunner] = None) -> str:
+    return hashlib.sha256(_normalize(content, runner).encode("utf-8")).hexdigest()
 
 
 def _diff(path: str, old: str, new: str) -> str:
@@ -202,17 +244,28 @@ def _layout(runner: TestProjectRunner, manifest: dict) -> Dict[str, str]:
 # Describe / init
 # ---------------------------------------------------------------------------
 
-def _detect(root: str) -> Dict[str, object]:
-    suites = 0
-    aio_config = False
+def walk_files(root: str, max_depth: int = 4) -> Iterable[Tuple[str, List[str]]]:
+    """``(dirpath, filenames)`` of a folder, at most ``max_depth`` deep,
+    skipping results, caches and virtual environments -- for runners'
+    :meth:`~MicroserviceBase.ports.test_project.TestProjectRunner.detect`."""
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
-        if os.path.relpath(dirpath, root).count(os.sep) >= 4:
+        if os.path.relpath(dirpath, root).count(os.sep) >= max_depth:
             dirnames[:] = []
-        suites += sum(1 for f in filenames if f.endswith(".robot"))
-        if os.path.basename(dirpath) == "config" and "robot_config.jsonp" in filenames:
-            aio_config = True
-    return {"robot_suites": suites, "aio_config": aio_config}
+        yield dirpath, filenames
+
+
+def _detect(root: str) -> Dict[str, Dict[str, object]]:
+    """What each runner recognises in the folder: ``{runner_id: {"count", "summary"}}``."""
+    found = {}
+    for runner in list(_RUNNERS.values()):
+        try:
+            info = runner.detect(root) or {}
+        except Exception as exc:   # noqa: BLE001 -- one runner's bug must not hide the others
+            info = {"error": str(exc)}
+        if info:
+            found[runner.runner_id] = info
+    return found
 
 
 def describe(root: str) -> dict:
@@ -225,6 +278,7 @@ def describe(root: str) -> dict:
         "exists": os.path.isdir(root),
         "initialized": False,
         "runners": available_runners(),
+        "default_runner": RobotAioRunner.runner_id,
         "services": [],
         "detected": {},
     }
@@ -475,11 +529,11 @@ def export_service(
             row["status"] = "keep"
         else:
             disk = _read_text(full)
-            if _normalize(pf.path, disk) == _normalize(pf.path, pf.content):
+            if _normalize(disk, runner) == _normalize(pf.content, runner):
                 row["status"] = "unchanged"
             else:
                 recorded = (prev_files.get(pf.path) or {}).get("sha256")
-                row["status"] = "update" if recorded == _digest(pf.path, disk) else "modified"
+                row["status"] = "update" if recorded == _digest(pf.path, disk, runner) else "modified"
                 row["diff"] = _diff(pf.path, disk, pf.content)
         rows.append((pf, row))
 
@@ -517,7 +571,7 @@ def export_service(
                 if pf.path in prev_files:
                     files_meta[pf.path] = prev_files[pf.path]
             else:
-                files_meta[pf.path] = {"role": "generated", "sha256": _digest(pf.path, pf.content)}
+                files_meta[pf.path] = {"role": "generated", "sha256": _digest(pf.path, pf.content, runner)}
         for path in stale:   # still on disk: keep reporting it
             files_meta[path] = prev_files[path]
 
@@ -556,24 +610,73 @@ _TREE_MAX_FILES = 2000
 _TREE_MAX_DEPTH = 8
 _PREVIEW_MAX_BYTES = 512_000
 
+# Kinds of files any project may hold, whatever its runner; the runner's
+# own file types (FileType) are asked first.
 _KINDS = {
-    ".robot": "suite", ".resource": "resource", ".proto": "proto",
-    ".jsonp": "config", ".json": "config", ".args": "config",
+    ".proto": "proto", ".jsonp": "config", ".json": "config", ".toml": "config",
+    ".ini": "config", ".cfg": "config", ".yaml": "config", ".yml": "config", ".args": "config",
     ".py": "library", ".md": "doc", ".txt": "doc",
 }
 
+# The GUI's group titles when the runner gives none.
+_KIND_TITLES = {"suite": "Suites", "flow": "Flows", "resource": "Resources", "proto": "Protos",
+                "config": "Configuration", "library": "Libraries", "doc": "Documents",
+                "other": "Other files"}
 
-def _kind(rel: str) -> str:
-    if rel.lower().endswith(".flow.json"):
-        return "flow"
+
+def _kind(rel: str, runner: Optional[TestProjectRunner] = None,
+          layout: Optional[Dict[str, str]] = None) -> str:
+    if runner is not None:
+        kind = runner.file_kind(layout or runner.default_layout(), rel)
+        if kind:
+            return kind
     return _KINDS.get(os.path.splitext(rel)[1].lower(), "other")
 
 
-def _file_entry(root: str, rel: str, tracked, runner: Optional[TestProjectRunner] = None) -> dict:
+def _file_type(runner: TestProjectRunner, kind: str) -> Optional[FileType]:
+    return next((ft for ft in runner.file_types() if ft.kind == kind), None)
+
+
+def _kinds_info(runner: TestProjectRunner) -> List[Dict[str, object]]:
+    """The project's file groups for the GUI: the runner's kinds first, in
+    its order, then the generic ones."""
+    out, seen = [], set()
+    for ft in runner.file_types():
+        if ft.kind in seen:
+            continue
+        seen.add(ft.kind)
+        out.append({"kind": ft.kind, "title": ft.title or _KIND_TITLES.get(ft.kind, ft.kind.title()),
+                    "noun": ft.noun or ft.kind, "suffix": ft.suffix, "folder": ft.folder,
+                    "creatable": ft.creatable})
+    for kind in ("proto", "config", "library", "doc", "other"):
+        if kind not in seen:
+            out.append({"kind": kind, "title": _KIND_TITLES[kind], "noun": kind, "suffix": "",
+                        "folder": "", "creatable": False})
+    return out
+
+
+def _can_create(runner: TestProjectRunner, layout: Dict[str, str], kind: str) -> bool:
+    """The runner has a creatable file type ``kind`` and a template for it."""
+    ft = _file_type(runner, kind)
+    if ft is None or not ft.creatable:
+        return False
+    folder = layout.get(ft.folder) or ft.folder or "."
+    rel = f"{folder}/new{ft.suffix}"
+    if kind == "flow":
+        return bool(runner.flow_template(layout, rel, "New", []))
+    return bool(runner.suite_template(layout, rel, None, [], DEFAULT_CONSUL, None))
+
+
+def _file_entry(root: str, rel: str, tracked, runner: Optional[TestProjectRunner] = None,
+                layout: Optional[Dict[str, str]] = None) -> dict:
     full = os.path.join(root, *rel.split("/"))
-    entry = {"path": rel, "kind": _kind(rel), "size": os.path.getsize(full), "service": None,
-             "runnable": bool(runner and rel != MANIFEST_NAME and runner.can_run(rel)),
-             "views": runner.file_views(rel) if runner and rel != MANIFEST_NAME else []}
+    own = bool(runner and rel != MANIFEST_NAME)
+    runnable = bool(own and runner.can_run(rel))
+    entry = {"path": rel, "kind": "config" if rel == MANIFEST_NAME else _kind(rel, runner, layout),
+             "size": os.path.getsize(full), "service": None, "runnable": runnable,
+             "run_hint": (runner.file_run_hint(layout or runner.default_layout(), rel)
+                          if runnable else ""),
+             "views": runner.file_views(rel) if own else []}
     if rel == MANIFEST_NAME:
         entry.update(role="manifest", state="ok")
         return entry
@@ -585,7 +688,7 @@ def _file_entry(root: str, rel: str, tracked, runner: Optional[TestProjectRunner
     state = "ok"
     if role == "generated":
         try:
-            state = "ok" if meta.get("sha256") == _digest(rel, _read_text(full)) else "edited"
+            state = "ok" if meta.get("sha256") == _digest(rel, _read_text(full), runner) else "edited"
         except OSError:
             state = "unreadable"
     entry.update(role=role, state=state, service=service)
@@ -624,14 +727,14 @@ def project_tree(root: str) -> dict:
                 break
             rel = os.path.relpath(os.path.join(dirpath, fname), root).replace(os.sep, "/")
             seen.add(rel)
-            files.append(_file_entry(root, rel, tracked.get(rel), runner))
+            files.append(_file_entry(root, rel, tracked.get(rel), runner, layout))
         if truncated:
             break
     if not truncated:
         for rel, (service, meta) in sorted(tracked.items()):
             if rel not in seen:
-                files.append({"path": rel, "kind": _kind(rel), "size": 0, "service": service,
-                              "runnable": False, "views": [],
+                files.append({"path": rel, "kind": _kind(rel, runner, layout), "size": 0,
+                              "service": service, "runnable": False, "run_hint": "", "views": [],
                               "role": meta.get("role", "generated"), "state": "missing"})
 
     services = []
@@ -663,7 +766,9 @@ def project_tree(root: str) -> dict:
         "truncated": truncated,
         "run_hint": runner.project_run_hint(layout),
         "can_run": runner.can_run(""),
-        "can_new_flow": bool(runner.flow_template(layout, "flows/new.flow.json", "New", [])),
+        "can_new_suite": _can_create(runner, layout, "suite"),
+        "can_new_flow": _can_create(runner, layout, "flow"),
+        "kinds": _kinds_info(runner),
         "run_settings": asdict(run_settings_of(manifest)),
         "groups": [_group_entry(runner, g) for g in groups_of(manifest)],
     }
@@ -976,13 +1081,13 @@ def edit_file_view(root: str, rel: str, view_id: str, content: str, edit: dict) 
     return out
 
 
-def check_syntax(rel: str, content: str) -> List[dict]:
-    """Robot Framework parse problems of a ``.robot`` / ``.resource`` text,
-    or the parse error of a ``.json`` file (flow files included).
+def check_syntax(rel: str, content: str, root: Optional[str] = None) -> List[dict]:
+    """Syntax problems of unsaved text: the parse error of a ``.json`` file
+    (flow files included), else what the runner reports -- the project's
+    runner when ``root`` is a test project, otherwise every registered one.
 
-    Returns ``[{"line": n, "message": text}]``; empty when the text parses
-    cleanly, when the file is not Robot data, or when Robot Framework is not
-    installed. This is a syntax check -- keyword names are not resolved.
+    Returns ``[{"line": n, "message": text}]``; empty when the text is fine
+    or nobody can check it.
     """
     lower = str(rel).lower()
     if lower.endswith(".json"):
@@ -992,20 +1097,18 @@ def check_syntax(rel: str, content: str) -> List[dict]:
             return [{"line": getattr(exc, "lineno", 1),
                      "message": f"Invalid JSON: {getattr(exc, 'msg', exc)}"}]
         return []
-    if not lower.endswith((".robot", ".resource")):
-        return []
-    try:
-        import io
-        from robot.api import Token, get_resource_tokens, get_tokens
-    except ImportError:
-        return []
-    tokenize = get_resource_tokens if lower.endswith(".resource") else get_tokens
-    problems = []
-    for token in tokenize(io.StringIO(content)):
-        if token.type in (Token.ERROR, Token.FATAL_ERROR) or getattr(token, "error", None):
-            problems.append({"line": token.lineno,
-                             "message": token.error or f"Invalid syntax: {token.value!r}"})
-    return problems
+    runners: List[TestProjectRunner] = []
+    manifest = _load_manifest(_abs_root(root)) if root else None
+    if manifest is not None:
+        runners = [get_runner(manifest["runner"])]
+    else:
+        _load_plugins()
+        runners = list(_RUNNERS.values())
+    for runner in runners:
+        problems = runner.check_syntax(rel, content)
+        if problems:
+            return problems
+    return []
 
 
 def write_project_file(root: str, rel: str, content: str, *,
@@ -1017,8 +1120,9 @@ def write_project_file(root: str, rel: str, content: str, *,
     outside the project, and -- unless ``force`` -- a file whose bytes on
     disk no longer match ``expected_sha256``
     (:class:`~MicroserviceBase.ports.test_project.TestProjectConflict`).
-    With ``create=True`` the file must not exist and must be ``.robot`` or
-    ``.resource``. Returns the new hash and any syntax problems.
+    With ``create=True`` the file must not exist and must be of a file type
+    the runner lets the GUI create. Returns the new hash and any syntax
+    problems.
     """
     root = _abs_root(root)
     manifest = _load_manifest(root)
@@ -1043,8 +1147,12 @@ def write_project_file(root: str, rel: str, content: str, *,
     if create:
         if os.path.exists(full):
             raise TestProjectError(f"{rel} already exists.")
-        if not rel.lower().endswith((".robot", ".resource", ".flow.json")):
-            raise TestProjectError("New files must be .robot, .resource or .flow.json files.")
+        runner = get_runner(manifest["runner"])
+        suffixes = [ft.suffix for ft in runner.file_types() if ft.creatable and ft.suffix]
+        if not any(rel.lower().endswith(sfx.lower()) for sfx in suffixes):
+            raise TestProjectError(
+                f"New files of a {runner.display_name} project must end in "
+                f"{', '.join(suffixes) or '(none: it creates no files here)'}.")
     elif not exists:
         raise TestProjectError(f"No such file in the test project: {rel}")
     elif expected_sha256 and not force:
@@ -1060,7 +1168,22 @@ def write_project_file(root: str, rel: str, content: str, *,
         fh.write(encoded)
     return {"status": "ok", "path": rel, "size": len(encoded), "sha256": _sha256(encoded),
             "role": "yours" if create else role, "created": bool(create),
-            "problems": check_syntax(rel, content)}
+            "problems": check_syntax(rel, content, root)}
+
+
+def _new_stem(name: str, suffix: str, noun: str) -> str:
+    """The name the user typed, without the file type's suffix, if checked."""
+    stem = str(name or "").strip()
+    if suffix and stem.lower().endswith(suffix.lower()):
+        stem = stem[: -len(suffix)]
+    if not _NEW_SUITE_RE.match(stem):
+        raise TestProjectError(
+            f"Invalid {noun} name {name!r}: use letters, digits, '_' or '-' (no spaces).")
+    return stem
+
+
+def _new_folder(layout: Dict[str, str], ft: FileType) -> str:
+    return (layout.get(ft.folder) or ft.folder or ".").strip("/") or "."
 
 
 def create_suite(root: str, name: str, *, service: Optional[str] = None) -> dict:
@@ -1076,11 +1199,12 @@ def create_suite(root: str, name: str, *, service: Optional[str] = None) -> dict
     runner = get_runner(manifest["runner"])
     layout = _layout(runner, manifest)
 
-    stem = re.sub(r"\.robot$", "", str(name or "").strip(), flags=re.I)
-    if not _NEW_SUITE_RE.match(stem):
-        raise TestProjectError(
-            f"Invalid suite name {name!r}: use letters, digits, '_' or '-' (no spaces).")
-    rel = f"{layout['suites']}/{stem}.robot"
+    ft = _file_type(runner, "suite")
+    if ft is None or not ft.creatable:
+        raise TestProjectError(f"{runner.display_name} projects cannot create suites here.")
+    noun = ft.noun or "suite"
+    stem = _new_stem(name, ft.suffix, noun)
+    rel = f"{_new_folder(layout, ft)}/{stem}{ft.suffix}"
 
     resources: List[str] = []
     consul_addr = DEFAULT_CONSUL
@@ -1092,14 +1216,15 @@ def create_suite(root: str, name: str, *, service: Optional[str] = None) -> dict
             raise TestProjectError(f"{service} has not been exported into this project.")
         files = entry.get("files") or {}
         resources = sorted(p for p, m in files.items()
-                           if (m or {}).get("role") == "generated" and p.endswith(".resource"))
+                           if (m or {}).get("role") == "generated"
+                           and _kind(p, runner, layout) == "resource")
         consul_addr = entry.get("consul_addr") or DEFAULT_CONSUL
         if (entry.get("source") or {}).get("kind") == "proto":
             proto_rel_dir = f"{layout['proto']}/{service}"
 
     content = runner.suite_template(layout, rel, service, resources, consul_addr, proto_rel_dir)
     if not content:
-        raise TestProjectError(f"{runner.display_name} projects cannot create suites here.")
+        raise TestProjectError(f"{runner.display_name} projects cannot create a {noun} here.")
     return write_project_file(root, rel, content, create=True)
 
 
@@ -1115,11 +1240,11 @@ def create_flow(root: str, name: str, *, resources: Optional[List[str]] = None) 
         raise TestProjectError(f"{root} is not a test project.")
     runner = get_runner(manifest["runner"])
     layout = _layout(runner, manifest)
-    stem = re.sub(r"\.flow\.json$|\.json$", "", str(name or "").strip(), flags=re.I)
-    if not _NEW_SUITE_RE.match(stem):
-        raise TestProjectError(
-            f"Invalid flow name {name!r}: use letters, digits, '_' or '-' (no spaces).")
-    rel = f"{layout.get('flows') or 'flows'}/{stem}.flow.json"
+    ft = _file_type(runner, "flow")
+    if ft is None or not ft.creatable:
+        raise TestProjectError(f"{runner.display_name} projects have no flow files.")
+    stem = _new_stem(name, ft.suffix, ft.noun or "flow")
+    rel = f"{_new_folder(layout, ft)}/{stem}{ft.suffix}"
     picked = []
     for path in resources or []:
         path = str(path).replace("\\", "/").strip("/")

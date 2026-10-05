@@ -6,6 +6,8 @@ and :mod:`.robot_aio` for the Robot Framework AIO adapter.
 """
 
 from ...ports.test_project import (
+    RUNNER_ENTRY_POINTS,
+    FileType,
     GroupMember,
     PlannedFile,
     RunArtifact,
@@ -21,6 +23,7 @@ from ...ports.test_project import (
 )
 from .engine import (
     MANIFEST_NAME,
+    PLUGIN_ERRORS,
     available_runners,
     check_syntax,
     collect_proto_set,
@@ -46,14 +49,19 @@ from .engine import (
     set_groups,
     set_run_settings,
     validate_name,
+    walk_files,
 )
 from .robot_aio import RobotAioRunner, sync_links
+from .temporal import TemporalPythonRunner
 from .runs import RUNS, RunManager
 
 __all__ = [
+    "FileType",
     "GroupMember",
     "MANIFEST_NAME",
+    "PLUGIN_ERRORS",
     "PlannedFile",
+    "RUNNER_ENTRY_POINTS",
     "RUNS",
     "RobotAioRunner",
     "RunArtifact",
@@ -66,6 +74,7 @@ __all__ = [
     "ServiceExport",
     "TestProjectConflict",
     "TestProjectError",
+    "TemporalPythonRunner",
     "TestProjectRunner",
     "available_runners",
     "check_syntax",
@@ -93,4 +102,5 @@ __all__ = [
     "set_run_settings",
     "sync_links",
     "validate_name",
+    "walk_files",
 ]

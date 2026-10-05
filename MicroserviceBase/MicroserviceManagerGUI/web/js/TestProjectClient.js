@@ -73,7 +73,7 @@
     /**
      * Initialize a folder as a test project. Existing files are left alone.
      * @param {string} root
-     * @param {string} [runner]      Runner id, default robotframework-aio.
+     * @param {string} [runner]      Runner id (describe() lists them), default robotframework-aio.
      * @param {string} [consulAddr]  Seeds the runner config.
      * @returns {Promise<object>}
      */
@@ -124,11 +124,14 @@
     },
 
     /**
-     * Robot Framework syntax problems of unsaved text.
+     * Syntax problems of unsaved text, as the project's runner sees them.
+     * @param {string} path
+     * @param {string} content
+     * @param {string} [root]  The project; without it every runner is asked.
      * @returns {Promise<{problems: Array<{line: number, message: string}>}>}
      */
-    checkFile: function (path, content) {
-      return _post('/api/test-project/file/check', { path: path, content: content });
+    checkFile: function (path, content, root) {
+      return _post('/api/test-project/file/check', { path: path, content: content, root: root || '' });
     },
 
     /**

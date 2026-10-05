@@ -5153,24 +5153,35 @@
       });
   }
 
+  // What a project of the runner looks like: its own [path, note] rows.
+  function _tpRunnerTree(name, runner) {
+    var rows = (runner && runner.structure) || [];
+    var width = rows.reduce(function (w, r) { return Math.max(w, r[0].length); }, 0) + 3;
+    return _escapeHtml(name) + '/\n' + rows.map(function (r, i) {
+      var pad = new Array(Math.max(1, width - r[0].length) + 1).join(' ');
+      return (i === rows.length - 1 ? '└─ ' : '├─ ') + _escapeHtml(r[0]) + pad + _escapeHtml(r[1]);
+    }).join('\n');
+  }
+
   function _showInitDialog(d, onReady) {
-    var runners = (d.runners || []).map(function (r) {
-      return '<option value="' + _escapeHtml(r.id) + '">' + _escapeHtml(r.name) + '</option>';
-    }).join('');
+    var list = d.runners || [];
     var detected = d.detected || {};
-    var existing = detected.robot_suites
+    // The runner whose files the folder already holds, else the default.
+    var found = list.filter(function (r) { return detected[r.id] && detected[r.id].count; })[0];
+    var chosen = found || list.filter(function (r) { return r.id === d.default_runner; })[0] || list[0];
+    var runners = list.map(function (r) {
+      return '<option value="' + _escapeHtml(r.id) + '"' + (r === chosen ? ' selected' : '') + '>' +
+        _escapeHtml(r.name) + '</option>';
+    }).join('');
+    var existing = Object.keys(detected).filter(function (id) { return detected[id].summary; })
+      .map(function (id) {
+        var r = list.filter(function (x) { return x.id === id; })[0];
+        return _escapeHtml(detected[id].summary) + (r ? ' (' + _escapeHtml(r.name) + ')' : '');
+      });
+    existing = existing.length
       ? '<div class="dev-note"><i class="bi bi-info-circle me-1"></i>The folder already holds ' +
-        detected.robot_suites + ' .robot file' + (detected.robot_suites === 1 ? '' : 's') +
-        '. Existing files are never moved or changed.</div>'
+        existing.join(', ') + '. Existing files are never moved or changed.</div>'
       : '';
-    var tree =
-      _escapeHtml(d.name) + '/\n' +
-      '├─ testproject.json                     manifest: runner, layout, what was exported\n' +
-      '├─ testsuites/\n' +
-      '│  ├─ config/robot_config.jsonp         RF AIO config (level 3), CONSUL_ADDR in params.global\n' +
-      '│  └─ &lt;service&gt;_smoke.robot            starter suite per service — yours to edit\n' +
-      '├─ resources/&lt;service&gt;/*.resource       generated keywords — refreshed on export\n' +
-      '└─ proto/&lt;service&gt;/*.proto              copied protos, when available';
 
     _tpState = { action: 'init', root: d.root, onReady: onReady };
     _tpShow('<i class="bi bi-folder-plus me-2"></i>Initialize test project',
@@ -5179,15 +5190,23 @@
       '<div class="mb-3">' +
       '  <label class="form-label small" for="tpRunner">Test runner</label>' +
       '  <select class="form-select form-select-sm tp-runner" id="tpRunner">' + runners + '</select>' +
-      '  <div class="form-text">The runner adapter decides layout and generated files; other runners can be added without changing projects that already exist.</div>' +
+      '  <div class="form-text" id="tpRunnerAbout"></div>' +
       '</div>' +
-      '<div class="tp-layout"><div class="small text-muted mb-1">Structure exports will use</div><pre>' + tree + '</pre></div>',
+      '<div class="tp-layout"><div class="small text-muted mb-1">Structure exports will use</div><pre id="tpRunnerTree"></pre></div>',
       '<i class="bi bi-check2 me-1"></i>Initialize');
+    var select = document.getElementById('tpRunner');
+    function show() {
+      var r = list.filter(function (x) { return x.id === select.value; })[0];
+      document.getElementById('tpRunnerAbout').textContent = ((r && r.description) || '') +
+        ' The runner decides layout, generated files and how tests run; projects keep the runner they were made with.';
+      document.getElementById('tpRunnerTree').innerHTML = _tpRunnerTree(d.name, r);
+    }
+    if (select) { select.addEventListener('change', show); show(); }
   }
 
   function _applyInit() {
     var st = _tpState;
-    var runner = (document.getElementById('tpRunner') || {}).value || 'robotframework-aio';
+    var runner = (document.getElementById('tpRunner') || {}).value || '';
     var consul = _connectedConsuls.length ? _connectedConsuls[0].url : '';
     var apply = document.getElementById('btnTestProjectApply');
     apply.disabled = true;
@@ -5425,14 +5444,31 @@
   // `runs`: the Runs pane is shown (then `selected` is null).
   var _tpView = { selected: null, data: null, runs: false, group: null };
 
+  // The project's file groups come from its runner (data.kinds: kind, title,
+  // noun, suffix, folder, creatable); these are the icons and the groups of a
+  // project read before the runner said.
+  var TPV_KIND_ICONS = {
+    suite: 'bi-play-circle', flow: 'bi-diagram-3', resource: 'bi-puzzle', proto: 'bi-file-earmark-code',
+    config: 'bi-sliders', library: 'bi-filetype-py', doc: 'bi-file-earmark-text', other: 'bi-file-earmark'
+  };
   var TPV_GROUPS = [
-    { kind: 'suite', title: 'Suites', icon: 'bi-play-circle' },
-    { kind: 'flow', title: 'Flows', icon: 'bi-diagram-3' },
-    { kind: 'resource', title: 'Resources', icon: 'bi-puzzle' },
-    { kind: 'proto', title: 'Protos', icon: 'bi-file-earmark-code' },
-    { kind: 'config', title: 'Configuration', icon: 'bi-sliders' },
-    { kind: 'other', title: 'Other files', icon: 'bi-file-earmark' }
+    { kind: 'suite', title: 'Suites', noun: 'suite' },
+    { kind: 'flow', title: 'Flows', noun: 'flow' },
+    { kind: 'resource', title: 'Resources', noun: 'resource' },
+    { kind: 'proto', title: 'Protos', noun: 'proto' },
+    { kind: 'config', title: 'Configuration', noun: 'config' },
+    { kind: 'other', title: 'Other files', noun: 'file' }
   ];
+
+  function _tpvGroups(data) {
+    return (data && data.kinds && data.kinds.length) ? data.kinds : TPV_GROUPS;
+  }
+
+  /** The runner's word for a kind of file ("suite", "test", "workflow"). */
+  function _tpvKind(data, kind) {
+    return _tpvGroups(data).filter(function (g) { return g.kind === kind; })[0] ||
+      { kind: kind, title: kind, noun: kind, suffix: '', folder: '' };
+  }
 
   var TPV_ROLE = {
     manifest:  ['manifest', 'Written by the tool: runner, layout and what was exported'],
@@ -5449,15 +5485,15 @@
     else switchMode('testproject');
   }
 
-  function _tpvGroupOf(f) {
-    return (f.kind === 'suite' || f.kind === 'flow' || f.kind === 'resource' || f.kind === 'proto' ||
-            f.kind === 'config')
-      ? f.kind : 'other';
+  function _tpvGroupOf(data, f) {
+    return _tpvGroups(data).some(function (g) { return g.kind === f.kind; }) ? f.kind : 'other';
   }
 
   function _tpvLabel(data, f) {
     var layout = data.layout || {};
-    var prefixes = [layout.suites, layout.resources, layout.proto].filter(Boolean);
+    var prefixes = Object.keys(layout).map(function (k) { return layout[k]; })
+      .filter(function (v) { return v && v !== '.'; })
+      .sort(function (a, b) { return b.length - a.length; });
     for (var i = 0; i < prefixes.length; i++) {
       if (f.path.indexOf(prefixes[i] + '/') === 0) return f.path.slice(prefixes[i].length + 1);
     }
@@ -5544,18 +5580,20 @@
           '</button>'
         : '');
 
-    TPV_GROUPS.forEach(function (g) {
-      var files = data.files.filter(function (f) { return _tpvGroupOf(f) === g.kind; });
+    _tpvGroups(data).forEach(function (g) {
+      var files = data.files.filter(function (f) { return _tpvGroupOf(data, f) === g.kind; });
+      var newSuite = g.kind === 'suite' && data.can_new_suite !== false;
       var newFlow = g.kind === 'flow' && data.can_new_flow;
-      if (!files.length && !newFlow) return;
-      html += '<div class="tpv-group"><div class="tpv-group-title"><span><i class="bi ' + g.icon + ' me-1"></i>' +
-              g.title + '</span><span>' +
-              (g.kind === 'suite'
-                ? '<button type="button" class="tpv-add" data-tpv-new-suite="1" title="New suite">' +
+      if (!files.length && !newFlow && !newSuite) return;
+      html += '<div class="tpv-group"><div class="tpv-group-title"><span><i class="bi ' +
+              (TPV_KIND_ICONS[g.kind] || TPV_KIND_ICONS.other) + ' me-1"></i>' +
+              _escapeHtml(g.title) + '</span><span>' +
+              (newSuite
+                ? '<button type="button" class="tpv-add" data-tpv-new-suite="1" title="New ' + _escapeHtml(g.noun) + '">' +
                   '<i class="bi bi-plus-lg"></i></button>'
                 : '') +
               (newFlow
-                ? '<button type="button" class="tpv-add" data-tpv-new-flow="1" title="New flow">' +
+                ? '<button type="button" class="tpv-add" data-tpv-new-flow="1" title="New ' + _escapeHtml(g.noun) + '">' +
                   '<i class="bi bi-plus-lg"></i></button>'
                 : '') +
               files.length + '</span></div>';
@@ -5748,21 +5786,24 @@
       '  </div>' +
       '  <div class="svc-ov-grid">' +
       '    <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-bar-chart me-1"></i>Project</h6>' +
-      '      <div class="tpv-stats">' + stat(count('suite'), 'suites') + stat(count('resource'), 'resources') +
+      '      <div class="tpv-stats">' + stat(count('suite'), _tpvKind(data, 'suite').title.toLowerCase()) +
+               stat(count('resource'), _tpvKind(data, 'resource').title.toLowerCase()) +
                stat(count('proto'), 'protos') + stat(data.services.length, 'services') + '</div>' +
       (data.run_hint
-        ? '<div class="tp-hint"><span class="small text-muted">Run all suites from the project root</span>' +
+        ? '<div class="tp-hint"><span class="small text-muted">Run the whole project from its root</span>' +
           '<code id="tpvRunHint" title="Copy">' + _escapeHtml(data.run_hint) + '</code></div>'
         : '') +
       '      <div class="mt-3 d-flex flex-wrap gap-2">' +
       (data.can_run
-        ? '<button type="button" class="btn btn-sm btn-primary" id="tpvRunAll" title="Run every suite and flow of the project">' +
+        ? '<button type="button" class="btn btn-sm btn-primary" id="tpvRunAll" title="Run everything the project\'s runner runs">' +
           '<i class="bi bi-play-fill me-1"></i>Run all\u2026</button>' +
           '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvRunSettings" title="Interpreter, PYTHONPATH and arguments for every run">' +
           '<i class="bi bi-gear me-1"></i>Run settings\u2026</button>'
         : '') +
-      '        <button type="button" class="btn btn-sm btn-outline-primary" id="tpvNewSuite">' +
-      '        <i class="bi bi-file-earmark-plus me-1"></i>New suite\u2026</button></div>' +
+      (data.can_new_suite !== false
+        ? '        <button type="button" class="btn btn-sm btn-outline-primary" id="tpvNewSuite">' +
+          '        <i class="bi bi-file-earmark-plus me-1"></i>New ' + _escapeHtml(_tpvKind(data, 'suite').noun) + '\u2026</button>'
+        : '') + '</div>' +
       '    </section>' +
       '    <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-plus-circle me-1"></i>Add a service</h6>' +
              addHtml + '</section>' +
@@ -5920,8 +5961,9 @@
       ? '<button type="button" class="btn btn-sm btn-success" id="tpvRunFile" title="Run it here and follow the console">' +
         '<i class="bi bi-play-fill me-1"></i>Run…</button>'
       : '') +
-      (f.kind === 'suite'
-      ? '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyRun" title="Copy the command that runs this suite">' +
+      (f.run_hint
+      ? '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyRun" title="' +
+        _escapeHtml('Copy the command that runs it: ' + f.run_hint) + '" data-run-hint="' + _escapeHtml(f.run_hint) + '">' +
         '<i class="bi bi-terminal me-1"></i>Run command</button>'
       : '');
   }
@@ -5930,7 +5972,7 @@
     var copyRun = document.getElementById('tpvCopyRun');
     if (copyRun) {
       copyRun.addEventListener('click', function () {
-        _copyText('python -m robot -d results ' + path, 'Command');
+        _copyText(copyRun.getAttribute('data-run-hint') || '', 'Command');
       });
     }
     var run = document.getElementById('tpvRunFile');
@@ -6160,7 +6202,7 @@
   function _tpvCheck() {
     var ed = _tpvEditor;
     if (!ed || !ed.textarea) return;
-    MM.testProjectClient.checkFile(ed.path, ed.textarea.value)
+    MM.testProjectClient.checkFile(ed.path, ed.textarea.value, _getTestProject())
       .then(function (res) {
         if (_tpvEditor === ed) _tpvShowProblems(res.problems || [], true);
       })
@@ -6317,7 +6359,7 @@
     _tpvDropFileView();
     var views = f.views || [];
     var bar = document.getElementById('tpvTabs');
-    if (!views.length || !bar) { _tpvViewState = null; return; }
+    if (!views.length || !bar) { _tpvViewState = null; _tpvOpenTab = null; return; }
     _tpvViewState = { path: f.path, views: views, getText: getText, tab: 'script', cacheText: null, cacheRes: null };
     bar.querySelectorAll('[data-tpv-tab]').forEach(function (b) {
       b.addEventListener('click', function () { _tpvShowTab(b.getAttribute('data-tpv-tab')); });
@@ -7891,6 +7933,8 @@
     _renderTpvSidebar(data);
     var content = document.getElementById('testProjectContent');
     var layout = data.layout || {};
+    var kind = _tpvKind(data, 'suite');
+    var noun = kind.noun || 'suite';
     var options = data.services.map(function (s) {
       return '<option value="' + _escapeHtml(s.name) + '">' + _escapeHtml(s.name) + '</option>';
     }).join('');
@@ -7899,23 +7943,23 @@
       '<div class="tpv-view">' +
       '  <div class="tpv-file-head">' +
       '    <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
-      '    <strong>New suite</strong>' +
+      '    <strong>New ' + _escapeHtml(noun) + '</strong>' +
       '  </div>' +
       '  <section class="svc-ov-card tpv-new-suite">' +
       '    <div class="mb-3">' +
       '      <label class="form-label small" for="tpvSuiteName">Name</label>' +
       '      <div class="input-group input-group-sm">' +
       '        <input type="text" class="form-control" id="tpvSuiteName" placeholder="e.g. greeting_checks" spellcheck="false">' +
-      '        <span class="input-group-text">.robot</span>' +
+      (kind.suffix ? '        <span class="input-group-text">' + _escapeHtml(kind.suffix) + '</span>' : '') +
       '      </div>' +
-      '      <div class="form-text">Created in <code>' + _escapeHtml(layout.suites || '') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
+      '      <div class="form-text">Created in <code>' + _escapeHtml(layout[kind.folder] || kind.folder || '') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
       '    </div>' +
       '    <div class="mb-3">' +
       '      <label class="form-label small" for="tpvSuiteService">Service</label>' +
       '      <select class="form-select form-select-sm" id="tpvSuiteService">' +
-      '        <option value="">None \u2014 an empty suite</option>' + options +
+      '        <option value="">None \u2014 an empty ' + _escapeHtml(noun) + '</option>' + options +
       '      </select>' +
-      '      <div class="form-text">Imports the service\'s generated keywords and opens its connection in the suite setup.</div>' +
+      '      <div class="form-text">Wires it to the service\'s generated ' + _escapeHtml(_tpvKind(data, 'resource').title.toLowerCase()) + '.</div>' +
       '    </div>' +
       '    <div id="tpvSuiteError"></div>' +
       '    <button type="button" class="btn btn-sm btn-primary" id="tpvSuiteCreate">' +
@@ -7932,7 +7976,7 @@
       document.getElementById('tpvSuiteError').innerHTML = '';
       MM.testProjectClient.newSuite(_getTestProject(), name.value.trim(), document.getElementById('tpvSuiteService').value)
         .then(function (res) {
-          showToast('New suite', res.path + ' created.', 'success');
+          showToast('New ' + noun, res.path + ' created.', 'success');
           _tpView.selected = res.path;
           renderTestProjectView();
         })
@@ -7955,6 +7999,9 @@
     _renderTpvSidebar(data);
     var content = document.getElementById('testProjectContent');
     var layout = data.layout || {};
+    var kind = _tpvKind(data, 'flow');
+    var noun = kind.noun || 'flow';
+    var resKind = _tpvKind(data, 'resource');
     var resources = data.files.filter(function (f) { return f.kind === 'resource'; });
     var checks = resources.map(function (f, i) {
       return '<div class="form-check">' +
@@ -7966,26 +8013,26 @@
       '<div class="tpv-view">' +
       '  <div class="tpv-file-head">' +
       '    <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
-      '    <strong>New flow</strong>' +
+      '    <strong>New ' + _escapeHtml(noun) + '</strong>' +
       '  </div>' +
       '  <section class="svc-ov-card tpv-new-suite">' +
       '    <div class="mb-3">' +
       '      <label class="form-label small" for="tpvFlowName">Name</label>' +
       '      <div class="input-group input-group-sm">' +
       '        <input type="text" class="form-control" id="tpvFlowName" placeholder="e.g. climate_debounce" spellcheck="false">' +
-      '        <span class="input-group-text">.flow.json</span>' +
+      (kind.suffix ? '        <span class="input-group-text">' + _escapeHtml(kind.suffix) + '</span>' : '') +
       '      </div>' +
-      '      <div class="form-text">Created in <code>' + _escapeHtml(layout.flows || 'flows') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
+      '      <div class="form-text">Created in <code>' + _escapeHtml(layout[kind.folder] || kind.folder || 'flows') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
       '    </div>' +
       (resources.length
         ? '    <div class="mb-3">' +
-          '      <div class="form-label small">Keywords from</div>' + checks +
-          '      <div class="form-text">The flow imports the ticked resource files, so their keywords can be its steps.</div>' +
+          '      <div class="form-label small">' + _escapeHtml(resKind.title) + ' it uses</div>' + checks +
+          '      <div class="form-text">The new ' + _escapeHtml(noun) + ' imports the ticked files, so it can call what they define.</div>' +
           '    </div>'
         : '') +
       '    <div id="tpvFlowError"></div>' +
       '    <button type="button" class="btn btn-sm btn-primary" id="tpvFlowCreate">' +
-      '      <i class="bi bi-file-earmark-plus me-1"></i>Create and open the diagram</button>' +
+      '      <i class="bi bi-file-earmark-plus me-1"></i>Create and open</button>' +
       '  </section>' +
       '</div>';
 
@@ -7999,7 +8046,7 @@
         .map(function (c) { return c.value; });
       MM.testProjectClient.newFlow(_getTestProject(), name.value.trim(), picked)
         .then(function (res) {
-          showToast('New flow', res.path + ' created.', 'success');
+          showToast('New ' + noun, res.path + ' created.', 'success');
           _tpView.selected = res.path;
           _tpvOpenTab = 'diagram';
           renderTestProjectView();
