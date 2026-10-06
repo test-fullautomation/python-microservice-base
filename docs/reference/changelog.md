@@ -80,6 +80,12 @@ this is the chronological summary.
   sends `breakpoints` / `paused` and gives `ctx.breakpoint(id)` (the project
   view's debugger and the VS Code extension do; without them it looks as
   before).
+- **Starting the bridge on Linux.** With no Python set in *Settings*, the
+  Electron app ran `python`, which Ubuntu does not have, and reported only
+  "Bridge spawn returned no PID" with an older part of `launcher.log`. It
+  now runs `python3` there (`python` on Windows, or whichever of the two
+  is on PATH), waits until the process has started or failed, and says why
+  it failed (`spawn python ENOENT`), with the error written to the log first.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 

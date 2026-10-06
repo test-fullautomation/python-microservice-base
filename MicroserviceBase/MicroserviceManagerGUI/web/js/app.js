@@ -9275,7 +9275,7 @@
     if (baseVersionEl) {
       if (window.electronAPI && window.electronAPI.getPackageVersion) {
         // Electron mode: query the Python configured in Settings
-        var pythonPath = (_settings && _settings.pythonPath) || 'python';
+        var pythonPath = (_settings && _settings.pythonPath) || '';   // empty: this platform's interpreter
         window.electronAPI.getPackageVersion(pythonPath, 'MicroserviceBase')
           .then(function (ver) {
             baseVersionEl.textContent = ver;
@@ -9561,7 +9561,7 @@
 
   function _fetchBaseVersion() {
     if (window.electronAPI && window.electronAPI.getPackageVersion) {
-      var pyPath = (_settings && _settings.pythonPath) || 'python';
+      var pyPath = (_settings && _settings.pythonPath) || '';
       window.electronAPI.getPackageVersion(pyPath, 'MicroserviceBase')
         .then(function (ver) { MM._baseVersion = ver; })
         .catch(function () {});
