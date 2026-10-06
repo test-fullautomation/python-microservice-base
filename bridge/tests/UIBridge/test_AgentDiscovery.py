@@ -57,6 +57,15 @@ def _serve(status):
     return server
 
 
+def _closed_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
 def _listen(port):
     return SimpleNamespace(status=psutil.CONN_LISTEN, laddr=SimpleNamespace(ip="127.0.0.1", port=port))
 
@@ -105,6 +114,7 @@ def test_found_with_old_psutil_and_a_proxy_and_the_rest_explained(monkeypatch, a
         _OtherUsersProc(102, agent),
         _OldPsutilProc(103, agent, [denied_port]),
         _OldPsutilProc(104, "nomad-helper", [ok_port]),   # not the agent's binary
+        _OldPsutilProc(105, agent, [_closed_port()]),
     ]
     monkeypatch.setattr(psutil, "process_iter", lambda attrs=None: iter(procs))
 
@@ -116,9 +126,13 @@ def test_found_with_old_psutil_and_a_proxy_and_the_rest_explained(monkeypatch, a
     else:
         assert data["instances"][0]["leader"] == "127.0.0.1:8300"
     reasons = {s["pid"]: s["reason"] for s in data["skipped"]}
-    assert set(reasons) == {102, 103}
+    assert set(reasons) == {102, 103, 105}
     assert "cannot be read" in reasons[102]
     assert "HTTP 403" in reasons[103] and str(denied_port) in reasons[103]
+    # Refused at once on Linux; Windows retries a closed port past the probe's timeout.
+    assert "connection refused" in reasons[105] or "no answer in time" in reasons[105]
+    # Fixed wording only: no exception text reaches the answer.
+    assert not any(w in r for r in reasons.values() for w in ("Errno", "WinError", "Traceback", "urlopen"))
 
 
 def test_a_local_agent_is_reached_past_the_proxy(monkeypatch, agents):
