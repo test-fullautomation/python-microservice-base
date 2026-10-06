@@ -157,6 +157,29 @@ class Test_DebugASuite:
         assert st["verdict"] in ("fail", "error", "unknown", "pass"), st["verdict"]
         assert not os.path.exists(os.path.join(str(project), "results", run["id"], ".stop"))
 
+    def test_loops_and_ifs_keep_the_stack(self, project):
+        """FOR, ITERATION and IF items are frames too: the listener labels them
+        without failing, and pops them again, so the stack after a loop is as
+        deep as before it."""
+        loop = "testsuites/loop_me.robot"
+        _write(project, loop, "*** Test Cases ***\nLoops\n    Log    before\n"
+                              "    FOR    ${i}    IN RANGE    2\n        IF    ${i} == 1\n"
+                              "            Log    one\n        END\n    END\n    Log    after\n")
+        run = tp.RUNS.start(str(project), loop, debug={"breakpoints": {loop: [3, 6, 9]}})
+        before = _stop(project, run["id"])["stopped"]["frames"]
+        seen = _go(project, run["id"], "continue")
+        inner = _stop(project, run["id"], seen)["stopped"]["frames"]
+        assert (inner[0]["path"], inner[0]["line"]) == (loop, 6)
+        assert len(inner) > len(before), "the loop, its iteration and the IF are on the stack"
+        seen = _go(project, run["id"], "continue")
+        after = _stop(project, run["id"], seen)["stopped"]["frames"]
+        assert (after[0]["path"], after[0]["line"]) == (loop, 9)
+        assert len(after) == len(before), [f["name"] for f in after]
+        tp.RUNS.debug_command(str(project), run["id"], "continue")
+        st = _until(project, run["id"], lambda s: s["run_state"] == "done")
+        assert st["verdict"] == "pass", "\n".join(st["lines"][-20:])
+        assert not [l for l in st["lines"] if "flow_debug.py" in l and "failed" in l], st["lines"]
+
     def test_only_one_run_and_no_debug_of_a_dry_run(self, project):
         with pytest.raises(tp.TestProjectError, match="dry run"):
             tp.RUNS.start(str(project), SUITE, dryrun=True, debug={})

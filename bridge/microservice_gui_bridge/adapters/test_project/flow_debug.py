@@ -509,7 +509,7 @@ def start_keyword(name, attrs):
     source, lineno = attrs.get("source") or "", attrs.get("lineno") or 0
     label = attrs.get("kwname") or name
     if attrs.get("type") not in (None, "KEYWORD", "SETUP", "TEARDOWN"):
-        label = "%s %s" % (attrs.get("type"), name or "").strip()
+        label = ("%s %s" % (attrs.get("type"), name or "")).strip()
     _stack.append({"name": label or attrs.get("type") or "?", "node": node, "source": source,
                    "lineno": lineno, "args": attrs.get("args"), "full": name,
                    "library": attrs.get("libname") if attrs.get("type") in (None, "KEYWORD", "SETUP", "TEARDOWN") else None})
