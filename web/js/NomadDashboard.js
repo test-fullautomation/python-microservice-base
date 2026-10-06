@@ -404,10 +404,17 @@
             }
             var instances = (data && data.instances) || [];
             if (instances.length === 0) {
+              var skipped = (data && data.skipped) || [];
               results.innerHTML =
                 '<div class="alert alert-warning small mt-2 mb-0">' +
                 '  <i class="bi bi-exclamation-triangle me-1"></i>' +
-                '  No running Nomad processes found on this machine.' +
+                (skipped.length
+                  ? '  Found ' + skipped.length + ' Nomad process(es) but could not reach their HTTP API:' +
+                    '<ul class="mb-0 mt-1">' + skipped.map(function (s) {
+                      return '<li>pid ' + _esc(s.pid) + ': ' + _esc(s.reason) + '</li>';
+                    }).join('') + '</ul>' +
+                    '<div class="mt-1">Enter the agent\'s address (e.g. <code>http://127.0.0.1:4646</code>) to connect by URL.</div>'
+                  : '  No running Nomad processes found on this machine.') +
                 '</div>';
               return;
             }
