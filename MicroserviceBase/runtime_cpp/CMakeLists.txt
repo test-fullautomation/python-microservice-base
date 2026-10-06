@@ -18,6 +18,7 @@ add_library(microservice_base_runtime STATIC
     src/ConsulRegistration.cpp
     src/ConsulResolver.cpp
     src/ServiceRunner.cpp
+    src/ServiceGui.cpp
 )
 
 target_include_directories(microservice_base_runtime
@@ -58,6 +59,7 @@ target_sources(microservice_base_runtime
         include/MicroserviceBase/ConsulRegistration.h
         include/MicroserviceBase/ServiceRunner.h
         include/MicroserviceBase/ServiceClient.h
+        include/MicroserviceBase/ServiceGui.h
 )
 
 # Modern alias so consumers can link against microservice_base::runtime.

@@ -212,6 +212,74 @@ check('SHELL_VERSION is 2.3.x', /^2\.3\./.test(C.SHELL_VERSION));
   check('plugin: window isolation needs main', C.lintPlugin(P3, { schema: pluginSchema }).some((i) => i.path === 'main'));
 }
 
+// ---------- dropdown fields (options, optionsFrom, current) ----------
+{
+  const withDropdowns = (form) => {
+    const m = clone(GOOD);
+    m.binds.grpc = ['device.v1.PowerSupply', 'config.ConfigService'];
+    m.tiles.push({ id: 'pick', size: '2x1', kind: 'command-form', call: 'config.ConfigService/SetDeviceType', form });
+    return m;
+  };
+  const GOOD_FORM = {
+    type: { type: 'int', options: [{ value: 0, label: 'RS232' }, { value: 1, label: 'client' }, 2] },
+    index: { type: 'int',
+             optionsFrom: { count: { rpc: 'config.ConfigService/GetDeviceType_ListCount', path: 'index' }, first: 1,
+                            inclusive: true, name: { rpc: 'config.ConfigService/GetDeviceType_Name', arg: 'index', path: 'name' } },
+             current: { rpc: 'config.ConfigService/GetDeviceType', path: 'index' } },
+    sub: { type: 'int',
+           optionsFrom: { count: { rpc: 'config.ConfigService/GetSubDeviceType_ListCount', path: 'index',
+                                   args: { index: { $from: { rpc: 'config.ConfigService/GetDeviceType', path: 'index' } } } } },
+           reloadAfter: ['config.ConfigService/SetDeviceType'] },
+    mode: { type: 'string', optionsFrom: { rpc: 'ListModes', path: 'modes', value: 'id', label: 'name' } }
+  };
+  const ok = lint(withDropdowns(GOOD_FORM));
+  check('dropdowns: options, optionsFrom (range, list, $from) and current lint clean', ok.length === 0, ok.map(C.formatIssue));
+
+  const both = clone(GOOD_FORM); both.mode.optionsFrom.count = { rpc: 'Count' };
+  check('dropdowns: rpc and count together is refused',
+        lint(withDropdowns(both)).some((i) => i.rule === 'S' && /optionsFrom/.test(i.path)));
+  const neither = clone(GOOD_FORM); neither.mode.optionsFrom = { path: 'x' };
+  check('dropdowns: optionsFrom without rpc or count is refused',
+        lint(withDropdowns(neither)).some((i) => i.rule === 'S' && /optionsFrom/.test(i.path)));
+  const twice = clone(GOOD_FORM); twice.type.optionsFrom = { rpc: 'ListModes' };
+  check('dropdowns: options and optionsFrom together is refused', lint(withDropdowns(twice)).some((i) => i.rule === 'S'));
+  const unbound = clone(GOOD_FORM); unbound.index.current.rpc = 'other.Service/GetDeviceType';
+  check('dropdowns: an RPC of a service not in binds.grpc is refused', C.hasErrors(lint(withDropdowns(unbound))));
+  const reloadUnbound = clone(GOOD_FORM); reloadUnbound.sub.reloadAfter = ['other.Service/SetDeviceType'];
+  check('dropdowns: reloadAfter an RPC of a service not in binds.grpc is refused', C.hasErrors(lint(withDropdowns(reloadUnbound))));
+  const reloadNothing = clone(GOOD_FORM); reloadNothing.type = { type: 'int', reloadAfter: ['config.ConfigService/SetDeviceType'] };
+  check('dropdowns: reloadAfter on a field that reads nothing is refused',
+        lint(withDropdowns(reloadNothing)).some((i) => i.rule === 'S' && /reloadAfter/.test(i.path)));
+  const reloadEmpty = clone(GOOD_FORM); reloadEmpty.sub.reloadAfter = [];
+  check('dropdowns: empty reloadAfter is a structure error', lint(withDropdowns(reloadEmpty)).some((i) => i.rule === 'S'));
+  const badKey = clone(GOOD_FORM); badKey.index.optionsFrom.colour = 'red';
+  check('dropdowns: unknown optionsFrom key is a structure error', lint(withDropdowns(badKey)).some((i) => i.rule === 'S'));
+}
+
+// ---------- tile groups ----------
+{
+  const withGroups = (groups) => { const m = clone(GOOD); m.groups = groups; return m; };
+  const ids = GOOD.tiles.map((t) => t.id);
+  const ok = lint(withGroups([{ id: 'main', title: 'Main', tiles: [ids[0]], collapsed: true }]));
+  check('groups: a group of existing tiles lints clean', ok.length === 0, ok.map(C.formatIssue));
+  check('groups: a tile that does not exist is refused',
+        lint(withGroups([{ id: 'g', title: 'G', tiles: ['nope'] }])).some((i) => i.rule === 'S' && /no tile "nope"/.test(i.message)));
+  check('groups: a tile in two groups is refused',
+        lint(withGroups([{ id: 'a', title: 'A', tiles: [ids[0]] }, { id: 'b', title: 'B', tiles: [ids[0]] }]))
+          .some((i) => i.rule === 'S' && /already in group "a"/.test(i.message)));
+  // Ids are data: one named like a property every object has is no duplicate.
+  const odd = clone(GOOD);
+  odd.tiles = odd.tiles.concat([{ id: 'constructor', size: '1x1', kind: 'text', text: 'a' }]);
+  odd.groups = [{ id: 'constructor', title: 'Odd', tiles: ['constructor'] }];
+  const oddIssues = lint(odd);
+  check('groups: ids named like object properties are plain ids', oddIssues.length === 0, oddIssues.map(C.formatIssue));
+  check('groups: a duplicate group id is refused',
+        lint(withGroups([{ id: 'a', title: 'A', tiles: [ids[0]] }, { id: 'a', title: 'B', tiles: [ids[1] || ids[0]] }]))
+          .some((i) => i.rule === 'S' && /duplicate group id/.test(i.message)));
+  check('groups: an empty group or a missing title is a structure error',
+        C.hasErrors(lint(withGroups([{ id: 'a', tiles: [] }]))));
+}
+
 // ---------- every shipped component must lint clean ----------
 {
   const servicesDir = path.join(GUI, 'web', 'services');

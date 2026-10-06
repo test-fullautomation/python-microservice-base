@@ -94,6 +94,7 @@ nav:
       - Diagrams: architecture/diagrams.md
   - Guides:
       - "C++ runtime install": guides/runtime-cpp-install.md
+      - "Adding a test runner": guides/test-runners.md
   # --- generated at build time by docs_hooks/copy_external_docs.py ---
   - Manager GUI:
       - Overview: gui/index.md
@@ -146,6 +147,7 @@ nav:
       - "029 · Robot Framework as the primary test client": adr/029-robot-framework-primary-test-client.md
       - "030 · Per-user authorisation via delegated authority service + JWT interceptor": adr/030-delegated-authority-jwt-interceptor.md
       - "031 · Service-delivered GUI over gRPC": adr/031-grpc-service-delivered-gui.md
+      - "032 · Pluggable test runners": adr/032-pluggable-test-runners.md
       - "ADR audit (post-migration alignment)": adr/AUDIT.md
   - Plans:
       - "Plans": plans/README.md

@@ -699,16 +699,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Check in-memory handle first
     if (_bridgeProcess && !_bridgeProcess.killed) {
       console.log('[preload] Bridge already running (handle), pid:', _bridgeProcess.pid);
-      return { pid: _bridgeProcess.pid };
+      return Promise.resolve({ pid: _bridgeProcess.pid });
     }
     // Check saved PID from a previous GUI session
     const savedPid = _readSavedPid();
     if (savedPid && _isProcessAlive(savedPid)) {
       console.log('[preload] Bridge already running (saved PID), pid:', savedPid);
-      return { pid: savedPid };
+      return Promise.resolve({ pid: savedPid });
     }
 
-    const pythonPath = (options && options.pythonPath) || 'python';
+    const pythonPath = _pythonOr(options && options.pythonPath);
     // launcher.py is a read-only script (from resources in packaged mode)
     const launcherPath = path.join(_pythonSrcPath, 'launcher.py');
     // config.json is writable user data
@@ -729,20 +729,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
 
     // Log file for diagnosing spawn failures (writable data dir)
+    // The header and a start failure are written at once: the failure dialog
+    // reads the file's tail right after spawnBridge answers.
     const logPath = path.join(_pythonDataPath, 'launcher.log');
-    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+    const logNow = (text) => { try { fs.appendFileSync(logPath, text); } catch (e) { /* no log then */ } };
     const timestamp = new Date().toISOString();
-    logStream.write('\n--- Spawn at ' + timestamp + ' ---\n');
-    logStream.write('Python: ' + pythonPath + '\n');
-    logStream.write('Args: ' + args.join(' ') + '\n');
+    logNow('\n--- Spawn at ' + timestamp + ' ---\n' +
+           'Python: ' + pythonPath + '\n' +
+           'Args: ' + args.join(' ') + '\n');
+    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
     console.log('[preload] Spawning bridge:', pythonPath, args.join(' '));
     console.log('[preload] Log file:', logPath);
 
-    _bridgeProcess = child_process.spawn(pythonPath, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      detached: true,   // let the process survive Electron exit
+    let proc;
+    try {
+      proc = child_process.spawn(pythonPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        detached: true,   // let the process survive Electron exit
+      });
+    } catch (e) {
+      logStream.end();
+      logNow('[error] ' + e.message + '\n');
+      return Promise.resolve({ pid: null, error: e.message, python: pythonPath });
+    }
+    _bridgeProcess = proc;
+
+    // Started or not is only known a moment later: a missing interpreter
+    // (no "python" on Ubuntu, only "python3") arrives as an 'error' event,
+    // after spawn() has returned without a PID. Answer once it is known, so
+    // the caller can say why -- the error is in launcher.log by then.
+    const started = new Promise((resolve) => {
+      proc.once('spawn', () => {
+        _writePid(proc.pid);   // so a future GUI session can reconnect
+        resolve({ pid: proc.pid, python: pythonPath });
+      });
+      proc.once('error', (err) => {
+        if (!proc.pid) logNow('[error] ' + err.message + '\n');
+        resolve({ pid: null, error: err.message, python: pythonPath });
+      });
     });
 
     _bridgeProcess.stdout.on('data', (data) => {
@@ -757,31 +783,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
       logStream.write('[stderr] ' + line + '\n');
     });
 
-    _bridgeProcess.on('close', (code) => {
+    proc.on('close', (code) => {
       console.log('[preload] Bridge process exited with code', code);
       logStream.write('[exit] code ' + code + '\n');
       logStream.end();
-      _bridgeProcess = null;
+      if (_bridgeProcess === proc) _bridgeProcess = null;
       _removePidFile();
     });
 
-    _bridgeProcess.on('error', (err) => {
+    proc.on('error', (err) => {
       console.error('[preload] Bridge spawn error:', err.message);
-      logStream.write('[error] ' + err.message + '\n');
-      logStream.end();
-      _bridgeProcess = null;
+      if (proc.pid) logStream.write('[error] ' + err.message + '\n');
+      else logStream.end();   // never started (logged above): no 'close' follows
+      if (_bridgeProcess === proc) _bridgeProcess = null;
       _removePidFile();
     });
-
-    // Persist PID so a future GUI session can reconnect
-    if (_bridgeProcess && _bridgeProcess.pid) {
-      _writePid(_bridgeProcess.pid);
-    }
 
     // Allow Electron to exit without waiting for this child process
-    _bridgeProcess.unref();
+    proc.unref();
 
-    return { pid: _bridgeProcess ? _bridgeProcess.pid : null };
+    return started;
   },
 
   /**
@@ -931,7 +952,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   getPackageVersion: (pythonPath, packageName) => {
     return new Promise((resolve) => {
-      const py = pythonPath || 'python';
+      const py = _pythonOr(pythonPath);
       const pkg = packageName || 'MicroserviceBase';
       const cmd = 'from importlib.metadata import version; print(version("' + pkg + '"))';
       child_process.execFile(py, ['-c', cmd], { timeout: 5000 }, (err, stdout) => {
@@ -968,6 +989,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return { running: false, pid: null };
   }
 });
+
+/**
+ * The interpreter to run: the one from Settings (quotes from Windows' "Copy
+ * as path" dropped), else this platform's usual name -- `python` on Windows;
+ * elsewhere `python3`, or `python` when only that is on PATH (Ubuntu and
+ * macOS have no `python` unless a package or a venv adds one).
+ */
+function _pythonOr(configured) {
+  const v = String(configured || '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+  return v || _defaultPython();
+}
+
+let _defaultPythonCache = null;
+function _defaultPython() {
+  if (_defaultPythonCache) return _defaultPythonCache;
+  if (process.platform === 'win32') return (_defaultPythonCache = 'python');
+  const dirs = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const onPath = (name) => dirs.some((d) => {
+    try { fs.accessSync(path.join(d, name), fs.constants.X_OK); return true; } catch (e) { return false; }
+  });
+  _defaultPythonCache = ['python3', 'python'].find(onPath) || 'python3';
+  return _defaultPythonCache;
+}
 
 function _generateUuid() {
   return Math.random().toString() +

@@ -359,7 +359,10 @@ class Test_RunSignals:
         assert first["verdict"] == "pass", first["all_lines"]
         store = project / "results" / first["id"] / "signals.json"
         data = json.loads(store.read_text(encoding="utf-8"))
-        assert {k: v["value"] for k, v in data.items()} == {"go": 1, "ack": 1}
+        # The members' own signals (a fork with flow control also keeps each
+        # flow's state and the control commands there).
+        mine = {k: v["value"] for k, v in data.items() if not k.startswith(("flow.state.", "flow.control"))}
+        assert mine == {"go": 1, "ack": 1}
         # A new run: a new store, nothing left over from the first.
         second = _wait(project, tp.RUNS.start_group(str(project), "hand")["id"])
         assert second["verdict"] == "pass", second["all_lines"]

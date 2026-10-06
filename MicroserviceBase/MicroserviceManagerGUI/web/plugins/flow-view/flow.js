@@ -351,7 +351,7 @@ function makeCtx(errorNode, expanded, edit) {
     at: function (nodeId, x, y, w, h) { this.pos[nodeId] = { x: x, y: y, w: w, h: h }; },
     syncMarker: 'url(#' + id + 's)',
     defs: '<defs>' +
-      '<marker id="' + markers[''] + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8a99a6"/></marker>' +
+      '<marker id="' + markers[''] + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--fv-faint, #8a99a6)"/></marker>' +
       '<marker id="' + markers.next + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7d5ba6"/></marker>' +
       '<marker id="' + markers.fail + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c77c0e"/></marker>' +
       '<marker id="' + id + 's" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1a9c83"/></marker>' +

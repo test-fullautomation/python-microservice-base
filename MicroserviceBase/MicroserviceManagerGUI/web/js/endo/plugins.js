@@ -166,11 +166,12 @@
    * Run one entry of a plugin in a sandboxed frame (frame-host.js): its own
    * process, no DOM of the shell, ctx over a port. fn: render | mount | run.
    */
-  function inFrame(p, el, entry, fn, args, ctx, label, selection, onReveal, onEdit) {
+  function inFrame(p, el, entry, fn, args, ctx, label, selection, onReveal, onEdit, onBreakpoint) {
     el.classList.add('endo-frame-body');
     return MM.endo.frames.create(el, {
       mode: 'module', base: p.base, entry: entry, fn: fn, args: args || [], ctx: ctx,
       label: label || ((p.manifest && p.manifest.title) || p.id), selection: selection, onReveal: onReveal, onEdit: onEdit,
+      onBreakpoint: onBreakpoint,
       // Tiles fill their cell; drawer, dock and views take the content's height.
       autoHeight: fn !== 'render' || !(args && args[0] && args[0].kind)
     });
@@ -483,6 +484,8 @@
    * onReveal(target) -- e.g. { node } to show a node in the source text.
    * ctx.edit(change) calls onEdit(change), whose result (or rejection) is
    * the view's answer; without onEdit the view is read-only.
+   * ctx.breakpoint(id) calls onBreakpoint(id): a step's breakpoint dot was
+   * clicked (a view that draws breakpoints, flow-view).
    */
   function fileViews(type) {
     return entriesOf('file.views', function (e) { return (e.for || []).indexOf(type) >= 0; })
@@ -490,9 +493,9 @@
         return {
           key: v.key, title: v.entry.title, icon: v.entry.icon, plugin: v.plugin.id,
           pluginTitle: v.plugin.manifest.title,
-          mount: function (el, data, onReveal, onEdit) {
+          mount: function (el, data, onReveal, onEdit, onBreakpoint) {
             var h = inFrame(v.plugin, el, v.entry.entry, 'mount', [], pluginCtx(v.plugin),
-                            v.entry.title + ' (' + v.plugin.manifest.title + ')', data, onReveal, onEdit);
+                            v.entry.title + ' (' + v.plugin.manifest.title + ')', data, onReveal, onEdit, onBreakpoint);
             var inst = frameInstance(h);
             inst.setData = function (d) { h.setSelection(d); };
             inst.ready = h.ready;

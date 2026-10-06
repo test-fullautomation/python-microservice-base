@@ -83,6 +83,7 @@
     var consulName = binds.consul === '@self' ? env.consulName : binds.consul;
     var methodsP = null;
     var open = 0;
+    var callWatchers = [];
     // One binary may serve several proto services: the first is the default,
     // the others are called as "<service>/<Method>".
     var services = [].concat(binds.grpc || []);
@@ -122,8 +123,24 @@
           protoPath: env.protoPath
         }).then(function (d) {
           if (!d || !d.ok) throw new Error((d && d.error) || (method + ' failed'));
+          callWatchers.slice().forEach(function (fn) {
+            try { fn(method, args || {}); } catch (e) { console.warn('[endo] onCall watcher failed:', e); }
+          });
           return d;
         });
+      },
+
+      /**
+       * fn(method, args) after each successful call of this component, from
+       * any of its tiles: dropdowns that depend on a setting read their
+       * choices again (reloadAfter). Returns off().
+       */
+      onCall: function (fn) {
+        callWatchers.push(fn);
+        return function off() {
+          var i = callWatchers.indexOf(fn);
+          if (i >= 0) callWatchers.splice(i, 1);
+        };
       },
 
       describe: function (method) {
@@ -333,6 +350,112 @@
     };
   }
 
+  // ------------------------------------------------------------ tile groups
+
+  // Open/closed per scope, component and group, remembered per user. The
+  // manifest's "collapsed" is only how a group starts.
+  var GROUPS_KEY = 'mm_endo_groups';
+  function groupPrefs() {
+    try { return JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function setGroupPref(key, open) {
+    var prefs = groupPrefs();
+    prefs[key] = open;
+    try { localStorage.setItem(GROUPS_KEY, JSON.stringify(prefs)); } catch (e) { /* storage unavailable */ }
+  }
+
+  /**
+   * A tile instance that runs only while its component is shown *and* its
+   * group is open (R5): suspend/resume from the component, setOpen from the
+   * group's header. A tile starts running, as rendered.
+   */
+  function gateInstance(inst) {
+    var shown = true, open = true, running = true;
+    function sync() {
+      var want = shown && open;
+      if (want === running) return;
+      running = want;
+      try { if (want) inst.resume(); else inst.suspend(); } catch (e) { /* fail small */ }
+    }
+    return {
+      suspend: function () { shown = false; sync(); },
+      resume: function () { shown = true; sync(); },
+      destroy: function () { inst.destroy(); },
+      refresh: inst.refresh,
+      setOpen: function (v) { open = !!v; sync(); },
+      isRunning: function () { return running; }
+    };
+  }
+
+  /**
+   * Put a component's tiles under the headers of its "groups".
+   *
+   * @param {HTMLElement} stage - where the tiles' sections already are
+   * @param {Array} entries - [{ tileId, section, instance }] of this component, in stage order
+   * @param {Array} groups - the manifest's groups
+   * @param {object} opts - { scope, component, source }: the key the open/closed choice is
+   *   remembered under, and a label for the header (the bench names the component)
+   * @returns {Array} the instances to run, in entries order: gated when grouped
+   */
+  function applyGroups(stage, entries, groups, opts) {
+    opts = opts || {};
+    // Keyed by ids from component.json: no inherited keys ("constructor", ...).
+    var byTile = Object.create(null);
+    (groups || []).forEach(function (g) {
+      (g && Array.isArray(g.tiles) ? g.tiles : []).forEach(function (t) { if (!byTile[t]) byTile[t] = g; });
+    });
+    var state = Object.create(null);   // group id -> { open, members: [{ section, gate }], head }
+    var out = entries.map(function (e) {
+      var g = byTile[e.tileId];
+      if (!g) return e.instance;
+      var s = state[g.id];
+      if (!s) {
+        var key = (opts.scope || 'svc') + '|' + (opts.component || '') + '|' + g.id;
+        var pref = groupPrefs()[key];
+        s = state[g.id] = { key: key, open: pref === undefined ? !g.collapsed : !!pref, members: [] };
+        s.head = groupHead(g, opts.source);
+        stage.insertBefore(s.head, e.section);   // the header goes where the group's first tile is
+        s.head.querySelector('button').addEventListener('click', function () {
+          s.open = !s.open;
+          setGroupPref(s.key, s.open);
+          showGroup(s);
+        });
+      }
+      var gate = e.instance ? gateInstance(e.instance) : null;
+      s.members.push({ section: e.section, gate: gate });
+      return gate;
+    });
+    if (Object.keys(state).length) stage.classList.add('grouped');
+    Object.keys(state).forEach(function (id) {
+      var s = state[id];
+      s.head.querySelector('.n').textContent = s.members.length + (s.members.length === 1 ? ' tile' : ' tiles');
+      showGroup(s);
+    });
+    return out;
+  }
+
+  function groupHead(g, source) {
+    var head = document.createElement('div');
+    head.className = 'endo-group';
+    head.setAttribute('data-group', g.id);
+    head.innerHTML = '<button type="button" class="endo-group-toggle" aria-expanded="true">' +
+      '<i class="bi bi-chevron-down" aria-hidden="true"></i>' +
+      '<span class="t">' + esc(g.title || g.id) + '</span>' +
+      (source ? '<span class="src">' + esc(source) + '</span>' : '') +
+      '<span class="n"></span></button>';
+    return head;
+  }
+
+  function showGroup(s) {
+    s.head.classList.toggle('collapsed', !s.open);
+    s.head.querySelector('button').setAttribute('aria-expanded', s.open ? 'true' : 'false');
+    s.members.forEach(function (m) {
+      m.section.hidden = !s.open;
+      if (m.gate) m.gate.setOpen(s.open);
+    });
+  }
+
   function issuesListHtml(arr) {
     return '<ul class="endo-issues">' + arr.map(function (i) {
       return '<li><b>' + esc(i.rule) + '</b> <code>' + esc(i.path) + '</code> ' + esc(i.message) + '</li>';
@@ -357,11 +480,13 @@
       var stage = document.createElement('div');
       stage.className = 'endo-stage';
       root.appendChild(stage);
-      (prep.manifest.tiles || []).forEach(function (tile) {
+      var entries = (prep.manifest.tiles || []).map(function (tile) {
         var r = renderTile(tile, prep.ctx);
         stage.appendChild(r.section);
-        if (r.instance) instances.push(r.instance);
+        return { tileId: tile.id, section: r.section, instance: r.instance };
       });
+      applyGroups(stage, entries, prep.manifest.groups, { scope: 'svc', component: prep.manifest.component })
+        .forEach(function (inst) { if (inst) instances.push(inst); });
       return handle;
     });
   }
@@ -370,6 +495,7 @@
   MM.endo.prepareComponent = prepareComponent;
   MM.endo.renderTile = renderTile;
   MM.endo.instanceGroup = instanceGroup;
+  MM.endo.applyGroups = applyGroups;
   MM.endo.issuesListHtml = issuesListHtml;
   MM.endo.layerVar = layerVar;
   MM.endo.KNOWN_PLUGIN_KINDS = KNOWN_PLUGIN_KINDS;

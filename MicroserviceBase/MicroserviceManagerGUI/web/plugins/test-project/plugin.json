@@ -3,7 +3,7 @@
   "plugin": "test-project",
   "version": "1.0.0",
   "title": "Test projects",
-  "description": "Robot Framework test projects: the Project tab under the left pane, the project view, and the Test project group on the Developer tab.",
+  "description": "Test projects for Robot Framework AIO, Temporal or another registered runner: the Project tab under the left pane, the project view, and the Test project group on the Developer tab.",
   "requires": { "shell": "^2.3", "capabilities": ["files.project"] },
   "isolation": "schema",
   "contributes": {
@@ -22,7 +22,7 @@
         { "id": "test-project.view", "label": "Project view", "icon": "kanban",
           "title": "Files, exported services and their sync state; re-export or add services" },
         { "id": "test-project.open", "label": "Open project", "icon": "folder2-open",
-          "title": "Choose the folder services are exported into (Robot Framework AIO)" }
+          "title": "Choose the folder services are exported into" }
       ] }
     ]
   }

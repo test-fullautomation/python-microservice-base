@@ -90,6 +90,39 @@ chamber, the bench signals and the hello service on one stage:
 | The lighter in-app help (loaded inside the running GUI) | `../../web/docs/help.html` (or click the **?** in the navbar when the GUI is running) |
 | Worked examples (C++ and Python services, a client, multi-proto projects) | [`../../../../examples/README.md`](../../../../examples/README.md) |
 
+## Views: user, admin, developer
+
+What the GUI offers is set by **roles** that combine. *User* is always on;
+the others add to it:
+
+| Role | Adds |
+|---|---|
+| **user** | the Services and Bench views, help |
+| **admin** | the Administrator ribbon tab: Nomad jobs and the fleet, the plugin manager |
+| **developer** | the Developer ribbon tab and everything behind it: test projects, the Service Creator, explorers, plugin views, the developer inspector |
+
+A lab operator who may start Nomad jobs gets `user+admin`; a test developer
+`user+developer`; the default is all three.
+
+Where the view comes from, highest priority first:
+
+| Where | Form |
+|---|---|
+| Address bar (browser) | `?view=user+admin` — for that window only |
+| *Settings → View* | checkboxes for *Administrator* and *Developer* |
+| `electron/settings.json` | `"view": "user+admin+developer"` |
+
+Roles may be written `user+admin`, `user admin`, `user,admin` or as a JSON
+list; `all` means every role. A view outside the roles stays shut whatever
+asks for it — a ribbon tab, a mode pill, a plugin command or a view
+restored from the last session — and the developer inspector turns off
+without the developer role.
+
+!!! note "Roles are not access control"
+    A view only hides parts of the GUI. Anyone who can reach the bridge can
+    still call its endpoints; keep the bridge on `localhost` (see
+    [Bridge security](#bridge-security-allowed-origins)).
+
 ## Providing a GUI for a gRPC service
 
 A service registered in Consul is listed in the Services view with a
@@ -139,11 +172,13 @@ instead of showing an empty panel.
 **A folder may ship both.** When it holds a `component.json` *and* a
 classic panel (`<Name>.html`, `ServiceUI.qml`, `ServiceUI.ui`, a Qt WASM
 build or `gui_schema.json`), the component is what opens, and
-**Developer → Selected service → Classic panel** switches that service to
-the other one. The choice is remembered per service (`mm_classic_panel` in
-local storage), so the service opens that way from the sidebar until it is
-switched back; the button is greyed out for a folder that ships only one
-kind. The bench dock offers the same switch through **Open classic
+**User → Service view → Tiles | Service window** switches that service
+between the two; the pressed button shows which is on screen. The choice is
+remembered per service (`mm_classic_panel` in local storage), so the service
+opens that way from the sidebar until it is switched back; both buttons are
+greyed out for a folder that ships only one kind. They sit on the User tab
+because the service window is an operator's screen (e.g. a Qt service's own
+window built for WebAssembly), available in every view role. The bench dock offers the same switch through **Open classic
 panel**.
 
 ### Component manifests (`component.json`)
@@ -173,6 +208,72 @@ chart, the capabilities it uses and the tiles it shows:
   (rows from an RPC, or static `rows`), `log` (server-streaming RPC) and
   `run-status`. **Sizes** on the 4-column stage: `1x1`, `2x1`, `2x2` and
   `4x1`.
+- **Dropdowns in a form.** A form field (of a `command-form` tile or a ribbon
+  command) becomes a dropdown with `options`, a fixed list, or with
+  `optionsFrom`, a list the service gives. `current` preselects the
+  service's present value; a ↻ next to the dropdown reads it again.
+
+  ```json
+  "form": {
+    "type":  { "type": "int",
+               "options": [{ "value": 0, "label": "RS232" }, { "value": 1, "label": "client" }] },
+    "index": { "type": "int",
+               "optionsFrom": { "count": { "rpc": "GetDeviceType_ListCount", "path": "index" },
+                                "name":  { "rpc": "GetDeviceType_Name", "arg": "index", "path": "name" } },
+               "current": { "rpc": "GetDeviceType", "path": "index" },
+               "reloadAfter": ["SetDeviceType"] },
+    "mode":  { "type": "string",
+               "optionsFrom": { "rpc": "ListModes", "path": "modes", "value": "id", "label": "name" } }
+  }
+  ```
+
+  `optionsFrom` is either a list RPC (`rpc`, `path` to the array, `value`
+  / `label` paths per item) or a range of indexes from a count RPC (`count`;
+  indexes 0 to count−1, or set `first`, and `inclusive` when the count is
+  the highest index), each named by an optional `name` RPC. An argument can
+  come from another RPC:
+  `"args": { "index": { "$from": { "rpc": "GetDeviceType", "path": "index" } } }`
+  — the sub-device list of the selected device type. Lists stop at 256
+  choices, and names are read one at a time (a device may not take parallel
+  requests).
+- **Linked dropdowns.** `reloadAfter` lists RPCs after whose successful call
+  the dropdown reads its choices and current value again — from its own tile,
+  another tile of the same component or a ribbon command. Give the
+  sub-device dropdown `"reloadAfter": ["SetDeviceType"]` and it follows a new
+  device type as soon as *Set device type* is run, with no ↻ needed.
+  The link follows what the service has **set**, not what is picked in
+  another tile: services such as the BITS ones list the sub-device types of
+  the device type they currently have.
+- `python -m MicroserviceBase.tools.ui_component` writes dropdowns from a
+  service's protos: choices listed in a field's comment
+  (`0-> RS232; 1-> client`), `Get<X>_ListCount` / `Get<X>_Name` / `Get<X>`
+  RPCs (indexes 0 to count−1, as the service's own combo boxes fill them;
+  "max index" or "1-n" comments are not trusted, because an index past the
+  end can crash a service that does not check it), and `reloadAfter` links:
+  `Set<X>` for a list whose count takes `<X>`, and a dropdown's own setter.
+- **Tile groups.** `groups` puts tiles under a full-width header that
+  expands and collapses (click it, or Enter on it):
+
+  ```json
+  "groups": [
+    { "id": "commands", "title": "Commands",    "tiles": ["init-device", "set-voltage"] },
+    { "id": "device",   "title": "Device type", "tiles": ["set-device-type", "get-device-type"], "collapsed": true }
+  ]
+  ```
+
+  The header sits where the group's first tile is; keep a group's tiles
+  together, and put tiles in no group first (they are not under a header).
+  A collapsed group's tiles are hidden **and suspended** (R5): their polling
+  and signal streams stop until it opens, and a component that is hidden and
+  shown again resumes only its open groups. `collapsed` is how a group starts;
+  the user's choice is remembered per component (and, on the bench, per
+  composition). The linter refuses a group naming a missing tile, a tile in
+  two groups and duplicate group ids. A grouped stage packs its rows in order
+  (no dense back-fill), so no tile moves above its header. A shell without
+  groups shows every tile flat. The generator groups a component of 7 tiles
+  or more: the service's own RPCs as *Commands*, *Readings* and *Streams*
+  (open), every other bound service by topic — *Device type*, *Interface*,
+  *Connect*, in its proto's order — collapsed.
 - **Frame tiles** (`"kind": "frame", "entry": "panel.html"`) show an HTML
   page of the component folder in a **sandboxed frame**: its own process,
   no access to the GUI's page, storage or the network. Its scripts reach
@@ -252,8 +353,33 @@ WebAssembly panel. It is built from `gui_wasm/` with `build_wasm.bat` or
 `.sh`, which also install it when `MM_SERVICES` points at `web/services`.
 The panel shows one group per RPC and calls the service over gRPC.
 **C++ services** declare their folder the same way: the C++ runtime reads
-`<PREFIX>GUI` (e.g. `HELLO_GUI=HelloService1.0.0`) into the `gui` setting
-and registers it as `Meta.gui`.
+`<PREFIX>GUI` (e.g. `HELLO_GUI=HelloService1.0.0`) into the `gui` setting,
+registers it as `Meta.gui` and serves the folder over `ServiceGui`
+(ADR-031), with the same checksum as a Python service. It finds the folder
+in `<PREFIX>GUI_DIR`, else `gui/<gui>`, `ui/<gui>`, `GUIs/<gui>`, `<gui>`
+or `../interfaces/gui/<gui>` beside the executable (or the working
+folder).
+
+**A Qt service's own window as its classic panel.** A Qt Widgets service
+can ship its desktop window, ported to WebAssembly, as the classic panel
+next to its `component.json`: put the Emscripten `.js` and `.wasm` at the
+top of the GUI folder. Operators switch with **User → Service view →
+Tiles | Service window**. For a service that is on Consul and not on the
+broker, the classic loader routes the panel's `window.callMicroservice`
+calls over gRPC:
+
+- the panel gets a token as `Module.endoToken`; it sends that as the
+  service name, so its calls (timer-driven ones included) reach it;
+- `"Method"` goes to whichever bound service has that method, found by
+  reflection; `"<package.Service>/Method"` to that service;
+- the request is the proto message as JSON (`args[0]`), the reply has a
+  broker reply's shape (`{ result: 'pass', result_data }`) plus
+  `result_json`, the whole response.
+
+A broker (Python) service's panel is called through the broker, as before.
+The port keeps the window's `.ui` and replaces each device call with an
+RPC; it links Qt Widgets only. WebAssembly has no nested event loop, so a
+dialog opens with `open()`, never `exec()`.
 
 ### The bench: one screen from many services
 
@@ -305,7 +431,9 @@ services, and in which order, is a **composition**:
   the **signals** badge under the stage, or `MB_SIGNAL_DISCOVERY_ADDR`),
   keeps **one** stream per graph service that owns a shown signal, and
   closes it when no tile needs it. Names the catalog does not know show
-  *unknown signal* and fill in once their service is up.
+  *unknown signal* and fill in once their service is up. How the host bus
+  in the window and the bridge share this work is drawn in
+  [Diagrams → Live signals](../../../../docs/architecture/diagrams.md#live-signals-host-bus-and-bridge).
 - `node tools/endo-lint.js <composition.json>` lints a composition in CI.
   `test/endo/fixtures/bench/` holds the proposal's prototype modules and
   compositions; `test/endo/test_endo_bench.js` tests them.
@@ -405,15 +533,28 @@ change, and *Undo last change* takes a grid change back. Generated files
 stay read-only (`robot-grid` plugin; `/api/test-project/view-edit`).
 
 **Edit suites in place.** Selecting a suite, a starter file or one of your
-own files opens it in an editor with Robot Framework highlighting and line
-numbers (Tab inserts four spaces, Enter keeps the indentation, **Ctrl+S**
-saves). A save refuses to overwrite a file that changed on disk since you
+own files opens it in an editor with Robot Framework highlighting — section
+headers, test and keyword names, the keyword each line calls, `[Settings]`,
+control words (FOR, IF, TRY, WHILE, THREAD, …), imports, named arguments,
+variables, comments — and line numbers (Tab inserts four spaces, Enter
+keeps the indentation, **Ctrl+S** saves). **Go to Definition** (**F12**, or
+**Ctrl+Click**) on a keyword, an import or a flow's `"keyword"` or
+sub-flow `"file"` opens where Robot finds it — the file's own keywords, its
+resources and theirs, its Python libraries, BuiltIn — at its line; a
+definition outside the project (a library, BuiltIn) is shown read-only. A save refuses to overwrite a file that changed on disk since you
 opened it, and offers *Overwrite* or *Reload* instead. On save — or with
 **Check** — the bridge parses the file with Robot Framework and lists syntax
 problems by line; click one to jump there. Unsaved text survives a reload
 and is offered again when you reopen the file. Generated files and the
 manifest open read-only. **New suite…** (overview, or **+** next to
 *Suites*) creates a suite already wired to an exported service's keywords.
+
+**New flow.** The **+** next to *Flows* (shown even while a project has no
+flow yet, when its runner has flow files) asks for a name and the resource
+files whose keywords the flow may use. It writes
+`flows/<name>.flow.json` from the runner's template — one test with one
+step to replace — and opens it on its *Diagram* tab, ready for
+*Edit flow* (below).
 
 **Export a service:** select a Consul-registered service, then *Developer →
 Selected service → Add to project* (or the button in the inspector's API tab).
@@ -458,12 +599,54 @@ Resources connect through Consul by service name, never by host and port —
 Nomad assigns a new port on every placement. Generated resources should not
 be edited; put your own keywords in a separate resource.
 
-**Other test runners.** `testproject.json` names the runner, and everything
-runner-specific sits behind one interface
-(`MicroserviceBase/ports/test_project.py`). Supporting another runner means
-adding an adapter next to `adapters/test_project/robot_aio.py` and
-registering it; the manifest, proto handling and the plan/apply safety rules
-stay the same — and so does running, below.
+### Test runners
+
+`testproject.json` names the project's **runner**, and everything
+runner-specific comes from it: which files are tests, flows and resources
+(and what the sidebar calls them), the starter files, the syntax check, the
+command a run starts and how its results are read. The GUI, the manifest,
+proto handling, the plan/apply safety rules and running stay the same for
+every runner. Two come with the Manager GUI:
+
+| Runner | Tests | Calls the services through | Results |
+|---|---|---|---|
+| **Robot Framework AIO** (`robotframework-aio`) | `.robot` suites and `*.flow.json` flows | generated keyword resources | `output.xml`, Log, Report |
+| **Temporal (Python SDK)** (`temporal-python`) | pytest files (`*_test.py`, `test_*.py`) that run Temporal workflows | generated activities | JUnit XML |
+
+**Choose one** when you initialize a folder: the dialog lists the runners
+with the structure each one writes, and preselects the runner whose files
+the folder already holds. A project keeps its runner; to move a suite to
+another runner, initialize a new project with it and export the services
+again.
+
+Structure for **Temporal (Python SDK)**:
+
+```text
+<project>/
+├─ testproject.json                   manifest: runner, layout, what was exported
+├─ conftest.py                        Temporal server + worker for the tests (starter)
+├─ pytest.ini, requirements.txt       test discovery; temporalio, pytest (starter)
+├─ activities/<service>/*.py          one activity per RPC, ACTIVITIES in __init__.py (generated)
+├─ workflows/<service>_smoke.py       starter workflow per service
+├─ tests/<service>_smoke_test.py      starter test per service
+└─ proto/<service>/*.proto            copied protos, when available
+```
+
+The activities find the service by name through Consul (`CONSUL_ADDR`), or
+at `<SERVICE>_ADDR` (e.g. `HELLO_ADDR=127.0.0.1:50051`) when set. A test
+runs a workflow with the `temporal` fixture —
+`temporal(Greet.run, "bench", workflows=[Greet], activities=ACTIVITIES)` —
+against the Temporal server at `TEMPORAL_ADDRESS` or, when that is not set,
+a local dev server (the `temporal` CLI at `TEMPORAL_CLI`, else downloaded by
+the SDK once). Put these variables, and an interpreter with `temporalio`,
+in the project's **Run settings**. Run variables reach the tests as
+environment variables; *Stop* lets the running test end and skips the rest.
+
+**Another runner** is one class implementing
+`MicroserviceBase/ports/test_project.py`'s `TestProjectRunner`, registered
+in code or — from its own package, without changing this one — as an entry
+point in the group `microservicebase.test_runners`. See the guide *Adding a
+test runner* and ADR-032.
 
 ### Running tests
 
@@ -484,6 +667,21 @@ builds into a suite at run time.
   the text in *Script*, unsaved changes included. Click a node to find it in
   *Script*; a flow the fork refuses shows its message and a link to the
   node or line it names.
+- **Sub-flows** — a step of kind `flow` calls another flow file with
+  arguments (`{"kind": "flow", "file": "sub/step.flow.json", "args": {…}}`).
+  The Diagram draws it as one box with its arguments, and its **+** opens
+  the sub-flow's steps in place. Those steps belong to the sub-flow's own
+  file, so they are shown, not edited, here.
+- **Edit flow** — the button above the Diagram (while the file is open in
+  *Script*) turns on a palette and drop zones: drag a palette item —
+  Keyword, Gate, Sleep, Sub-flow, Decision, Loop, Try, Test — onto a **+**
+  to insert it; drag a step onto another **+** to move it; click a step for
+  its fields (*Apply*, *Delete*, *Wrap in loop / try*); *Undo* takes the
+  last change back. Every change goes through the runner
+  (`adapters/test_project/flow_edit.py`), which rewires the edges, has the
+  fork validate the result and writes it back to *Script* one node and one
+  edge per line; a change that would make the flow invalid is refused with
+  the reason. One edit at a time; a drop while one is in flight says so.
 - **Run dialog** — variables for this run (`NAME=value`, one per line; they
   override the file's own values) and **Dry run** (check keywords and
   arguments, execute nothing). Both are remembered per file.
@@ -514,6 +712,71 @@ under `"run"`, so a project runs the same way for everyone who opens it:
 | PYTHONPATH | Folders put in front of the path, relative to the project root — e.g. the `src` of a RobotFramework AIO checkout that brings `robot.flow`. |
 | Extra arguments | Added to every run (one per line). |
 | Environment | `NAME=value` pairs for every run. |
+
+### Pause, resume, stop and continue a flow
+
+With a RobotFramework AIO fork that has flow control (`robot/flow/control.py`),
+a running flow can be held and let go from **Runs**:
+
+- **Pause** holds it at the next step boundary — between two steps, at a
+  loop iteration, between two polls of a gate, never inside a keyword (a
+  running `Sleep` ends first). Loop deadlines, gate timeouts and watchdogs do
+  not run on while it is paused. The meta line says where it holds (phase,
+  loop and iteration) and the Diagram marks the step in amber. **Resume**
+  lets it go on.
+- **Stop** on a flow is the flow's own: it ends at the next step boundary,
+  writes a **checkpoint**, ends the running test UNKNOWN, runs the teardown
+  and starts no further test. If a step runs on for more than a minute, the
+  usual graceful stop follows; a second **Stop** kills.
+- **Continue from checkpoint** (on a flow run that was stopped or broke off)
+  starts a new run that skips the test phases already finished and goes on
+  with the interrupted loop where it stopped, with its saved variables; the
+  setup phase runs again. The new run says which run it continues.
+- **Step mode** (the Run dialog of a flow) pauses before every step of the
+  test phases; **Next step** goes on one step.
+- **Run groups**: Pause / Resume act on every member; each member's header
+  has its own, for that member alone (its gates' partners may then time
+  out waiting for it).
+
+Under the hood the run's signal store is the control channel (the fork's
+`python -m robot.flow control <store> pause|resume|stop [--rig member]`, sent
+with the project's interpreter); every flow process publishes its state
+there. Group members run as rigs named after their ids.
+
+### Debugging
+
+**Debug** next to *Run…* in a suite's or flow's editor runs it under the
+debugger, with the variables of its last run.
+
+- **Breakpoints**: click a line number in the editor (a red dot), or the dot
+  at the top-left corner of a step on the Diagram. A breakpoint anywhere in a
+  step of a flow file is the step's; in a sub-flow's file it stops in every
+  call of that sub-flow. Breakpoints are kept per project in the browser and
+  can be set or removed while a run is being debugged.
+- When the run stops, **Runs** shows the debug panel: the source with the
+  line it stopped at (and its breakpoints, which can be clicked there too),
+  the **call stack** — flow steps, sub-flow steps (`<sub-flow>::<step>`),
+  keywords, Python functions — with their files and lines, the
+  **variables** of the selected frame (lists and dictionaries expand), and a
+  **console**: `${var}` shows a value, any other line runs a keyword (cells
+  separated by two spaces), and where the run is stopped in Python, a Python
+  expression. The editor and the Diagram of that file mark the line and the
+  step.
+- **Continue** (F5), **Step Over** (F10), **Step Into** (F11: into a
+  keyword, a sub-flow or the Python function of a keyword of your library),
+  **Step Out** (Shift+F11), **Pause**; **Stop** ends the run gracefully, also
+  while it is stopped.
+- **Into Python**: Step Into on a keyword of your own Python library stops at
+  the first line of its function; Step Over / Into / Out then move through
+  the Python code (yours, not Robot Framework's or installed packages), and
+  when the function returns the run stops at Robot's next step.
+- **Stop when a keyword fails** stops where a keyword fails, before its
+  callers report the failure.
+
+Debugging is the runner's (`TestProjectRunner.can_debug`): for Robot
+Framework AIO, `flow_debug.py` is the listener in the Robot process and
+`debugging.py` the bridge's side. The VS Code extension uses the same
+listener.
 
 ### Run groups: processes that meet
 
@@ -621,7 +884,10 @@ flashes them in order and lets them fade, **Hop** moves the mark through
 them, **Off** shows only where the run is now. Reduced motion turns the
 replay off. The Diagram keeps the running step in view, except for a few
 seconds after you scroll it yourself. A finished run keeps its counts: where
-the deviations of a long night were.
+the deviations of a long night were. Inside a sub-flow the position names
+the step as `<sub-flow>::<step>`: an opened sub-flow marks that step, a
+closed one lights its box. Steps Robot reports as not run — the branch a
+decision did not take — never count as the position.
 
 How it knows: `robot_boot.py` (which starts every GUI run) loads
 `adapters/test_project/flow_position.py` into the Robot process. It numbers
@@ -671,11 +937,16 @@ library:
   `Set Signal` keyword takes — so write-direction graphs can be demonstrated
   end to end: set → watch the wired blocks react → see the ack.
 - **▶ Run graph / ▶ Run cluster** starts a *local, fully mocked* cluster for
-  a wiring check. It needs `run_cluster.py`, which belongs to the signals
-  repository and is deliberately not vendored here: point
-  **`MB_SIGNALS_ROOT`** at a checkout that contains it, otherwise the button
-  reports the snapshot as missing. Deploying the generated Nomad job and
-  using ◉ Monitor is the supported path for a real bench.
+  a wiring check, with the vendored runner `graph-studio/tools/run_cluster.py`.
+  The signal services it runs are not vendored: they come from the Live
+  panel's signals root, else **`MB_SIGNALS_ROOT`** (a folder containing
+  `signal_graph/`, `signal_discovery/` and `common/`); without one the button
+  says what is missing. The cluster's signal-discovery listens on the port
+  of the Live panel's *signal-discovery host:port*, so a bench job that
+  already owns the default port is no obstacle. When `grpcio-reflection` is
+  installed in the interpreter that runs it, every server of the cluster
+  also answers gRPC reflection, so the Manager GUI lists a graph's methods. Deploying the generated Nomad job
+  and using ◉ Monitor is the supported path for a real bench.
 - **Library…** has two tabs: *New block skeleton* scaffolds a block package
   (`blocks.py`, test stub, README, file header) with the catalog hints
   already in place and, with the *layout* box ticked, the hexagonal skeleton
@@ -686,7 +957,7 @@ library:
   hot-reloads the palette without a restart.
 
 Live lookups, Monitor and Set signal need `grpcurl` on `PATH` (as the API
-Explorer does). Graph services serve no gRPC reflection, so the vendored
+Explorer does). Deployed graph services serve no gRPC reflection, so the vendored
 `reference/protos/signal.proto` is passed as `-import-path`; the Live panel's
 *proto dir* overrides it.
 

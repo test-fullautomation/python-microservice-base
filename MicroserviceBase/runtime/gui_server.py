@@ -42,14 +42,25 @@ _SKIP_DIRS = {"__pycache__", ".git", "node_modules", ".idea", ".vscode"}
 _SKIP_SUFFIXES = (".pyc", ".pyo", ".log", ".tmp", "~")
 
 
+def _is_link(path: str) -> bool:
+    """A symbolic link or (Windows) a junction: it may point outside the folder."""
+    isjunction = getattr(os.path, "isjunction", None)
+    return os.path.islink(path) or bool(isjunction and isjunction(path))
+
+
 def _walk(root: str) -> Iterator[Tuple[str, str]]:
-    """``(absolute path, archive path)`` of every file worth shipping."""
+    """``(absolute path, archive path)`` of every file worth shipping. Links --
+    to a file or a folder -- are left out: what is served stays inside the
+    folder. runtime_cpp's ServiceGui walks the same way (same checksum)."""
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
+        dirnames[:] = sorted(d for d in dirnames
+                             if d not in _SKIP_DIRS and not _is_link(os.path.join(dirpath, d)))
         for name in sorted(filenames):
             if name.endswith(_SKIP_SUFFIXES):
                 continue
             full = os.path.join(dirpath, name)
+            if _is_link(full):
+                continue
             yield full, os.path.relpath(full, root).replace(os.sep, "/")
 
 

@@ -45,9 +45,18 @@ dependencies = [
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "psutil>=5.9.0",
+    # The Manager GUI's bridge (adapters/ui_bridge/fastapi_bridge.py, which
+    # the GUI's "Start bridge" runs through MicroserviceManagerGUI/python/launcher.py).
+    # Was only the `web` extra, so a plain `pip install` gave a GUI whose
+    # bridge could not start; the GUI ships in this package, so its bridge's
+    # server is a base dependency, like grpcio-tools above.
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
 ]
 
 [project.optional-dependencies]
+# Kept so `pip install MicroserviceBase[web]` still works; both are base
+# dependencies now.
 web = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",

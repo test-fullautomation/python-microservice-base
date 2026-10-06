@@ -203,7 +203,7 @@
       });
     })).then(function (mods) {
       // Two services must not bring the same component id (R8).
-      var seen = {};
+      var seen = Object.create(null);   // component ids: no inherited keys
       mods.forEach(function (m) {
         if (m.state !== 'ok') return;
         var id = m.manifest.component;
@@ -388,6 +388,7 @@
       '  <footer class="bench-status" id="benchStatus" aria-label="Modules on this bench"></footer>' +
       '</div>';
     var stage = el.querySelector('#benchStage');
+    var entriesByModule = [];   // [{ mod, entries }]: the tiles of each component, for its groups
 
     state.slots.forEach(function (slot) {
       var mod = slot.module;
@@ -395,7 +396,9 @@
       if (slot.state === 'ok') {
         var r = MM.endo.renderTile(slot.tile, mod.ctx, { layer: mod.manifest.layer, source: mod.manifest.title });
         section = r.section;
-        if (r.instance) instances.push(r.instance);
+        var bucket = entriesByModule.filter(function (b) { return b.mod === mod; })[0];
+        if (!bucket) entriesByModule.push(bucket = { mod: mod, entries: [] });
+        bucket.entries.push({ tileId: slot.tile && slot.tile.id, section: section, instance: r.instance });
       } else {
         section = slotSection(slot);
       }
@@ -410,6 +413,16 @@
         if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === section) { ev.preventDefault(); select(slot.key); }
       });
       stage.appendChild(section);
+    });
+
+    // A component's groups: headers where their first tile landed in the
+    // composition's order; collapsing on the bench is remembered for this
+    // composition only.
+    var compId = (state.comp && state.comp.composition) || '';
+    entriesByModule.forEach(function (b) {
+      MM.endo.applyGroups(stage, b.entries, b.mod.manifest.groups,
+                          { scope: 'bench:' + compId, component: b.mod.manifest.component, source: b.mod.manifest.title })
+        .forEach(function (inst) { if (inst) instances.push(inst); });
     });
 
     drawStatus();
@@ -839,12 +852,12 @@
       if (cmd.confirm) mod.ctx.confirm(cmd.confirm).then(function (ok) { if (ok) go(formArgs); });
       else go(formArgs);
     };
-    if (cmd.form && Object.keys(cmd.form).length) askForm(title, cmd, confirmed);
+    if (cmd.form && Object.keys(cmd.form).length) askForm(title, cmd, confirmed, mod.ctx);
     else confirmed(null);
   }
 
   var cmdModal = null;
-  function askForm(title, cmd, done) {
+  function askForm(title, cmd, done, ctx) {
     var util = MM.endo.util.form;
     var el = document.getElementById('benchCmdModal');
     if (!el) {
@@ -865,6 +878,7 @@
       el.addEventListener('shown.bs.modal', function () { el.__shown = true; });
       el.addEventListener('hidden.bs.modal', function () {
         el.__shown = false;
+        if (el.__unlink) { el.__unlink(); el.__unlink = null; }
         var next = el.__afterHide;
         el.__afterHide = null;
         if (next) next();
@@ -879,6 +893,9 @@
     errBox.hidden = true;
     el.querySelector('#benchCmdRun').textContent = cmd.label;
     var form = el.querySelector('form');
+    // Dropdowns that read their choices from the service (optionsFrom, current).
+    if (el.__unlink) { el.__unlink(); el.__unlink = null; }
+    if (ctx) { el.__unlink = util.wireReload(form, fields, ctx); util.loadOptions(form, fields, ctx); }
     form.onsubmit = function (ev) {
       ev.preventDefault();
       var args;

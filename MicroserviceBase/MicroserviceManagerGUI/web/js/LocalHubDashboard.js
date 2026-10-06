@@ -270,16 +270,20 @@
             bridgePort = parseInt(urlObj.port) || bridgePort;
           } catch (e) {}
 
-          var result = window.electronAPI.spawnBridge({
-            pythonPath: settings.pythonPath || 'python',
+          Promise.resolve(window.electronAPI.spawnBridge({
+            pythonPath: settings.pythonPath || '',   // empty: this platform's interpreter
             brokerHost: settings.brokerHost || 'localhost',
             brokerPort: settings.brokerPort || '5672',
             bridgePort: bridgePort,
+          })).then(function (result) {
+            if (result && result.pid) {
+              MM.showToast('Bridge', 'Bridge started (PID ' + result.pid + ')', 'success');
+            } else {
+              MM.showToast('Bridge', 'Could not start ' + ((result && result.python) || 'Python') + ': ' +
+                ((result && result.error) || 'no process') + '. Set the Python interpreter in Settings.', 'danger');
+            }
+            setTimeout(function () { _updateBridgeStatusUI(); }, 500);
           });
-          if (result && result.pid) {
-            MM.showToast('Bridge', 'Bridge started (PID ' + result.pid + ')', 'success');
-          }
-          setTimeout(function () { _updateBridgeStatusUI(); }, 500);
         };
       }
 

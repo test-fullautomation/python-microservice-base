@@ -157,6 +157,80 @@ def _port_open(host, port, timeout=0.3):
       s.close()
 
 
+def _listening_ports(proc):
+   """The TCP ports ``proc`` listens on, as ``(probe_host, port)``.
+
+   ``Process.net_connections`` is psutil 6+; older psutil (5.9 is allowed
+   by the dependency range) only has ``connections``. Raises psutil's
+   AccessDenied / NoSuchProcess for the caller to report.
+   """
+   import psutil
+
+   read = getattr(proc, 'net_connections', None) or proc.connections
+   out = []
+   for c in read(kind='tcp'):
+      if c.status != psutil.CONN_LISTEN or not c.laddr:
+         continue
+      ip = c.laddr.ip or '127.0.0.1'
+      # Reach ``0.0.0.0``/``::`` via 127.0.0.1 locally.
+      out.append((ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1", c.laddr.port))
+   return out
+
+
+def _local_get(url, timeout):
+   """GET a local agent's HTTP API, never through a proxy.
+
+   The agents found by process discovery listen on this machine; with
+   HTTP_PROXY set (a local Px on corporate PCs) and 127.0.0.1 missing from
+   NO_PROXY, urllib would send the probe to the proxy and every agent would
+   look absent.
+   """
+   import urllib.request
+
+   opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+   with opener.open(urllib.request.Request(url), timeout=timeout) as resp:
+      return resp.read().decode('utf-8')
+
+
+def _open_url(url, timeout):
+   """urlopen that reaches a Consul or Nomad on this machine directly (see
+   ``_local_get``); any other address keeps the proxy settings."""
+   import urllib.request
+   from ..nomad_hub.nomad_client import is_loopback_url
+
+   handlers = [urllib.request.ProxyHandler({})] if is_loopback_url(url) else []
+   return urllib.request.build_opener(*handlers).open(url, timeout=timeout)
+
+
+#: HTTP statuses a probe can name; others are "an HTTP error".
+_PROBE_STATUS = {401: "HTTP 401", 403: "HTTP 403 (an ACL token is needed)", 404: "HTTP 404",
+                 500: "HTTP 500", 502: "HTTP 502", 503: "HTTP 503"}
+
+
+def _probe_error(exc):
+   """One short line for why a probed port is not the agent's HTTP API.
+
+   Fixed wording chosen by the kind of failure: the exception's own text
+   goes to the bridge's log, never into a response.
+   """
+   import socket
+   import urllib.error
+
+   logger.debug("agent probe failed: %r", exc)
+   if isinstance(exc, urllib.error.HTTPError):
+      return _PROBE_STATUS.get(getattr(exc, 'code', None), "an HTTP error")
+   reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+   if isinstance(reason, ConnectionRefusedError):
+      return "connection refused"
+   if isinstance(reason, (socket.timeout, TimeoutError)):
+      return "no answer in time"
+   if isinstance(reason, ConnectionError):
+      return "connection closed"
+   if isinstance(reason, ValueError):
+      return "not a JSON answer"
+   return "no HTTP answer (see the bridge's log)"
+
+
 def _agent_start_failure(label, proc, log_lines, port_open, timeout=6.0, poll=0.15):
    """
 Watch a just-spawned agent long enough to tell *running* from *exited*.
@@ -1510,9 +1584,12 @@ Forward a request to the FleetWebAPI.
                 {"url": "...", "host": "...", "port": N, "pid": N,
                  "name": "...", "version": "...", "datacenter": "...",
                  "server": bool, "exe": "..."}, ...
-             ]}
+             ],
+             "skipped": [{"pid": N, "reason": "..."}, ...]}
+
+         ``skipped``: Nomad processes that were seen but not reached, and
+         why -- so "nothing found" can say what to fix.
          """
-         import urllib.request, urllib.error
          try:
             import psutil
          except ImportError:
@@ -1520,6 +1597,7 @@ Forward a request to the FleetWebAPI.
                     "error": "psutil not installed on the bridge Python"}
 
          found: list = []
+         skipped: list = []
          seen: set = set()
 
          for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
@@ -1533,19 +1611,19 @@ Forward a request to the FleetWebAPI.
                   continue
 
                try:
-                  conns = proc.net_connections(kind='tcp')
-               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  ports = _listening_ports(proc)
+               except psutil.AccessDenied:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "its ports cannot be read (a process of another user: start the "
+                                  "bridge as that user, or connect by URL)"})
+                  continue
+               except psutil.NoSuchProcess:
                   continue
 
-               for c in conns:
-                  if c.status != psutil.CONN_LISTEN:
-                     continue
-                  if not c.laddr:
-                     continue
-                  ip = c.laddr.ip or '127.0.0.1'
-                  port = c.laddr.port
-                  # Reach ``0.0.0.0``/``::`` via 127.0.0.1 locally.
-                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+               if not ports:
+                  skipped.append({"pid": proc.pid, "reason": "it listens on no TCP port (yet)"})
+               errors, answered = [], False
+               for probe_host, port in ports:
                   key = (probe_host, port)
                   if key in seen:
                      continue
@@ -1555,11 +1633,11 @@ Forward a request to the FleetWebAPI.
                   # Serf will fast-reject.  Use a short timeout.
                   url = "http://%s:%d" % (probe_host, port)
                   try:
-                     req = urllib.request.Request(url + '/v1/agent/self')
-                     with urllib.request.urlopen(req, timeout=1.5) as resp:
-                        info = json.loads(resp.read().decode('utf-8'))
-                  except Exception:
+                     info = json.loads(_local_get(url + '/v1/agent/self', timeout=1.5))
+                  except Exception as e:
+                     errors.append("%d: %s" % (port, _probe_error(e)))
                      continue
+                  answered = True
 
                   member = info.get('member', {}) or {}
                   config = info.get('config', {}) or {}
@@ -1580,14 +1658,21 @@ Forward a request to the FleetWebAPI.
                                     member.get('Tags', {}).get('dc') or ''),
                      "server":     is_server,
                   })
+               if errors and not answered:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "no port answered /v1/agent/self (" + "; ".join(errors) + ")"})
 
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
                continue
             except Exception:
-               # Don't let one bad process break the whole scan.
+               # Don't let one bad process break the whole scan, but say so
+               # (the details in the bridge's log, not in the answer).
+               logger.warning("agent scan: process %s skipped", getattr(proc, 'pid', None), exc_info=True)
+               skipped.append({"pid": getattr(proc, 'pid', None),
+                               "reason": "could not be inspected (see the bridge's log)"})
                continue
 
-         return {"instances": found}
+         return {"instances": found, "skipped": skipped}
 
       @app.get("/api/nomad/jobs")
       def nomad_list_jobs():
@@ -2025,7 +2110,7 @@ Forward a request to the FleetWebAPI.
          import urllib.request, urllib.error
          url = _resolve_consul_url(consul) + path
          try:
-            with urllib.request.urlopen(url, timeout=5) as resp:
+            with _open_url(url, timeout=5) as resp:
                body = resp.read().decode('utf-8')
                return json.loads(body) if body else None
          except urllib.error.URLError as e:
@@ -2040,7 +2125,7 @@ Forward a request to the FleetWebAPI.
          base = _resolve_consul_url(consul)
          url = base + '/v1/status/leader'
          try:
-            with urllib.request.urlopen(url, timeout=3) as resp:
+            with _open_url(url, timeout=3) as resp:
                leader = resp.read().decode('utf-8').strip('"')
                return {"ok": True, "leader": leader, "consul_url": base}
          except Exception as e:
@@ -2087,9 +2172,9 @@ Forward a request to the FleetWebAPI.
                 {"url": "...", "host": "...", "port": N, "pid": N,
                  "leader": "...", "datacenter": "...", "server": bool,
                  "version": "...", "node_name": "..."}, ...
-             ]}
+             ],
+             "skipped": [{"pid": N, "reason": "..."}, ...]}
          """
-         import urllib.request, urllib.error
          try:
             import psutil
          except ImportError:
@@ -2097,6 +2182,7 @@ Forward a request to the FleetWebAPI.
                     "error": "psutil not installed on the bridge Python"}
 
          found: list = []
+         skipped: list = []
          seen: set = set()
 
          for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
@@ -2107,18 +2193,19 @@ Forward a request to the FleetWebAPI.
                   continue
 
                try:
-                  conns = proc.net_connections(kind='tcp')
-               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  ports = _listening_ports(proc)
+               except psutil.AccessDenied:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "its ports cannot be read (a process of another user: start the "
+                                  "bridge as that user, or connect by URL)"})
+                  continue
+               except psutil.NoSuchProcess:
                   continue
 
-               for c in conns:
-                  if c.status != psutil.CONN_LISTEN:
-                     continue
-                  if not c.laddr:
-                     continue
-                  ip = c.laddr.ip or '127.0.0.1'
-                  port = c.laddr.port
-                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+               if not ports:
+                  skipped.append({"pid": proc.pid, "reason": "it listens on no TCP port (yet)"})
+               errors, answered = [], False
+               for probe_host, port in ports:
                   key = (probe_host, port)
                   if key in seen:
                      continue
@@ -2127,11 +2214,11 @@ Forward a request to the FleetWebAPI.
                   url = "http://%s:%d" % (probe_host, port)
                   leader = None
                   try:
-                     req = urllib.request.Request(url + '/v1/status/leader')
-                     with urllib.request.urlopen(req, timeout=1.0) as resp:
-                        leader = resp.read().decode('utf-8').strip('"')
-                  except Exception:
+                     leader = _local_get(url + '/v1/status/leader', timeout=1.0).strip().strip('"')
+                  except Exception as e:
+                     errors.append("%d: %s" % (port, _probe_error(e)))
                      continue
+                  answered = True
 
                   # Supplementary agent info (version, datacenter, node,
                   # server mode) — if /v1/agent/self fails we still keep
@@ -2139,9 +2226,7 @@ Forward a request to the FleetWebAPI.
                   # it's Consul HTTP.
                   meta = {}
                   try:
-                     req2 = urllib.request.Request(url + '/v1/agent/self')
-                     with urllib.request.urlopen(req2, timeout=1.5) as resp2:
-                        info = json.loads(resp2.read().decode('utf-8'))
+                     info = json.loads(_local_get(url + '/v1/agent/self', timeout=1.5))
                      cfg = info.get('Config') or info.get('config') or {}
                      meta = {
                         "version":    cfg.get('Version') or cfg.get('version') or '',
@@ -2162,13 +2247,21 @@ Forward a request to the FleetWebAPI.
                      "leader":     leader or '',
                      **meta,
                   })
+               if errors and not answered:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "no port answered /v1/status/leader (" + "; ".join(errors) + ")"})
 
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
                continue
             except Exception:
+               # Don't let one bad process break the whole scan, but say so
+               # (the details in the bridge's log, not in the answer).
+               logger.warning("agent scan: process %s skipped", getattr(proc, 'pid', None), exc_info=True)
+               skipped.append({"pid": getattr(proc, 'pid', None),
+                               "reason": "could not be inspected (see the bridge's log)"})
                continue
 
-         return {"instances": found}
+         return {"instances": found, "skipped": skipped}
 
       # =====================================================================
       # Dynamic gRPC method discovery and invocation
@@ -3151,6 +3244,10 @@ Generate scaffolding for a new microservice project.
          overwrite_modified: bool = False
 
       def _tp_error(exc):
+         # A TestProjectError's message is written for the user ("A run is
+         # already in progress", "Invalid suite name ...") and the GUI shows
+         # it: only the message goes out, never a traceback. Other exceptions
+         # are logged and answered with a plain message where they are caught.
          from ..test_project import TestProjectConflict
          out = {"status": "error", "error": str(exc)}
          if isinstance(exc, TestProjectConflict):
@@ -3205,6 +3302,7 @@ Generate scaffolding for a new microservice project.
       class TestProjectCheckBody(BaseModel):
          path: str
          content: str
+         root: str = ""                 # the project: its runner checks the text
 
       class TestProjectNewSuiteBody(BaseModel):
          root: str
@@ -3229,9 +3327,10 @@ Generate scaffolding for a new microservice project.
 
       @app.post("/api/test-project/file/check")
       def test_project_file_check(body: TestProjectCheckBody):
-         """Robot Framework syntax problems of unsaved text (nothing is written)."""
+         """Syntax problems of unsaved text, from the project's runner (nothing is written)."""
          from ..test_project import check_syntax
-         return {"status": "ok", "problems": check_syntax(body.path, body.content)}
+         return {"status": "ok",
+                 "problems": check_syntax(body.path, body.content, body.root or None)}
 
       @app.post("/api/test-project/suite")
       def test_project_new_suite(body: TestProjectNewSuiteBody):
@@ -3260,6 +3359,31 @@ Generate scaffolding for a new microservice project.
          dryrun: bool = False
          resources: bool = False        # record RAM / CPU of the run (resources.html)
          group: str = ""                # run this run group instead of ``path``
+         # Debug it: {breakpoints: {path: [lines]}, filters: [...], stop_on_entry}
+         debug: Optional[Dict[str, Any]] = None
+         step: bool = False             # step mode: pause before every step
+
+      class TestProjectControlBody(BaseModel):
+         root: str
+         run_id: str
+         command: str                   # pause | resume | stop
+         member: str = ""               # one member of a group run
+
+      class TestProjectDebugBody(BaseModel):
+         root: str
+         run_id: str
+         command: str = ""              # continue | next | stepIn | stepOut | pause
+         path: str = ""                 # breakpoints: the file
+         lines: List[int] = []          # breakpoints: its lines
+         filters: Optional[List[str]] = None
+         ref: int = 0                   # variables
+         expression: str = ""           # evaluate
+
+      class TestProjectDefineBody(BaseModel):
+         root: str
+         path: str
+         content: str
+         name: str
 
       class TestProjectRunRefBody(BaseModel):
          root: str
@@ -3290,7 +3414,7 @@ Generate scaffolding for a new microservice project.
                run = RUNS.start_group(body.root, body.group, dryrun=body.dryrun, resources=body.resources)
             else:
                run = RUNS.start(body.root, body.path, variables=body.variables, dryrun=body.dryrun,
-                                resources=body.resources)
+                                resources=body.resources, debug=body.debug, step=body.step)
             run["root"] = os.path.abspath(body.root.strip())
             return _tp_with_url(run)
          except TestProjectError as exc:
@@ -3304,6 +3428,55 @@ Generate scaffolding for a new microservice project.
             run = RUNS.status(body.root, body.run_id, body.since)
             run["root"] = os.path.abspath(body.root.strip())
             return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/control")
+      def test_project_run_control(body: TestProjectControlBody):
+         """Pause, resume or stop a running flow (all processes, or one member of a group)."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.control(body.root, body.run_id, body.command, body.member)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/restart")
+      def test_project_run_restart(body: TestProjectRunRefBody):
+         """A new run continuing a stopped one from its checkpoint."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            run = RUNS.restart(body.root, body.run_id)
+            run["root"] = os.path.abspath(body.root.strip())
+            return _tp_with_url(run)
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/run/debug")
+      def test_project_run_debug(body: TestProjectDebugBody):
+         """Drive a debugged run: a command, the breakpoints of one file, the
+         exception filters, a frame's variables (``ref``) or an evaluation."""
+         from ..test_project import RUNS, TestProjectError
+         try:
+            if body.command:
+               return {"status": "ok", "debug": RUNS.debug_command(body.root, body.run_id, body.command)}
+            if body.path:
+               return {"status": "ok", "breakpoints": RUNS.debug_breakpoints(body.root, body.run_id, body.path, body.lines)}
+            if body.filters is not None:
+               return {"status": "ok", "debug": RUNS.debug_filters(body.root, body.run_id, body.filters)}
+            if body.expression:
+               return {"status": "ok", **RUNS.debug_evaluate(body.root, body.run_id, body.expression)}
+            return {"status": "ok", **RUNS.debug_variables(body.root, body.run_id, body.ref)}
+         except TestProjectError as exc:
+            return _tp_error(exc)
+
+      @app.post("/api/test-project/define")
+      def test_project_define(body: TestProjectDefineBody):
+         """Where a keyword (or import) used in a file is defined (Go to Definition)."""
+         from ..test_project import TestProjectError, define
+         try:
+            return define(body.root, body.path, body.content, body.name)
          except TestProjectError as exc:
             return _tp_error(exc)
 
@@ -3336,7 +3509,7 @@ Generate scaffolding for a new microservice project.
 
       @app.post("/api/test-project/inspect")
       def test_project_inspect(body: TestProjectInspectBody):
-         """A file's extra views from its runner (a flow's diagram and Robot text)."""
+         """A file's extra views from its runner (e.g. a flow's diagram and its text)."""
          from ..test_project import TestProjectError, inspect_file
          try:
             return inspect_file(body.root, body.path, body.content)
@@ -3512,8 +3685,9 @@ Generate scaffolding for a new microservice project.
          except TestProjectError as exc:
             return _tp_error(exc)
          except Exception as exc:    # noqa: BLE001
+            # Not a TestProjectError: its details stay in the bridge's log.
             logger.exception("[test-project] export failed: %s", exc)
-            return _tp_error("Unexpected failure: %s: %s" % (type(exc).__name__, exc))
+            return _tp_error("The export failed unexpectedly; the bridge's log has the details.")
 
       @app.post("/api/scaffold/generate-v2")
       def scaffold_generate_v2(body: ScaffoldV2Request):

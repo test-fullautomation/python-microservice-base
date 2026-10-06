@@ -73,7 +73,7 @@
     /**
      * Initialize a folder as a test project. Existing files are left alone.
      * @param {string} root
-     * @param {string} [runner]      Runner id, default robotframework-aio.
+     * @param {string} [runner]      Runner id (describe() lists them), default robotframework-aio.
      * @param {string} [consulAddr]  Seeds the runner config.
      * @returns {Promise<object>}
      */
@@ -124,11 +124,14 @@
     },
 
     /**
-     * Robot Framework syntax problems of unsaved text.
+     * Syntax problems of unsaved text, as the project's runner sees them.
+     * @param {string} path
+     * @param {string} content
+     * @param {string} [root]  The project; without it every runner is asked.
      * @returns {Promise<{problems: Array<{line: number, message: string}>}>}
      */
-    checkFile: function (path, content) {
-      return _post('/api/test-project/file/check', { path: path, content: content });
+    checkFile: function (path, content, root) {
+      return _post('/api/test-project/file/check', { path: path, content: content, root: root || '' });
     },
 
     /**
@@ -157,15 +160,48 @@
 
     /**
      * Start a run of one file, or of the whole project (path '').
-     * @param {object} opts {variables: {name: value}, dryrun: bool}
+     * @param {object} opts {variables: {name: value}, dryrun: bool, resources: bool,
+     *   debug: {breakpoints: {path: [lines]}, filters: [...], stop_on_entry: bool}}
      * @returns {Promise<object>} the run: id, run_state, target_label, argv, results_url, ...
      */
     run: function (root, path, opts) {
       opts = opts || {};
-      return _post('/api/test-project/run', {
+      var body = {
         root: root, path: path || '', variables: opts.variables || {}, dryrun: !!opts.dryrun,
         resources: !!opts.resources
-      });
+      };
+      if (opts.debug) body.debug = opts.debug;
+      if (opts.step) body.step = true;
+      return _post('/api/test-project/run', body);
+    },
+
+    /**
+     * Pause, resume or stop a running flow: every process, or one member of a
+     * group run (`member`, its id). Answers the run's state, with `control`.
+     */
+    control: function (root, runId, command, member) {
+      return _post('/api/test-project/run/control', { root: root, run_id: runId, command: command, member: member || '' });
+    },
+
+    /** A new run continuing a stopped (or broken off) flow run from its checkpoint. */
+    restart: function (root, runId) {
+      return _post('/api/test-project/run/restart', { root: root, run_id: runId });
+    },
+
+    /**
+     * Drive a debugged run. `what` is one of: {command: continue|next|stepIn|stepOut|pause},
+     * {path, lines} (a file's breakpoints), {filters: [...]}, {ref} (variables), {expression}.
+     */
+    debug: function (root, runId, what) {
+      return _post('/api/test-project/run/debug', Object.assign({ root: root, run_id: runId }, what || {}));
+    },
+
+    /**
+     * Where a keyword (or import) used in a file is defined: {found, path (in the
+     * project) | abs + snippet (outside), line, owner}. `content`: the editor's text.
+     */
+    define: function (root, path, content, name) {
+      return _post('/api/test-project/define', { root: root, path: path, content: content, name: name });
     },
 
     /**

@@ -13,10 +13,15 @@
 // `editable` (the project view, the file open in Script): "Edit flow" turns
 // on drag and drop -- see edit.js. Edits go to the host (ctx.edit) and come
 // back as new data, like any change of the text.
+//
+// `breakpoints` / `paused` (a host that debugs, with ctx.breakpoint): dots
+// to set breakpoints on the steps, and the step the run is stopped at -- see
+// breakpoints.js.
 import { render } from './flow.js';
 import { ensureStyle } from './style.js';
 import { mark, extent, zoom, replay } from './live.js';
 import { toolbar, panel, readPanel, insertEdit, kindLabel, findStep } from './edit.js';
+import { markBreakpoints } from './breakpoints.js';
 
 export function mount(el, ctx) {
   ensureStyle();
@@ -66,6 +71,7 @@ export function mount(el, ctx) {
     } else {
       zoom(el, data.zoom, []);
     }
+    markBreakpoints(el, data, ctx.breakpoint ? (id) => ctx.breakpoint(id) : null);
   }
 
   function wireNodes() {

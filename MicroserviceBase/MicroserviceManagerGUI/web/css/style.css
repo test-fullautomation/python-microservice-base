@@ -2696,6 +2696,70 @@ body.dev-mode .app-navbar {
 .rf-name { color: #85c1e9; font-weight: 600; }
 .rf-key  { color: #f5b7b1; }
 .rf-cont { color: #95a5a6; }
+.rf-call { color: #f9e79f; }
+.rf-ctl  { color: #ff9fbf; font-weight: 700; }
+.rf-arg  { color: #aed6f1; }
+.rf-imp  { color: #82e0aa; }
+
+/* Breakpoints in the editor's gutter (js/tp-debug.js), the line a debugged run stopped at. */
+.tpv-breakable > div > div { cursor: pointer; position: relative; }
+.tpv-breakable > div > div:hover::before { content: ""; position: absolute; left: -0.25rem; top: 50%; width: 8px; height: 8px;
+  margin-top: -4px; border-radius: 50%; background: rgba(229, 20, 0, 0.45); }
+.tpv-gutter .tpv-bp::before { content: ""; position: absolute; left: -0.25rem; top: 50%; width: 8px; height: 8px;
+  margin-top: -4px; border-radius: 50%; background: #e51400 !important; }
+.tpv-gutter .tpv-at { color: #ffd166; font-weight: 700; }
+.tpv-curline { position: absolute; left: 0; right: 0; background: rgba(255, 209, 102, 0.18);
+  border-left: 3px solid #ffd166; pointer-events: none; }
+
+/* The debug panel of a debugged run (Runs view). */
+.tpd { margin: 0 0 0.75rem; border: 1px solid #d9e2e7; border-radius: 8px; background: #fbfcfd; }
+.tpd.tpd-stopped { border-color: #e5a400; box-shadow: 0 0 0 1px rgba(229, 164, 0, 0.25); }
+.tpd-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #e3e9ed; }
+.tpd-buttons { display: inline-flex; gap: 0.25rem; }
+.tpd-buttons .btn { padding: 0.1rem 0.45rem; }
+.tpd-where { flex: 1 1 auto; font-size: 0.85rem; min-width: 12rem; }
+.tpd-paused { display: inline-block; padding: 0 0.4rem; border-radius: 4px; background: #e5a400; color: #1a1a1a;
+  font-weight: 600; font-size: 0.78rem; }
+.tpd-filter { font-size: 0.8rem; color: #5d6d7e; display: inline-flex; gap: 0.3rem; align-items: center; }
+.tpd-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(16rem, 2fr); gap: 0; }
+@media (max-width: 1000px) { .tpd-body { grid-template-columns: 1fr; } }
+.tpd-source { border-right: 1px solid #e3e9ed; min-width: 0; }
+.tpd-source-head { padding: 0.35rem 0.6rem; font-size: 0.8rem; border-bottom: 1px solid #eef2f4; }
+.tpd-code { max-height: 300px; overflow: auto; background: var(--navbar-bg); color: #d5dde3;
+  font-family: Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.5; padding: 0.3rem 0; }
+.tpd-snippet { max-height: 60vh; border-radius: 6px; }
+.tpd-line { display: flex; white-space: pre; }
+.tpd-line.tpd-current { background: rgba(255, 209, 102, 0.2); box-shadow: inset 3px 0 0 #ffd166; }
+.tpd-ln { flex: 0 0 3.6em; text-align: right; padding-right: 0.8em; color: rgba(236, 240, 241, 0.35);
+  position: relative; user-select: none; }
+.tpd-source .tpd-ln { cursor: pointer; }
+.tpd-ln.tpd-bp::before { content: ""; position: absolute; left: 0.4em; top: 50%; width: 8px; height: 8px; margin-top: -4px;
+  border-radius: 50%; background: #e51400; }
+.tpd-text { flex: 1; padding-right: 0.75rem; }
+.tpd-side { display: flex; flex-direction: column; min-width: 0; }
+.tpd-side section { padding: 0.35rem 0.6rem; border-bottom: 1px solid #eef2f4; }
+.tpd-side section:last-child { border-bottom: 0; }
+.tpd-side h6 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #6c7a86; margin: 0 0 0.25rem; }
+.tpd-stack { list-style: none; margin: 0; padding: 0; max-height: 140px; overflow: auto; font-size: 0.8rem; }
+.tpd-stack li { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.1rem 0.3rem; border-radius: 4px; cursor: pointer; }
+.tpd-stack li.active { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.tpd-stack li.tpd-py .tpd-frame-name::after { content: " · Python"; color: #6c7a86; font-size: 0.72rem; }
+.tpd-frame-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpd-frame-where { color: #6c7a86; font-family: Consolas, monospace; font-size: 0.75rem; white-space: nowrap; }
+.tpd-vars { max-height: 200px; overflow: auto; font-family: Consolas, "Courier New", monospace; font-size: 0.78rem; }
+.tpd-var { white-space: nowrap; cursor: default; }
+.tpd-var[data-ref] { cursor: pointer; }
+.tpd-twisty { display: inline-block; width: 1em; color: #6c7a86; }
+.tpd-var-name { color: #6f42c1; }
+.tpd-var-value { color: #1a252f; }
+.tpd-muted { color: #8a99a6; font-size: 0.8rem; }
+.tpd-console { max-height: 120px; overflow: auto; font-family: Consolas, "Courier New", monospace; font-size: 0.78rem;
+  margin-bottom: 0.3rem; }
+.tpd-in { color: #6c7a86; }
+.tpd-out { color: #1a252f; white-space: pre-wrap; }
+.tpd-err { color: #b3261e; white-space: pre-wrap; }
+.tpd-input { font-family: Consolas, "Courier New", monospace; font-size: 0.78rem; }
 
 .tpv-edit-status {
   font-size: 0.75rem;
@@ -3190,3 +3254,7 @@ body.view-no-admin #ribbonAdmin {
   display: none !important;
 }
 body.view-no-admin .infra-pill { cursor: default; }
+
+/* A flow's own state in a group member's header (pause / resume). */
+.tpr-member-flow { font-size: 0.75rem; color: #5d6d7e; margin-left: 0.4rem; }
+.tpr-member-flow.tpr-paused { color: #9a6700; font-weight: 600; }
