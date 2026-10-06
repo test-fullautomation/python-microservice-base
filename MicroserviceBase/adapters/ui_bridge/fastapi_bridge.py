@@ -157,6 +157,62 @@ def _port_open(host, port, timeout=0.3):
       s.close()
 
 
+def _listening_ports(proc):
+   """The TCP ports ``proc`` listens on, as ``(probe_host, port)``.
+
+   ``Process.net_connections`` is psutil 6+; older psutil (5.9 is allowed
+   by the dependency range) only has ``connections``. Raises psutil's
+   AccessDenied / NoSuchProcess for the caller to report.
+   """
+   import psutil
+
+   read = getattr(proc, 'net_connections', None) or proc.connections
+   out = []
+   for c in read(kind='tcp'):
+      if c.status != psutil.CONN_LISTEN or not c.laddr:
+         continue
+      ip = c.laddr.ip or '127.0.0.1'
+      # Reach ``0.0.0.0``/``::`` via 127.0.0.1 locally.
+      out.append((ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1", c.laddr.port))
+   return out
+
+
+def _local_get(url, timeout):
+   """GET a local agent's HTTP API, never through a proxy.
+
+   The agents found by process discovery listen on this machine; with
+   HTTP_PROXY set (a local Px on corporate PCs) and 127.0.0.1 missing from
+   NO_PROXY, urllib would send the probe to the proxy and every agent would
+   look absent.
+   """
+   import urllib.request
+
+   opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+   with opener.open(urllib.request.Request(url), timeout=timeout) as resp:
+      return resp.read().decode('utf-8')
+
+
+def _open_url(url, timeout):
+   """urlopen that reaches a Consul or Nomad on this machine directly (see
+   ``_local_get``); any other address keeps the proxy settings."""
+   import urllib.request
+   from ..nomad_hub.nomad_client import is_loopback_url
+
+   handlers = [urllib.request.ProxyHandler({})] if is_loopback_url(url) else []
+   return urllib.request.build_opener(*handlers).open(url, timeout=timeout)
+
+
+def _probe_error(exc):
+   """One short line for why a probed port is not the agent's HTTP API."""
+   import urllib.error
+
+   if isinstance(exc, urllib.error.HTTPError):
+      return "HTTP %d%s" % (exc.code, " (an ACL token is needed)" if exc.code == 403 else "")
+   if isinstance(exc, urllib.error.URLError):
+      return str(exc.reason)
+   return str(exc) or exc.__class__.__name__
+
+
 def _agent_start_failure(label, proc, log_lines, port_open, timeout=6.0, poll=0.15):
    """
 Watch a just-spawned agent long enough to tell *running* from *exited*.
@@ -1510,9 +1566,12 @@ Forward a request to the FleetWebAPI.
                 {"url": "...", "host": "...", "port": N, "pid": N,
                  "name": "...", "version": "...", "datacenter": "...",
                  "server": bool, "exe": "..."}, ...
-             ]}
+             ],
+             "skipped": [{"pid": N, "reason": "..."}, ...]}
+
+         ``skipped``: Nomad processes that were seen but not reached, and
+         why -- so "nothing found" can say what to fix.
          """
-         import urllib.request, urllib.error
          try:
             import psutil
          except ImportError:
@@ -1520,6 +1579,7 @@ Forward a request to the FleetWebAPI.
                     "error": "psutil not installed on the bridge Python"}
 
          found: list = []
+         skipped: list = []
          seen: set = set()
 
          for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
@@ -1533,19 +1593,19 @@ Forward a request to the FleetWebAPI.
                   continue
 
                try:
-                  conns = proc.net_connections(kind='tcp')
-               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  ports = _listening_ports(proc)
+               except psutil.AccessDenied:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "its ports cannot be read (a process of another user: start the "
+                                  "bridge as that user, or connect by URL)"})
+                  continue
+               except psutil.NoSuchProcess:
                   continue
 
-               for c in conns:
-                  if c.status != psutil.CONN_LISTEN:
-                     continue
-                  if not c.laddr:
-                     continue
-                  ip = c.laddr.ip or '127.0.0.1'
-                  port = c.laddr.port
-                  # Reach ``0.0.0.0``/``::`` via 127.0.0.1 locally.
-                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+               if not ports:
+                  skipped.append({"pid": proc.pid, "reason": "it listens on no TCP port (yet)"})
+               errors, answered = [], False
+               for probe_host, port in ports:
                   key = (probe_host, port)
                   if key in seen:
                      continue
@@ -1555,11 +1615,11 @@ Forward a request to the FleetWebAPI.
                   # Serf will fast-reject.  Use a short timeout.
                   url = "http://%s:%d" % (probe_host, port)
                   try:
-                     req = urllib.request.Request(url + '/v1/agent/self')
-                     with urllib.request.urlopen(req, timeout=1.5) as resp:
-                        info = json.loads(resp.read().decode('utf-8'))
-                  except Exception:
+                     info = json.loads(_local_get(url + '/v1/agent/self', timeout=1.5))
+                  except Exception as e:
+                     errors.append("%d: %s" % (port, _probe_error(e)))
                      continue
+                  answered = True
 
                   member = info.get('member', {}) or {}
                   config = info.get('config', {}) or {}
@@ -1580,14 +1640,18 @@ Forward a request to the FleetWebAPI.
                                     member.get('Tags', {}).get('dc') or ''),
                      "server":     is_server,
                   })
+               if errors and not answered:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "no port answered /v1/agent/self (" + "; ".join(errors) + ")"})
 
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
                continue
-            except Exception:
-               # Don't let one bad process break the whole scan.
+            except Exception as e:
+               # Don't let one bad process break the whole scan, but say so.
+               skipped.append({"pid": getattr(proc, 'pid', None), "reason": _probe_error(e)})
                continue
 
-         return {"instances": found}
+         return {"instances": found, "skipped": skipped}
 
       @app.get("/api/nomad/jobs")
       def nomad_list_jobs():
@@ -2025,7 +2089,7 @@ Forward a request to the FleetWebAPI.
          import urllib.request, urllib.error
          url = _resolve_consul_url(consul) + path
          try:
-            with urllib.request.urlopen(url, timeout=5) as resp:
+            with _open_url(url, timeout=5) as resp:
                body = resp.read().decode('utf-8')
                return json.loads(body) if body else None
          except urllib.error.URLError as e:
@@ -2040,7 +2104,7 @@ Forward a request to the FleetWebAPI.
          base = _resolve_consul_url(consul)
          url = base + '/v1/status/leader'
          try:
-            with urllib.request.urlopen(url, timeout=3) as resp:
+            with _open_url(url, timeout=3) as resp:
                leader = resp.read().decode('utf-8').strip('"')
                return {"ok": True, "leader": leader, "consul_url": base}
          except Exception as e:
@@ -2087,9 +2151,9 @@ Forward a request to the FleetWebAPI.
                 {"url": "...", "host": "...", "port": N, "pid": N,
                  "leader": "...", "datacenter": "...", "server": bool,
                  "version": "...", "node_name": "..."}, ...
-             ]}
+             ],
+             "skipped": [{"pid": N, "reason": "..."}, ...]}
          """
-         import urllib.request, urllib.error
          try:
             import psutil
          except ImportError:
@@ -2097,6 +2161,7 @@ Forward a request to the FleetWebAPI.
                     "error": "psutil not installed on the bridge Python"}
 
          found: list = []
+         skipped: list = []
          seen: set = set()
 
          for proc in psutil.process_iter(attrs=('pid', 'name', 'exe')):
@@ -2107,18 +2172,19 @@ Forward a request to the FleetWebAPI.
                   continue
 
                try:
-                  conns = proc.net_connections(kind='tcp')
-               except (psutil.AccessDenied, psutil.NoSuchProcess):
+                  ports = _listening_ports(proc)
+               except psutil.AccessDenied:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "its ports cannot be read (a process of another user: start the "
+                                  "bridge as that user, or connect by URL)"})
+                  continue
+               except psutil.NoSuchProcess:
                   continue
 
-               for c in conns:
-                  if c.status != psutil.CONN_LISTEN:
-                     continue
-                  if not c.laddr:
-                     continue
-                  ip = c.laddr.ip or '127.0.0.1'
-                  port = c.laddr.port
-                  probe_host = ip if ip not in ("0.0.0.0", "::", "") else "127.0.0.1"
+               if not ports:
+                  skipped.append({"pid": proc.pid, "reason": "it listens on no TCP port (yet)"})
+               errors, answered = [], False
+               for probe_host, port in ports:
                   key = (probe_host, port)
                   if key in seen:
                      continue
@@ -2127,11 +2193,11 @@ Forward a request to the FleetWebAPI.
                   url = "http://%s:%d" % (probe_host, port)
                   leader = None
                   try:
-                     req = urllib.request.Request(url + '/v1/status/leader')
-                     with urllib.request.urlopen(req, timeout=1.0) as resp:
-                        leader = resp.read().decode('utf-8').strip('"')
-                  except Exception:
+                     leader = _local_get(url + '/v1/status/leader', timeout=1.0).strip().strip('"')
+                  except Exception as e:
+                     errors.append("%d: %s" % (port, _probe_error(e)))
                      continue
+                  answered = True
 
                   # Supplementary agent info (version, datacenter, node,
                   # server mode) — if /v1/agent/self fails we still keep
@@ -2139,9 +2205,7 @@ Forward a request to the FleetWebAPI.
                   # it's Consul HTTP.
                   meta = {}
                   try:
-                     req2 = urllib.request.Request(url + '/v1/agent/self')
-                     with urllib.request.urlopen(req2, timeout=1.5) as resp2:
-                        info = json.loads(resp2.read().decode('utf-8'))
+                     info = json.loads(_local_get(url + '/v1/agent/self', timeout=1.5))
                      cfg = info.get('Config') or info.get('config') or {}
                      meta = {
                         "version":    cfg.get('Version') or cfg.get('version') or '',
@@ -2162,13 +2226,18 @@ Forward a request to the FleetWebAPI.
                      "leader":     leader or '',
                      **meta,
                   })
+               if errors and not answered:
+                  skipped.append({"pid": proc.pid, "reason":
+                                  "no port answered /v1/status/leader (" + "; ".join(errors) + ")"})
 
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
                continue
-            except Exception:
+            except Exception as e:
+               # Don't let one bad process break the whole scan, but say so.
+               skipped.append({"pid": getattr(proc, 'pid', None), "reason": _probe_error(e)})
                continue
 
-         return {"instances": found}
+         return {"instances": found, "skipped": skipped}
 
       # =====================================================================
       # Dynamic gRPC method discovery and invocation

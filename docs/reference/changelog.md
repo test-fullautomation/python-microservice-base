@@ -86,6 +86,14 @@ this is the chronological summary.
   now runs `python3` there (`python` on Windows, or whichever of the two
   is on PATH), waits until the process has started or failed, and says why
   it failed (`spawn python ENOENT`), with the error written to the log first.
+- **Detecting local Nomad and Consul agents.** *Detect* found nothing
+  where psutil is older than 6 (`net_connections` is new in 6.0) or where an
+  HTTP proxy is set without `127.0.0.1` in `NO_PROXY`: both were swallowed.
+  The probes now go straight to the agent, either psutil works, and an
+  agent process that was seen but not reached is listed with the reason
+  (its ports cannot be read, no port answered, HTTP 403 needing a token).
+  Once connected, a Nomad or Consul on `127.0.0.1` / `localhost` is also
+  reached without the proxy; remote clusters keep it.
 - **FastAPI and uvicorn are base dependencies.** They were only the `web`
   extra, so `pip install MicroserviceBase` gave a GUI whose bridge could
   not start. The `web` extra stays, for installs that name it.
