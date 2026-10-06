@@ -202,15 +202,33 @@ def _open_url(url, timeout):
    return urllib.request.build_opener(*handlers).open(url, timeout=timeout)
 
 
+#: HTTP statuses a probe can name; others are "an HTTP error".
+_PROBE_STATUS = {401: "HTTP 401", 403: "HTTP 403 (an ACL token is needed)", 404: "HTTP 404",
+                 500: "HTTP 500", 502: "HTTP 502", 503: "HTTP 503"}
+
+
 def _probe_error(exc):
-   """One short line for why a probed port is not the agent's HTTP API."""
+   """One short line for why a probed port is not the agent's HTTP API.
+
+   Fixed wording chosen by the kind of failure: the exception's own text
+   goes to the bridge's log, never into a response.
+   """
+   import socket
    import urllib.error
 
+   logger.debug("agent probe failed: %r", exc)
    if isinstance(exc, urllib.error.HTTPError):
-      return "HTTP %d%s" % (exc.code, " (an ACL token is needed)" if exc.code == 403 else "")
-   if isinstance(exc, urllib.error.URLError):
-      return str(exc.reason)
-   return str(exc) or exc.__class__.__name__
+      return _PROBE_STATUS.get(getattr(exc, 'code', None), "an HTTP error")
+   reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+   if isinstance(reason, ConnectionRefusedError):
+      return "connection refused"
+   if isinstance(reason, (socket.timeout, TimeoutError)):
+      return "no answer in time"
+   if isinstance(reason, ConnectionError):
+      return "connection closed"
+   if isinstance(reason, ValueError):
+      return "not a JSON answer"
+   return "no HTTP answer (see the bridge's log)"
 
 
 def _agent_start_failure(label, proc, log_lines, port_open, timeout=6.0, poll=0.15):
@@ -1646,9 +1664,12 @@ Forward a request to the FleetWebAPI.
 
             except (psutil.NoSuchProcess, psutil.ZombieProcess):
                continue
-            except Exception as e:
-               # Don't let one bad process break the whole scan, but say so.
-               skipped.append({"pid": getattr(proc, 'pid', None), "reason": _probe_error(e)})
+            except Exception:
+               # Don't let one bad process break the whole scan, but say so
+               # (the details in the bridge's log, not in the answer).
+               logger.warning("agent scan: process %s skipped", getattr(proc, 'pid', None), exc_info=True)
+               skipped.append({"pid": getattr(proc, 'pid', None),
+                               "reason": "could not be inspected (see the bridge's log)"})
                continue
 
          return {"instances": found, "skipped": skipped}
@@ -2232,9 +2253,12 @@ Forward a request to the FleetWebAPI.
 
             except (psutil.NoSuchProcess, psutil.ZombieProcess):
                continue
-            except Exception as e:
-               # Don't let one bad process break the whole scan, but say so.
-               skipped.append({"pid": getattr(proc, 'pid', None), "reason": _probe_error(e)})
+            except Exception:
+               # Don't let one bad process break the whole scan, but say so
+               # (the details in the bridge's log, not in the answer).
+               logger.warning("agent scan: process %s skipped", getattr(proc, 'pid', None), exc_info=True)
+               skipped.append({"pid": getattr(proc, 'pid', None),
+                               "reason": "could not be inspected (see the bridge's log)"})
                continue
 
          return {"instances": found, "skipped": skipped}
