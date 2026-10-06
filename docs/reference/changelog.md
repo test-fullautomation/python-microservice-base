@@ -86,6 +86,9 @@ this is the chronological summary.
   now runs `python3` there (`python` on Windows, or whichever of the two
   is on PATH), waits until the process has started or failed, and says why
   it failed (`spawn python ENOENT`), with the error written to the log first.
+- **FastAPI and uvicorn are base dependencies.** They were only the `web`
+  extra, so `pip install MicroserviceBase` gave a GUI whose bridge could
+  not start. The `web` extra stays, for installs that name it.
 
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 
