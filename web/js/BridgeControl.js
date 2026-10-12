@@ -143,7 +143,8 @@
     _loadSettings().then(function (settings) {
       settings = settings || {};
       var spawnOpts = {
-        pythonPath: settings.pythonPath || 'python',
+        // Empty: the app picks this platform's interpreter (python3 on Linux).
+        pythonPath: settings.pythonPath || '',
         bridgeHost: settings.bridgeHost || '127.0.0.1',
         bridgePort: parseInt(settings.bridgePort, 10) || 1112,
         brokerHost: settings.brokerHost || 'localhost',
@@ -156,7 +157,10 @@
     })
       .then(function (info) {
         if (!info || !info.pid) {
-          _handleStartFailure('Bridge spawn returned no PID.');
+          _handleStartFailure(info && info.error
+            ? 'Could not start ' + (info.python || 'Python') + ': ' + info.error + '. ' +
+              'Set the Python interpreter in Settings (on Linux usually python3, or a venv\'s bin/python).'
+            : 'Bridge spawn returned no PID.');
           return;
         }
 

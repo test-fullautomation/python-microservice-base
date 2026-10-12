@@ -162,6 +162,9 @@
       // Ask the host to show something this view points at (a file view:
       // { node } of the file it draws). The host decides; no answer.
       reveal: function (target) { send({ type: 'call', id: ++seq, method: 'reveal', args: [target] }); },
+      // A step's breakpoint dot was clicked (a view that draws breakpoints):
+      // the host sets or removes one. No answer; the view gets new data.
+      breakpoint: function (id) { send({ type: 'call', id: ++seq, method: 'breakpoint', args: [String(id)] }); },
       // Ask the host to change what this view shows (a file view: one edit of
       // the file). The host applies it -- or refuses, with a message.
       edit: function (change) { return request('edit', [change]); },

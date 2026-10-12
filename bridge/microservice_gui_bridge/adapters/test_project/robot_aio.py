@@ -41,6 +41,7 @@ from typing import Dict, List
 
 from ...ports.test_project import (
     POSITION_FILE,
+    FileType,
     PlannedFile,
     RunGroup,
     RunArtifact,
@@ -69,6 +70,8 @@ FLOW_SUFFIX = ".flow.json"
 # robot.flow.signals' store of a run, in its output folder (ROBOT_FLOW_SIGNALS).
 SIGNALS_FILE = "signals.json"
 _BOOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_boot.py")
+# The debug listener: breakpoints, stepping, variables (debugging.py is its other end).
+_DEBUG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_debug.py")
 _INSPECT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "flow_inspect.py")
 # Suites and resources as a grid: rows, and the keyword each calls (robot_grid.py).
 _GRID = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robot_grid.py")
@@ -209,9 +212,68 @@ class RobotAioRunner(TestProjectRunner):
 
     runner_id = "robotframework-aio"
     display_name = "Robot Framework AIO"
+    description = ("Robot Framework suites and flow files; generated keyword resources per "
+                   "service reach it through Consul.")
+    # A generated resource carries its generation date in its documentation.
+    generated_stamp = r"^\.\.\.\s+Generated:.*\n?"
 
     def default_layout(self) -> Dict[str, str]:
         return {"suites": "testsuites", "resources": "resources", "proto": "proto"}
+
+    # ---- files -------------------------------------------------------------
+
+    def file_types(self) -> List[FileType]:
+        return [
+            FileType("suite", ".robot", "Suites", "suite", "suites", creatable=True),
+            FileType("flow", FLOW_SUFFIX, "Flows", "flow", "flows", creatable=True),
+            FileType("resource", ".resource", "Resources", "resource", "resources", creatable=True),
+        ]
+
+    def structure(self, layout: Dict[str, str]) -> List[List[str]]:
+        suites, res = layout["suites"], layout["resources"]
+        return [
+            ["testproject.json", "manifest: runner, layout, what was exported"],
+            [f"{suites}/{_CONFIG_REL}", "RF AIO config (level 3), CONSUL_ADDR in params.global"],
+            [f"{suites}/<service>_smoke.robot", "starter suite per service — yours to edit"],
+            [f"{res}/<service>/*.resource", "generated keywords — refreshed on export"],
+            [f"{layout['proto']}/<service>/*.proto", "copied protos, when available"],
+        ]
+
+    def detect(self, root: str) -> Dict[str, object]:
+        from .engine import walk_files
+        count, config = 0, False
+        for dirpath, files in walk_files(root):
+            count += sum(1 for f in files if f.lower().endswith(".robot"))
+            config = config or (os.path.basename(dirpath) == "config" and "robot_config.jsonp" in files)
+        if not count and not config:
+            return {}
+        return {"count": count, "summary": f"{count} .robot file{'' if count == 1 else 's'}",
+                "aio_config": config}
+
+    def check_syntax(self, rel_path: str, content: str) -> List[Dict[str, object]]:
+        """Robot Framework's parse problems of a ``.robot`` / ``.resource``
+        text; none when Robot Framework is not installed. Keyword names are
+        not resolved."""
+        lower = str(rel_path).lower()
+        if not lower.endswith(_GRID_SUFFIXES):
+            return []
+        try:
+            import io
+            from robot.api import Token, get_resource_tokens, get_tokens
+        except ImportError:
+            return []
+        tokenize = get_resource_tokens if lower.endswith(".resource") else get_tokens
+        problems = []
+        for token in tokenize(io.StringIO(content)):
+            if token.type in (Token.ERROR, Token.FATAL_ERROR) or getattr(token, "error", None):
+                problems.append({"line": token.lineno,
+                                 "message": token.error or f"Invalid syntax: {token.value!r}"})
+        return problems
+
+    def file_run_hint(self, layout: Dict[str, str], rel_path: str) -> str:
+        if str(rel_path).lower().endswith(FLOW_SUFFIX):
+            return f"python -m robot --parser robot.flow -d results {rel_path}"
+        return f"python -m robot -d results {rel_path}"
 
     def _config_path(self, layout: Dict[str, str]) -> str:
         return f"{layout['suites']}/{_CONFIG_REL}"
@@ -316,12 +378,23 @@ class RobotAioRunner(TestProjectRunner):
             argv += ["--variable", f"{name}:{value}"]
         if options.dryrun:
             argv.append("--dryrun")
+        if options.debug_port:
+            if options.dryrun:
+                raise TestProjectError("A dry run cannot be debugged.")
+            argv += ["--listener", _DEBUG]
+        if options.step:
+            if not self._uses_flows(target_abs):
+                raise TestProjectError("Step mode is for flow files.")
+            # The fork's step mode: a pause before every step, resumed through the signal store.
+            argv += ["--variable", "FLOW_STEP:yes"]
         argv += [str(a) for a in settings.args]
         argv.append(target_abs)
 
         env = self._env(root, settings)
         stop_file = os.path.join(output_dir, ".stop")
         env["MM_RUN_STOP_FILE"] = stop_file
+        if options.debug_port:
+            env["MM_DEBUG_PORT"] = str(options.debug_port)
         if self._uses_flows(target_abs):
             # The fork's robot.flow.signals: this run's own store (a group run
             # shares one, see group_env). The settings' environment wins.
@@ -336,6 +409,92 @@ class RobotAioRunner(TestProjectRunner):
                        RunArtifact("report.html", "Report"),
                        RunArtifact("output.xml", "output.xml")],
         )
+
+    def can_debug(self, rel_path: str) -> bool:
+        return self.can_run(rel_path)
+
+    # ---- pause, resume, stop, restart: the fork's flow control ----------------
+    #
+    # A flow run's signal store (ROBOT_FLOW_SIGNALS, in its folder) is also its
+    # control channel: ``python -m robot.flow control <store> pause|resume|stop
+    # [--rig NAME]`` writes the command, every flow process publishes
+    # ``flow.state.<rig or pid>`` there. A group's members share one store and
+    # run as rigs named after the members.
+
+    def can_pause(self, rel_path: str) -> bool:
+        rel = str(rel_path).lower()
+        return rel.endswith(FLOW_SUFFIX) or rel == ""
+
+    def control(self, root, layout, out_dir, command, member, settings: RunSettings):
+        if command not in ("pause", "resume", "stop"):
+            return {"ok": False, "error": f"Unknown command {command!r}."}
+        store = os.path.join(out_dir, SIGNALS_FILE)
+        argv = [settings.python.strip() or sys.executable, "-m", "robot.flow", "control", store, command]
+        if member:
+            argv += ["--rig", member]
+        import subprocess
+        env = dict(os.environ)
+        for key, value in self._env(root, settings).items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
+        try:
+            proc = subprocess.run(argv, capture_output=True, cwd=root, env=env, timeout=30,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {"ok": False, "error": f"Could not send {command}: {exc}"}
+        if proc.returncode != 0:
+            tail = proc.stderr.decode("utf-8", errors="replace").strip().splitlines()[-2:]
+            return {"ok": False, "error": " / ".join(tail) or f"exit {proc.returncode}",
+                    "missing": b"No module named" in proc.stderr}
+        return {"ok": True}
+
+    def control_state(self, out_dir):
+        import time as _time
+        try:
+            with open(os.path.join(out_dir, SIGNALS_FILE), encoding="utf-8") as fh:
+                entries = json.load(fh)
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(entries, dict):
+            return {}
+        now = _time.time()
+        processes, command = {}, None
+        for key, entry in entries.items():
+            if not isinstance(entry, dict):
+                continue
+            age = round(max(0.0, now - float(entry.get("time") or now)), 1)
+            if key.startswith("flow.state."):
+                value = entry.get("value") if isinstance(entry.get("value"), dict) else {"state": entry.get("value")}
+                processes[key[len("flow.state."):]] = {
+                    "state": value.get("state"), "phase": value.get("phase"), "loop": value.get("loop"),
+                    "iteration": value.get("iteration"), "age_s": age}
+            elif key == "flow.control" or key.startswith("flow.control."):
+                if command is None or age < command["age_s"]:
+                    command = {"value": entry.get("value"), "age_s": age,
+                               "member": key[len("flow.control."):] if key != "flow.control" else ""}
+        return {"processes": processes, "command": command} if processes or command else {}
+
+    def member_env(self, member_id):
+        return {"ROBOT_FLOW_RIG": member_id}
+
+    def restart_variables(self, out_dir, target):
+        if not str(target).lower().endswith(FLOW_SUFFIX):
+            return None
+        try:
+            found = sorted(f for f in os.listdir(out_dir) if f.endswith(".checkpoint.json"))
+        except OSError:
+            return None
+        return {"FLOW_CHECKPOINT": os.path.join(out_dir, found[0])} if found else None
+
+    def define(self, root, layout, rel_path, content, name, settings: RunSettings):
+        """Robot's own answer (``robot_grid.py --define``): the keyword resolved
+        like the Grid and the run -- for a flow file through its imports."""
+        payload = json.dumps({"text": content, "name": name})
+        data = self._run_helper(_GRID, root, rel_path, payload, settings, "the definition", flags=["--define"])
+        return {k: data.get(k) for k in ("ok", "found", "source", "line", "name", "owner", "owner_type", "error", "missing")
+                if k in data}
 
     @staticmethod
     def _env(root: str, settings: RunSettings) -> Dict[str, object]:

@@ -68,6 +68,39 @@
 .endo-tile.w4 { grid-column: span 4; }
 .endo-tile.h2 { grid-row: span 2; }
 
+/* ---------- tile groups: a full-width header that expands and collapses ---------- */
+/* A grouped stage: no dense packing (it would pull a later tile above its
+   header), and rows sized by content so a header row stays a header row;
+   the tiles keep their usual minimum heights. */
+.endo-stage.grouped { grid-auto-flow: row; grid-auto-rows: auto; }
+.endo-stage.grouped > .endo-tile { min-height: 8.5rem; }
+.endo-stage.grouped > .endo-tile.h2 { min-height: calc(17rem + 0.75rem); }
+.endo-group {
+  grid-column: 1 / -1;
+  align-self: end;
+  border-bottom: 2px solid var(--layer, var(--rule, #D3D9D1));
+}
+.endo-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.25rem;
+  border: none;
+  background: transparent;
+  color: var(--ink, inherit);
+  font: 600 0.88rem var(--font-body, inherit);
+  text-align: left;
+  cursor: pointer;
+}
+.endo-group-toggle:hover .t { text-decoration: underline; }
+.endo-group-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.endo-group-toggle .bi { transition: transform 0.15s ease; }
+.endo-group.collapsed .endo-group-toggle .bi { transform: rotate(-90deg); }
+.endo-group-toggle .src { font: 400 0.7rem var(--font-mono, monospace); opacity: 0.7; }
+.endo-group-toggle .n { margin-left: auto; font: 400 0.72rem var(--font-mono, monospace); opacity: 0.65; }
+@media (prefers-reduced-motion: reduce) { .endo-group-toggle .bi { transition: none; } }
+
 @container (max-width: 780px) {
   .endo-stage { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .endo-tile.w4 { grid-column: span 2; }
@@ -163,6 +196,9 @@
 .endo-fields { display: grid; gap: 0.4rem; }
 .endo-field-label { display: flex; justify-content: space-between; font-size: 0.76rem; color: var(--muted, #5A665F); margin-bottom: 0.15rem; }
 .endo-type { font: 0.66rem var(--font-mono, monospace); opacity: 0.8; }
+.endo-select-row { display: flex; gap: 0.3rem; align-items: center; }
+.endo-select-row select { flex: 1; min-width: 0; }
+.endo-reload { padding: 0 0.45rem; line-height: 1.6; }
 .endo-actions { display: flex; gap: 0.4rem; }
 .endo-result { font-size: 0.82rem; border-radius: 6px; padding: 0.4rem 0.55rem; background: var(--content-bg, #EEF1EC); }
 .endo-result.ok { border-left: 3px solid var(--good); }

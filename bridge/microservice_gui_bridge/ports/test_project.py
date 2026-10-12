@@ -151,11 +151,19 @@ Per-run choices made when starting a run.
 * ``dryrun`` -- check the tests without executing them, when supported.
 * ``resources`` -- record RAM and CPU of the run's processes (the engine's
   monitor, ``resources.html``); not for a dry run.
+* ``debug_port`` -- debug the run: the runner adds its debug listener,
+  which connects to this port (see :meth:`TestProjectRunner.can_debug`).
    """
 
    variables: Dict[str, str] = field(default_factory=dict)
    dryrun: bool = False
    resources: bool = False
+   #: A debugger listens on this local port (``debugging.py``): the run's
+   #: debug listener connects to it. 0: not debugged.
+   debug_port: int = 0
+   #: Step mode: the run pauses before every step and goes on one step per
+   #: resume (:meth:`TestProjectRunner.control`); see ``can_pause``.
+   step: bool = False
 
 
 @dataclass
@@ -209,6 +217,15 @@ A file a run leaves in its output folder that the GUI can open.
    primary: bool = False
 
 
+#: Entry-point group through which other packages add test runners: each
+#: entry point names a :class:`TestProjectRunner` subclass (or a factory
+#: returning an instance), e.g. in ``pyproject.toml``::
+#:
+#:    [project.entry-points."microservicebase.test_runners"]
+#:    my-runner = "my_package.runner:MyRunner"
+RUNNER_ENTRY_POINTS = "microservicebase.test_runners"
+
+
 #: A run's live position, in its output folder: which node of its flow each
 #: process is in, written by the runner as it goes (JSON: ``node``,
 #: ``counts``, ``last``, ``done``, ``seq``). Optional; the engine passes it on
@@ -255,10 +272,45 @@ What a finished run found, in runner-neutral terms.
    message: str = ""
 
 
+@dataclass
+class FileType:
+   """
+A kind of file a runner works with, so the engine and the GUI never need
+to know the runner's file names.
+
+* ``kind`` -- what the GUI groups it under: ``"suite"`` (something that
+  runs: a test file), ``"flow"`` (a test drawn as a graph), ``"resource"``
+  (reusable steps the tests import), ``"config"``, ``"library"``.
+* ``suffix`` -- how a file of that kind is recognised (``".robot"``); the
+  longest matching suffix wins. ``""`` for a kind found by
+  :meth:`TestProjectRunner.file_kind` alone.
+* ``title`` -- the GUI's heading for the group (``"Suites"``).
+* ``noun`` -- one of them, for buttons and messages (``"suite"``).
+* ``folder`` -- layout key of the folder new files of this kind go to.
+* ``creatable`` -- the GUI may create files of this kind (with the
+  runner's :meth:`~TestProjectRunner.suite_template` or
+  :meth:`~TestProjectRunner.flow_template`) and save new ones.
+   """
+
+   kind: str
+   suffix: str = ""
+   title: str = ""
+   noun: str = ""
+   folder: str = ""
+   creatable: bool = False
+
+
 class TestProjectRunner(ABC):
    """
 A test runner the Manager GUI can export services for -- and, when it
 implements the run methods, run tests with.
+
+Everything runner-specific -- file names, layout, generated code, syntax
+checks, the run command, how results are read -- lives in the
+implementation; the engine, the run manager and the GUI only use this
+interface. A runner is registered with
+``MicroserviceBase.adapters.test_project.register_runner`` or, from another
+package, as an entry point in the group :data:`RUNNER_ENTRY_POINTS`.
    """
 
    __test__ = False   # not a pytest test class
@@ -267,6 +319,68 @@ implements the run methods, run tests with.
    runner_id: str = ""
    #: Human-readable name for the GUI.
    display_name: str = ""
+   #: One sentence for the GUI's runner choice.
+   description: str = ""
+   #: Regular expression (multi-line) of a line in generated files that is
+   #: ignored when telling whether a file changed -- e.g. a generation date,
+   #: so two exports of the same API on different days compare equal.
+   generated_stamp: str = ""
+
+   # ---- files (optional; the defaults know nothing runner-specific) ----------
+
+   def file_types(self) -> List[FileType]:
+      """
+The kinds of files this runner works with. Files of no listed kind fall
+back to the engine's generic ones (``.proto``, ``.json``, ``.py``, ``.md``
+...). Default: none.
+      """
+      return []
+
+   def file_kind(self, layout: Dict[str, str], rel_path: str) -> str:
+      """
+The kind of the project file ``rel_path``, or ``""`` to let the engine
+decide. Default: the longest matching suffix of :meth:`file_types`.
+Override when a suffix is not enough (``tests/test_x.py`` is a test,
+``activities/x.py`` is not).
+      """
+      lower = str(rel_path).lower()
+      best = None
+      for ft in self.file_types():
+         if ft.suffix and lower.endswith(ft.suffix.lower()):
+            if best is None or len(ft.suffix) > len(best.suffix):
+               best = ft
+      return best.kind if best else ""
+
+   def structure(self, layout: Dict[str, str]) -> List[List[str]]:
+      """
+What a project of this runner looks like, for the GUI's *Initialize*
+dialog: ``[[path, note], ...]``, ``<service>`` standing for a service's
+name. Default: none.
+      """
+      return []
+
+   def detect(self, root: str) -> Dict[str, object]:
+      """
+What of this runner a folder already holds, before it is a test project:
+``{"count": n, "summary": "3 .robot files"}``, or ``{}`` for nothing.
+The GUI preselects the runner that found something. Default: nothing.
+      """
+      return {}
+
+   def check_syntax(self, rel_path: str, content: str) -> List[Dict[str, object]]:
+      """
+Syntax problems of ``content`` (unsaved text of ``rel_path``) as
+``[{"line": n, "message": text}]``. JSON files are checked by the engine.
+Default: none (no check).
+      """
+      return []
+
+   def file_run_hint(self, layout: Dict[str, str], rel_path: str) -> str:
+      """
+Command that runs ``rel_path`` from the project root, for the GUI's *Run
+command* button. Default: none.
+      """
+      return ""
 
    @abstractmethod
    def default_layout(self) -> Dict[str, str]:
@@ -351,6 +465,68 @@ project) and writes its results into ``output_dir``, which exists.
 Raise :class:`TestProjectError` when it cannot be run.
       """
       raise TestProjectError(f"{self.display_name or self.runner_id} cannot run tests.")
+
+   def can_debug(self, rel_path: str) -> bool:
+      """
+Whether ``rel_path`` can be run under the debugger (``RunOptions.debug_port``):
+breakpoints, stepping, variables. Default: no.
+      """
+      return False
+
+   # ---- pause, resume, stop, restart (optional) --------------------------------
+
+   def can_pause(self, rel_path: str) -> bool:
+      """
+Whether a run of ``rel_path`` can be paused, resumed and stopped through
+:meth:`control` while it runs (and started in step mode). Default: no.
+      """
+      return False
+
+   def control(self, root: str, layout: Dict[str, str], out_dir: str, command: str,
+               member: str, settings: RunSettings) -> Dict[str, object]:
+      """
+Send ``command`` -- ``pause``, ``resume`` or ``stop`` -- to the running
+run whose folder is ``out_dir`` (a group run's folder for a group);
+``member``: only that member of a group run (its id), ``""`` for all.
+``{"ok": True}`` or ``{"ok": False, "error": ...}``. ``stop`` ends at the
+next step boundary, keeps what is needed to continue later
+(:meth:`restart_variables`) and runs the teardown.
+      """
+      return {"ok": False, "error": f"{self.display_name or self.runner_id} runs cannot be paused."}
+
+   def control_state(self, out_dir: str) -> Dict[str, object]:
+      """
+What the processes of a run say about themselves, for the GUI's poll:
+``{"processes": {name: {"state": running|paused|stopped|finished, "phase",
+"loop", "iteration", "age_s"}}, "command": {"value", "age_s"} or None}``,
+``name`` being a group member's id. ``{}`` when nothing is known.
+      """
+      return {}
+
+   def member_env(self, member_id: str) -> Dict[str, str]:
+      """
+Environment of one member of a group run, besides :meth:`group_env` --
+e.g. the name :meth:`control` addresses it by. Default: nothing.
+      """
+      return {}
+
+   def restart_variables(self, out_dir: str, target: str) -> Optional[Dict[str, str]]:
+      """
+After a run of ``target`` that was stopped or broke off: the variables a
+new run needs to continue where it ended (its checkpoint), or None when
+it cannot. Default: None.
+      """
+      return None
+
+   def define(self, root: str, layout: Dict[str, str], rel_path: str, content: str,
+              name: str, settings: RunSettings) -> Dict[str, object]:
+      """
+Where ``name`` -- a keyword as called in ``content`` (the editor's text of
+``rel_path``), or an import -- is defined: ``{"ok": True, "found": bool,
+"source": absolute path, "line": n or None, "name", "owner"}``. Default:
+nothing found.
+      """
+      return {"ok": True, "found": False}
 
    # ---- extra file views (optional) -------------------------------------------
 

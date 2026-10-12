@@ -66,7 +66,7 @@
   // Developer tab and by the bench dock; remembered per service.
   var CLASSIC_PREF_KEY = 'mm_classic_panel';
   var CLASSIC_FILE_RE = /(\.html|\.qml|\.ui|\.wasm|^gui_schema\.json)$/i;
-  var _bothKinds = {};         // { folder: Promise<boolean> } -- folder listings are stable
+  var _bothKinds = {};         // { folder: Promise<boolean> } -- until the service sends new files
   var _guiChecked = {};        // { folder: true } -- compared with its service once per window
   var _guiFetchFailedAt = {};  // { serviceName: ms } -- a failed download is retried after a pause
   var GUI_FETCH_RETRY_MS = 15000;
@@ -101,24 +101,50 @@
   }
 
   /**
-   * Enable the Developer tab's "Classic panel" button for a service whose
-   * folder ships both kinds, and show whether the classic one is on screen.
+   * The User tab's "Service view" pair (Tiles | Service window): enabled for
+   * a service whose folder ships both kinds, the one on screen pressed.
    */
   function _refreshClassicPanelBtn(sel) {
-    var btn = document.getElementById('btnDevClassicPanel');
-    if (!btn) return;
-    var showing = !!(sel && _classicPanels[sel.name]);
-    btn.setAttribute('aria-pressed', showing ? 'true' : 'false');
-    btn.title = showing
-      ? 'Back to the component tiles of this service'
-      : 'Show the service\'s classic panel instead of its component tiles';
+    var tiles = document.getElementById('btnViewTiles');
+    var own = document.getElementById('btnViewServiceWindow');
+    if (!tiles || !own) return;
+    var classic = !!(sel && _classicPanels[sel.name]);
+    function set(both) {
+      tiles.disabled = own.disabled = !both;
+      tiles.setAttribute('aria-pressed', both && !classic ? 'true' : 'false');
+      own.setAttribute('aria-pressed', both && classic ? 'true' : 'false');
+      tiles.title = both ? 'Show ' + sel.name + ' as tiles'
+                         : 'The selected service has one screen only';
+      own.title = both ? 'Show ' + sel.name + '\'s own window'
+                       : 'The selected service has one screen only';
+    }
     var svc = sel && sel.consul;
-    if (!svc || !svc.gui) { btn.disabled = true; return; }
+    if (!svc || !svc.gui) { set(false); return; }
     _folderHasBothKinds(svc.gui).then(function (both) {
       // The user may have picked another service while the listing ran.
       if (_selectedService !== sel) return;
-      btn.disabled = !both;
-      if (!both) btn.title = 'This service ships only one kind of GUI';
+      set(both);
+    });
+  }
+
+  /** Show the selected service as tiles (classic false) or as its own window (true). */
+  function _showServiceView(classic) {
+    _withSelectedService('Service view', function (sel) {
+      var svc = sel.consul;
+      if (!svc || !svc.gui) {
+        showToast('Service view', sel.name + ' does not declare a GUI.', 'info');
+        return;
+      }
+      _folderHasBothKinds(svc.gui).then(function (both) {
+        if (!both) {
+          showToast('Service view', sel.name + ' has one screen only.', 'info');
+          _refreshClassicPanelBtn(sel);
+          return;
+        }
+        switchMode('services');
+        if (!!_classicPanels[sel.name] === classic && _servicePanels[sel.name]) return;   // already showing
+        _openConsulServiceGui(sel, { classic: classic });
+      });
     });
   }
 
@@ -513,6 +539,7 @@
 
     var serviceInfo = MM.servicesInfor[serviceName];
     _selectedService = { name: serviceName, infoKey: serviceName, consul: null, info: serviceInfo };
+    _refreshClassicPanelBtn(_selectedService);   // a broker service: one screen
     if (_devMode) _renderInspector(_selectedService);
 
     if (serviceInfo.gui_support === true) {
@@ -2582,7 +2609,7 @@
         row.addEventListener('click', function () {
           _selectedService = { name: svc.name, infoKey: infoKey, consul: svcWithUrl, info: null };
           if (svc.gui) _openConsulServiceGui(_selectedService);
-          else _showServiceOverview(_selectedService);
+          else { _showServiceOverview(_selectedService); _refreshClassicPanelBtn(_selectedService); }
           if (_devMode) _renderInspector(_selectedService);
           // Visual selection across all groups
           document
@@ -2623,7 +2650,7 @@
       function (el) { return el.getAttribute('data-service-name') === svc.name; })[0];
     if (row) row.classList.add('active');
     if (svc.gui) _openConsulServiceGui(_selectedService, opts);
-    else _showServiceOverview(_selectedService);
+    else { _showServiceOverview(_selectedService); _refreshClassicPanelBtn(_selectedService); }
     if (_devMode) _renderInspector(_selectedService);
   }
 
@@ -2650,7 +2677,8 @@
       address: svc.address,
       port: svc.port,
       grpcServices: svc.grpcServices,
-      gui: svc.gui
+      gui: svc.gui,
+      protoPath: _getStoredProtoPath(svc.name)   // for a classic Qt WASM panel's gRPC calls
     };
 
     // One cached panel per service: drop it when the other kind is wanted
@@ -2682,7 +2710,8 @@
     // Bring the folder up to date from the service first (ADR-031): it
     // arrives when missing and is replaced when the service's copy moved
     // on. Whichever kind is shown then reads files that are current.
-    _fetchGuiFromService(sel, svc, folder).then(function () {
+    _fetchGuiFromService(sel, svc, folder).then(function (wrote) {
+      if (wrote) _refreshClassicPanelBtn(sel);   // the button was set from the folder as it was
       if (classic) {
         _loadServiceGUIMultiTier(sel.name, folderPath, contentDiv, '');
         return;
@@ -2788,6 +2817,9 @@
           })
           .then(function (wrote) {
             if (wrote) {
+              // The folder may now ship another kind of GUI (a classic panel
+              // next to the component): list it again.
+              delete _bothKinds[folder];
               delete _guiFetchFailedAt[sel.name];
               delete _guiFetchNotified[sel.name];
               showToast('Service GUI', (present ? 'Updated' : 'Loaded') + ' the GUI of ' +
@@ -4978,27 +5010,11 @@
     switchMode('services');
     setDevMode(true, { tab: 'api', silent: true });
   });
-  // Switch the selected service between its component tiles and the
-  // classic panel its folder also ships. The choice sticks for that
-  // service until it is switched back.
-  _wire('btnDevClassicPanel', function () {
-    _withSelectedService('Classic panel', function (sel) {
-      var svc = sel.consul;
-      if (!svc || !svc.gui) {
-        showToast('Classic panel', sel.name + ' does not declare a GUI.', 'info');
-        return;
-      }
-      _folderHasBothKinds(svc.gui).then(function (both) {
-        if (!both) {
-          showToast('Classic panel', svc.gui + ' ships only one kind of GUI.', 'info');
-          _refreshClassicPanelBtn(sel);
-          return;
-        }
-        switchMode('services');
-        _openConsulServiceGui(sel, { classic: !_classicPanels[sel.name] });
-      });
-    });
-  });
+  // User tab, "Service view": the selected service as its component tiles
+  // or as its own window (the classic panel its folder also ships). The
+  // choice sticks for that service until it is switched back.
+  _wire('btnViewTiles', function () { _showServiceView(false); });
+  _wire('btnViewServiceWindow', function () { _showServiceView(true); });
   _wire('btnDevCodeExamples', function () {
     _withSelectedService('Code Examples', function (sel) {
       switchMode('services');
@@ -5137,24 +5153,35 @@
       });
   }
 
+  // What a project of the runner looks like: its own [path, note] rows.
+  function _tpRunnerTree(name, runner) {
+    var rows = (runner && runner.structure) || [];
+    var width = rows.reduce(function (w, r) { return Math.max(w, r[0].length); }, 0) + 3;
+    return _escapeHtml(name) + '/\n' + rows.map(function (r, i) {
+      var pad = new Array(Math.max(1, width - r[0].length) + 1).join(' ');
+      return (i === rows.length - 1 ? '└─ ' : '├─ ') + _escapeHtml(r[0]) + pad + _escapeHtml(r[1]);
+    }).join('\n');
+  }
+
   function _showInitDialog(d, onReady) {
-    var runners = (d.runners || []).map(function (r) {
-      return '<option value="' + _escapeHtml(r.id) + '">' + _escapeHtml(r.name) + '</option>';
-    }).join('');
+    var list = d.runners || [];
     var detected = d.detected || {};
-    var existing = detected.robot_suites
+    // The runner whose files the folder already holds, else the default.
+    var found = list.filter(function (r) { return detected[r.id] && detected[r.id].count; })[0];
+    var chosen = found || list.filter(function (r) { return r.id === d.default_runner; })[0] || list[0];
+    var runners = list.map(function (r) {
+      return '<option value="' + _escapeHtml(r.id) + '"' + (r === chosen ? ' selected' : '') + '>' +
+        _escapeHtml(r.name) + '</option>';
+    }).join('');
+    var existing = Object.keys(detected).filter(function (id) { return detected[id].summary; })
+      .map(function (id) {
+        var r = list.filter(function (x) { return x.id === id; })[0];
+        return _escapeHtml(detected[id].summary) + (r ? ' (' + _escapeHtml(r.name) + ')' : '');
+      });
+    existing = existing.length
       ? '<div class="dev-note"><i class="bi bi-info-circle me-1"></i>The folder already holds ' +
-        detected.robot_suites + ' .robot file' + (detected.robot_suites === 1 ? '' : 's') +
-        '. Existing files are never moved or changed.</div>'
+        existing.join(', ') + '. Existing files are never moved or changed.</div>'
       : '';
-    var tree =
-      _escapeHtml(d.name) + '/\n' +
-      '├─ testproject.json                     manifest: runner, layout, what was exported\n' +
-      '├─ testsuites/\n' +
-      '│  ├─ config/robot_config.jsonp         RF AIO config (level 3), CONSUL_ADDR in params.global\n' +
-      '│  └─ &lt;service&gt;_smoke.robot            starter suite per service — yours to edit\n' +
-      '├─ resources/&lt;service&gt;/*.resource       generated keywords — refreshed on export\n' +
-      '└─ proto/&lt;service&gt;/*.proto              copied protos, when available';
 
     _tpState = { action: 'init', root: d.root, onReady: onReady };
     _tpShow('<i class="bi bi-folder-plus me-2"></i>Initialize test project',
@@ -5163,15 +5190,23 @@
       '<div class="mb-3">' +
       '  <label class="form-label small" for="tpRunner">Test runner</label>' +
       '  <select class="form-select form-select-sm tp-runner" id="tpRunner">' + runners + '</select>' +
-      '  <div class="form-text">The runner adapter decides layout and generated files; other runners can be added without changing projects that already exist.</div>' +
+      '  <div class="form-text" id="tpRunnerAbout"></div>' +
       '</div>' +
-      '<div class="tp-layout"><div class="small text-muted mb-1">Structure exports will use</div><pre>' + tree + '</pre></div>',
+      '<div class="tp-layout"><div class="small text-muted mb-1">Structure exports will use</div><pre id="tpRunnerTree"></pre></div>',
       '<i class="bi bi-check2 me-1"></i>Initialize');
+    var select = document.getElementById('tpRunner');
+    function show() {
+      var r = list.filter(function (x) { return x.id === select.value; })[0];
+      document.getElementById('tpRunnerAbout').textContent = ((r && r.description) || '') +
+        ' The runner decides layout, generated files and how tests run; projects keep the runner they were made with.';
+      document.getElementById('tpRunnerTree').innerHTML = _tpRunnerTree(d.name, r);
+    }
+    if (select) { select.addEventListener('change', show); show(); }
   }
 
   function _applyInit() {
     var st = _tpState;
-    var runner = (document.getElementById('tpRunner') || {}).value || 'robotframework-aio';
+    var runner = (document.getElementById('tpRunner') || {}).value || '';
     var consul = _connectedConsuls.length ? _connectedConsuls[0].url : '';
     var apply = document.getElementById('btnTestProjectApply');
     apply.disabled = true;
@@ -5409,14 +5444,31 @@
   // `runs`: the Runs pane is shown (then `selected` is null).
   var _tpView = { selected: null, data: null, runs: false, group: null };
 
+  // The project's file groups come from its runner (data.kinds: kind, title,
+  // noun, suffix, folder, creatable); these are the icons and the groups of a
+  // project read before the runner said.
+  var TPV_KIND_ICONS = {
+    suite: 'bi-play-circle', flow: 'bi-diagram-3', resource: 'bi-puzzle', proto: 'bi-file-earmark-code',
+    config: 'bi-sliders', library: 'bi-filetype-py', doc: 'bi-file-earmark-text', other: 'bi-file-earmark'
+  };
   var TPV_GROUPS = [
-    { kind: 'suite', title: 'Suites', icon: 'bi-play-circle' },
-    { kind: 'flow', title: 'Flows', icon: 'bi-diagram-3' },
-    { kind: 'resource', title: 'Resources', icon: 'bi-puzzle' },
-    { kind: 'proto', title: 'Protos', icon: 'bi-file-earmark-code' },
-    { kind: 'config', title: 'Configuration', icon: 'bi-sliders' },
-    { kind: 'other', title: 'Other files', icon: 'bi-file-earmark' }
+    { kind: 'suite', title: 'Suites', noun: 'suite' },
+    { kind: 'flow', title: 'Flows', noun: 'flow' },
+    { kind: 'resource', title: 'Resources', noun: 'resource' },
+    { kind: 'proto', title: 'Protos', noun: 'proto' },
+    { kind: 'config', title: 'Configuration', noun: 'config' },
+    { kind: 'other', title: 'Other files', noun: 'file' }
   ];
+
+  function _tpvGroups(data) {
+    return (data && data.kinds && data.kinds.length) ? data.kinds : TPV_GROUPS;
+  }
+
+  /** The runner's word for a kind of file ("suite", "test", "workflow"). */
+  function _tpvKind(data, kind) {
+    return _tpvGroups(data).filter(function (g) { return g.kind === kind; })[0] ||
+      { kind: kind, title: kind, noun: kind, suffix: '', folder: '' };
+  }
 
   var TPV_ROLE = {
     manifest:  ['manifest', 'Written by the tool: runner, layout and what was exported'],
@@ -5433,15 +5485,15 @@
     else switchMode('testproject');
   }
 
-  function _tpvGroupOf(f) {
-    return (f.kind === 'suite' || f.kind === 'flow' || f.kind === 'resource' || f.kind === 'proto' ||
-            f.kind === 'config')
-      ? f.kind : 'other';
+  function _tpvGroupOf(data, f) {
+    return _tpvGroups(data).some(function (g) { return g.kind === f.kind; }) ? f.kind : 'other';
   }
 
   function _tpvLabel(data, f) {
     var layout = data.layout || {};
-    var prefixes = [layout.suites, layout.resources, layout.proto].filter(Boolean);
+    var prefixes = Object.keys(layout).map(function (k) { return layout[k]; })
+      .filter(function (v) { return v && v !== '.'; })
+      .sort(function (a, b) { return b.length - a.length; });
     for (var i = 0; i < prefixes.length; i++) {
       if (f.path.indexOf(prefixes[i] + '/') === 0) return f.path.slice(prefixes[i].length + 1);
     }
@@ -5528,18 +5580,20 @@
           '</button>'
         : '');
 
-    TPV_GROUPS.forEach(function (g) {
-      var files = data.files.filter(function (f) { return _tpvGroupOf(f) === g.kind; });
+    _tpvGroups(data).forEach(function (g) {
+      var files = data.files.filter(function (f) { return _tpvGroupOf(data, f) === g.kind; });
+      var newSuite = g.kind === 'suite' && data.can_new_suite !== false;
       var newFlow = g.kind === 'flow' && data.can_new_flow;
-      if (!files.length && !newFlow) return;
-      html += '<div class="tpv-group"><div class="tpv-group-title"><span><i class="bi ' + g.icon + ' me-1"></i>' +
-              g.title + '</span><span>' +
-              (g.kind === 'suite'
-                ? '<button type="button" class="tpv-add" data-tpv-new-suite="1" title="New suite">' +
+      if (!files.length && !newFlow && !newSuite) return;
+      html += '<div class="tpv-group"><div class="tpv-group-title"><span><i class="bi ' +
+              (TPV_KIND_ICONS[g.kind] || TPV_KIND_ICONS.other) + ' me-1"></i>' +
+              _escapeHtml(g.title) + '</span><span>' +
+              (newSuite
+                ? '<button type="button" class="tpv-add" data-tpv-new-suite="1" title="New ' + _escapeHtml(g.noun) + '">' +
                   '<i class="bi bi-plus-lg"></i></button>'
                 : '') +
               (newFlow
-                ? '<button type="button" class="tpv-add" data-tpv-new-flow="1" title="New flow">' +
+                ? '<button type="button" class="tpv-add" data-tpv-new-flow="1" title="New ' + _escapeHtml(g.noun) + '">' +
                   '<i class="bi bi-plus-lg"></i></button>'
                 : '') +
               files.length + '</span></div>';
@@ -5732,21 +5786,24 @@
       '  </div>' +
       '  <div class="svc-ov-grid">' +
       '    <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-bar-chart me-1"></i>Project</h6>' +
-      '      <div class="tpv-stats">' + stat(count('suite'), 'suites') + stat(count('resource'), 'resources') +
+      '      <div class="tpv-stats">' + stat(count('suite'), _tpvKind(data, 'suite').title.toLowerCase()) +
+               stat(count('resource'), _tpvKind(data, 'resource').title.toLowerCase()) +
                stat(count('proto'), 'protos') + stat(data.services.length, 'services') + '</div>' +
       (data.run_hint
-        ? '<div class="tp-hint"><span class="small text-muted">Run all suites from the project root</span>' +
+        ? '<div class="tp-hint"><span class="small text-muted">Run the whole project from its root</span>' +
           '<code id="tpvRunHint" title="Copy">' + _escapeHtml(data.run_hint) + '</code></div>'
         : '') +
       '      <div class="mt-3 d-flex flex-wrap gap-2">' +
       (data.can_run
-        ? '<button type="button" class="btn btn-sm btn-primary" id="tpvRunAll" title="Run every suite and flow of the project">' +
+        ? '<button type="button" class="btn btn-sm btn-primary" id="tpvRunAll" title="Run everything the project\'s runner runs">' +
           '<i class="bi bi-play-fill me-1"></i>Run all\u2026</button>' +
           '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvRunSettings" title="Interpreter, PYTHONPATH and arguments for every run">' +
           '<i class="bi bi-gear me-1"></i>Run settings\u2026</button>'
         : '') +
-      '        <button type="button" class="btn btn-sm btn-outline-primary" id="tpvNewSuite">' +
-      '        <i class="bi bi-file-earmark-plus me-1"></i>New suite\u2026</button></div>' +
+      (data.can_new_suite !== false
+        ? '        <button type="button" class="btn btn-sm btn-outline-primary" id="tpvNewSuite">' +
+          '        <i class="bi bi-file-earmark-plus me-1"></i>New ' + _escapeHtml(_tpvKind(data, 'suite').noun) + '\u2026</button>'
+        : '') + '</div>' +
       '    </section>' +
       '    <section class="svc-ov-card"><h6 class="svc-ov-card-title"><i class="bi bi-plus-circle me-1"></i>Add a service</h6>' +
              addHtml + '</section>' +
@@ -5904,8 +5961,13 @@
       ? '<button type="button" class="btn btn-sm btn-success" id="tpvRunFile" title="Run it here and follow the console">' +
         '<i class="bi bi-play-fill me-1"></i>Run…</button>'
       : '') +
-      (f.kind === 'suite'
-      ? '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyRun" title="Copy the command that runs this suite">' +
+      (f.runnable && (_tpView.data || {}).can_debug && MM.tpDebug
+      ? '<button type="button" class="btn btn-sm btn-outline-success" id="tpvDebugFile" title="Debug it: stop at breakpoints (click a line number, or a step\'s dot on the Diagram), step, see variables">' +
+        '<i class="bi bi-bug me-1"></i>Debug</button>'
+      : '') +
+      (f.run_hint
+      ? '<button type="button" class="btn btn-sm btn-outline-secondary" id="tpvCopyRun" title="' +
+        _escapeHtml('Copy the command that runs it: ' + f.run_hint) + '" data-run-hint="' + _escapeHtml(f.run_hint) + '">' +
         '<i class="bi bi-terminal me-1"></i>Run command</button>'
       : '');
   }
@@ -5914,11 +5976,165 @@
     var copyRun = document.getElementById('tpvCopyRun');
     if (copyRun) {
       copyRun.addEventListener('click', function () {
-        _copyText('python -m robot -d results ' + path, 'Command');
+        _copyText(copyRun.getAttribute('data-run-hint') || '', 'Command');
       });
     }
     var run = document.getElementById('tpvRunFile');
     if (run) run.addEventListener('click', function () { _tpvRunDialog(path); });
+    var debug = document.getElementById('tpvDebugFile');
+    if (debug) debug.addEventListener('click', function () { _tpvDebug(path); });
+  }
+
+  // ---- Debugging and Go to Definition in the project view (js/tp-debug.js) ----
+
+  var _tpvPendingLine = null;    // the line to show once the file opens
+
+  /** Breakpoints make sense in the project's suites, resources and flows (a runner that debugs). */
+  function _tpvBreakable(path) {
+    var data = _tpView.data || {};
+    if (!data.can_debug || !MM.tpDebug) return false;
+    var f = (data.files || []).filter(function (x) { return x.path === path; })[0];
+    return !!f && (f.kind === 'suite' || f.kind === 'resource' || f.kind === 'flow');
+  }
+
+  /** Open a project file in the project view at `line` (Go to Definition, the call stack). */
+  function _tpvOpenAt(path, line) {
+    if (_tpvEditor && _tpvEditor.textarea && _tpvEditor.path === path && _tpView.selected === path && !_tpView.runs) {
+      _tpvShowTab('script');
+      if (line) _tpvGotoLine(line);
+      return;
+    }
+    _tpvGuard(function () {
+      _tpvPendingLine = line || null;
+      _tpvOpenTab = 'script';
+      _tpView.selected = path;
+      _tpView.runs = false;
+      _tpView.group = null;
+      if (_currentMode !== 'testproject') switchMode('testproject');
+      else renderTestProjectView();
+    });
+  }
+
+  function _tpvTakePendingLine() {
+    var line = _tpvPendingLine;
+    _tpvPendingLine = null;
+    if (line) setTimeout(function () { _tpvGotoLine(line); }, 0);
+  }
+
+  /** The run being debugged in this project, if any: its _tprRuns entry. */
+  function _tpdLiveRun(root) {
+    var live = _tprLiveRun(root);
+    return live && live.record && live.record.debug ? live : null;
+  }
+
+  /** The line of `path` a debugged run of this project is stopped at, or 0. */
+  function _tpdStoppedAt(path) {
+    var e = _tpdLiveRun(_getTestProject());
+    var dbg = e && typeof e.record.debug === 'object' ? e.record.debug : null;
+    var top = dbg && dbg.stopped && dbg.stopped.frames[0];
+    return top && top.path === path ? top : null;
+  }
+
+  function _tpvDebugLine(path) {
+    var top = _tpdStoppedAt(path);
+    return top && top.line ? top.line : 0;
+  }
+
+  /** Every poll of a run: the editor, the Diagrams and the debug panel follow where it stopped. */
+  function _tpdOnPoll(e) {
+    if (!e.record || !e.record.debug) return;
+    var key = JSON.stringify(typeof e.record.debug === 'object' ? [e.record.debug.seq, e.record.run_state] : e.record.run_state);
+    if (key === e.debugKey) return;
+    e.debugKey = key;
+    if (_tpvEditor && _tpvEditor.textarea) _tpvRefreshEditor();
+    _tpvRefreshViewMarks();
+    if (e.debugPanel) e.debugPanel.update();
+    var d = _tprDiagram;
+    if (d && d.view && d.key === _tprKey(e.root, e.id)) d.view.setData(_tprViewData(d));
+    // Stopped in a file the editor shows: bring the line into view.
+    var top = typeof e.record.debug === 'object' && e.record.debug.stopped && e.record.debug.stopped.frames[0];
+    if (top && _tpvEditor && _tpvEditor.textarea && _tpvEditor.path === top.path && !_tpView.runs) _tpvGotoLine(top.line);
+  }
+
+  /** Breakpoints changed (editor, Diagram, debug panel): a debugged run gets them; everything shows them. */
+  function _tpdBreakpointsChanged(root, path) {
+    var e = _tpdLiveRun(root);
+    if (e) {
+      MM.testProjectClient.debug(root, e.id, { path: path, lines: MM.tpDebug.breakpoints.lines(root, path) })
+        .catch(function () { /* the run just ended */ });
+    }
+    if (_tpvEditor && _tpvEditor.textarea && _tpvEditor.path === path) _tpvRefreshEditor();
+    _tpvRefreshViewMarks();
+    var d = _tprDiagram;
+    if (d && d.view) d.view.setData(_tprViewData(d));
+    Object.keys(_tprRuns).forEach(function (k) { if (_tprRuns[k].debugPanel) _tprRuns[k].debugPanel.refresh(); });
+  }
+
+  /** Debug a file with the options of its last run (variables), the breakpoints and the filter. */
+  function _tpvDebug(path) {
+    var root = _getTestProject();
+    if (!root) return;
+    var live = _tprLiveRun(root);
+    if (live) {
+      showToast('Debug', 'A run is already in progress: ' + live.record.target_label + '.', 'warning');
+      _tpvGuard(function () { _showTpvRuns(live.id); });
+      return;
+    }
+    if (path && _tpvDirty() && _tpvEditor.path === path) {
+      showToast('Debug', 'Save ' + path + ' first (Ctrl+S): a run uses the file as it is on disk.', 'warning');
+      return;
+    }
+    var saved = _tprLoadOptions(root, path);
+    var vars = (_tprParsePairs(saved.vars || '', 'Variables') || {}).vars || {};
+    _tprStart(root, path, {
+      variables: vars,
+      debug: { breakpoints: MM.tpDebug.breakpoints.all(root), filters: MM.tpDebug.storedFilters(), stop_on_entry: false }
+    });
+  }
+
+  /** Go to Definition at offset `pos` of the editor's text: open it, or show where it is. */
+  function _tpvGotoDefinition(ed, pos) {
+    var q = MM.tpDebug && MM.tpDebug.lookupAt(ed.path, ed.textarea.value, pos);
+    if (!q) { showToast('Go to Definition', 'Put the caret on a keyword, an import or a sub-flow.', 'info'); return; }
+    var files = ((_tpView.data || {}).files || []).map(function (f) { return f.path; });
+    if (q.file) {
+      var target = MM.tpDebug.resolveRelative(ed.path, q.file);
+      if (files.indexOf(target) >= 0) { _tpvOpenAt(target, 1); return; }
+    }
+    MM.testProjectClient.define(ed.root, ed.path, ed.textarea.value, q.name)
+      .then(function (res) {
+        if (!res.found) {
+          showToast('Go to Definition', res.error || ('Robot finds no keyword ' + q.name + ' here.'), 'info');
+        } else if (res.path) {
+          _tpvOpenAt(res.path, res.line || 1);
+        } else {
+          _tpvShowDefinition(res);
+        }
+      })
+      .catch(function (err) { showToast('Go to Definition', err.message || String(err), 'warning'); });
+  }
+
+  /** A definition outside the project (a library, BuiltIn): where, and the lines around it. */
+  function _tpvShowDefinition(res) {
+    var snip = res.snippet || { first: 1, lines: [] };
+    var html = MM.tpDebug.highlight(res.abs, snip.lines.join('\n')).replace(/\n$/, '').split('\n').map(function (l, i) {
+      var n = snip.first + i;
+      return '<div class="tpd-line' + (n === res.line ? ' tpd-current' : '') + '"><span class="tpd-ln">' + n +
+        '</span><span class="tpd-text">' + (l || ' ') + '</span></div>';
+    }).join('');
+    _tpState = { action: 'define' };
+    _tpShow('<i class="bi bi-box-arrow-up-right me-2"></i>' + _escapeHtml(res.name || 'Definition'),
+      '<p class="small mb-2">' + (res.owner ? 'In <strong>' + _escapeHtml(res.owner) + '</strong>, ' : '') +
+      'outside the project (read-only): <code>' + _escapeHtml(res.abs) + (res.line ? ':' + res.line : '') + '</code></p>' +
+      '<div class="tpd-code tpd-snippet">' + html + '</div>', null);
+  }
+
+  /** The Diagram of the open file: its breakpoints and the step a debugged run stopped at. */
+  function _tpvRefreshViewMarks() {
+    var st = _tpvViewState;
+    if (!st || !_tpvFileView || !_tpvFileView.setData || !st.cacheRes || st.tab === 'script') return;
+    var view = (st.views || []).filter(function (v) { return v.id === st.tab; })[0];
+    if (view && view.type === 'flow-graph' && st.cacheRes.ok) _tpvFileView.setData(_tpvViewData(view, st.cacheRes));
   }
 
   function _tpvShowPreview(f, res) {
@@ -5927,6 +6143,7 @@
       '<i class="bi bi-clipboard me-1"></i>Copy</button>';
     document.getElementById('tpvFileBody').innerHTML =
       '<pre class="helper-code-pre tpv-preview">' + _numberedCode(res.content) + '</pre>';
+    setTimeout(_tpvTakePendingLine, 0);
     _tpvWireCopyRun(res.path);
     document.getElementById('tpvCopyFile').addEventListener('click', function () { _copyText(res.content, 'File'); });
     _tpvWireViews(f, function () { return res.content; });
@@ -5945,8 +6162,10 @@
 
     document.getElementById('tpvFileBody').innerHTML =
       '<div class="tpv-editor">' +
-      '  <div class="tpv-gutter"><div id="tpvGutter"></div></div>' +
+      '  <div class="tpv-gutter' + (_tpvBreakable(res.path) ? ' tpv-breakable' : '') + '"' +
+      (_tpvBreakable(res.path) ? ' title="Click a line number to set or remove a breakpoint"' : '') + '><div id="tpvGutter"></div></div>' +
       '  <div class="tpv-code">' +
+      '    <div class="tpv-curline" id="tpvCurLine" hidden></div>' +
       '    <pre class="tpv-hl" id="tpvHl" aria-hidden="true"></pre>' +
       '    <textarea class="tpv-input" id="tpvInput" spellcheck="false" wrap="off" autocomplete="off"' +
       '              autocapitalize="off" aria-label="' + _escapeHtml(res.path) + '"></textarea>' +
@@ -5968,6 +6187,15 @@
     });
     ta.addEventListener('scroll', _tpvSyncScroll);
     ta.addEventListener('keydown', _tpvKeydown);
+    // Go to Definition: Ctrl+Click (the caret is where it was clicked) or F12.
+    ta.addEventListener('click', function (e) {
+      if ((e.ctrlKey || e.metaKey) && _tpvEditor === ed) _tpvGotoDefinition(ed, ta.selectionStart);
+    });
+    document.getElementById('tpvGutter').addEventListener('click', function (e) {
+      var ln = e.target.closest && e.target.closest('[data-line]');
+      if (!ln || _tpvEditor !== ed || !_tpvBreakable(ed.path)) return;
+      MM.tpDebug.breakpoints.toggle(ed.root, ed.path, Number(ln.getAttribute('data-line')), ta.value);
+    });
     document.getElementById('tpvSave').addEventListener('click', function () { _tpvSave(false); });
     document.getElementById('tpvCheck').addEventListener('click', _tpvCheck);
     document.getElementById('tpvRevert').addEventListener('click', function () {
@@ -5982,6 +6210,7 @@
     });
     _tpvWireCopyRun(res.path);
     _tpvWireViews(f, function () { return ta.value; });
+    _tpvTakePendingLine();
 
     // Offer unsaved changes left over from an earlier session.
     var draft = _tpvLoadDraft(root, res.path);
@@ -6016,11 +6245,28 @@
     var value = ed.textarea.value;
     hl.innerHTML = /\.json$/i.test(ed.path) ? _jsonHighlight(value) : _rfHighlight(value);
     var lines = value.split('\n').length;
-    if (lines !== ed.lines) {
+    // The gutter: line numbers, breakpoints, the line a debugged run stopped at.
+    var marks = _tpvBreakable(ed.path) ? MM.tpDebug.breakpoints.lines(ed.root, ed.path) : [];
+    var at = _tpvDebugLine(ed.path);
+    var gutterKey = lines + '|' + marks.join(',') + '|' + at;
+    if (gutterKey !== ed.gutterKey) {
+      ed.gutterKey = gutterKey;
       ed.lines = lines;
       var nums = [];
-      for (var i = 1; i <= lines; i++) nums.push(i);
-      document.getElementById('tpvGutter').textContent = nums.join('\n');
+      for (var i = 1; i <= lines; i++) {
+        nums.push('<div data-line="' + i + '"' + (marks.indexOf(i) >= 0 || i === at
+          ? ' class="' + (marks.indexOf(i) >= 0 ? 'tpv-bp' : '') + (i === at ? ' tpv-at' : '') + '"' : '') + '>' + i + '</div>');
+      }
+      document.getElementById('tpvGutter').innerHTML = nums.join('');
+    }
+    var cur = document.getElementById('tpvCurLine');
+    if (cur) {
+      cur.hidden = !at;
+      if (at) {
+        var cs = getComputedStyle(ed.textarea);
+        cur.style.top = (parseFloat(cs.paddingTop) + (at - 1) * (parseFloat(cs.lineHeight) || 18)) + 'px';
+        cur.style.height = (parseFloat(cs.lineHeight) || 18) + 'px';
+      }
     }
     _tpvSyncScroll();
     var dirty = value !== ed.original;
@@ -6051,10 +6297,17 @@
     var gutter = document.getElementById('tpvGutter');
     if (hl) hl.style.transform = 'translate(' + (-ed.textarea.scrollLeft) + 'px,' + (-ed.textarea.scrollTop) + 'px)';
     if (gutter) gutter.style.transform = 'translateY(' + (-ed.textarea.scrollTop) + 'px)';
+    var cur = document.getElementById('tpvCurLine');
+    if (cur) cur.style.transform = 'translateY(' + (-ed.textarea.scrollTop) + 'px)';
   }
 
   function _tpvKeydown(e) {
     var ta = e.target;
+    if (e.key === 'F12' && !e.ctrlKey && !e.altKey && _tpvEditor && _tpvEditor.textarea === ta) {
+      e.preventDefault();
+      _tpvGotoDefinition(_tpvEditor, ta.selectionStart);
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
       _tpvSave(false);
@@ -6144,7 +6397,7 @@
   function _tpvCheck() {
     var ed = _tpvEditor;
     if (!ed || !ed.textarea) return;
-    MM.testProjectClient.checkFile(ed.path, ed.textarea.value)
+    MM.testProjectClient.checkFile(ed.path, ed.textarea.value, _getTestProject())
       .then(function (res) {
         if (_tpvEditor === ed) _tpvShowProblems(res.problems || [], true);
       })
@@ -6246,15 +6499,36 @@
    * Output must stay character-for-character aligned with the textarea, so
    * only spans are added -- never text.
    */
+  // Robot Framework text as coloured HTML, cell by cell (cells: two or more
+  // spaces, a tab, or " | "): section headers, test and keyword names, the
+  // keyword each line calls (after its ${assignments}), [Settings], control
+  // words (FOR, IF, TRY, WHILE, THREAD, ...), imports, named arguments,
+  // variables, continuation and comments -- the same pieces the VS Code
+  // extension's grammar colours.
+  var RF_CONTROL = /^(FOR|END|IF|ELSE IF|ELSE|WHILE|TRY|EXCEPT|FINALLY|BREAK|CONTINUE|RETURN|VAR|GROUP|THREAD)$/;
+  var RF_INLINE = /^(IN|IN RANGE|IN ENUMERATE|IN ZIP|AND|ELSE|ELSE IF|AS)$/;
+  var RF_CALLS_NEXT = /^\[(Setup|Teardown|Template)\]$/i;
+  var RF_SETTING_CALL = /^((Suite|Test|Task) (Setup|Teardown)|(Test|Task) Template)$/i;
+  var RF_IMPORT = /^(Library|Resource|Variables)$/i;
+
+  function _rfVars(html) {
+    return html.replace(/((?:[$@%]|&amp;)\{[^}\n]*\})/g, '<span class="rf-var">$1</span>');
+  }
+
+  function _rfCell(cls, text) {
+    var html = _rfVars(_escapeHtml(text));
+    return cls ? '<span class="' + cls + '">' + html + '</span>' : html;
+  }
+
   function _rfHighlight(text) {
     var section = '';
     return text.split('\n').map(function (line) {
-      var head = /^\s*\*{3}\s*([^*]+?)\s*\*{3}/.exec(line);
-      if (head) {
+      var head = /^\s*\*{1,3}\s*([^*]+?)\s*\**\s*$/.exec(line);
+      if (head && /^\s*\*/.test(line)) {
         section = head[1].toLowerCase();
         return '<span class="rf-sec">' + _escapeHtml(line) + '</span>';
       }
-      if (/^\s*#/.test(line)) return '<span class="rf-com">' + _escapeHtml(line) + '</span>';
+      if (/^\s*#/.test(line) || section.indexOf('comment') === 0) return '<span class="rf-com">' + _escapeHtml(line) + '</span>';
 
       var code = line;
       var comment = '';
@@ -6263,20 +6537,61 @@
         code = line.slice(0, cm.index);
         comment = '<span class="rf-com">' + _escapeHtml(line.slice(cm.index)) + '</span>';
       }
-      var out = _escapeHtml(code)
-        .replace(/((?:[$@%]|&amp;)\{[^}\n]*\})/g, '<span class="rf-var">$1</span>')
-        // [Tags] etc. are settings only at the start of a cell; ${d}[key] is item access.
-        .replace(/(^\s+|\t| {2,})(\[[A-Za-z][A-Za-z ]*\])/g, '$1<span class="rf-set">$2</span>')
-        .replace(/^(\s*)(\.\.\.)/, '$1<span class="rf-cont">$2</span>');
-
-      if (code.trim() && !/^\s/.test(code) && !/^\.\.\./.test(code)) {
-        if (section.indexOf('setting') === 0) {
-          out = out.replace(/^(\S(?:.*?\S)?)( {2,}|\t|$)/, '<span class="rf-key">$1</span>$2');
-        } else if (section.indexOf('test case') === 0 || section.indexOf('task') === 0 ||
-                   section.indexOf('keyword') === 0) {
-          out = '<span class="rf-name">' + out + '</span>';
+      var body = section.indexOf('test case') === 0 || section.indexOf('task') === 0 || section.indexOf('keyword') === 0;
+      var settings = section.indexOf('setting') === 0;
+      var variables = section.indexOf('variable') === 0;
+      // cells and separators alternate: parts[0] is '' on an indented line
+      var parts = code.split(/( {2,}|\t+| \| )/);
+      var out = '';
+      var cellNo = 0;          // cells seen, the leading empty one included
+      var callNext = false;    // the next cell is a keyword call
+      var sawCall = false;
+      var indented = parts[0] === '';
+      parts.forEach(function (part, i) {
+        if (i % 2 === 1) { out += _escapeHtml(part); return; }
+        var t = part;
+        var n = cellNo++;
+        if (!t) return;
+        if (n === 0) {
+          if (t === '...') { out += _rfCell('rf-cont', t); return; }
+          if (body) { out += _rfCell('rf-name', t); return; }
+          if (settings) {
+            out += _rfCell('rf-key', t);
+            if (RF_SETTING_CALL.test(t)) callNext = 'call';
+            else if (RF_IMPORT.test(t)) callNext = 'import';
+            return;
+          }
+          if (variables) { out += _rfCell('rf-var', t); return; }
+          out += _rfCell('', t);
+          return;
         }
-      }
+        if (callNext) {
+          out += _rfCell(callNext === 'import' ? 'rf-imp' : 'rf-call', t);
+          callNext = false;
+          sawCall = true;
+          return;
+        }
+        if (n === 1 && t === '...') { out += _rfCell('rf-cont', t); return; }
+        if (body && indented && !sawCall) {
+          if (/^[$@&]\{[^}]*\}\s?=?$/.test(t)) { out += _rfCell('', t); return; }   // ${assignment}=
+          if (/^\[[^\]]+\]$/.test(t)) {
+            out += _rfCell('rf-set', t);
+            if (RF_CALLS_NEXT.test(t)) callNext = 'call'; else sawCall = true;
+            return;
+          }
+          if (RF_CONTROL.test(t)) { out += _rfCell('rf-ctl', t); sawCall = true; return; }
+          out += _rfCell('rf-call', t);
+          sawCall = true;
+          return;
+        }
+        if (RF_INLINE.test(t)) { out += _rfCell('rf-ctl', t); return; }
+        var named = /^([A-Za-z_][\w ]*?)=(?!=)/.exec(t);
+        if (named) {
+          out += '<span class="rf-arg">' + _escapeHtml(named[1]) + '</span>=' + _rfVars(_escapeHtml(t.slice(named[0].length)));
+          return;
+        }
+        out += _rfCell('', t);
+      });
       return out + comment;
     }).join('\n') + '\n';
   }
@@ -6301,7 +6616,7 @@
     _tpvDropFileView();
     var views = f.views || [];
     var bar = document.getElementById('tpvTabs');
-    if (!views.length || !bar) { _tpvViewState = null; return; }
+    if (!views.length || !bar) { _tpvViewState = null; _tpvOpenTab = null; return; }
     _tpvViewState = { path: f.path, views: views, getText: getText, tab: 'script', cacheText: null, cacheRes: null };
     bar.querySelectorAll('[data-tpv-tab]').forEach(function (b) {
       b.addEventListener('click', function () { _tpvShowTab(b.getAttribute('data-tpv-tab')); });
@@ -6410,7 +6725,8 @@
           _tpvShowTab('script');
           _tpvGotoLine(Number(target.line));
         }
-      }, _tpvEditable() ? function (change) { return _tpvViewEdit(view, change); } : null);
+      }, _tpvEditable() ? function (change) { return _tpvViewEdit(view, change); } : null,
+      view.type === 'flow-graph' && _tpvBreakable(st.path) ? _tpvViewBreakpoint : null);
     } else if (view.type === 'code') {
       pane.innerHTML = '<div class="tpv-view-note"><i class="bi bi-code-slash me-1"></i>What the runner builds from the text in Script; read-only.' + note + '</div>' +
         '<pre class="tpv-code-view">' + (view.language === 'robot' ? _rfHighlight(data.text || '') : _escapeHtml(data.text || '')) + '</pre>';
@@ -6430,7 +6746,22 @@
     var data = Object.assign({}, (res.views || {})[view.id] || {});
     data.editable = _tpvEditable();
     data.undo = data.editable ? (_tpvEditor.viewUndo || []).length : 0;
+    var st = _tpvViewState;
+    if (view.type === 'flow-graph' && st && _tpvBreakable(st.path)) {
+      var top = _tpdStoppedAt(st.path);
+      data.breakpoints = MM.tpDebug.breakpoints.steps(_getTestProject(), st.path, st.getText());
+      data.paused = top && top.node ? top.node : null;
+    }
     return data;
+  }
+
+  /** A step's breakpoint dot on the project view's Diagram. */
+  function _tpvViewBreakpoint(id) {
+    var st = _tpvViewState;
+    if (!st || String(id).indexOf('::') >= 0) return;
+    var text = st.getText();
+    var line = MM.tpDebug.breakpoints.lineOfStep(text, id);
+    if (line) MM.tpDebug.breakpoints.toggle(_getTestProject(), st.path, line, text);
   }
 
   /**
@@ -6990,6 +7321,8 @@
         ? ' · PYTHONPATH <code>' + _escapeHtml(settings.pythonpath.join(';')) + '</code>' : '') +
       ((settings.args || []).length ? ' · arguments <code>' + _escapeHtml(settings.args.join(' ')) + '</code>' : '');
 
+    var fileEntry = (data.files || []).filter(function (x) { return x.path === path; })[0];
+    var pausable = !!(fileEntry && fileEntry.pausable);
     _tpState = { action: 'run', root: root, path: path };
     _tpShow('<i class="bi bi-play-fill me-2"></i>Run',
       '<div class="tpr-form">' +
@@ -7004,6 +7337,12 @@
       '    <input class="form-check-input" type="checkbox" id="tprDry">' +
       '    <label class="form-check-label small" for="tprDry">Dry run: check keywords and arguments, execute nothing</label>' +
       '  </div>' +
+      (pausable
+        ? '  <div class="form-check mb-3">' +
+          '    <input class="form-check-input" type="checkbox" id="tprStep">' +
+          '    <label class="form-check-label small" for="tprStep">Step mode: pause before every step of the test phases; <em>Resume</em> goes on one step at a time</label>' +
+          '  </div>'
+        : '') +
       '  <div class="form-check mb-2">' +
       '    <input class="form-check-input" type="checkbox" id="tprRes">' +
       '    <label class="form-check-label small" for="tprRes">Record RAM and CPU of the run: a <em>Resources</em> report with a verdict per process, for long runs</label>' +
@@ -7015,6 +7354,7 @@
     document.getElementById('tprVars').value = saved.vars || '';
     document.getElementById('tprDry').checked = !!saved.dryrun;
     document.getElementById('tprRes').checked = !!saved.resources;
+    if (pausable) document.getElementById('tprStep').checked = !!saved.step;
     document.getElementById('tprOpenSettings').addEventListener('click', function (e) {
       e.preventDefault();
       _tpvRunSettingsDialog(function () { _tpvRunDialog(path); });
@@ -7029,20 +7369,27 @@
     var varsText = document.getElementById('tprVars').value;
     var dryrun = document.getElementById('tprDry').checked;
     var resources = document.getElementById('tprRes').checked;
+    var stepBox = document.getElementById('tprStep');
+    var step = !!(stepBox && stepBox.checked) && !dryrun;
     var parsed = _tprParsePairs(varsText, 'Variables');
     if (parsed.error) {
       document.getElementById('tprDialogError').innerHTML = _devAlert('warning', 'Not started', parsed.error);
       return;
     }
-    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun, resources: resources });
+    _tprStoreOptions(st.root, st.path, { vars: varsText, dryrun: dryrun, resources: resources, step: step });
     st.action = 'done';
     _afterModalHidden(function () {
-      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun, resources: resources });
+      _tprStart(st.root, st.path, { variables: parsed.vars, dryrun: dryrun, resources: resources, step: step });
     });
   }
 
   function _tprStart(root, path, opts) {
-    return MM.testProjectClient.run(root, path, opts)
+    return _tprFollow(root, MM.testProjectClient.run(root, path, opts), 'Run not started');
+  }
+
+  /** A run the bridge just started: poll it and show it in Runs. */
+  function _tprFollow(root, started, failure) {
+    return started
       .then(function (rec) {
         var e = _tprRuns[_tprKey(root, rec.id)] =
           { root: root, id: rec.id, record: rec, lines: [], since: 0, polling: false };
@@ -7051,8 +7398,47 @@
         return rec;
       })
       .catch(function (err) {
-        showToast('Run not started', err.message || String(err), 'danger');
+        showToast(failure, err.message || String(err), 'danger');
       });
+  }
+
+  // ---- pause, resume, stop with a checkpoint (a runner that can pause: flows) ----
+
+  /** What the run's processes say: { names, paused: [names], text } (or null). */
+  function _tprFlowState(rec, member) {
+    var procs = (rec.control && rec.control.processes) || {};
+    var names = Object.keys(procs).filter(function (n) { return !member || n === member; });
+    if (!names.length) return null;
+    var paused = names.filter(function (n) { return procs[n].state === 'paused'; });
+    var p = procs[names[0]];
+    var where = [];
+    if (p.phase) where.push('phase ' + p.phase);
+    if (p.loop) where.push('loop ' + p.loop + ' iteration ' + ((p.iteration || 0) + 1));
+    var text = (paused.length ? (paused.length === names.length ? 'paused' : paused.length + ' of ' + names.length + ' paused')
+                              : (p.state || 'running')) + (where.length && names.length === 1 ? ' · ' + where.join(', ') : '');
+    return { names: names, paused: paused, text: text, all: paused.length === names.length };
+  }
+
+  /** Pause or resume a running flow (`member`: one member of a group). */
+  function _tprControl(e, command, member) {
+    MM.testProjectClient.control(e.root, e.id, command, member || '')
+      .then(function (st) {
+        e.record = Object.assign({}, e.record, { control: st.control || e.record.control });
+        e.toolsState = null;
+        e.memberTools = [];
+        _tprUpdateShown(e, null);
+      })
+      .catch(function (err) { showToast(command === 'pause' ? 'Pause' : 'Resume', err.message || String(err), 'warning'); });
+  }
+
+  /** A new run continuing this one from its checkpoint. */
+  function _tprContinue(e) {
+    var live = _tprLiveRun(e.root);
+    if (live) {
+      showToast('Continue', 'A run is already in progress: ' + live.record.target_label + '.', 'warning');
+      return;
+    }
+    _tprFollow(e.root, MM.testProjectClient.restart(e.root, e.id), 'Not continued');
   }
 
   function _tpvRunSettingsDialog(then) {
@@ -7163,6 +7549,7 @@
           });
           e.record = st;
           e.since = st.next || e.since;
+          _tpdOnPoll(e);
           e.error = '';
           if (st.dropped) fresh.unshift('… ' + st.dropped + ' earlier lines are only in console.log …');
           Array.prototype.push.apply(e.lines, fresh);
@@ -7354,6 +7741,7 @@
       '</div>' +
       '<div class="tpr-counts" id="tprCounts"></div>' +
       '<div class="tpr-message" id="tprMessage" hidden></div>' +
+      (e.record.debug && e.record.run_state !== 'done' && MM.tpDebug ? '<div class="tpd" id="tpdPanel"></div>' : '') +
       '<div class="tpr-tabs" role="tablist">' +
       '  <button type="button" class="tpr-tab active" data-tpr-tab="console">Console</button>' +
       '  <button type="button" class="tpr-tab" data-tpr-tab="results">Results <span id="tprResultsN"></span></button>' +
@@ -7384,6 +7772,14 @@
     });
     var toggle = document.getElementById('tprDiagramToggle');
     if (toggle) toggle.addEventListener('click', function () { _tprToggleDiagram(e); });
+    var dbgEl = document.getElementById('tpdPanel');
+    e.debugPanel = dbgEl ? MM.tpDebug.panel(dbgEl, {
+      root: e.root, runId: e.id,
+      state: function () { return typeof e.record.debug === 'object' ? e.record.debug : {}; },
+      openFile: function (path, line) { _tpvOpenAt(path, line); },
+      toast: showToast
+    }) : null;
+    if (e.debugPanel) e.debugPanel.update();
     if (drawable) _tprWireSplit(e);
     _tprDropDiagram();
     if (showDiagram) _tprMountDiagram(e);
@@ -7451,6 +7847,10 @@
     if (rec.elapsed_s != null) meta.push((state === 'running' || state === 'stopping' ? 'running for ' : 'took ') + _tprDuration(rec.elapsed_s));
     if (rec.runner_name) meta.push(rec.runner_name);
     if (opts.dryrun) meta.push('dry run');
+    if (opts.step) meta.push('step mode');
+    if (rec.continues) meta.push('continues ' + rec.continues);
+    var flowState = !rec.group && state !== 'done' ? _tprFlowState(rec) : null;
+    if (flowState) meta.push('flow ' + flowState.text);
     if (opts.resources) meta.push('recording RAM and CPU');
     var vars = Object.keys(opts.variables || {});
     if (vars.length) meta.push(vars.map(function (k) { return k + '=' + opts.variables[k]; }).join(', '));
@@ -7458,15 +7858,34 @@
     document.getElementById('tprMeta').textContent = meta.join(' · ');
 
     var done = rec.run_state === 'done';
-    var toolsState = state + '|' + (rec.results_url ? 1 : 0);
+    var anyFlow = rec.pausable && !done ? _tprFlowState(rec) : null;
+    var toolsState = state + '|' + (rec.results_url ? 1 : 0) + '|' + (anyFlow ? anyFlow.paused.length + '/' + anyFlow.names.length : '-') +
+      '|' + (rec.restartable ? 1 : 0);
     if (e.toolsState !== toolsState) {
       e.toolsState = toolsState;
       var hasFiles = done && rec.verdict !== 'error' || done && (rec.tests || []).length;
       var html = '';
+      if (!done && anyFlow && state !== 'stopping') {
+        html += anyFlow.paused.length
+          ? '<button type="button" class="btn btn-sm btn-success" id="tprResume" title="Go on' +
+            ((rec.options || {}).step ? ' to the next step (step mode)' : '') + '"><i class="bi bi-play-fill me-1"></i>' +
+            ((rec.options || {}).step ? 'Next step' : 'Resume') + '</button>'
+          : '';
+        html += !anyFlow.all
+          ? '<button type="button" class="btn btn-sm btn-outline-warning" id="tprPause" title="Hold the flow at the next step boundary; loop deadlines and gate timeouts do not run on while it is paused">' +
+            '<i class="bi bi-pause-fill me-1"></i>Pause</button>'
+          : '';
+      }
       if (!done) {
         html += '<button type="button" class="btn btn-sm btn-outline-danger" id="tprStop" title="' +
-          (state === 'stopping' ? 'Kill it now: no teardown, no reports' : 'Stop after the running keyword; teardowns and reports still run') + '">' +
+          (state === 'stopping' ? 'Kill it now: no teardown, no reports'
+            : anyFlow ? 'Stop at the next step: a checkpoint is written to continue from later, the teardown runs'
+            : 'Stop after the running keyword; teardowns and reports still run') + '">' +
           '<i class="bi bi-stop-fill me-1"></i>' + (state === 'stopping' ? 'Force stop' : 'Stop') + '</button>';
+      }
+      if (done && rec.restartable) {
+        html += '<button type="button" class="btn btn-sm btn-success" id="tprContinue" title="A new run that skips the finished phases and goes on with the interrupted loop where it stopped">' +
+          '<i class="bi bi-skip-end-fill me-1"></i>Continue from checkpoint</button>';
       }
       if (hasFiles) {
         (rec.artifacts || []).forEach(function (a) {
@@ -7504,6 +7923,12 @@
       tools.querySelectorAll('[data-tpr-artifact]').forEach(function (b) {
         b.addEventListener('click', function () { _tprOpenArtifact(e.record, b.getAttribute('data-tpr-artifact')); });
       });
+      var pause = document.getElementById('tprPause');
+      if (pause) pause.addEventListener('click', function () { pause.disabled = true; _tprControl(e, 'pause'); });
+      var resume = document.getElementById('tprResume');
+      if (resume) resume.addEventListener('click', function () { resume.disabled = true; _tprControl(e, 'resume'); });
+      var cont = document.getElementById('tprContinue');
+      if (cont) cont.addEventListener('click', function () { cont.disabled = true; _tprContinue(e); });
       var again = document.getElementById('tprAgain');
       if (again) {
         again.addEventListener('click', function () {
@@ -7613,7 +8038,31 @@
 
   /** What the Diagram view gets: the runner's drawing data, where the run is, and the view settings. */
   function _tprViewData(d) {
-    return Object.assign({}, d.base, { live: d.live, zoom: _tprZoom(), motion: _tprMotion() });
+    var data = Object.assign({}, d.base, { live: d.live, zoom: _tprZoom(), motion: _tprMotion() });
+    var e = _tprRuns[d.key];
+    var held = e && !e.record.debug && !e.record.group && e.record.run_state !== 'done' ? _tprFlowState(e.record) : null;
+    if (held && held.paused.length) {
+      var pos = e.record.position || {};
+      data.paused = pos.node || (pos.last && pos.last.node) || null;
+    }
+    if (e && e.record.debug && !e.record.group && MM.tpDebug && d.flowText != null) {
+      var dbg = typeof e.record.debug === 'object' ? e.record.debug : {};
+      var top = dbg.stopped && dbg.stopped.frames.filter(function (f) { return f.node; })[0];
+      data.breakpoints = MM.tpDebug.breakpoints.steps(e.root, e.record.target, d.flowText);
+      data.paused = top ? top.node : null;
+    }
+    return data;
+  }
+
+  /** A step's breakpoint dot on the Runs view's Diagram: toggle it in the flow file. */
+  function _tprDiagramBreakpoint(e, d, id) {
+    if (!MM.tpDebug || d.flowText == null) return;
+    if (String(id).indexOf('::') >= 0) {
+      showToast('Breakpoint', 'Set it in the sub-flow\'s own file (open it, then click its line or its step).', 'info');
+      return;
+    }
+    var line = MM.tpDebug.breakpoints.lineOfStep(d.flowText, id);
+    if (line) MM.tpDebug.breakpoints.toggle(e.root, e.record.target, line, d.flowText);
   }
 
   /** The Diagram's size as the view takes it: 'fit', 'natural' or a share (0.75). */
@@ -7712,7 +8161,11 @@
             e.diagramData = data;
             return data;
           });
-    Promise.all([ask, pluginsReady])
+    // A debugged flow: its text too, for its breakpoints' lines.
+    var text = rec.debug && !rec.group
+      ? MM.testProjectClient.file(e.root, rec.target).then(function (res) { return res.content; }, function () { return null; })
+      : Promise.resolve(null);
+    Promise.all([ask, pluginsReady, text])
       .then(function (r) {
         if (_tprDiagram !== d || !document.getElementById('tprDiagramBody')) return;
         var plugged = MM.endo && MM.endo.plugins ? MM.endo.plugins.fileViews(type)[0] : null;
@@ -7725,9 +8178,11 @@
           // Our own scrolling (follow) is not the user's.
           if (Date.now() - d.followedAt > 150) d.userScrolledAt = Date.now();
         });
+        d.flowText = r[2];
         d.view = plugged.mount(document.getElementById('tprDiagramFrame'),
           _tprViewData(d),
-          function (target) { _tprDiagramReveal(e, d, target); });
+          function (target) { _tprDiagramReveal(e, d, target); }, null,
+          rec.debug ? function (id) { _tprDiagramBreakpoint(e, d, id); } : null);
       })
       .catch(function (err) {
         if (_tprDiagram === d && document.getElementById('tprDiagramBody')) {
@@ -7741,7 +8196,7 @@
     var d = _tprDiagram;
     if (!d || !d.view || d.key !== _tprKey(e.root, e.id)) return;
     var live = _tprLivePositions(e.record);
-    var liveKey = JSON.stringify(live);
+    var liveKey = JSON.stringify([live, e.record.debug && e.record.debug.seq, _tprFlowState(e.record)]);
     if (liveKey === d.liveKey) return;
     d.live = live;
     d.liveKey = liveKey;
@@ -7795,7 +8250,8 @@
       }
       var state = _tprState(m);
       var done = m.state === 'done';
-      var key = state + '|' + (rec.results_url ? 1 : 0) + '|' + (m.elapsed_s | 0);
+      var mFlow = rec.pausable && !done && rec.run_state !== 'stopping' ? _tprFlowState(rec, m.id) : null;
+      var key = state + '|' + (rec.results_url ? 1 : 0) + '|' + (m.elapsed_s | 0) + '|' + (mFlow ? mFlow.text : '');
       if (e.memberTools[i] === key) return;
       e.memberTools[i] = key;
       var vars = Object.keys(m.variables || {}).map(function (k) { return k + '=' + m.variables[k]; }).join(', ');
@@ -7812,7 +8268,18 @@
           _escapeHtml(m.target) + (vars ? ' · ' + _escapeHtml(vars) : '') +
           (m.elapsed_s != null ? ' · ' + _escapeHtml(_tprDuration(m.elapsed_s)) : '') + '</span>' +
         (done ? '<span class="tpr-counts tpr-member-counts">' + _tprCounts(m.counts, true) + '</span>' : '') +
-        '<span class="tpr-member-tools">' + files + '</span>';
+        (mFlow ? '<span class="tpr-member-flow' + (mFlow.paused.length ? ' tpr-paused' : '') + '">' + _escapeHtml(mFlow.text) + '</span>' : '') +
+        '<span class="tpr-member-tools">' + files +
+        (mFlow ? (mFlow.paused.length
+          ? '<button type="button" class="btn btn-sm btn-success" data-tpr-member-control="resume" data-member="' + _escapeHtml(m.id) + '" title="Resume ' + _escapeHtml(m.id) + ' only"><i class="bi bi-play-fill"></i></button>'
+          : '<button type="button" class="btn btn-sm btn-outline-warning" data-tpr-member-control="pause" data-member="' + _escapeHtml(m.id) + '" title="Pause ' + _escapeHtml(m.id) + ' only; the others run on (their gates may time out waiting for it)"><i class="bi bi-pause-fill"></i></button>')
+          : '') + '</span>';
+      head.querySelectorAll('[data-tpr-member-control]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true;
+          _tprControl(e, b.getAttribute('data-tpr-member-control'), b.getAttribute('data-member'));
+        });
+      });
       head.querySelectorAll('[data-tpr-member-artifact]').forEach(function (b) {
         b.addEventListener('click', function () {
           _openUrl(MM.testProjectClient.resultUrl(rec, b.getAttribute('data-tpr-member-artifact'), b.getAttribute('data-member')));
@@ -7875,6 +8342,8 @@
     _renderTpvSidebar(data);
     var content = document.getElementById('testProjectContent');
     var layout = data.layout || {};
+    var kind = _tpvKind(data, 'suite');
+    var noun = kind.noun || 'suite';
     var options = data.services.map(function (s) {
       return '<option value="' + _escapeHtml(s.name) + '">' + _escapeHtml(s.name) + '</option>';
     }).join('');
@@ -7883,23 +8352,23 @@
       '<div class="tpv-view">' +
       '  <div class="tpv-file-head">' +
       '    <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
-      '    <strong>New suite</strong>' +
+      '    <strong>New ' + _escapeHtml(noun) + '</strong>' +
       '  </div>' +
       '  <section class="svc-ov-card tpv-new-suite">' +
       '    <div class="mb-3">' +
       '      <label class="form-label small" for="tpvSuiteName">Name</label>' +
       '      <div class="input-group input-group-sm">' +
       '        <input type="text" class="form-control" id="tpvSuiteName" placeholder="e.g. greeting_checks" spellcheck="false">' +
-      '        <span class="input-group-text">.robot</span>' +
+      (kind.suffix ? '        <span class="input-group-text">' + _escapeHtml(kind.suffix) + '</span>' : '') +
       '      </div>' +
-      '      <div class="form-text">Created in <code>' + _escapeHtml(layout.suites || '') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
+      '      <div class="form-text">Created in <code>' + _escapeHtml(layout[kind.folder] || kind.folder || '') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
       '    </div>' +
       '    <div class="mb-3">' +
       '      <label class="form-label small" for="tpvSuiteService">Service</label>' +
       '      <select class="form-select form-select-sm" id="tpvSuiteService">' +
-      '        <option value="">None \u2014 an empty suite</option>' + options +
+      '        <option value="">None \u2014 an empty ' + _escapeHtml(noun) + '</option>' + options +
       '      </select>' +
-      '      <div class="form-text">Imports the service\'s generated keywords and opens its connection in the suite setup.</div>' +
+      '      <div class="form-text">Wires it to the service\'s generated ' + _escapeHtml(_tpvKind(data, 'resource').title.toLowerCase()) + '.</div>' +
       '    </div>' +
       '    <div id="tpvSuiteError"></div>' +
       '    <button type="button" class="btn btn-sm btn-primary" id="tpvSuiteCreate">' +
@@ -7916,7 +8385,7 @@
       document.getElementById('tpvSuiteError').innerHTML = '';
       MM.testProjectClient.newSuite(_getTestProject(), name.value.trim(), document.getElementById('tpvSuiteService').value)
         .then(function (res) {
-          showToast('New suite', res.path + ' created.', 'success');
+          showToast('New ' + noun, res.path + ' created.', 'success');
           _tpView.selected = res.path;
           renderTestProjectView();
         })
@@ -7939,6 +8408,9 @@
     _renderTpvSidebar(data);
     var content = document.getElementById('testProjectContent');
     var layout = data.layout || {};
+    var kind = _tpvKind(data, 'flow');
+    var noun = kind.noun || 'flow';
+    var resKind = _tpvKind(data, 'resource');
     var resources = data.files.filter(function (f) { return f.kind === 'resource'; });
     var checks = resources.map(function (f, i) {
       return '<div class="form-check">' +
@@ -7950,26 +8422,26 @@
       '<div class="tpv-view">' +
       '  <div class="tpv-file-head">' +
       '    <a href="#" class="tpv-back" id="tpvBack"><i class="bi bi-arrow-left me-1"></i>Overview</a>' +
-      '    <strong>New flow</strong>' +
+      '    <strong>New ' + _escapeHtml(noun) + '</strong>' +
       '  </div>' +
       '  <section class="svc-ov-card tpv-new-suite">' +
       '    <div class="mb-3">' +
       '      <label class="form-label small" for="tpvFlowName">Name</label>' +
       '      <div class="input-group input-group-sm">' +
       '        <input type="text" class="form-control" id="tpvFlowName" placeholder="e.g. climate_debounce" spellcheck="false">' +
-      '        <span class="input-group-text">.flow.json</span>' +
+      (kind.suffix ? '        <span class="input-group-text">' + _escapeHtml(kind.suffix) + '</span>' : '') +
       '      </div>' +
-      '      <div class="form-text">Created in <code>' + _escapeHtml(layout.flows || 'flows') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
+      '      <div class="form-text">Created in <code>' + _escapeHtml(layout[kind.folder] || kind.folder || 'flows') + '/</code>. Letters, digits, <code>_</code> or <code>-</code>.</div>' +
       '    </div>' +
       (resources.length
         ? '    <div class="mb-3">' +
-          '      <div class="form-label small">Keywords from</div>' + checks +
-          '      <div class="form-text">The flow imports the ticked resource files, so their keywords can be its steps.</div>' +
+          '      <div class="form-label small">' + _escapeHtml(resKind.title) + ' it uses</div>' + checks +
+          '      <div class="form-text">The new ' + _escapeHtml(noun) + ' imports the ticked files, so it can call what they define.</div>' +
           '    </div>'
         : '') +
       '    <div id="tpvFlowError"></div>' +
       '    <button type="button" class="btn btn-sm btn-primary" id="tpvFlowCreate">' +
-      '      <i class="bi bi-file-earmark-plus me-1"></i>Create and open the diagram</button>' +
+      '      <i class="bi bi-file-earmark-plus me-1"></i>Create and open</button>' +
       '  </section>' +
       '</div>';
 
@@ -7983,7 +8455,7 @@
         .map(function (c) { return c.value; });
       MM.testProjectClient.newFlow(_getTestProject(), name.value.trim(), picked)
         .then(function (res) {
-          showToast('New flow', res.path + ' created.', 'success');
+          showToast('New ' + noun, res.path + ' created.', 'success');
           _tpView.selected = res.path;
           _tpvOpenTab = 'diagram';
           renderTestProjectView();
@@ -8587,6 +9059,8 @@
   MM.loadContent = loadContent;
   MM.changeConnectButtonState = changeConnectButtonState;
   MM.showToast = showToast;
+  MM.tpHighlight = { robot: _rfHighlight, json: _jsonHighlight };
+  if (MM.tpDebug) MM.tpDebug.breakpoints.onChange(_tpdBreakpointsChanged);
   MM.showConfirm = showConfirm;
   MM.showWarningDialog = showWarningDialog;
   MM.activateItemAndLoadContent = activateItemAndLoadContent;
@@ -8801,7 +9275,7 @@
     if (baseVersionEl) {
       if (window.electronAPI && window.electronAPI.getPackageVersion) {
         // Electron mode: query the Python configured in Settings
-        var pythonPath = (_settings && _settings.pythonPath) || 'python';
+        var pythonPath = (_settings && _settings.pythonPath) || '';   // empty: this platform's interpreter
         window.electronAPI.getPackageVersion(pythonPath, 'MicroserviceBase')
           .then(function (ver) {
             baseVersionEl.textContent = ver;
@@ -9087,7 +9561,7 @@
 
   function _fetchBaseVersion() {
     if (window.electronAPI && window.electronAPI.getPackageVersion) {
-      var pyPath = (_settings && _settings.pythonPath) || 'python';
+      var pyPath = (_settings && _settings.pythonPath) || '';
       window.electronAPI.getPackageVersion(pyPath, 'MicroserviceBase')
         .then(function (ver) { MM._baseVersion = ver; })
         .catch(function () {});
