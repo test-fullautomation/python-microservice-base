@@ -40,8 +40,26 @@ GH_BLOB = "https://github.com/test-fullautomation/python-microservice-base/blob/
 LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
 
 # Relative prefixes the rewriters legitimately produce -- these point at
-# sibling pages inside the generated site and must NOT be absolutized.
-_INTERNAL_PREFIXES = ("../examples/", "../gui/")
+# sibling pages inside the generated site and must NOT be absolutized:
+# the two copied trees, and every top-level folder of docs/ itself (links
+# to repo-level docs are rewritten to point inside the site, see
+# _site_docs_link).
+_INTERNAL_PREFIXES = ("../examples/", "../gui/") + tuple(
+    f"../{d.name}/" for d in (REPO / "docs").iterdir() if d.is_dir()
+)
+
+
+def _site_docs_link(text: str, ups: int) -> str:
+    """``(<ups x ../>)docs/X.md#a`` -> ``(../X.md#a)``: a link from a copied
+    page to a repo-level page of ``docs/`` stays inside the site instead of
+    being sent to GitHub. ``ups`` is how many ``../`` reach the repo root
+    from the source folder, so a link into some other ``docs/`` folder (the
+    GUI's own ``docs/html``, say) is left alone."""
+    return re.sub(
+        r"\((?:\.\./){%d}docs/([A-Za-z0-9_\-/]+\.md(?:#[A-Za-z0-9_\-]+)?)\)" % ups,
+        r"(../\1)",
+        text,
+    )
 
 
 def _absolutize_escaping_links(text: str, src_rel_dir: str) -> str:
@@ -111,6 +129,8 @@ def _rewrite_gui(text: str) -> str:
     text = re.sub(r"\(\.\./img/", "(img/", text)
     # ../html/X.html -> X.md   (the shipped HTML twin is not part of this site)
     text = re.sub(r"\(\.\./html/([A-Za-z0-9_\-]+)\.html\)", r"(\1.md)", text)
+    # ../../../../docs/X.md -> ../X.md   (repo-level docs are in this site)
+    text = _site_docs_link(text, 4)
     return text
 
 
@@ -124,6 +144,8 @@ def _rewrite_examples(text: str) -> str:
     )
     text = re.sub(r"\(\.\./img/", "(img/", text)
     text = re.sub(r"\(\.\./html/([A-Za-z0-9_\-]+)\.html\)", r"(\1.md)", text)
+    # ../../../docs/X.md -> ../X.md   (repo-level docs are in this site)
+    text = _site_docs_link(text, 3)
     return text
 
 

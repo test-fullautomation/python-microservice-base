@@ -21,6 +21,7 @@
  *     spec: { mode: 'module' | 'html', base, entry, fn, args, ctx, label, selection, onReveal, onEdit }
  *     onReveal(target): the frame's ctx.reveal(target), for hosts that show
  *     what a view points at (file views: jump to a node in the source).
+ *     onBreakpoint(id): the frame's ctx.breakpoint(id) (a step's breakpoint dot).
  *     onEdit(change): the frame's ctx.edit(change); its result (or a
  *     promise of it) is the answer, a throw or rejection the refusal.
  *     Without it the frame's ctx.edit is refused (a read-only view).
@@ -304,6 +305,9 @@
             // The host view applies it (or not); the frame only gets the answer.
             if (typeof spec.onEdit !== 'function') return refuse({ code: 'ReadOnly', message: 'this view cannot edit' });
             return Promise.resolve(spec.onEdit(JSON.parse(JSON.stringify(a[0] == null ? null : a[0])))).then(reply, refuse);
+          case 'breakpoint':
+            if (typeof spec.onBreakpoint === 'function') spec.onBreakpoint(String(a[0] == null ? '' : a[0]).slice(0, 500));
+            return reply(null);
           case 'reveal':
             // Plain data only; what to do with it is the host view's call.
             if (typeof spec.onReveal === 'function') spec.onReveal(JSON.parse(JSON.stringify(a[0] == null ? null : a[0])));

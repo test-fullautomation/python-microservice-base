@@ -19,6 +19,7 @@ validated and can be rendered; skipped otherwise.
 """
 import importlib.util
 import json
+import re
 import os
 import sys
 
@@ -105,7 +106,11 @@ class Test_Insert:
     def test_a_new_loop_comes_with_a_step_to_replace(self):
         text, node = edit({"op": "insert", "kind": "loop", "attrs": {"id": "retry", "max_loops": 5}, "before": "off"})
         assert node == "retry"
-        assert "WHILE    True    limit=5    on_limit=pass" in lines(text)
+        # A loop in a test phase: a plain WHILE, or (a fork with checkpoints)
+        # its Flow Loop bookkeeping with the same limit, then the WHILE.
+        assert ("WHILE    True    limit=5    on_limit=pass" in lines(text)
+                or any(re.match(r"\$\{flow_limit_retry\}\s+\$\{flow_deadline_retry\}=\s+Flow Loop\s+retry\s+5\b", l)
+                       for l in lines(text)))
         assert "No Operation" in lines(text)
 
     def test_a_new_decision_has_both_branches_empty(self):

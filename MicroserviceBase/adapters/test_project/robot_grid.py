@@ -23,6 +23,16 @@ this cell names (Run Keyword and friends)}``. Only the keywords the file
 uses are sent in full; ``catalog`` says how many were found.
 
 Nothing here writes: the grid is read-only (phase 1).
+
+Where a keyword is defined, for an editor's *Go to Definition*::
+
+    python robot_grid.py --define <path>   < {"text": ..., "name": ...}
+
+``path`` is a suite, a resource or a flow file (``*.flow.json``: its
+``imports`` are what it can call). ``name`` is the keyword as written in a
+call, or an import's name. Prints ``{"ok", "found", "source", "line",
+"name", "owner", "owner_type"}``; ``source`` is a file path, ``line`` 1-based
+(or null when only the file is known).
 """
 
 import hashlib
@@ -66,7 +76,7 @@ def _libdoc(spec, cache_key_extra=""):
     from robot.libdoc import LibraryDocumentation
     from robot.version import get_version
     path_mtime = os.path.getmtime(spec) if os.path.isfile(spec) else 0
-    key = hashlib.sha1(json.dumps([spec, cache_key_extra, path_mtime, get_version(), sys.executable,
+    key = hashlib.sha1(json.dumps(["v2", spec, cache_key_extra, path_mtime, get_version(), sys.executable,
                                    os.environ.get("PYTHONPATH", "")]).encode("utf-8")).hexdigest()
     cached = os.path.join(CACHE_DIR, key + ".json")
     try:
@@ -76,9 +86,11 @@ def _libdoc(spec, cache_key_extra=""):
     except (OSError, ValueError):
         pass
     doc = LibraryDocumentation(spec).to_dictionary()
-    data = {"name": doc.get("name", ""), "type": doc.get("type", ""),
+    data = {"name": doc.get("name", ""), "type": doc.get("type", ""), "source": doc.get("source") or None,
             "keywords": [{"name": k.get("name", ""), "args": _arg_dicts(k.get("args")),
-                          "shortdoc": k.get("shortdoc", ""), "doc": (k.get("doc") or "")[:4000]}
+                          "shortdoc": k.get("shortdoc", ""), "doc": (k.get("doc") or "")[:4000],
+                          "source": k.get("source") or doc.get("source") or None,
+                          "lineno": k.get("lineno") or None}
                          for k in doc.get("keywords") or []]}
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
@@ -116,7 +128,8 @@ def _file_keywords(model):
                         args.append(_user_arg(value))
                 elif t == "Documentation":
                     doc = stmt.value
-            out.append({"name": kw.name, "args": args, "shortdoc": doc.split("\n")[0], "doc": doc[:4000]})
+            out.append({"name": kw.name, "args": args, "shortdoc": doc.split("\n")[0], "doc": doc[:4000],
+                        "lineno": kw.lineno})
     return out
 
 
@@ -226,7 +239,7 @@ def build_catalog(model, path, text_is_resource):
                     try:
                         doc = _libdoc(spec)
                         catalog.add(doc["name"] or stmt.name, "library", doc["keywords"], alias=stmt.alias)
-                        record.update(ok=True, keywords=len(doc["keywords"]))
+                        record.update(ok=True, keywords=len(doc["keywords"]), source=doc.get("source"))
                     except Exception as exc:  # noqa: BLE001 -- say which import, keep going
                         record["error"] = str(exc).splitlines()[0][:300]
                     catalog.imports.append(record)
@@ -240,6 +253,7 @@ def build_catalog(model, path, text_is_resource):
                         record["error"] = f"No such file: {resolved}"
                         catalog.imports.append(record)
                         continue
+                    record["source"] = rpath
                     try:
                         doc = _libdoc(rpath)
                         catalog.add(doc["name"] or os.path.splitext(os.path.basename(rpath))[0], "resource",
@@ -258,7 +272,7 @@ def build_catalog(model, path, text_is_resource):
 
     catalog.variables = _variables_of(model, os.path.basename(path))
     imports_of(model, os.path.abspath(path), True, 0)
-    own = _file_keywords(model)
+    own = [dict(kw, source=os.path.abspath(path)) for kw in _file_keywords(model)]
     catalog.add(os.path.splitext(os.path.basename(path))[0], "file", own)
     return catalog
 
@@ -1203,9 +1217,68 @@ def main_edit():
         return {"ok": False, "missing": True, "error": f"This interpreter has no Robot Framework ({exc})."}
 
 
+_BDD_PREFIX = re.compile(r"^(given|when|then|and|but)\s+", re.I)
+
+
+def _flow_suite_text(flow):
+    """A suite's Settings with a flow file's imports, so they resolve as in a suite."""
+    imports = flow.get("imports") if isinstance(flow.get("imports"), dict) else {}
+    lines = ["*** Settings ***"]
+    for setting, section in (("Library", "libraries"), ("Resource", "resources"), ("Variables", "variables")):
+        for item in imports.get(section) or []:
+            parts = [str(p) for p in item] if isinstance(item, list) else [str(item)]
+            if parts and parts[0].strip():
+                lines.append("    ".join([setting] + parts))
+    return "\n".join(lines) + "\n"
+
+
+def define(path, text, name):
+    """Where ``name`` -- a keyword as called, or an import -- is defined."""
+    from robot.api.parsing import get_model, get_resource_model
+    name = str(name or "").strip()
+    if not name:
+        return {"ok": True, "found": False}
+    if path.lower().endswith(".flow.json"):
+        try:
+            flow = json.loads(text)
+        except ValueError as exc:
+            return {"ok": False, "error": f"The flow is not valid JSON: {exc}"}
+        model, is_resource = get_model(_flow_suite_text(flow if isinstance(flow, dict) else {})), False
+    else:
+        is_resource = path.lower().endswith(".resource")
+        model = (get_resource_model if is_resource else get_model)(text)
+    catalog = build_catalog(model, path, is_resource)
+    # An import: the resource file, or the library's source.
+    for record in catalog.imports:
+        if record.get("via") is None and record.get("source") and (record["name"] or "").strip() == name:
+            return {"ok": True, "found": True, "source": record["source"], "line": None,
+                    "name": record["name"], "owner": record["name"], "owner_type": record["type"]}
+    entry = catalog.find(name) or catalog.find(_BDD_PREFIX.sub("", name))
+    if not entry or not entry.get("source"):
+        return {"ok": True, "found": False, "name": name}
+    return {"ok": True, "found": True, "source": entry["source"], "line": entry.get("lineno"),
+            "name": entry["name"], "owner": entry["owner"], "owner_type": entry["owner_type"]}
+
+
+def main_define():
+    path = sys.argv[2]
+    try:
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8-sig", errors="replace") or "{}")
+    except ValueError as exc:
+        return {"ok": False, "error": f"Bad request: {exc}"}
+    try:
+        return define(path, str(payload.get("text") or ""), payload.get("name"))
+    except ImportError as exc:
+        return {"ok": False, "missing": True, "error": f"This interpreter has no Robot Framework ({exc})."}
+    except Exception as exc:  # noqa: BLE001 -- an answer, not a traceback
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--edit":
         return main_edit()
+    if len(sys.argv) > 2 and sys.argv[1] == "--define":
+        return main_define()
     path = sys.argv[1]
     text = sys.stdin.buffer.read().decode("utf-8-sig", errors="replace")
     try:

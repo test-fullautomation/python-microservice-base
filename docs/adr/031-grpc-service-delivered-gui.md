@@ -78,6 +78,20 @@ descriptor, so they cannot drift.
 `ui/<Service><version>/` layout is matched, so a generated service serves
 its component with no extra code.
 
+The C++ runtime does the same (`runtime_cpp`, `ServiceGui.h/.cpp`): with
+`<PREFIX>GUI` set, `ServiceRunner` registers `Meta.gui` and a
+`grpc::CallbackGenericService` that answers only
+`/microservicebase.gui.v1.ServiceGui/*` (anything else stays
+UNIMPLEMENTED). It writes the two messages by hand, so it needs no
+generated code and no new dependency, and it packs the folder with the
+same rules as the Python side — files sorted, `__pycache__`, `.git`,
+`*.log` and the like skipped, SHA-256 over path and content — so the
+checksum matches byte for byte. The folder is `<PREFIX>GUI_DIR`, else
+`gui/<gui>`, `ui/<gui>`, `GUIs/<gui>`, `<gui>` or `../interfaces/gui/<gui>`
+beside the executable, then the same under the working folder. The last
+candidate fits a deploy that keeps binaries in `service/` and descriptors
+in `interfaces/`.
+
 `ServiceGui` is served but **not advertised through reflection**. Its
 types live in a private descriptor pool, so reflection could list the
 service but not describe it — and a client that walks the list, like the
@@ -130,10 +144,11 @@ A missing folder never sends a stored checksum, or the bridge would answer
 
 ### Negative
 
-- Services that are not built on `ServiceRunner` (other languages, the C++
-  runtime, third-party services) do not serve the contract; the GUI falls
-  back to the local folder and says so. Their panels still need shipping by
-  other means.
+- Services that are not built on a `ServiceRunner` (other languages,
+  third-party services) do not serve the contract; the GUI falls back to
+  the local folder and says so. Their panels still need shipping by other
+  means. (The C++ runtime serves it since October 2026, see *Service
+  side*.)
 - A service now reads its GUI folder at request time; a service that is
   deployed without its files answers `available: false` rather than failing
   loudly.

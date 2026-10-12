@@ -114,6 +114,25 @@ Graceful deregistration and process teardown.
 !include diagrams/gui_architecture.puml
 ```
 
+### Live signals: host bus and bridge
+
+The host bus (`web/js/endo/bus.js`) is the JavaScript half in the GUI
+window; the bridge's signal routes and hub (`adapters/ui_bridge/signal_routes.py`,
+`adapters/signals/hub.py`) are the Python half. One WebSocket per window
+carries every subscription; the hub keeps one gRPC stream per graph service.
+Colours: purple frames, blue JavaScript, amber Python, green services, pink
+streaming.
+
+```plantuml
+!include diagrams/component_host_bus_bridge.puml
+```
+
+### One subscription, start to finish
+
+```plantuml
+!include diagrams/sequence_host_bus_subscribe.puml
+```
+
 ### GUI loading tiers
 
 ```plantuml

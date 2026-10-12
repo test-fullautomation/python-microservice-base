@@ -5,6 +5,99 @@ Significant changes since the framework's RabbitMQ-era origins.
 Architectural records (one file per decision) live in [`adr/`](../adr);
 this is the chronological summary.
 
+## Unreleased — Manager GUI: flows, views, live signals
+
+- **View roles.** The GUI opens in a view made of roles — *user* (Services,
+  Bench), *admin* (Nomad, plugins), *developer* (test projects, tools) —
+  from `settings.json`, *Settings → View* or `?view=` in the address.
+- **Flow Diagram editing.** *Edit flow* inserts, moves, changes, deletes and
+  wraps steps by drag and drop; each change is validated by the runner and
+  written back to the flow file.
+- **Sub-flows in the Diagram.** A `flow` step is drawn as one box that opens
+  in place; the live position follows a run into it.
+- **New flow.** A **+** on the project view's *Flows* group creates a flow
+  file from the runner's template and opens its Diagram.
+- **Signal Graph Studio.** *Run cluster* uses the Live panel's discovery
+  port and serves gRPC reflection from the clusters it starts.
+- **Docs.** Diagrams of the host bus and the bridge for live signals.
+- **C++ services serve their GUI.** The C++ runtime registers `Meta.gui`
+  from `<PREFIX>GUI` and serves the folder over `ServiceGui` (ADR-031),
+  with the same checksum as the Python runtime; `<PREFIX>GUI_DIR` or the
+  folders beside the executable, `../interfaces/gui/<gui>` included.
+- **A Qt service's own window.** The classic Qt WebAssembly panel of a
+  Consul gRPC service now reaches the service over gRPC
+  (`Module.endoToken`, methods found by reflection). **User → Service
+  view → Tiles | Service window** switches a service between its component
+  and that window; it moved from the Developer tab, and the button now
+  enables itself once a downloaded folder ships both.
+- **Dropdowns in forms.** A form field can be a dropdown: fixed `options`,
+  or `optionsFrom` the service (a list RPC, or a count RPC with a name per
+  index), `current` preselected; `reloadAfter` reads it again after a
+  call it depends on, from any tile of the component.
+- **Tile groups.** `groups` puts tiles under headers that expand and
+  collapse; a collapsed group's tiles are suspended, and the choice is
+  remembered.
+- **Components from protos.** `python -m MicroserviceBase.tools.ui_component`
+  writes a `component.json` from a service's protos: forms, dropdowns
+  (indexes 0 to count−1), `reloadAfter` links and groups.
+- **Pluggable test runners; Temporal.** A test project's runner now owns
+  its file types, the *Initialize* dialog's structure, folder detection,
+  *Check*, new tests and flows and the run command; the GUI shows them in
+  the runner's words. Other packages add runners as entry points
+  (`microservicebase.test_runners`). New runner **Temporal (Python SDK)**:
+  pytest tests running workflows, generated activities per service, JUnit
+  results (ADR-032, guide *Adding a test runner*). `describe()`'s
+  `detected` is now per runner.
+- **Themeable Grid and Diagram.** The neutrals and tints of the shared
+  `robot-grid` and `flow-view` styles are CSS variables (`--rg-*`,
+  `--fv-*`) with the current light colours as fallback: the GUI looks the
+  same, and a host such as an editor extension can give them a dark palette.
+- **Where a keyword is defined.** `robot_grid.py --define` answers where a
+  keyword called in a suite, resource or flow file is defined (file and
+  line), resolved like the Grid and the run; Libdoc's `source` and
+  `lineno` are kept in the keyword catalog. Editors use it for Go to
+  Definition.
+- **Pause, resume, stop and continue flow runs.** With the fork's flow
+  control: *Pause* / *Resume* a running flow (or one member of a run
+  group), where it holds shown in Runs and on the Diagram; *Stop* writes a
+  checkpoint; *Continue from checkpoint* starts a run that goes on where it
+  stopped; step mode from the Run dialog. Runner port: `can_pause`,
+  `control`, `control_state`, `member_env`, `restart_variables`,
+  `RunOptions.step`. The live position also follows the fork's checkpointed
+  loops, and step mode works with it.
+- **Debugging and Go to Definition in the project view.** *Debug* runs a
+  suite or flow with breakpoints (the editor's line numbers, the Diagram's
+  step dots, sub-flows included), stops on a failed keyword, steps over,
+  into (keywords, sub-flows, the Python function of a keyword of the user's
+  library) and out, shows the call stack, variables and a console, and marks
+  the stopped line and step in the editor and the Diagram. F12 / Ctrl+Click
+  goes to where Robot finds a keyword. The editor colours keyword calls,
+  control words, imports and named arguments too. The listener
+  (`flow_debug.py`) is shared with the VS Code extension; the runner port
+  gains `can_debug` and `define`.
+- **Breakpoints on the Diagram.** The `flow-view` plugin draws a breakpoint
+  dot on each step and marks the step a debugger paused at, when the host
+  sends `breakpoints` / `paused` and gives `ctx.breakpoint(id)` (the project
+  view's debugger and the VS Code extension do; without them it looks as
+  before).
+- **Starting the bridge on Linux.** With no Python set in *Settings*, the
+  Electron app ran `python`, which Ubuntu does not have, and reported only
+  "Bridge spawn returned no PID" with an older part of `launcher.log`. It
+  now runs `python3` there (`python` on Windows, or whichever of the two
+  is on PATH), waits until the process has started or failed, and says why
+  it failed (`spawn python ENOENT`), with the error written to the log first.
+- **Detecting local Nomad and Consul agents.** *Detect* found nothing
+  where psutil is older than 6 (`net_connections` is new in 6.0) or where an
+  HTTP proxy is set without `127.0.0.1` in `NO_PROXY`: both were swallowed.
+  The probes now go straight to the agent, either psutil works, and an
+  agent process that was seen but not reached is listed with the reason
+  (its ports cannot be read, no port answered, HTTP 403 needing a token).
+  Once connected, a Nomad or Consul on `127.0.0.1` / `localhost` is also
+  reached without the proxy; remote clusters keep it.
+- **FastAPI and uvicorn are base dependencies.** They were only the `web`
+  extra, so `pip install MicroserviceBase` gave a GUI whose bridge could
+  not start. The `web` extra stays, for installs that name it.
+
 ## Release 2.2.0 — 2026-05-27 — Robot generator + bridge fixes
 
 Manager GUI + bridge additions on top of 2.1.0. Targets the

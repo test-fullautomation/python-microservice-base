@@ -39,6 +39,25 @@ import ssl
 logger = logging.getLogger(__name__)
 
 
+def is_loopback_url(url):
+   """True for an http(s) URL on this machine: 127.x, ``localhost``, ``::1``."""
+   host = (urllib.parse.urlsplit(url).hostname or '').lower()
+   return host == 'localhost' or host == '::1' or host.startswith('127.')
+
+
+def _opener_for(address, ssl_context=None):
+   """The opener for ``address``: a local agent is reached directly.
+
+   urllib follows HTTP_PROXY. On corporate PCs that is a local Px, and
+   when NO_PROXY lacks 127.0.0.1 every call to a Nomad on this machine
+   goes to the proxy and fails. A remote cluster keeps the proxy.
+   """
+   handlers = [urllib.request.HTTPSHandler(context=ssl_context)]
+   if is_loopback_url(address):
+      handlers.append(urllib.request.ProxyHandler({}))
+   return urllib.request.build_opener(*handlers)
+
+
 class NomadAPIError(Exception):
    """
 Raised when the Nomad API returns a non-2xx response.
@@ -154,6 +173,10 @@ Construct a NomadClient bound to a Nomad server.
          self._ssl_context = ssl.create_default_context()
          self._ssl_context.check_hostname = False
          self._ssl_context.verify_mode = ssl.CERT_NONE
+      self._opener = _opener_for(self._address, self._ssl_context)
+
+   def _open(self, req):
+      return self._opener.open(req, timeout=self._timeout)
 
    def _url(self, path, params=None):
       url = f'{self._address}/v1/{path.lstrip("/")}'
@@ -176,9 +199,7 @@ Construct a NomadClient bound to a Nomad server.
          req.add_header('X-Nomad-Token', self._token)
 
       try:
-         resp = urllib.request.urlopen(
-            req, timeout=self._timeout, context=self._ssl_context
-         )
+         resp = self._open(req)
       except urllib.error.HTTPError as e:
          error_body = e.read().decode('utf-8', errors='replace')
          raise NomadAPIError(e.code, error_body, url) from e
@@ -206,9 +227,7 @@ Construct a NomadClient bound to a Nomad server.
          req.add_header('X-Nomad-Token', self._token)
 
       try:
-         resp = urllib.request.urlopen(
-            req, timeout=self._timeout, context=self._ssl_context
-         )
+         resp = self._open(req)
       except urllib.error.HTTPError as e:
          error_body = e.read().decode('utf-8', errors='replace')
          raise NomadAPIError(e.code, error_body, url) from e

@@ -63,6 +63,35 @@ class Test_Package:
         assert count == 3
         assert sorted(names) == ["DemoService.html", "assets/style.css", "component.json"]
 
+    def test_links_are_not_shipped(self, gui_dir, tmp_path):
+        """A link -- to a file or a folder -- may point outside the GUI folder:
+        it is neither followed nor shipped (runtime_cpp walks the same way)."""
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("not for the GUI", encoding="utf-8")
+        before = gui_server.GuiPackage(gui_dir, "DemoService1.0.0").package()[0]
+        made = []
+        try:
+            os.symlink(str(outside / "secret.txt"), os.path.join(gui_dir, "secret.txt"))
+            made.append("file link")
+        except (OSError, NotImplementedError):
+            pass
+        try:
+            os.symlink(str(outside), os.path.join(gui_dir, "linked"), target_is_directory=True)
+            made.append("folder link")
+        except (OSError, NotImplementedError):
+            if sys.platform == "win32":     # a junction needs no privilege
+                import subprocess
+                if subprocess.run(["cmd", "/c", "mklink", "/J", os.path.join(gui_dir, "junction"), str(outside)],
+                                  capture_output=True).returncode == 0:
+                    made.append("junction")
+        if not made:
+            pytest.skip("this system makes no links here")
+        checksum, blob, count = gui_server.GuiPackage(gui_dir, "DemoService1.0.0").package()
+        names = zipfile.ZipFile(__import__("io").BytesIO(blob)).namelist()
+        assert sorted(names) == ["DemoService.html", "assets/style.css", "component.json"], made
+        assert count == 3 and checksum == before
+
     def test_checksum_is_stable_across_calls(self, gui_dir):
         package = gui_server.GuiPackage(gui_dir, "DemoService1.0.0")
         assert package.package()[0] == package.package()[0]

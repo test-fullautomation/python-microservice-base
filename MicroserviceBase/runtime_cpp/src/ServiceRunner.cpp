@@ -94,6 +94,22 @@ int ServiceRunner::start() {
         builder.RegisterService(entry.service);
     }
 
+    // The service's own GUI folder, served on request (ServiceGui, the same
+    // contract as the Python runtime): the Manager GUI fetches it the first
+    // time it opens this service and again only when it changes.
+    if (!m_settings.gui.empty()) {
+        const std::string dir = resolveGuiDir(m_settings.gui, m_settings.gui_dir);
+        auto package = dir.empty() ? nullptr : std::make_shared<GuiPackage>(dir, m_settings.gui);
+        if (package && package->exists()) {
+            m_guiService = std::make_unique<ServiceGuiService>(package);
+            builder.RegisterCallbackGenericService(m_guiService.get());
+            std::cout << "[ServiceRunner] Serving GUI folder " << m_settings.gui << " from " << dir << std::endl;
+        } else {
+            std::cout << "[ServiceRunner] Meta.gui is " << m_settings.gui
+                      << " but no GUI folder was found; the Manager GUI will need the files locally" << std::endl;
+        }
+    }
+
     m_server = builder.BuildAndStart();
     if (!m_server) {
         throw std::runtime_error("Failed to start gRPC server on " + bind_target);

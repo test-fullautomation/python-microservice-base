@@ -109,7 +109,8 @@ class Test_Init:
         _write(root, "testsuites/old.robot", "*** Test Cases ***\n")
         before = tp.describe(str(root))
         assert before["initialized"] is False
-        assert before["detected"] == {"robot_suites": 1, "aio_config": True}
+        assert before["detected"]["robotframework-aio"] == {
+            "count": 1, "summary": "1 .robot file", "aio_config": True}
         result = tp.init_project(str(root), "robotframework-aio")
         assert CONFIG in result["kept"]
         assert _read(root, CONFIG) == "// mine\n"
@@ -366,7 +367,8 @@ class Test_BridgeEndpoints:
     def test_describe_then_init(self, client, tmp_path):
         d = client.post("/api/test-project/describe", json={"root": str(tmp_path)}).json()
         assert d["status"] == "ok" and d["initialized"] is False
-        assert {"id": "robotframework-aio", "name": "Robot Framework AIO"} in d["runners"]
+        assert {(r["id"], r["name"]) for r in d["runners"]} >= {
+            ("robotframework-aio", "Robot Framework AIO"), ("temporal-python", "Temporal (Python SDK)")}
 
         r = client.post("/api/test-project/init",
                         json={"root": str(tmp_path), "consul_addr": CONSUL}).json()
@@ -520,7 +522,7 @@ class Test_Editing:
             tp.write_project_file(root, "testsuites/nope.robot", "x")
         with pytest.raises(tp.TestProjectError, match="already exists"):
             tp.write_project_file(root, SUITE, "x", create=True)
-        with pytest.raises(tp.TestProjectError, match=r"\.robot, \.resource or \.flow\.json"):
+        with pytest.raises(tp.TestProjectError, match=r"must end in \.robot, \.flow\.json, \.resource"):
             tp.write_project_file(root, "testsuites/notes.txt", "x", create=True)
 
     def test_syntax_problems_are_reported_with_lines(self):

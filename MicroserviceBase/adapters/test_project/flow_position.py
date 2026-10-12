@@ -55,9 +55,43 @@ def install():
         return bool(emitters)
     for kind, emit in list(emitters.items()):
         emitters[kind] = _stamping(emit)
+    # A loop directly in a test phase is built apart, with its checkpoint
+    # bookkeeping (``Flow Loop``, the WHILE): the same stamps.
+    tracked = getattr(builder._Emitter, "_tracked_loop", None)
+    if tracked is not None:
+        builder._Emitter._tracked_loop = _stamping(tracked)
     builder._mm_positions = True
     _tolerate_new_output_files()
+    _keep_step_mode()
     return True
+
+
+def _keep_step_mode():
+    """The fork's step mode (``FLOW_STEP``) pauses before the steps that have no
+    line number -- a flow's own; a step with one is taken for a line of a
+    resource. Our stamps give flow steps one: hide it from that check, so the
+    flow still pauses before each of its steps."""
+    try:
+        from robot.flow import control
+    except ImportError:
+        return
+    flow_control = getattr(control, "FlowControl", None)
+    step = getattr(flow_control, "step", None)
+    if step is None or getattr(step, "_mm_stamps", False):
+        return
+
+    def stamp_aware(self, context, item):
+        lineno = getattr(item, "lineno", None)
+        if not (isinstance(lineno, int) and BASE <= lineno < BASE + len(NODES)):
+            return step(self, context, item)
+        item.lineno = None
+        try:
+            return step(self, context, item)
+        finally:
+            item.lineno = lineno
+
+    stamp_aware._mm_stamps = True
+    flow_control.step = stamp_aware
 
 
 def _tolerate_new_output_files():
@@ -81,10 +115,28 @@ def _tolerate_new_output_files():
     Listeners.output_file = output_file
 
 
+_BOOKKEEPING = []
+
+
+def _bookkeeping():
+    """Names of the keywords the fork adds for its checkpoint (``Flow Phase``,
+    ``Flow Loop``, ``Flow Iteration``); none with an older fork."""
+    if not _BOOKKEEPING:
+        names = set()
+        try:
+            from robot.flow import builder
+            names.update(getattr(builder, n) for n in ("PHASE_KEYWORD", "LOOP_KEYWORD", "ITERATION_KEYWORD")
+                         if isinstance(getattr(builder, n, None), str))
+        except ImportError:
+            pass
+        _BOOKKEEPING.append(frozenset(names))
+    return _BOOKKEEPING[0]
+
+
 def _stamping(emit):
-    def wrapper(self, body, step):
+    def wrapper(self, body, step, *more):
         before = len(body)
-        emit(self, body, step)
+        emit(self, body, step, *more)
         node = getattr(step, "id", None) or getattr(getattr(step, "node", None), "id", None)
         if node is None:
             return
@@ -98,6 +150,8 @@ def _stamping(emit):
         # every other kind builds exactly one item. Nested steps were stamped
         # by their own emitter already.
         for item in list(body)[before:]:
+            if getattr(item, "name", None) in _bookkeeping():
+                continue          # the fork's checkpoint keywords (Flow Loop, ...): not a step
             if getattr(item, "lineno", None) is None or item.lineno < BASE:
                 item.lineno = BASE + len(NODES)
                 NODES.append(str(node))

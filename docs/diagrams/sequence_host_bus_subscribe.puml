@@ -1,0 +1,49 @@
+@startuml sequence_host_bus_subscribe
+title One subscription, start to finish
+
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam sequenceMessageAlign left
+
+box "GUI window · JavaScript" #E0F2FE
+  participant "tile\n(frame)" as T #EDE9FE
+  participant "host.js" as H #F0F9FF
+  participant "bus.js\n(host bus)" as B #BAE6FD
+end box
+box "FastAPI bridge · Python" #FEF3C7
+  participant "signal_routes" as R #FDE68A
+  participant "SignalHub" as S #FFFBEB
+end box
+box "Services" #D1FAE5
+  participant "signal-discovery" as D #ECFDF5
+  participant "signal_graph" as G #ECFDF5
+end box
+
+T -> H : ctx.signals.subscribe(names)
+H -> B : capability ok → bus.subscribe
+note over B : first subscriber of a name?\nonly then does the bridge hear of it
+B -[#DB2777]> R : WebSocket {op: subscribe, names, discovery}
+R -> S : hub for this discovery address
+R -[#DB2777]> B : {type: ready, discovery}
+S -[#059669]> D : ListSignals
+D -[#059669]-> S : name → owning service
+S -[#DB2777]> G : Subscribe(union of names)
+
+loop while any tile watches
+  G -[#DB2777]> S : values, as they change
+  S -> S : keep latest, flush every 0.1 s
+  S -[#DB2777]> B : {type: update, values: [{name, value, ts}]}
+  B -> T : cb(name, value, ts) to every subscriber
+end
+
+== a second tile on the same name ==
+T -> B : subscribe(same name)
+B -> T : last value at once; nothing sent to the bridge
+
+== writes ==
+T -> B : ctx.signals.set(name, value)
+B -> R : POST /api/signals/set
+R -> S : set
+S -> G : SetSignal on the owner
+G --> T : {success, message}
+@enduml

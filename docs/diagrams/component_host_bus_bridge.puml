@@ -1,0 +1,66 @@
+@startuml component_host_bus_bridge
+title Live signals: the host bus (JavaScript) and the FastAPI bridge (Python)
+
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam ArrowColor #555555
+hide stereotype
+
+skinparam rectangle {
+  BackgroundColor<<win>> #E0F2FE
+  BorderColor<<win>> #0284C7
+  BackgroundColor<<bridge>> #FEF3C7
+  BorderColor<<bridge>> #D97706
+  BackgroundColor<<svc>> #D1FAE5
+  BorderColor<<svc>> #059669
+  BackgroundColor<<frame>> #EDE9FE
+  BorderColor<<frame>> #7C3AED
+}
+skinparam component {
+  BackgroundColor<<js>> #F0F9FF
+  BorderColor<<js>> #0284C7
+  BackgroundColor<<bus>> #BAE6FD
+  BorderColor<<bus>> #0369A1
+  BackgroundColor<<py>> #FFFBEB
+  BorderColor<<py>> #D97706
+  BackgroundColor<<routes>> #FDE68A
+  BorderColor<<routes>> #B45309
+  BackgroundColor<<s>> #ECFDF5
+  BorderColor<<s>> #059669
+  BackgroundColor<<consul>> #F1F5F9
+  BorderColor<<consul>> #64748B
+}
+
+rectangle "GUI window · JavaScript" <<win>> as WIN {
+  rectangle "Sandboxed frames · one per tile\n(no network access of their own)" <<frame>> as FRAMES
+  component "frame-host.js\nanswers each frame's ctx call;\nsuspend drops its subscriptions" <<js>> as FH
+  component "host.js · ctx.signals\ncapability check:\nsignals.subscribe · signals.set" <<js>> as HOST
+  component "bus.js · MM.endo.bus (host bus)\ncounts subscribers per name;\none WebSocket per window;\nreconnect 1 s to 15 s, resubscribe;\nlast value for late subscribers" <<bus>> as BUS
+}
+
+rectangle "FastAPI bridge · Python (localhost:1112)" <<bridge>> as BR {
+  component "signal_routes.py\nWS /api/signals/stream\nPOST /api/signals/set\nGET /api/signals/catalog · /stats\norigin check · one client per socket" <<routes>> as ROUTES
+  component "HubRegistry\none SignalHub per discovery address\n(client override, env, Consul)" <<py>> as REG
+  component "hub.py · SignalHub\ncatalog: name to owning service\none Subscribe stream per owner\nlatest value per signal, every 0.1 s\nset: SetSignal on the owner" <<py>> as HUB
+}
+
+rectangle "Services" <<svc>> as SV {
+  component "signal-discovery\nListSignals" <<s>> as DISC
+  component "signal_graph services\nSubscribe · SetSignal" <<s>> as GRAPH
+  component "Consul" <<consul>> as CONSUL
+}
+
+FRAMES -down-> FH : MessagePort
+FH -down-> HOST : ctx.signals
+HOST -down-> BUS : subscribe / set
+BUS -right[#DB2777,bold]-> ROUTES : WebSocket: subscribe,\nupdate at most 10 Hz;\nPOST for set
+ROUTES -up-> REG
+REG -up-> HUB
+HUB -right[#059669,dashed]-> DISC : catalog
+HUB -right[#DB2777,bold]-> GRAPH : Subscribe stream\nper owner
+REG -right.> CONSUL : find signal-discovery
+DISC -[hidden]down- GRAPH
+GRAPH -[hidden]down- CONSUL
+WIN -[hidden]right- BR
+BR -[hidden]right- SV
+@enduml

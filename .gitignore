@@ -121,3 +121,6 @@ htmlcov/
 # (template: tools/bazel/bazelrc.user.template)
 .bazelrc.user
 certs/
+
+# Screenshots of failed GUI probes
+MicroserviceBase/MicroserviceManagerGUI/test/gui/output/
