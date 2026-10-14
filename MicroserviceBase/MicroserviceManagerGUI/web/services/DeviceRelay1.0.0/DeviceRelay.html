@@ -1,0 +1,54 @@
+<div class="p-3" id="swGui">
+  <style>
+    #swGui table.sw-tbl {
+      font-size: 0.85rem;
+      table-layout: fixed;
+      width: 100%;
+    }
+    #swGui .sw-tbl td, #swGui .sw-tbl th {
+      vertical-align: middle;
+      font-variant-numeric: tabular-nums;
+    }
+    #swGui .sw-card {
+      border: 2px solid #dee2e6;
+      border-radius: 10px;
+      padding: 16px 20px;
+      background: #fff;
+      margin-bottom: 20px;
+      transition: border-color 0.3s ease;
+    }
+
+    @keyframes swPop { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  </style>
+
+  <div class="row g-3">
+    <div class="col-12 d-flex justify-content-between align-items-center mb-1">
+      <div class="text-muted small fw-bold"><i class="bi bi-toggle-on me-1"></i>Device Switching Channels</div>
+      <div class="small fw-bold text-secondary" id="swTarget"></div>
+    </div>
+    
+    <!-- Channels Container -->
+    <div class="col-12" id="swChannelsContainer">
+    </div>
+
+    <!-- Loading / Error hints -->
+    <div class="col-12" id="swHint">
+      <div class="alert alert-info py-2 small mb-0">Discovering Relay/Power Switch channels...</div>
+    </div>
+    <div class="col-12 d-none" id="swErrorWrap">
+      <div class="alert alert-danger py-2 small mb-0" id="swError"></div>
+    </div>
+  </div>
+
+  <!-- Custom Confirm Modal -->
+  <div class="d-none" id="swConfirmBackdrop" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:1050; display:flex; align-items:center; justify-content:center; backdrop-filter: blur(2px);">
+    <div class="sw-modal shadow-lg" style="background:#fff; border-radius:12px; padding:24px; width:360px; max-width:90%; animation: swPop 0.2s ease-out;">
+      <h5 class="fw-bold mb-3" id="swConfirmTitle" style="color:#2b2d42;">Confirm Action</h5>
+      <p id="swConfirmMsg" class="mb-4 text-muted" style="font-size:1.05rem;">Are you sure?</p>
+      <div class="d-flex justify-content-end gap-2">
+        <button id="swConfirmCancelBtn" class="btn fw-bold" style="background:#f1f3f5; color:#495057; border:none; padding:8px 16px; border-radius:8px;">Cancel</button>
+        <button id="swConfirmOkBtn" class="btn fw-bold text-white" style="background:#10b981; border:none; padding:8px 24px; border-radius:8px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
