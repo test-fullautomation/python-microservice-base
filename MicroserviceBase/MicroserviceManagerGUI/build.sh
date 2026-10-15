@@ -30,6 +30,27 @@ else
     echo "WARNING: Python not found at $PYTHON_PATH, skipping wheel build"
 fi
 
+# The wheel's dependencies for the deb's offline install (postinst.sh), for
+# each Python a supported distro ships: Ubuntu 22.04/24.04, Debian 12, 3.13.
+# WHEELHOUSE_INDEX_URL picks the index when pip's configured one is unreachable.
+echo "[3b/4] Downloading the dependency wheels..."
+WHEELHOUSE="$(pwd)/build-resources/wheelhouse"
+mkdir -p "$WHEELHOUSE"
+rm -f "$WHEELHOUSE"/*.whl
+MSB_WHEEL="$(ls build-resources/installers/microservicebase-*-py3-none-any.whl 2>/dev/null | head -n1)"
+if [ -n "$MSB_WHEEL" ]; then
+    for v in 3.10 3.11 3.12 3.13; do
+        "$PYTHON_PATH" -m pip download --quiet --disable-pip-version-check \
+            ${WHEELHOUSE_INDEX_URL:+--index-url "$WHEELHOUSE_INDEX_URL"} \
+            -d "$WHEELHOUSE" --only-binary=:all: --implementation cp --python-version "$v" \
+            --platform manylinux_2_28_x86_64 --platform manylinux_2_17_x86_64 \
+            --platform manylinux2014_x86_64 --platform linux_x86_64 \
+            "$MSB_WHEEL[web]" \
+        || echo "WARNING: no dependency wheels for Python $v; the deb downloads them at install time"
+    done
+    rm -f "$WHEELHOUSE"/microservicebase-*.whl
+fi
+
 echo "[4/4] Building..."
 if [ "$1" = "--pack" ]; then
     echo "Building unpacked directory..."
