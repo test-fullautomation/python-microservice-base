@@ -378,7 +378,7 @@ Return method descriptors for ``full_service_name``.
                 "name": f.name,
                 "number": f.number,
                 "type": _FIELD_TYPE_NAMES.get(f.type, str(f.type)),
-                "label": _FIELD_LABEL_NAMES.get(f.label, str(f.label)),
+                "label": _FIELD_LABEL_NAMES.get(_field_label(f), str(_field_label(f))),
             }
             if f.message_type is not None:
                 entry["message_type"] = f.message_type.full_name
@@ -396,7 +396,7 @@ Return method descriptors for ``full_service_name``.
         out: Dict[str, Any] = {}
         for f in msg_desc.fields:
             key = f.name
-            if f.label == 3:  # LABEL_REPEATED
+            if _field_label(f) == 3:  # LABEL_REPEATED
                 out[key] = []
                 continue
             if f.type == 11:  # TYPE_MESSAGE
@@ -1063,3 +1063,17 @@ _FIELD_LABEL_NAMES = {
     2: "required",
     3: "repeated",
 }
+
+
+def _field_label(f) -> int:
+    """Label number of a FieldDescriptor (1 optional, 2 required, 3 repeated).
+
+    protobuf 7 removed ``FieldDescriptor.label``; ``is_repeated`` and
+    ``is_required`` replace it.
+    """
+    label = getattr(f, "label", None)
+    if label is not None:
+        return label
+    if f.is_repeated:
+        return 3
+    return 2 if getattr(f, "is_required", False) else 1
