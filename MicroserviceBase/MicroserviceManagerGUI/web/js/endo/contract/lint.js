@@ -564,6 +564,12 @@
           }
         });
       });
+      // A kind renders in another component's tiles, with that component's
+      // ctx: the plugin's own capabilities and bindings would not hold there.
+      (Array.isArray(c.kinds) ? c.kinds : []).forEach(function (e, i) {
+        add('P', 'error', 'contributes.kinds[' + i + ']',
+            'a plugin a service delivers adds no tile kinds: a kind runs with the ctx of the component that uses it, not with the plugin\'s bindings');
+      });
       (req.capabilities || []).forEach(function (cap, i) {
         if (cap === 'files.project' || cap === 'process.spawn') {
           add('P', 'error', 'requires.capabilities[' + i + ']',

@@ -482,7 +482,9 @@ what. Raises ``ValueError`` naming the bad key.
    rid = request_id if request_id and _REQUEST_ID.match(request_id) else uuid.uuid4().hex
    out.append(("x-request-id", rid))
    user = _local_user()
-   if user:
+   # Optional: a login name that is no valid metadata value (non-ASCII,
+   # such as "jörg") is left out rather than failing every call.
+   if user and len(user) <= 1024 and all(32 <= ord(c) < 127 for c in user):
       out.append(("x-mm-user", user))
    return out, rid
 

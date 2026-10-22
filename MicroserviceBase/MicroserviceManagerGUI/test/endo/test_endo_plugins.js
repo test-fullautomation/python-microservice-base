@@ -396,6 +396,9 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
     const e = clone(sessions); e.requires.capabilities.push('files.project');
     check('P: a service plugin may not reach this PC\'s files', lintS(e).some((i) => i.rule === 'P' && i.severity === 'error' &&
           /files\.project/.test(i.message)));
+    const k = clone(sessions); k.contributes.kinds = [{ kind: 'session-badge', title: 'Session', entry: 'view.js' }];
+    check('P: a service plugin adds no tile kinds (they would run with another component\'s ctx)',
+          lintS(k).some((i) => i.rule === 'P' && i.severity === 'error' && i.path === 'contributes.kinds[0]'), lintS(k));
     const d = clone(sessions); d.binds = { grpc: ['a'], consul: 'other-service' };
     check('S: binds names proto services only; the service is the one that delivered it',
           rules(lintS(d), 'error').includes('S'), lintS(d));

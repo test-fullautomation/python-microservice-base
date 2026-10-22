@@ -96,9 +96,13 @@ def _detail(any_msg, pools) -> Dict[str, Any]:
             continue
         try:
             msg = message_factory.GetMessageClass(desc).FromString(any_msg.value)
-        except Exception:   # noqa: BLE001 -- bytes that do not match the type: fall through to raw
+            # The type's own pool, so an Any inside the detail resolves too.
+            out = MessageToDict(msg, preserving_proto_field_name=True, descriptor_pool=pool)
+        except Exception:   # noqa: BLE001 -- bytes or contents that do not convert: fall through to raw
             break
-        out = MessageToDict(msg, preserving_proto_field_name=True)
+        # Well-known types such as Duration convert to a string, not an object.
+        if not isinstance(out, dict):
+            break
         out["@type"] = type_name
         return out
     return {"@type": type_name, "value": base64.b64encode(any_msg.value).decode("ascii")}

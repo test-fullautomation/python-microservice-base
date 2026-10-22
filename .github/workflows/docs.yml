@@ -79,6 +79,11 @@ jobs:
       # machine something else has usually pulled urllib3 in already, so
       # the gap only shows up on a clean runner as:
       #   ModuleNotFoundError: No module named 'urllib3'
+      #
+      # selectolax is pinned below 1.0: mkdocs-glightbox 0.5.2 parses each
+      # page with it to wrap images for zooming, and with selectolax 1.0 the
+      # rewritten pages lose every <img> -- all PlantUML diagrams vanish and
+      # the verify step finds none.
       - name: Install ProperDocs toolchain
         run: |
           python -m pip install --upgrade pip
@@ -87,11 +92,12 @@ jobs:
             properdocs-theme-readthedocs \
             plantuml-markdown \
             mkdocs-glightbox \
+            'selectolax<1' \
             urllib3 \
             requests
 
       - name: Show installed versions
-        run: python -m pip list | grep -Ei 'properdocs|plantuml|glightbox|urllib3|requests|markdown'
+        run: python -m pip list | grep -Ei 'properdocs|plantuml|glightbox|selectolax|urllib3|requests|markdown'
 
       # The jar is gitignored (11 MB binary), so fetch it here. The path
       # must match `plantuml_cmd` in properdocs.yml: tools/plantuml.jar

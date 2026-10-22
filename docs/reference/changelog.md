@@ -35,6 +35,15 @@ this is the chronological summary.
   sends `x-request-id` and `x-mm-user` with every GUI call, and
   `/api/grpc/call` answers `code`, `details` and `request_id`. An unknown
   method name is now reported as such instead of a bare `KeyError`.
+- **Service plugins, tightened.** A service's plugin may not add tile
+  kinds; an allowance belongs to one Consul (`id@service@consul`); offers
+  with an invalid plugin id are ignored; a changed `Meta.gui` reloads the
+  plugin, and a load overtaken by a withdrawal or the service leaving is
+  dropped. A detail the bridge cannot turn into an object (a `Duration`,
+  say) arrives raw instead of replacing the error; a login name that is no
+  valid metadata value is left out of `x-mm-user`. On Linux the app picks
+  the bundled Python environment when the settings name a system Python or
+  a Windows path; the install hook no longer edits users' settings.
 - **C++ services serve their GUI.** The C++ runtime registers `Meta.gui`
   from `<PREFIX>GUI` and serves the folder over `ServiceGui` (ADR-031),
   with the same checksum as the Python runtime; `<PREFIX>GUI_DIR` or the

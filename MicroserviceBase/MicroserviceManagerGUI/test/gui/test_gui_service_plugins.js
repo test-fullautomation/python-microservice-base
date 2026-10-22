@@ -15,6 +15,7 @@ const CONFIG = { plugin: 'config-demo', service: 'configuration-hub-demo', folde
 const REFUSED = { plugin: 'refused-demo', service: 'overreaching-demo', folder: 'RefusedDemo0.1.0' };
 const CLASH = { plugin: 'charts', service: 'impostor-demo', folder: 'SessionsDemo0.1.0' };
 const NAV = '#sidebarSwitch [data-mode="plugin:sessions-demo/sessions"]';
+const CLASH_ID = 'charts@impostor-demo@http://127.0.0.1:8500';   // id@service@consul
 
 probe('GUI probe: service plugins', async (t) => {
   const g = await t.open({});
@@ -33,7 +34,7 @@ probe('GUI probe: service plugins', async (t) => {
   t.check('sessions-demo is listed as delivered by its service', s && s.source === 'service' && s.service === SESSIONS.service, s);
   t.check('sessions-demo waits for an administrator (blocked)', s && s.state === 'blocked', s);
   t.check('a blocked plugin adds no tab', !(await g.js(`!!document.querySelector(${JSON.stringify(NAV)})`)));
-  const clash = await info('charts@impostor-demo');
+  const clash = await info(CLASH_ID);
   t.check('a service plugin cannot take the id of a plugin shipped with the GUI', clash && clash.state === 'refused' &&
           /bundled plugin "charts"/.test(clash.error), clash);
   t.check('the shipped charts plugin is untouched', (await info('charts')).state === 'active');
@@ -109,10 +110,35 @@ probe('GUI probe: service plugins', async (t) => {
   t.check('its service gone: offline', s && s.state === 'offline' && /not registered in Consul/.test(s.error), s);
   t.check('its service gone: the tab is removed', !(await g.js(`!!document.querySelector(${JSON.stringify(NAV)})`)));
   t.check('the GUI leaves the plugin\'s view', (await g.js("!!document.querySelector('.app-content > [data-endo-mode=\"plugin:sessions-demo/sessions\"]')")) === false);
-  t.check('the clash entry goes with its service', (await info('charts@impostor-demo')) === null);
+  t.check('the clash entry goes with its service', (await info(CLASH_ID)) === null);
   await offer([SESSIONS, CONFIG, REFUSED]);
   t.check('its service back: active again without asking', await g.waitFor(async () => ((await info('sessions-demo')) || {}).state === 'active', 8000));
   t.check('its service back: the tab is back', await g.waitForSelector(NAV, 5000));
+
+  // ---- the same names in another Consul are another publisher: asked again
+  await offer([Object.assign({}, SESSIONS, { consulUrl: 'http://other-cluster:8500' }), CONFIG, REFUSED]);
+  s = await info('sessions-demo');
+  t.check("another Consul delivering the same plugin is not allowed by this one's allowance", s && s.state === 'blocked', s);
+  t.check('and its tab is gone', !(await g.js(`!!document.querySelector(${JSON.stringify(NAV)})`)));
+  await offer([SESSIONS, CONFIG, REFUSED]);
+  t.check('the allowed Consul back: active again', await g.waitFor(async () => ((await info('sessions-demo')) || {}).state === 'active', 8000));
+
+  // ---- Meta.gui changes under a registered service: the new folder is loaded
+  await offer([Object.assign({}, SESSIONS, { folder: 'ConfigDemo0.1.0' }), CONFIG, REFUSED]);
+  s = await info('sessions-demo');
+  t.check('a new folder is read again (its plugin.json names another id: refused)', s && s.state === 'refused' &&
+          s.issues.some((i) => /Meta\.gui_plugin/.test(i)), s);
+  t.check("the old folder's tab is gone", !(await g.js(`!!document.querySelector(${JSON.stringify(NAV)})`)));
+  await offer([SESSIONS, CONFIG, REFUSED]);
+  t.check('the right folder again: active', await g.waitFor(async () => ((await info('sessions-demo')) || {}).state === 'active', 8000));
+  await g.waitForSelector(NAV, 5000);
+
+  // ---- an offer with an id outside the plugin-id pattern is ignored
+  const EVIL = { plugin: 'x"],body,[data-endo-plugin="x', service: 'evil-demo', folder: 'SessionsDemo0.1.0' };
+  await offer([SESSIONS, CONFIG, REFUSED, EVIL]);
+  t.check('an invalid plugin id is not listed', !(await g.js("MicroserviceManager.endo.plugins.list().some(function (p) { return /body/.test(p.id); })")));
+  await offer([SESSIONS, CONFIG, REFUSED]);
+  t.check('and cannot take the page with it', await g.js("!!document.querySelector('.app-content') && !!document.body.children.length"));
 
   // ---- the administrator withdraws the allowance
   await g.js("MicroserviceManager.endo.plugins.setAllowed('sessions-demo', false)");
