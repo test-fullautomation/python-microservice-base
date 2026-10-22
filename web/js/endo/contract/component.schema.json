@@ -43,7 +43,7 @@
     },
     "tiles": { "type": "array", "items": { "$ref": "#/definitions/tile" } },
     "groups": {
-      "description": "tiles shown under a header that expands and collapses; a tile in no group stays as it is. A collapsed group's tiles are suspended (R5). Shells without groups show every tile flat.",
+      "description": "tiles shown together in a box that expands and collapses; a tile in no group stays as it is. A collapsed group's tiles are suspended (R5). Shells without groups show every tile flat.",
       "type": "array",
       "items": {
         "type": "object",
@@ -53,7 +53,8 @@
           "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
           "title": { "type": "string", "minLength": 1 },
           "tiles": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-          "collapsed": { "type": "boolean", "description": "how the group starts; the user's choice is remembered" }
+          "collapsed": { "type": "boolean", "description": "how the group starts; the user's choice is remembered" },
+          "w": { "type": "integer", "minimum": 1, "maximum": 4, "description": "the box's width in stage columns on a service's page; default: its tiles' widths added up, at most 4. On the bench a group is a piece of any shape and w does not apply" }
         }
       }
     },

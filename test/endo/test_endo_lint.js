@@ -262,6 +262,12 @@ check('SHELL_VERSION is 2.3.x', /^2\.3\./.test(C.SHELL_VERSION));
   const ids = GOOD.tiles.map((t) => t.id);
   const ok = lint(withGroups([{ id: 'main', title: 'Main', tiles: [ids[0]], collapsed: true }]));
   check('groups: a group of existing tiles lints clean', ok.length === 0, ok.map(C.formatIssue));
+  const wide = lint(withGroups([{ id: 'main', title: 'Main', tiles: [ids[0]], w: 2 }]));
+  check('groups: a box width of 1-4 columns lints clean', wide.length === 0, wide.map(C.formatIssue));
+  [0, 5, 1.5, '2'].forEach((w) => {
+    check('groups: box width ' + JSON.stringify(w) + ' is a structure error',
+          lint(withGroups([{ id: 'main', title: 'Main', tiles: [ids[0]], w: w }])).some((i) => i.rule === 'S' && /\.w$/.test(i.path)));
+  });
   check('groups: a tile that does not exist is refused',
         lint(withGroups([{ id: 'g', title: 'G', tiles: ['nope'] }])).some((i) => i.rule === 'S' && /no tile "nope"/.test(i.message)));
   check('groups: a tile in two groups is refused',

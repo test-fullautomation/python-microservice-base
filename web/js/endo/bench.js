@@ -45,6 +45,7 @@
     modules: [],
     slots: [],
     group: null,         // instanceGroup of every mounted tile
+    pieces: {},          // module id -> its piece colour (1-based), for components with groups
     selectedKey: null,
     active: false,
     dirty: true,
@@ -415,15 +416,29 @@
       stage.appendChild(section);
     });
 
-    // A component's groups: headers where their first tile landed in the
-    // composition's order; collapsing on the bench is remembered for this
+    // A component's groups: pieces of any shape, each tile of a group
+    // touching another, packed with the other tiles like Tetris pieces
+    // (MM.endo.shapeStage); collapsing on the bench is remembered for this
     // composition only.
+    // Each component with groups gets a piece colour, in bench order, so
+    // its pieces look alike; the nav shows the same colour as the legend.
     var compId = (state.comp && state.comp.composition) || '';
+    var shaped = false;
+    state.pieces = {};
+    state.modules.forEach(function (m) {
+      if (m.state === 'ok' && m.manifest && (m.manifest.groups || []).length) {
+        state.pieces[K().moduleId(m)] = Object.keys(state.pieces).length + 1;
+      }
+    });
     entriesByModule.forEach(function (b) {
+      if ((b.mod.manifest.groups || []).length) shaped = true;
       MM.endo.applyGroups(stage, b.entries, b.mod.manifest.groups,
-                          { scope: 'bench:' + compId, component: b.mod.manifest.component, source: b.mod.manifest.title })
+                          { scope: 'bench:' + compId, component: b.mod.manifest.component,
+                            source: b.mod.manifest.title, layer: b.mod.manifest.layer,
+                            piece: state.pieces[K().moduleId(b.mod)], shape: true })
         .forEach(function (inst) { if (inst) instances.push(inst); });
     });
+    if (shaped) instances.push(MM.endo.shapeStage(stage));
 
     drawStatus();
     drawNav();
@@ -596,8 +611,11 @@
       state.modules.map(function (m) {
         var layer = m.manifest && C().LAYERS.indexOf(m.manifest.layer) >= 0 ? m.manifest.layer : null;
         var id = K().moduleId(m);
-        return '<li class="list-group-item bench-nav-item state-' + m.state + '" tabindex="0" data-component="' + esc(id) + '"' +
-          (layer ? ' style="--layer:' + MM.endo.layerVar(layer) + '"' : '') + '>' +
+        var piece = state.pieces && state.pieces[id];
+        var style = (layer ? '--layer:' + MM.endo.layerVar(layer) + ';' : '') + (piece ? '--piece:' + MM.endo.pieceVar(piece) : '');
+        return '<li class="list-group-item bench-nav-item state-' + m.state + (piece ? ' has-piece' : '') +
+          '" tabindex="0" data-component="' + esc(id) + '"' +
+          (style ? ' style="' + style + '"' : '') + '>' +
           '<div class="svc-row"><div class="svc-name"><i class="bench-layer-dot" aria-hidden="true"></i>' +
           esc((m.manifest && m.manifest.title) || (m.entry && m.entry.service) || id) + '</div>' +
           '<div class="svc-hint">' + esc(layer || '—') + ' · ' + esc((m.entry && m.entry.service) || '') +

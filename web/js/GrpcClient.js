@@ -96,7 +96,14 @@
      * @param {string} [opts.consulUrl]  Consul cluster URL (for multi-Consul).
      * @param {string} [opts.protoPath]  .proto search dir for the
      *     LocalProtoClient fallback (see getServiceMethods).
-     * @returns {Promise<object>}
+     * @param {number} [opts.timeout]    Seconds before the call fails
+     *     with DEADLINE_EXCEEDED (default: the bridge's).
+     * @param {object} [opts.metadata]   Request metadata {key: value}; the
+     *     bridge adds x-request-id and x-mm-user.
+     * @param {string} [opts.requestId]  Id of the call (the bridge makes one
+     *     when empty); every answer carries it as request_id.
+     * @returns {Promise<object>} {ok, result | events, request_id} or, on a
+     *     failed call, {ok: false, error, code, details, request_id}.
      */
     callMethod: function (opts) {
       return _fetchJson('POST', '/api/grpc/call', {
@@ -105,7 +112,10 @@
         method:       opts.method,
         args_json:    opts.argsJson || '{}',
         consul:       opts.consulUrl || '',
-        proto_path:   opts.protoPath || ''
+        proto_path:   opts.protoPath || '',
+        timeout:      opts.timeout || 0,
+        metadata:     opts.metadata || {},
+        request_id:   opts.requestId || ''
       });
     }
   };
