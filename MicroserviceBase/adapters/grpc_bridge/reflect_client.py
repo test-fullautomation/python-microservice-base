@@ -28,7 +28,7 @@ import json
 import logging
 import os
 import tempfile
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import grpc
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
@@ -65,6 +65,8 @@ def _msg_to_dict(msg):
         )
 from grpc_reflection.v1alpha import reflection_pb2, reflection_pb2_grpc
 
+from .rpc_status import status_of
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,9 +84,18 @@ Any failure from the reflection client — network, parse, or invoke.
   returned ``UNIMPLEMENTED`` for — the canonical signal that the server
   wasn't built with reflection support.  Bridge code uses this to decide
   whether to fall back to :class:`LocalProtoClient`.
+
+* ``code``, ``details``
+
+  / *Type*: str, list /
+
+  For a call the service failed: the gRPC status name (``"INVALID_ARGUMENT"``)
+  and its decoded ``google.rpc.Status`` details (see :mod:`.rpc_status`).
+  ``""`` and ``[]`` for a failure in the bridge itself.
     """
 
-    def __init__(self, message: str, *, is_unimplemented: bool = False) -> None:
+    def __init__(self, message: str, *, is_unimplemented: bool = False,
+                 code: str = "", details: Optional[List[Dict[str, Any]]] = None) -> None:
         """
 Construct a GrpcReflectError.
 
@@ -104,6 +115,15 @@ Construct a GrpcReflectError.
         """
         super().__init__(message)
         self.is_unimplemented = is_unimplemented
+        self.code = code
+        self.details = list(details or [])
+
+
+def _call_failed(exc: grpc.RpcError, pool) -> GrpcReflectError:
+    """The GrpcReflectError of a call the service failed, with its full status."""
+    st = status_of(exc, pool)
+    return GrpcReflectError("%s: %s" % (st["code"], st["message"]),
+                            code=st["code"], details=st["details"])
 
 
 class GrpcReflectClient:
@@ -378,7 +398,7 @@ Return method descriptors for ``full_service_name``.
                 "name": f.name,
                 "number": f.number,
                 "type": _FIELD_TYPE_NAMES.get(f.type, str(f.type)),
-                "label": _FIELD_LABEL_NAMES.get(f.label, str(f.label)),
+                "label": _FIELD_LABEL_NAMES.get(_field_label(f), str(_field_label(f))),
             }
             if f.message_type is not None:
                 entry["message_type"] = f.message_type.full_name
@@ -396,7 +416,7 @@ Return method descriptors for ``full_service_name``.
         out: Dict[str, Any] = {}
         for f in msg_desc.fields:
             key = f.name
-            if f.label == 3:  # LABEL_REPEATED
+            if _field_label(f) == 3:  # LABEL_REPEATED
                 out[key] = []
                 continue
             if f.type == 11:  # TYPE_MESSAGE
@@ -428,6 +448,8 @@ Return method descriptors for ``full_service_name``.
         args_json: str,
         max_events: int = 100,
         max_seconds: float = 15.0,
+        timeout: Optional[float] = None,
+        metadata: Optional[Sequence[Tuple[str, str]]] = None,
     ) -> Dict[str, Any]:
         """
 Invoke a unary-unary or server-streaming method.
@@ -475,6 +497,22 @@ intentionally rejected here.
 
   Server-streaming only: maximum wall-clock seconds before cancelling.
 
+* ``timeout``
+
+  / *Condition*: optional / *Type*: float / *Default*: the client's timeout /
+
+  Unary only: seconds before the call fails with ``DEADLINE_EXCEEDED``.
+
+* ``metadata``
+
+  / *Condition*: optional / *Type*: sequence of (key, value) /
+
+  Request metadata sent with the call (the bridge adds ``x-request-id``
+  and ``x-mm-user``).
+
+A call the service fails raises :class:`GrpcReflectError` with ``code``
+and ``details`` set from its ``google.rpc.Status``.
+
 **Returns:**
 
 * ``result``
@@ -486,7 +524,10 @@ intentionally rejected here.
         import time
 
         svc = self._service_descriptor(full_service_name)
-        method = svc.FindMethodByName(method_name)
+        try:
+            method = svc.FindMethodByName(method_name)
+        except KeyError:   # the C implementation raises instead of returning None
+            method = None
         if method is None:
             raise GrpcReflectError(
                 f"Method '{method_name}' not found in {full_service_name}"
@@ -519,9 +560,9 @@ intentionally rejected here.
                 response_deserializer=resp_cls.FromString,
             )
             try:
-                resp = call(req_msg, timeout=self._timeout)
+                resp = call(req_msg, timeout=timeout or self._timeout, metadata=metadata)
             except grpc.RpcError as exc:
-                raise GrpcReflectError(self._fmt_rpc_err(exc)) from exc
+                raise _call_failed(exc, self._pool) from exc
             return {
                 "streaming": False,
                 "result": _msg_to_dict(resp),
@@ -533,7 +574,7 @@ intentionally rejected here.
             request_serializer=req_cls.SerializeToString,
             response_deserializer=resp_cls.FromString,
         )
-        stream = call(req_msg, timeout=max_seconds + 2)
+        stream = call(req_msg, timeout=max_seconds + 2, metadata=metadata)
 
         events: List[Dict[str, Any]] = []
         truncated = False
@@ -559,7 +600,7 @@ intentionally rejected here.
                     "truncated": True,
                     "error": self._fmt_rpc_err(exc),
                 }
-            raise GrpcReflectError(self._fmt_rpc_err(exc)) from exc
+            raise _call_failed(exc, self._pool) from exc
         finally:
             try:
                 stream.cancel()
@@ -912,6 +953,8 @@ class LocalProtoClient:
         args_json: str,
         max_events: int = 100,
         max_seconds: float = 15.0,
+        timeout: Optional[float] = None,
+        metadata: Optional[Sequence[Tuple[str, str]]] = None,
     ) -> Dict[str, Any]:
         """Same semantics as :meth:`GrpcReflectClient.call_method`."""
         # Reuse GrpcReflectClient's invocation core by binding it to our
@@ -927,6 +970,8 @@ class LocalProtoClient:
             args_json=args_json,
             max_events=max_events,
             max_seconds=max_seconds,
+            call_timeout=timeout,
+            metadata=metadata,
         )
 
     def call_unary(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -952,6 +997,8 @@ def _invoke_method(
     args_json: str,
     max_events: int,
     max_seconds: float,
+    call_timeout: Optional[float] = None,
+    metadata: Optional[Sequence[Tuple[str, str]]] = None,
 ) -> Dict[str, Any]:
     import time
 
@@ -962,7 +1009,10 @@ def _invoke_method(
             f"Service '{full_service_name}' not in descriptor pool"
         ) from exc
 
-    method = svc.FindMethodByName(method_name)
+    try:
+        method = svc.FindMethodByName(method_name)
+    except KeyError:   # the C implementation raises instead of returning None
+        method = None
     if method is None:
         raise GrpcReflectError(
             f"Method '{method_name}' not found in {full_service_name}"
@@ -994,11 +1044,9 @@ def _invoke_method(
             response_deserializer=resp_cls.FromString,
         )
         try:
-            resp = call(req_msg, timeout=timeout)
+            resp = call(req_msg, timeout=call_timeout or timeout, metadata=metadata)
         except grpc.RpcError as exc:
-            raise GrpcReflectError(
-                GrpcReflectClient._fmt_rpc_err(exc)
-            ) from exc
+            raise _call_failed(exc, pool) from exc
         return {
             "streaming": False,
             "result": _msg_to_dict(resp),
@@ -1009,7 +1057,7 @@ def _invoke_method(
         request_serializer=req_cls.SerializeToString,
         response_deserializer=resp_cls.FromString,
     )
-    stream = call(req_msg, timeout=max_seconds + 2)
+    stream = call(req_msg, timeout=max_seconds + 2, metadata=metadata)
 
     events: List[Dict[str, Any]] = []
     truncated = False
@@ -1033,9 +1081,7 @@ def _invoke_method(
                 "truncated": True,
                 "error": GrpcReflectClient._fmt_rpc_err(exc),
             }
-        raise GrpcReflectError(
-            GrpcReflectClient._fmt_rpc_err(exc)
-        ) from exc
+        raise _call_failed(exc, pool) from exc
     finally:
         try:
             stream.cancel()
@@ -1063,3 +1109,17 @@ _FIELD_LABEL_NAMES = {
     2: "required",
     3: "repeated",
 }
+
+
+def _field_label(f) -> int:
+    """Label number of a FieldDescriptor (1 optional, 2 required, 3 repeated).
+
+    protobuf 7 removed ``FieldDescriptor.label``; ``is_repeated`` and
+    ``is_required`` replace it.
+    """
+    label = getattr(f, "label", None)
+    if label is not None:
+        return label
+    if f.is_repeated:
+        return 3
+    return 2 if getattr(f, "is_required", False) else 1

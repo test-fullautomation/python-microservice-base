@@ -2348,6 +2348,9 @@
               // Manager GUI to show (ServiceRunner registers settings.gui
               // as Meta.gui). Empty = no GUI.
               gui: (svc.Meta && svc.Meta.gui) || '',
+              // The id of a shell plugin in that folder (its plugin.json):
+              // pages, tabs and commands the service adds to the GUI.
+              guiPlugin: (svc.Meta && svc.Meta.gui && svc.Meta.gui_plugin) || '',
               instances: instances.length,
               status: _computeServiceStatus(instances)
             };
@@ -2454,11 +2457,40 @@
   }
 
   /**
+   * Tell the plugin manager which shell plugins the reachable services
+   * deliver (Meta.gui_plugin, plugin.json in their Meta.gui folder). The
+   * list is complete each time, so a service that left Consul takes its
+   * plugin with it. Allowing one is an administrator's step (Plugins).
+   */
+  function _offerServicePlugins() {
+    if (!MM.endo || !MM.endo.plugins || !MM.endo.plugins.offerServicePlugins) return;
+    var offers = [];
+    _connectedConsuls.forEach(function (conn) {
+      if (conn.alive === false) return;
+      (conn.services || []).forEach(function (svc) {
+        if (!svc.guiPlugin || !svc.gui) return;
+        var folder = String(svc.gui).replace(/^[\/\\]+|[\/\\]+$/g, '');
+        offers.push({
+          plugin: svc.guiPlugin,
+          service: svc.name,
+          consulUrl: conn.url,
+          folder: folder,
+          base: new URL(SERVICES_GUI_FOLDER + '/' + folder + '/', document.baseURI).href
+        });
+      });
+    });
+    MM.endo.plugins.offerServicePlugins(offers).catch(function (e) {
+      console.warn('[plugins] service plugins:', e);
+    });
+  }
+
+  /**
    * Render the sidebar from the current set of _connectedConsuls.  One
    * accordion group per Consul URL, with its services inside.  Called
    * whenever the connection list changes (add, remove, reload).
    */
   function _renderAllConnectedConsuls() {
+    _offerServicePlugins();
     var container = document.getElementById('servicesList');
     if (!container) return;
 
@@ -3887,7 +3919,8 @@
       var x = a[i], y = b[i];
       if (!x || !y) return false;
       if (x.name !== y.name || x.address !== y.address ||
-          x.port !== y.port || x.instances !== y.instances) return false;
+          x.port !== y.port || x.instances !== y.instances ||
+          x.gui !== y.gui || x.guiPlugin !== y.guiPlugin) return false;
       // Status kind is the most likely field to change.
       var sx = (x.status && x.status.kind) || '';
       var sy = (y.status && y.status.kind) || '';
@@ -8704,7 +8737,11 @@
         testproject: { sidebar: 'sidebarTestProject', content: 'testProjectContent' }
       },
       switchMode: function (mode) { switchMode(mode); },
-      currentMode: function () { return _currentMode; }
+      currentMode: function () { return _currentMode; },
+      // A service's plugin folder, brought up to date like its panel (ADR-031).
+      fetchServiceFiles: function (e) {
+        return _fetchGuiFromService({ name: e.service }, { consulUrl: e.consulUrl }, e.folder);
+      }
     });
     MM.endo.plugins.onChange(function (ev) {
       _syncSidebarSwitch();

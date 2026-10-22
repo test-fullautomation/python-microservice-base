@@ -96,6 +96,16 @@ service's name (e.g. ``HELLO_``).
   service instead of needing it copied there by hand. Empty = look for
   ``gui/<gui>``, ``ui/<gui>``, ``GUIs/<gui>`` or ``<gui>`` next to the
   service's entry module; nothing found = nothing served.
+
+* ``gui_plugin``
+
+  / *Type*: str / *Default*: "" /
+
+  Id of a shell plugin in the ``gui`` folder (its ``plugin.json``), for a
+  service that adds pages, tabs or commands to the Manager GUI rather than
+  only a panel. Registered as ``Meta.gui_plugin`` (only together with
+  ``gui``). The GUI downloads and runs it once an administrator allows it
+  on that PC; it runs in sandboxed frames and calls only this service.
     """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -112,3 +122,4 @@ service's name (e.g. ``HELLO_``).
 
     gui: str = ""
     gui_dir: str = ""
+    gui_plugin: str = ""

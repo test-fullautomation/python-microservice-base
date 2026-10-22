@@ -5,6 +5,13 @@
  * Where plugins come from:
  *   bundled    web/plugins/<id>/plugin.json, listed in web/plugins/index.json
  *   installed  <userData>/plugins/<id>/ (desktop app; wins over bundled)
+ *   service    a Consul service with Meta.gui_plugin = <id>: plugin.json in
+ *              the folder it serves over ServiceGui (Meta.gui, ADR-031).
+ *              app.js offers these after every Consul refresh. Nothing is
+ *              downloaded until an administrator allows the plugin on this
+ *              PC; it runs only in frames and its ctx reaches only the
+ *              service that delivered it. A service that leaves Consul takes
+ *              its plugin off the screen until it comes back.
  *
  * A plugin is enabled unless the user turned it off (Administrator →
  * Plugins; stored per PC). An enabled plugin that passes the linter is
@@ -21,6 +28,8 @@
  *   actions      { name: fn }   shell actions for commands ("robotGen", ...)
  *   views        { name: { sidebar, content } }  shell views for navigators
  *   switchMode(mode), currentMode()
+ *   fetchServiceFiles({ service, consulUrl, folder })  bring a service's
+ *                folder up to date (resolves when done; failure is tolerated)
  */
 (function () {
   'use strict';
@@ -29,10 +38,18 @@
   MM.endo = MM.endo || {};
 
   var DISABLED_KEY = 'mm_plugins_disabled';
+  var SERVICE_ALLOWED_KEY = 'mm_service_plugins_allowed';   // "<id>@<service>@<consul>", per PC
+  // What a service may offer, checked before anything is stored or put in a
+  // selector: the plugin id as plugin.schema.json has it, a Consul name as
+  // binds.uses has it.
+  var PLUGIN_ID = /^[a-z0-9][a-z0-9-]*$/;
+  var SERVICE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
   var SCHEMA_URL = 'js/endo/contract/plugin.schema.json';
   var PANEL = { user: 'ribbonUser', dev: 'ribbonDev', admin: 'ribbonAdmin' };
 
-  var hooks = { actions: {}, views: {}, switchMode: function () {}, currentMode: function () { return ''; } };
+  var hooks = { actions: {}, views: {}, switchMode: function () {}, currentMode: function () { return ''; },
+                fetchServiceFiles: function () { return Promise.resolve(false); } };
+  var pluginSchema = null;
   var plugins = [];          // { id, manifest, base, source, state, issues, error, applied }
   var listeners = [];
   var readyResolve;
@@ -40,6 +57,8 @@
   var viewInstances = {};    // mode -> { sidebar, content } instances of entry views
 
   function esc(s) { return MM.endo.util.esc(s); }
+  /** A value for a quoted attribute selector: ids come from plugin.json and Consul. */
+  function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, '\\$&'); }
   function C() { return window.EndoContract; }
 
   // ------------------------------------------------------------ state
@@ -50,6 +69,18 @@
   function saveDisabled(set) {
     try { localStorage.setItem(DISABLED_KEY, JSON.stringify(Array.from(set).sort())); } catch (e) { /* storage unavailable */ }
   }
+  function allowedSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(SERVICE_ALLOWED_KEY) || '[]')); } catch (e) { return new Set(); }
+  }
+  function saveAllowed(set) {
+    try { localStorage.setItem(SERVICE_ALLOWED_KEY, JSON.stringify(Array.from(set).sort())); } catch (e) { /* storage unavailable */ }
+  }
+  /** The Consul a service is registered in, so the same names in two clusters are two publishers. */
+  function consulOf(url) { return String(url || '').trim().toLowerCase().replace(/\/+$/, ''); }
+  function publisher(service, consulUrl) { return service + '@' + consulOf(consulUrl); }
+  function serviceKey(p) { return p.id + '@' + publisher(p.service, p.consulUrl); }
+  /** Ends whatever load of p is under way: its result is no longer applied. */
+  function invalidate(p) { p.gen = (p.gen || 0) + 1; }
   function byId(id) { return plugins.filter(function (p) { return p.id === id; })[0] || null; }
   function isActive(p) { return !!p && p.state === 'active'; }
 
@@ -130,9 +161,171 @@
     });
   }
 
-  /** Allow or block a window plugin (the main process owns the list). */
+  // ------------------------------------------------------------ service plugins
+
+  /**
+   * The plugins the connected services deliver, as app.js sees them after a
+   * Consul refresh: [{ plugin, service, consulUrl, folder, base, local }].
+   * `base` is the folder's URL; `local` means its files are already in place
+   * (copied by hand, a test fixture) and nothing is fetched. The list is the
+   * whole truth each time: a service missing from it has left Consul.
+   */
+  function offerServicePlugins(offers) {
+    return ready.then(function () {
+      var seen = Object.create(null);
+      var seenConflict = Object.create(null);
+      var changed = false;
+      var start = [];
+      var present = Object.create(null);    // every publisher in this offer, by serviceKey
+      (offers || []).forEach(function (o) {
+        if (o && o.plugin && o.service) present[o.plugin + '@' + publisher(o.service, o.consulUrl)] = true;
+      });
+      (offers || []).forEach(function (o) {
+        if (!o || !o.plugin || !o.service || !o.folder) return;
+        var id = String(o.plugin), service = String(o.service);
+        if (!PLUGIN_ID.test(id) || !SERVICE_NAME.test(service)) {
+          console.warn('[plugins] ignored an offer with an invalid plugin id or service name:', id, service);
+          return;
+        }
+        var key = id + '@' + publisher(service, o.consulUrl);
+        if (seen[key]) return;
+        seen[key] = true;
+        var p = byId(id);
+        if (p && p.source === 'service' && !p.conflict && !present[serviceKey(p)] &&
+            publisher(p.service, p.consulUrl) !== publisher(service, o.consulUrl)) {
+          // Its old publisher is gone and another one offers the id: a new
+          // publisher, so a new allowance (serviceKey), never the old one.
+          invalidate(p);
+          removeAll(p);
+          p.service = service;
+          p.consulUrl = o.consulUrl || '';
+          p.manifest = null;
+          p.issues = [];
+          p.state = 'offline';
+          changed = true;
+        }
+        var clash = p && (p.source !== 'service' ? 'the id is taken by the ' + p.source + ' plugin "' + id + '"'
+          : (publisher(p.service, p.consulUrl) !== publisher(service, o.consulUrl)
+            ? 'the id is already delivered by the service "' + p.service + '"' +
+              (consulOf(p.consulUrl) !== consulOf(o.consulUrl) ? ' in ' + (p.consulUrl || 'the default Consul') : '')
+            : ''));
+        if (clash) {
+          var cid = key;
+          seenConflict[cid] = true;
+          if (!byId(cid)) {
+            plugins.push({ id: cid, source: 'service', service: service, consulUrl: o.consulUrl || '', folder: o.folder,
+                           conflict: true, manifest: null, issues: [], state: 'refused', error: clash });
+            changed = true;
+          }
+          return;
+        }
+        if (!p) {
+          p = { id: id, source: 'service', service: service, consulUrl: o.consulUrl || '', folder: o.folder,
+                manifest: null, issues: [], state: 'offline', error: '', gen: 0 };
+          plugins.push(p);
+        } else if (p.state !== 'offline' && (p.folder !== o.folder || p.base !== o.base)) {
+          // Meta.gui changed under a registered service: drop what the old
+          // folder contributed and load the new one from scratch.
+          invalidate(p);
+          removeAll(p);
+          p.manifest = null;
+          p.issues = [];
+          p.state = 'offline';
+          changed = true;
+        }
+        p.folder = o.folder;
+        p.base = o.base;
+        p.local = !!o.local;
+        if (p.state === 'offline') start.push(p);       // new, back in Consul, or a new folder
+      });
+      plugins.slice().forEach(function (p) {
+        if (p.source !== 'service') return;
+        if (p.conflict) {
+          if (!seenConflict[p.id]) { plugins.splice(plugins.indexOf(p), 1); changed = true; }
+          return;
+        }
+        if (!seen[serviceKey(p)] && p.state !== 'offline') {
+          invalidate(p);
+          removeAll(p);
+          p.state = 'offline';
+          p.error = 'the service "' + p.service + '" is not registered in Consul';
+          changed = true;
+        }
+      });
+      return Promise.all(start.map(startService)).then(function () {
+        if (!changed && !start.length) return;
+        renderManager();                      // an open Plugins dialog shows the change
+        notify({ services: true });
+      });
+    });
+  }
+
+  /** Allowed: fetch the folder, read and lint plugin.json, apply. Not allowed: wait, download nothing. */
+  function startService(p) {
+    if (!allowedSet().has(serviceKey(p))) {
+      p.state = 'blocked';
+      p.error = 'delivered by the service "' + p.service + '": allow it to download and run it';
+      return Promise.resolve();
+    }
+    invalidate(p);
+    var gen = p.gen;
+    var key = serviceKey(p);
+    // Withdrawn, offline, moved to another folder or publisher, or started
+    // again while this load ran: its result is not applied.
+    function stale() { return p.gen !== gen || serviceKey(p) !== key || !allowedSet().has(key); }
+    p.state = 'loading';
+    p.error = '';
+    var files = p.local ? Promise.resolve()
+      : Promise.resolve().then(function () {
+        return hooks.fetchServiceFiles({ service: p.service, consulUrl: p.consulUrl, folder: p.folder });
+      });
+    return files.catch(function () { /* the copy on disk may still do */ })
+      .then(function () { return stale() ? null : fetchJson(p.base + 'plugin.json'); })
+      .then(function (m) {
+        if (stale()) return;
+        p.manifest = m;
+        p.issues = C().lintPlugin(m, { schema: pluginSchema, source: 'service' });
+        if (m && m.plugin !== p.id) {
+          p.issues.push({ rule: 'S', severity: 'error', component: p.id, path: 'plugin',
+                          message: 'must match the service\'s Meta.gui_plugin "' + p.id + '"' });
+        }
+        if (C().hasErrors(p.issues)) { p.state = 'refused'; return; }
+        if (disabledSet().has(p.id)) { p.state = 'disabled'; return; }
+        return apply(p, stale);
+      }, function (e) {
+        if (stale()) return;
+        p.manifest = null;
+        p.state = 'error';
+        p.error = 'no readable plugin.json in ' + p.folder + ': ' + e.message;
+      });
+  }
+
+  function setServiceAllowed(p, allowed) {
+    if (p.conflict) return Promise.resolve(false);
+    var set = allowedSet();
+    if (allowed) set.add(serviceKey(p)); else set.delete(serviceKey(p));
+    saveAllowed(set);
+    if (!allowed) {
+      invalidate(p);
+      removeAll(p);
+      if (p.state !== 'offline') {
+        p.state = 'blocked';
+        p.error = 'delivered by the service "' + p.service + '": allow it to download and run it';
+      }
+      notify({ plugin: p.id, enabled: false });
+      return Promise.resolve(false);
+    }
+    if (p.state === 'offline') return Promise.resolve(false);
+    return startService(p).then(function () {
+      notify({ plugin: p.id, enabled: p.state === 'active' });
+      return p.state === 'active';
+    });
+  }
+
+  /** Allow or block a window plugin (the main process owns the list) or a service's plugin (this PC). */
   function setAllowed(id, allowed) {
     var p = byId(id);
+    if (p && p.source === 'service') return setServiceAllowed(p, allowed);
     var api = window.electronAPI;
     if (!p || !api || typeof api.setWindowPluginAllowed !== 'function') return Promise.resolve(false);
     return api.setWindowPluginAllowed(id, allowed).then(function (res) {
@@ -186,8 +379,12 @@
     };
   }
 
-  /** Kinds first (they must exist before tiles render), then the rest. */
-  function apply(p) {
+  /**
+   * Kinds first (they must exist before tiles render), then the rest.
+   * `stale` (a service's plugin): true once the load this belongs to was
+   * overtaken; checked again after the modules arrive.
+   */
+  function apply(p, stale) {
     p.state = 'loading';
     p.error = '';
     var kinds = contrib(p, 'kinds');
@@ -195,6 +392,7 @@
     return Promise.all(kinds.map(function (k) {
       return MM.endo.frames.loadModules(p.base, k.entry).then(function () { return k; });
     })).then(function (loaded) {
+      if (stale && stale()) return;
       loaded.forEach(function (k) {
         MM.endo.kinds[k.kind] = {
           plugin: p.id,
@@ -208,6 +406,7 @@
       applyNavigators(p);
       p.state = 'active';
     }).catch(function (e) {
+      if (stale && stale()) return;
       removeAll(p);
       p.state = 'error';
       p.error = e.message || String(e);
@@ -219,7 +418,7 @@
     contrib(p, 'kinds').forEach(function (k) {
       if (MM.endo.kinds[k.kind] && MM.endo.kinds[k.kind].plugin === p.id) delete MM.endo.kinds[k.kind];
     });
-    document.querySelectorAll('[data-endo-plugin="' + p.id + '"]').forEach(function (el) { el.remove(); });
+    document.querySelectorAll('[data-endo-plugin="' + cssEsc(p.id) + '"]').forEach(function (el) { el.remove(); });
     // Groups a plugin created and no other plugin still uses.
     document.querySelectorAll('#ribbon .ribbon-group.endo-plugin-group').forEach(function (g) {
       if (!g.querySelector('.ribbon-btn')) g.remove();
@@ -320,7 +519,7 @@
   }
 
   function ensureViewContainers(p, entry, mode) {
-    if (document.querySelector('[data-endo-mode="' + mode + '"]')) return;
+    if (document.querySelector('[data-endo-mode="' + cssEsc(mode) + '"]')) return;
     var aside = document.querySelector('.app-sidebar');
     var sw = document.getElementById('sidebarSwitch');
     var side = document.createElement('div');
@@ -353,8 +552,8 @@
     var nav = contrib(p, 'navigators').filter(function (e) { return e.id === m[2] && !e.shell; })[0];
     var view = contrib(p, 'stage.views').filter(function (e) { return e.id === m[2] && !e.shell; })[0];
     var slot = viewInstances[mode] = viewInstances[mode] || {};
-    var side = document.querySelector('.sidebar-mode[data-endo-mode="' + mode + '"] .sidebar-content');
-    var content = document.querySelector('.app-content > [data-endo-mode="' + mode + '"]');
+    var side = document.querySelector('.sidebar-mode[data-endo-mode="' + cssEsc(mode) + '"] .sidebar-content');
+    var content = document.querySelector('.app-content > [data-endo-mode="' + cssEsc(mode) + '"]');
     [['sidebar', nav, side], ['content', view, content]].forEach(function (t) {
       var key = t[0], spec = t[1], el = t[2];
       if (!spec || !el) return;
@@ -365,8 +564,15 @@
 
   // ------------------------------------------------------------ commands
 
-  /** A plugin's own ctx: its declared capabilities, no service binding. */
+  /** A plugin's own ctx: its declared capabilities; bound to the service that delivered it, if one did. */
   function pluginCtx(p) {
+    if (p.source === 'service') {
+      var b = p.manifest.binds || {};
+      return MM.endo.makeCtx({ component: 'plugin.' + p.id, title: p.manifest.title,
+                               requires: p.manifest.requires || {},
+                               binds: { consul: p.service, grpc: b.grpc || [], uses: b.uses || [] } },
+                             { base: p.base, consulName: p.service, consulUrl: p.consulUrl });
+    }
     return MM.endo.makeCtx({ component: 'plugin.' + p.id, title: p.manifest.title,
                              requires: p.manifest.requires || {}, binds: { consul: '' } }, { base: p.base });
   }
@@ -515,7 +721,7 @@
   function list() {
     return plugins.map(function (p) {
       return { id: p.id, title: (p.manifest && p.manifest.title) || p.id, version: p.manifest && p.manifest.version,
-               source: p.source, isolation: p.manifest && p.manifest.isolation, state: p.state,
+               source: p.source, service: p.service || '', isolation: p.manifest && p.manifest.isolation, state: p.state,
                error: p.error || '', issues: (p.issues || []).map(function (i) { return i.rule + ' ' + i.path + ': ' + i.message; }) };
     });
   }
@@ -526,7 +732,9 @@
 
   function setEnabled(id, on) {
     var p = byId(id);
-    if (!p || p.state === 'refused' || p.state === 'unavailable' || p.state === 'blocked') return Promise.resolve(false);
+    if (!p || p.state === 'refused' || p.state === 'unavailable' || p.state === 'blocked' || p.state === 'offline' || !p.manifest) {
+      return Promise.resolve(false);
+    }
     var off = disabledSet();
     if (on) off.delete(id); else off.add(id);
     saveDisabled(off);
@@ -546,7 +754,8 @@
   // ------------------------------------------------------------ manager (Administrator → Plugins)
 
   var STATE_TEXT = { active: 'active', disabled: 'off', refused: 'refused', error: 'failed to load',
-                     unavailable: 'desktop app only', loading: 'loading', pending: 'pending', blocked: 'not allowed' };
+                     unavailable: 'desktop app only', loading: 'loading', pending: 'pending', blocked: 'not allowed',
+                     offline: 'service offline' };
 
   function contributionsText(p) {
     var c = (p.manifest && p.manifest.contributes) || {};
@@ -582,14 +791,23 @@
     managerModal.show();
   }
 
+  /** The other Consul services a service plugin calls (binds.uses of its loaded plugin.json). */
+  function usesOf(p) {
+    var b = (p.manifest && p.manifest.binds) || {};
+    return Array.isArray(b.uses) ? b.uses : [];
+  }
+
   function renderManager() {
     var box = document.getElementById('pluginsList');
     if (!box) return;
     box.innerHTML = plugins.map(function (p) {
       var m = p.manifest || {};
-      var canToggle = p.state !== 'refused' && p.state !== 'unavailable' && p.state !== 'blocked' && !!p.manifest;
-      var isWindow = m.isolation === 'window' && p.state !== 'refused' && p.state !== 'unavailable';
-      var allowed = isWindow && windowRecords[p.id] && windowRecords[p.id].allowed;
+      var canToggle = p.state !== 'refused' && p.state !== 'unavailable' && p.state !== 'blocked' &&
+                      p.state !== 'offline' && !!p.manifest;
+      var isService = p.source === 'service' && !p.conflict;
+      var isWindow = !isService && m.isolation === 'window' && p.state !== 'refused' && p.state !== 'unavailable';
+      var allowed = isService ? allowedSet().has(serviceKey(p)) : (isWindow && windowRecords[p.id] && windowRecords[p.id].allowed);
+      var source = p.source === 'service' ? 'service ' + p.service : p.source;
       var on = p.state === 'active' || p.state === 'loading' || p.state === 'pending' || p.state === 'error';
       var errs = (p.issues || []).filter(function (i) { return i.severity === 'error'; });
       return '<div class="plugin-row state-' + p.state + '" data-plugin="' + esc(p.id) + '">' +
@@ -597,7 +815,7 @@
         ' id="pluginToggle-' + esc(p.id) + '"' + (on ? ' checked' : '') + (canToggle ? '' : ' disabled') +
         ' aria-label="' + esc((m.title || p.id) + ' enabled') + '"></div>' +
         '<div class="plugin-main"><div class="plugin-title"><strong>' + esc(m.title || p.id) + '</strong> ' +
-        '<code>' + esc(p.id) + '</code> <span class="endo-muted">' + esc(m.version || '') + ' · ' + esc(p.source) +
+        '<code>' + esc(p.id) + '</code> <span class="endo-muted">' + esc(m.version || '') + ' · ' + esc(source) +
         ' · ' + esc(m.isolation || '?') + '</span>' +
         '<span class="plugin-state">' + esc(STATE_TEXT[p.state] || p.state) + '</span></div>' +
         (m.description ? '<div class="plugin-desc">' + esc(m.description) + '</div>' : '') +
@@ -606,6 +824,14 @@
           ' id="pluginAllow-' + esc(p.id) + '"' + (allowed ? ' checked' : '') + '>' +
           '<label class="form-check-label" for="pluginAllow-' + esc(p.id) + '">Allowed to open its own window and start processes' +
           ' <span class="endo-muted">(window-plugin allow-list)</span></label></div>' : '') +
+        (isService ? '<div class="form-check form-switch plugin-allow mt-1"><input class="form-check-input" type="checkbox" role="switch"' +
+          ' id="pluginAllow-' + esc(p.id) + '"' + (allowed ? ' checked' : '') + '>' +
+          '<label class="form-check-label" for="pluginAllow-' + esc(p.id) + '">Allowed on this PC: download it from <strong>' +
+          esc(p.service) + '</strong> and run it <span class="endo-muted">(sandboxed frames; it can call that service' +
+          ' and only the services its plugin.json names under binds.uses)</span>' +
+          '</label></div>' : '') +
+        (isService && usesOf(p).length ? '<div class="plugin-uses endo-muted mt-1">Also calls: ' +
+          usesOf(p).map(function (u) { return '<code>' + esc(u) + '</code>'; }).join(', ') + '</div>' : '') +
         (p.error ? '<div class="endo-error mt-1">' + esc(p.error) + '</div>' : '') +
         (errs.length ? '<div class="endo-refused mt-1">' + MM.endo.issuesListHtml(errs) + '</div>' : '') +
         '</div></div>';
@@ -633,6 +859,7 @@
       .then(function (r) {
         (r[2] || []).forEach(function (rec) { windowRecords[rec.id] = rec; });
         plugins = r[0];
+        pluginSchema = r[1];
         assess(plugins, r[1]);
         // Apply in index order so ribbon contributions keep a stable order.
         return plugins.reduce(function (chain, p) {
@@ -654,6 +881,8 @@
     list: list,
     state: state,
     setEnabled: setEnabled,
+    setAllowed: setAllowed,
+    offerServicePlugins: offerServicePlugins,
     kindInfo: kindInfo,
     knownKinds: knownKinds,
     drawerTabs: drawerTabs,

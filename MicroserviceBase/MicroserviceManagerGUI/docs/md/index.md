@@ -251,25 +251,44 @@ chart, the capabilities it uses and the tiles it shows:
   "max index" or "1-n" comments are not trusted, because an index past the
   end can crash a service that does not check it), and `reloadAfter` links:
   `Set<X>` for a list whose count takes `<X>`, and a dropdown's own setter.
-- **Tile groups.** `groups` puts tiles under a full-width header that
-  expands and collapses (click it, or Enter on it):
+- **Tile groups.** `groups` puts tiles together in a box that expands and
+  collapses (click its title, or Enter on it):
 
   ```json
   "groups": [
     { "id": "commands", "title": "Commands",    "tiles": ["init-device", "set-voltage"] },
-    { "id": "device",   "title": "Device type", "tiles": ["set-device-type", "get-device-type"], "collapsed": true }
+    { "id": "device",   "title": "Device type", "tiles": ["set-device-type", "get-device-type"], "collapsed": true, "w": 2 }
   ]
   ```
 
-  The header sits where the group's first tile is; keep a group's tiles
-  together, and put tiles in no group first (they are not under a header).
+  On a service's page a group is a box, one item on the stage, as big as
+  its tiles: its width their widths added up, at most the stage's 4
+  columns (or `w`, 1 to 4), its height the rows they pack into. Its tiles
+  sit on the stage's own columns and rows, so they line up with the loose
+  tiles around it, and the stage packs boxes and loose tiles together. The
+  box sits where the group's first tile was; collapsed, it shrinks to its
+  title, one column wide. A tile wider than its box takes the box's width.
+
+  On the **bench**, where several components share the stage, a group is
+  a piece of any shape, like a Tetris piece: every tile of a group touches
+  another of the group, the piece is outlined in the gaps with its title on
+  the outline's top edge, and pieces, loose tiles and collapsed chips fill
+  each other's notches. Each component with groups has its own colour on
+  the bench (six colours, in bench order, then again from the first): its
+  pieces' outlines, tint and title tabs and its collapsed chips take it
+  (each of its groups in a shade of its own, so neighbouring groups of one
+  component differ too),
+  and its entry in the bench's side list shows the same colour as the
+  legend. The tiles keep their own colours. The GUI places each piece where it ends highest
+  (the bench stays short), so a piece's shape can change with the bench's
+  width and with the other components on it; a group's tiles keep the
+  component's order. `w` does not apply there.
   A collapsed group's tiles are hidden **and suspended** (R5): their polling
   and signal streams stop until it opens, and a component that is hidden and
   shown again resumes only its open groups. `collapsed` is how a group starts;
   the user's choice is remembered per component (and, on the bench, per
   composition). The linter refuses a group naming a missing tile, a tile in
-  two groups and duplicate group ids. A grouped stage packs its rows in order
-  (no dense back-fill), so no tile moves above its header. A shell without
+  two groups and duplicate group ids. A shell without
   groups shows every tile flat. The generator groups a component of 7 tiles
   or more: the service's own RPCs as *Commands*, *Readings* and *Streams*
   (open), every other bound service by topic — *Device type*, *Interface*,
@@ -481,6 +500,63 @@ what it added at once, and tiles of its kinds show *enable the plugin*.
   are not.
 - Each frame is a separate process, so a bench with many frame or plugin
   tiles uses noticeably more memory than one of plain tiles.
+
+#### Plugins a service delivers
+
+A service can add pages, tabs and commands to the GUI, not only a panel: it
+ships a plugin in the folder it already serves over `ServiceGui`
+(ADR-031) and names it in Consul.
+
+| Consul `Meta` | Meaning |
+|---|---|
+| `gui` | the folder the service serves (as for a panel), e.g. `SessionsDemo0.1.0` |
+| `gui_plugin` | the id of the plugin whose `plugin.json` is in that folder, e.g. `sessions-demo` |
+
+With MicroserviceBase's runtime, set `gui`, `gui_plugin` and (optionally)
+`gui_dir` in the service settings; other services put the two keys into
+their Consul registration and serve the `ServiceGui` contract themselves.
+
+- The GUI offers such plugins whenever its Consul view changes. **Nothing
+  is downloaded or run until an administrator allows it** under
+  *Administrator → Plugins* ("Allowed on this PC"); the choice is kept per
+  PC, per plugin, service and Consul: the same names in another Consul are
+  another publisher and are asked for again.
+- A service's plugin runs **only in sandboxed frames**: `"isolation":
+  "frame"`, every contribution an `entry` module, no `shell` views or
+  actions, no main-process code, no tile `kinds` (a kind would run with
+  the context of the component that uses it, not with the plugin's
+  bindings), and no capability that reaches this PC (`files.project`,
+  `process.spawn`). Anything else is refused, with the reason in the
+  Plugins dialog. An offer whose plugin id or service name is not a valid
+  name is ignored.
+- Its `ctx` is **bound to the service that delivered it**: `ctx.call`
+  reaches that service's proto services listed in `binds.grpc` in
+  `plugin.json` (the first is the default), and `ctx.service` names it.
+- It may call **other services it names** in `binds.uses` (Consul names),
+  as `ctx.call('<consul>:<ProtoService>/<Method>', args)`, on the same
+  Consul. Any other service is refused in the GUI (`NotBound`) before a
+  call is made. The Plugins dialog lists them under *Also calls*.
+- `ctx.call(method, args, { timeout, metadata })` takes a timeout in
+  milliseconds and request metadata (lowercase keys; no `grpc-`, `-bin`,
+  `x-request-id` or `x-mm-user` keys). The bridge adds `x-request-id` and
+  `x-mm-user` (the login name of this PC).
+- A failed call rejects with an `Error` whose `code` is the gRPC status
+  name (`INVALID_ARGUMENT`, `FAILED_PRECONDITION`, ...) or `BridgeError`
+  when the call never reached the service, `details` the decoded
+  `google.rpc.Status` details (`google.rpc.BadRequest` field violations,
+  `PreconditionFailure`, `ErrorInfo`, the service's own types; others as
+  `{ "@type", value }` in base64), and `requestId` the id the service saw.
+- Its id must be free: a plugin shipped with the GUI or delivered by
+  another service keeps it, and the newcomer is refused.
+- When the service leaves Consul, its plugin leaves the screen (state
+  *service offline*); when it comes back, an allowed plugin returns
+  without asking again. When its `Meta.gui` names another folder, the
+  plugin is taken off and loaded again from that folder. A load still
+  under way when the allowance is withdrawn or the service leaves is
+  dropped.
+- Lint one with `lintPlugin(manifest, { source: 'service' })`. The
+  fixtures in `test/endo/fixtures/service-plugins/` are working
+  templates; `test/gui/test_gui_service_plugins.js` drives the whole path.
 
 ## Test projects
 

@@ -367,6 +367,123 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
           JSON.stringify({ patterns: ['Err*'], type: 'glob', variable: '${e}' }));
   }
 
+  // ---------- plugins a service delivers (Meta.gui_plugin) ----------
+  {
+    const SP = path.join(__dirname, 'fixtures', 'service-plugins');
+    const lintS = (m) => C.lintPlugin(m, { schema: pluginSchema, source: 'service' });
+    const sessions = readJson(path.join(SP, 'SessionsDemo0.1.0', 'plugin.json'));
+    const config = readJson(path.join(SP, 'ConfigDemo0.1.0', 'plugin.json'));
+    const refused = readJson(path.join(SP, 'RefusedDemo0.1.0', 'plugin.json'));
+    check('service fixture sessions-demo lints clean as a service plugin', lintS(sessions).length === 0, lintS(sessions).map(C.formatIssue));
+    check('service fixture config-demo lints clean as a service plugin', lintS(config).length === 0, lintS(config).map(C.formatIssue));
+    [['SessionsDemo0.1.0', sessions], ['ConfigDemo0.1.0', config]].forEach(([dir, m]) => {
+      Object.values(m.contributes).forEach((list) => list.filter((e) => e.entry).forEach((e) => {
+        check('service fixture ' + m.plugin + ': entry ' + e.entry + ' exists', fs.existsSync(path.join(SP, dir, e.entry)));
+      }));
+    });
+    const rr = lintS(refused).filter((i) => i.severity === 'error' && i.rule === 'P');
+    check('P: a service plugin may not use shell views or actions', rr.length === 2 && rr.every((i) => /not "shell"/.test(i.message)), rr);
+    check('the same shell entries are fine in a plugin shipped with the GUI',
+          !lintP(refused).some((i) => i.rule === 'P'), lintP(refused).map(C.formatIssue));
+    const a = clone(sessions); a.isolation = 'schema'; a.contributes = {};
+    check('P: a service plugin runs in frames', lintS(a).some((i) => i.rule === 'P' && i.path === 'isolation'));
+    const b = clone(sessions); b.isolation = 'window'; b.main = 'x.js'; b.contributes = {};
+    check('P: a service plugin has no main-process code', lintS(b).some((i) => i.rule === 'P' && i.path === 'main'));
+    const c = clone(sessions); delete c.binds;
+    check('P: grpc.call without binds.grpc warns', lintS(c).some((i) => i.rule === 'P' && i.severity === 'warn' && i.path === 'binds.grpc'));
+    check('P: binds on a plugin shipped with the GUI warns (no service to call)',
+          lintP(sessions).some((i) => i.rule === 'P' && i.severity === 'warn' && i.path === 'binds'));
+    const e = clone(sessions); e.requires.capabilities.push('files.project');
+    check('P: a service plugin may not reach this PC\'s files', lintS(e).some((i) => i.rule === 'P' && i.severity === 'error' &&
+          /files\.project/.test(i.message)));
+    const k = clone(sessions); k.contributes.kinds = [{ kind: 'session-badge', title: 'Session', entry: 'view.js' }];
+    check('P: a service plugin adds no tile kinds (they would run with another component\'s ctx)',
+          lintS(k).some((i) => i.rule === 'P' && i.severity === 'error' && i.path === 'contributes.kinds[0]'), lintS(k));
+    const d = clone(sessions); d.binds = { grpc: ['a'], consul: 'other-service' };
+    check('S: binds names proto services only; the service is the one that delivered it',
+          rules(lintS(d), 'error').includes('S'), lintS(d));
+
+    // ---------- slot 3: other services it calls (binds.uses) ----------
+    const u = clone(sessions); u.binds.uses = ['configuration-hub', 'catalog'];
+    check('P: binds.uses with Consul names lints clean', lintS(u).length === 0, lintS(u).map(C.formatIssue));
+    const ua = clone(u); ua.binds.uses = ['10.0.0.5:50051', 'catalog/x', 'catalog'];
+    check('P: binds.uses refuses addresses and paths',
+          lintS(ua).filter((i) => i.rule === 'P' && i.severity === 'error').map((i) => i.path).join() === 'binds.uses[0],binds.uses[1]', lintS(ua));
+    const ub = clone(u); ub.binds.uses = ['catalog', 'catalog'];
+    check('P: a service named twice in binds.uses warns', lintS(ub).some((i) => i.path === 'binds.uses[1]' && i.severity === 'warn'));
+    const uc = clone(u); uc.requires.capabilities = ['session.read'];
+    check('P: binds.uses without grpc.call warns', lintS(uc).some((i) => i.path === 'binds.uses' && i.severity === 'warn'));
+    const ud = clone(u); ud.binds.other = 1;
+    check('S: binds takes only grpc and uses', rules(lintS(ud), 'error').includes('S'));
+  }
+
+  // ---------- slots 3 and 4: ctx.call to other services, options, full errors ----------
+  {
+    const vm = require('vm');
+    const window = { MicroserviceManager: { endo: { util: { esc: String } } } };
+    vm.runInNewContext(fs.readFileSync(path.join(GUI, 'web', 'js', 'endo', 'host.js'), 'utf-8'),
+                       { window, document: { addEventListener() {} }, console, URL, fetch: () => Promise.reject(new Error('offline')) });
+    const MM = window.MicroserviceManager;
+    const sent = [];
+    let answer = { ok: true, result: {}, request_id: 'r1' };
+    MM.grpcClient = {
+      callMethod: (o) => { sent.push(o); return typeof answer === 'function' ? answer(o) : Promise.resolve(answer); },
+      getServiceMethods: (name) => Promise.resolve({ grpc_services: [{ name: name === 'catalog' ? 'catalog.v1.Catalog' : 'session.v1.SessionManager',
+                                                                       methods: [{ name: name === 'catalog' ? 'List' : 'Open', input_fields: [] }] }] })
+    };
+    const ctx = MM.endo.makeCtx({ component: 'plugin.sessions', requires: { capabilities: ['grpc.call'] },
+                                  binds: { consul: 'session-manager', grpc: ['session.v1.SessionManager'], uses: ['catalog'] } },
+                                { consulName: 'session-manager', consulUrl: 'http://consul:8500', protoPath: 'protos' });
+    const last = () => sent[sent.length - 1];
+    await ctx.call('Open', {});
+    check('slot 3: a plain method still goes to the own service',
+          last().consulName === 'session-manager' && last().grpcService === 'session.v1.SessionManager' && last().protoPath === 'protos', last());
+    await ctx.call('catalog:catalog.v1.Catalog/List', { page: 1 });
+    check('slot 3: "<consul>:<ProtoService>/<Method>" goes to that service, on the same Consul, without the own proto path',
+          last().consulName === 'catalog' && last().grpcService === 'catalog.v1.Catalog' && last().method === 'List' &&
+          last().consulUrl === 'http://consul:8500' && last().protoPath === '', last());
+    await ctx.call('session-manager:session.v1.SessionManager/Open', {});
+    check('slot 3: the own Consul name as prefix is the own service', last().consulName === 'session-manager' && last().method === 'Open', last());
+    const n = sent.length;
+    const refusedWith = (p) => p.then(() => null, (e) => e);
+    let e = await refusedWith(ctx.call('configuration-hub:config.v1.Hub/Get', {}));
+    check('slot 3: a service not in binds.uses is refused before any call', e && e.code === 'NotBound' && sent.length === n, e && e.message);
+    e = await refusedWith(ctx.call('catalog:List', {}));
+    check('slot 3: another service needs its proto service named', e && e.code === 'NotBound' && /ProtoService/.test(e.message), e && e.message);
+    const d = await ctx.describe('catalog:catalog.v1.Catalog/List');
+    check('slot 3: describe reaches a used service', d && d.name === 'List', d);
+    check('slot 3: ctx lists the services it uses', JSON.stringify(ctx.uses) === '["catalog"]', ctx.uses);
+
+    await ctx.call('Open', {}, { timeout: 2500, metadata: { tenant: 'lab-3', n: 7 } });
+    check('slot 4: timeout (ms) and metadata reach the bridge (s, strings)',
+          last().timeout === 2.5 && JSON.stringify(last().metadata) === '{"tenant":"lab-3","n":"7"}', last());
+    e = await refusedWith(ctx.call('Open', {}, { timeout: -1 }));
+    check('slot 4: a bad timeout is refused', e && e.code === 'BadOptions', e && e.message);
+    e = await refusedWith(ctx.call('Open', {}, { metadata: ['x'] }));
+    check('slot 4: metadata must be an object', e && e.code === 'BadOptions', e && e.message);
+
+    const details = [{ '@type': 'google.rpc.BadRequest', field_violations: [{ field: 'name', description: 'required' }] }];
+    answer = { ok: false, error: 'INVALID_ARGUMENT: the session is not valid', code: 'INVALID_ARGUMENT', details: details, request_id: 'r9' };
+    e = await refusedWith(ctx.call('Open', {}));
+    check('slot 4: a failed call rejects with code, details and requestId',
+          e && e.code === 'INVALID_ARGUMENT' && JSON.stringify(e.details) === JSON.stringify(details) && e.requestId === 'r9' &&
+          e.message === 'INVALID_ARGUMENT: the session is not valid', e && { code: e.code, details: e.details, id: e.requestId });
+    answer = { ok: false, error: "Service 'session-manager' not found in Consul", code: '', details: [], request_id: 'r10' };
+    e = await refusedWith(ctx.call('Open', {}));
+    check('slot 4: a call that never reached the service is a BridgeError', e && e.code === 'BridgeError' && e.requestId === 'r10', e && e.code);
+    answer = () => Promise.reject(new Error('Bridge not running'));
+    e = await refusedWith(ctx.call('Open', {}));
+    check('slot 4: a bridge that is down is a BridgeError too', e && e.code === 'BridgeError' && /Bridge not running/.test(e.message), e && e.code);
+
+    // The frame boundary keeps the full status (frame-host refuse -> frame-sdk).
+    const hostSrc = fs.readFileSync(path.join(GUI, 'web', 'js', 'endo', 'frame-host.js'), 'utf-8');
+    const sdkSrc = fs.readFileSync(path.join(GUI, 'web', 'js', 'endo', 'frame-sdk.js'), 'utf-8');
+    check('slot 4: the frame host passes details, requestId and the call options across the port',
+          /err\.details = /.test(hostSrc) && /err\.requestId = /.test(hostSrc) && /ctx\.call\(a\[0\], a\[1\], a\[2\]\)/.test(hostSrc));
+    check('slot 4: the frame SDK puts them back on the Error',
+          /e\.details = msg\.error\.details/.test(sdkSrc) && /e\.requestId = msg\.error\.requestId/.test(sdkSrc));
+  }
+
   console.log('\n' + passes + ' passed, ' + failures + ' failed');
   process.exit(failures ? 1 : 0);
 })();

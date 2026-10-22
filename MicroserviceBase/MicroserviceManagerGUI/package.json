@@ -137,10 +137,33 @@
         "AppImage",
         "deb"
       ],
-      "icon": "build-resources/icon.png"
+      "icon": "build-resources/icon.png",
+      "extraResources": [
+        {
+          "from": "build-resources/wheelhouse",
+          "to": "wheelhouse",
+          "filter": [
+            "*.whl"
+          ]
+        }
+      ]
     },
     "deb": {
-      "afterInstall": "build-resources/postinst.sh"
+      "afterInstall": "build-resources/postinst.sh",
+      "afterRemove": "build-resources/postrm.sh",
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "python3",
+        "python3-venv"
+      ]
     }
   },
   "devDependencies": {
