@@ -996,9 +996,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
  * elsewhere `python3`, or `python` when only that is on PATH (Ubuntu and
  * macOS have no `python` unless a package or a venv adds one).
  */
+// Settings that name no interpreter of their own: empty, a bare system
+// Python, or (on Linux) a Windows path such as the shipped default.
+const _SYSTEM_PYTHONS = ['', 'python', 'python3', '/usr/bin/python', '/usr/bin/python3'];
+
 function _pythonOr(configured) {
   const v = String(configured || '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+  if (process.platform !== 'win32') {
+    const windowsPath = /^[A-Za-z]:[\\/]/.test(v) || v.indexOf('\\') >= 0;
+    if (windowsPath || _SYSTEM_PYTHONS.indexOf(v) >= 0) return _bundledPython() || (windowsPath ? '' : v) || _defaultPython();
+  }
   return v || _defaultPython();
+}
+
+// The Linux package installs MicroserviceBase in a venv next to the app
+// (postinst.sh). It is chosen here, as the user, rather than written into
+// users' settings by the root install hook.
+function _bundledPython() {
+  if (!_isPackaged || process.platform === 'win32') return '';
+  const py = path.join(path.dirname(_resourcesPath), 'python-env', 'bin', 'python3');
+  try { fs.accessSync(py, fs.constants.X_OK); return py; } catch (e) { return ''; }
 }
 
 let _defaultPythonCache = null;

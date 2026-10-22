@@ -130,6 +130,15 @@ class Test_Status:
         assert own == {"@type": "demo.v1.Item", "id": "7", "version": 4}
         assert unknown == {"@type": "x.y.Unknown", "value": "AQI="}
 
+    def test_a_well_known_type_detail_stays_raw(self):
+        # MessageToDict turns a Duration into "1.500s", not an object: the
+        # detail keeps its bytes instead of replacing the error with a TypeError.
+        duration = message_factory.GetMessageClass(
+            rpc_status._POOL.FindMessageTypeByName("google.protobuf.Duration"))(seconds=1, nanos=500000000)
+        out = rpc_status._detail(_any(duration, "google.protobuf.Duration"), [rpc_status._POOL])
+        assert out["@type"] == "google.protobuf.Duration"
+        assert set(out) == {"@type", "value"}
+
     def test_a_status_without_details(self, channel):
         with pytest.raises(GrpcReflectError) as info:
             _call(channel, "plain")
@@ -174,6 +183,14 @@ class Test_Metadata:
             call_metadata({"note": "line\nbreak"})
         with pytest.raises(ValueError):
             call_metadata({"note": "x" * 1025})
+
+    def test_a_login_name_that_is_no_metadata_value_is_left_out(self, monkeypatch):
+        from MicroserviceBase.adapters.ui_bridge import fastapi_bridge
+        monkeypatch.setattr(fastapi_bridge, "_local_user", lambda: "jörg")
+        md, _rid = call_metadata({})
+        assert "x-mm-user" not in dict(md)
+        monkeypatch.setattr(fastapi_bridge, "_local_user", lambda: "joerg")
+        assert dict(call_metadata({})[0])["x-mm-user"] == "joerg"
 
     def test_the_bridge_keys_are_last_and_not_doubled(self):
         md, _rid = call_metadata({"a": "1"})

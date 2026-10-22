@@ -81,7 +81,8 @@
     (req.capabilities || []).forEach(function (c) { caps[c] = true; });
     var binds = manifest.binds || {};
     var consulName = binds.consul === '@self' ? env.consulName : binds.consul;
-    var methodsP = {};
+    // No prototype: Consul names such as "constructor" are plain keys here.
+    var methodsP = Object.create(null);
     var open = 0;
     var callWatchers = [];
     // One binary may serve several proto services: the first is the default,

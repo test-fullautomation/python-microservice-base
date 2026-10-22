@@ -519,12 +519,16 @@ their Consul registration and serve the `ServiceGui` contract themselves.
 - The GUI offers such plugins whenever its Consul view changes. **Nothing
   is downloaded or run until an administrator allows it** under
   *Administrator → Plugins* ("Allowed on this PC"); the choice is kept per
-  PC, per plugin and service.
+  PC, per plugin, service and Consul: the same names in another Consul are
+  another publisher and are asked for again.
 - A service's plugin runs **only in sandboxed frames**: `"isolation":
   "frame"`, every contribution an `entry` module, no `shell` views or
-  actions, no main-process code, and no capability that reaches this PC
-  (`files.project`, `process.spawn`). Anything else is refused, with the
-  reason in the Plugins dialog.
+  actions, no main-process code, no tile `kinds` (a kind would run with
+  the context of the component that uses it, not with the plugin's
+  bindings), and no capability that reaches this PC (`files.project`,
+  `process.spawn`). Anything else is refused, with the reason in the
+  Plugins dialog. An offer whose plugin id or service name is not a valid
+  name is ignored.
 - Its `ctx` is **bound to the service that delivered it**: `ctx.call`
   reaches that service's proto services listed in `binds.grpc` in
   `plugin.json` (the first is the default), and `ctx.service` names it.
@@ -546,7 +550,10 @@ their Consul registration and serve the `ServiceGui` contract themselves.
   another service keeps it, and the newcomer is refused.
 - When the service leaves Consul, its plugin leaves the screen (state
   *service offline*); when it comes back, an allowed plugin returns
-  without asking again.
+  without asking again. When its `Meta.gui` names another folder, the
+  plugin is taken off and loaded again from that folder. A load still
+  under way when the allowance is withdrawn or the service leaves is
+  dropped.
 - Lint one with `lintPlugin(manifest, { source: 'service' })`. The
   fixtures in `test/endo/fixtures/service-plugins/` are working
   templates; `test/gui/test_gui_service_plugins.js` drives the whole path.

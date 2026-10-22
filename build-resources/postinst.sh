@@ -72,24 +72,24 @@ else
             echo "  FAILED; retry with network access: sudo dpkg-reconfigure devatservgui"
         fi
     fi
-    # Point the GUI at the venv: the default settings for new users, and
-    # existing users' settings that still name a system Python.
-    if [[ -x "$PY_BIN" ]]; then
-        for _settings in "$APP_RESOURCES/settings.json" /root/.config/devatservgui/settings.json \
-                         /home/*/.config/devatservgui/settings.json; do
-            [[ -f "$_settings" ]] || continue
-            python3 - "$_settings" "$PY_BIN" <<'EOF' || true
+    # Point the packaged default settings (root-owned, copied to new users)
+    # at the venv; it ships the Windows interpreter path. Users' own
+    # settings are not touched as root: the app picks the venv itself when
+    # theirs name a system Python or a Windows path (preload.js).
+    _settings="$APP_RESOURCES/settings.json"
+    if [[ -x "$PY_BIN" && -f "$_settings" && ! -L "$_settings" ]]; then
+        python3 - "$_settings" "$PY_BIN" <<'EOF' || true
 import json, sys
 path, py = sys.argv[1], sys.argv[2]
 with open(path, encoding="utf-8") as f:
     s = json.load(f)
-if s.get("pythonPath", "") in ("", "python", "python3", "/usr/bin/python", "/usr/bin/python3"):
+v = s.get("pythonPath", "")
+if v in ("", "python", "python3", "/usr/bin/python", "/usr/bin/python3") or "\\" in v or v[1:3] in (":/", ":\\"):
     s["pythonPath"] = py
     with open(path, "w", encoding="utf-8") as f:
         json.dump(s, f, indent=2)
     print("  settings: pythonPath set in", path)
 EOF
-        done
     fi
 fi
 
