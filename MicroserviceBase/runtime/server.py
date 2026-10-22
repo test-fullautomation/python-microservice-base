@@ -246,6 +246,32 @@ Start the gRPC server and register with Consul.
 
         return self._bound_port
 
+    def consul_meta(self) -> dict:
+        """
+The ``Meta`` this service registers in Consul.
+
+**Returns:**
+
+* ``meta``
+
+  / *Type*: dict /
+
+  ``grpc_services`` always; ``gui`` when the service has a GUI folder, and
+  ``gui_plugin`` when that folder holds a shell plugin for the Manager GUI.
+        """
+        meta = {
+            "grpc_services": ",".join(e.full_service_name for e in self._servicers),
+        }
+        # The Manager GUI shows web/services/<gui>/ for this service when
+        # set; absent, the service is listed as "No GUI".
+        if self._settings.gui:
+            meta["gui"] = self._settings.gui
+            # A shell plugin in that folder (plugin.json): pages and tabs the
+            # service adds to the Manager GUI once an administrator allows it.
+            if self._settings.gui_plugin:
+                meta["gui_plugin"] = self._settings.gui_plugin
+        return meta
+
     async def serve_forever(self) -> None:
         """
 Start, register with Consul, and block until a shutdown signal arrives.
@@ -259,14 +285,7 @@ Start, register with Consul, and block until a shutdown signal arrives.
         self._install_signal_handlers()
 
         address = self._settings.advertise_addr or _local_hostname()
-
-        meta = {
-            "grpc_services": ",".join(e.full_service_name for e in self._servicers),
-        }
-        # The Manager GUI shows web/services/<gui>/ for this service when
-        # set; absent, the service is listed as "No GUI".
-        if self._settings.gui:
-            meta["gui"] = self._settings.gui
+        meta = self.consul_meta()
 
         async with ConsulRegistration(
             name=self._settings.service_name,

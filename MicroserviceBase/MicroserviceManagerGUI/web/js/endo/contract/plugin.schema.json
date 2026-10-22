@@ -22,6 +22,19 @@
       }
     },
     "isolation": { "type": "string", "enum": ["schema", "frame", "window"] },
+    "binds": {
+      "type": "object",
+      "description": "plugins a service delivers: the proto services of that service its ctx.call reaches (the first is the default; others are called as \"<service>/<Method>\"), and the other Consul services it may call",
+      "additionalProperties": false,
+      "properties": {
+        "grpc": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "uses": {
+          "type": "array",
+          "description": "Consul names of other services ctx.call may reach, as \"<consul>:<ProtoService>/<Method>\"",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "main": { "type": "string", "description": "window plugins: main-process module, relative to the Manager GUI folder; exports register(), open(opts), shutdown()" },
     "preload": { "type": "string", "description": "window plugins: preload script" },
     "contributes": {

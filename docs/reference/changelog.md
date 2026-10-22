@@ -20,6 +20,21 @@ this is the chronological summary.
 - **Signal Graph Studio.** *Run cluster* uses the Live panel's discovery
   port and serves gRPC reflection from the clusters it starts.
 - **Docs.** Diagrams of the host bus and the bridge for live signals.
+- **Plugins a service delivers.** A service can add pages, tabs and
+  commands to the GUI: a `plugin.json` in the folder it serves over
+  `ServiceGui`, named by `Meta.gui_plugin` (Python runtime: `gui_plugin`).
+  Nothing is downloaded until an administrator allows it per PC; it runs
+  only in sandboxed frames, its `ctx` reaches only that service
+  (`binds.grpc`, `ctx.service`), and it leaves the screen when the service
+  leaves Consul.
+- **Calls to other services, full errors.** A service's plugin can call
+  the other services it names in `binds.uses`
+  (`"<consul>:<ProtoService>/<Method>"`). `ctx.call` takes
+  `{ timeout, metadata }`, and a failed call rejects with the gRPC `code`,
+  the decoded `google.rpc.Status` `details` and the `requestId`. The bridge
+  sends `x-request-id` and `x-mm-user` with every GUI call, and
+  `/api/grpc/call` answers `code`, `details` and `request_id`. An unknown
+  method name is now reported as such instead of a bare `KeyError`.
 - **C++ services serve their GUI.** The C++ runtime registers `Meta.gui`
   from `<PREFIX>GUI` and serves the folder over `ServiceGui` (ADR-031),
   with the same checksum as the Python runtime; `<PREFIX>GUI_DIR` or the
@@ -34,9 +49,14 @@ this is the chronological summary.
   or `optionsFrom` the service (a list RPC, or a count RPC with a name per
   index), `current` preselected; `reloadAfter` reads it again after a
   call it depends on, from any tile of the component.
-- **Tile groups.** `groups` puts tiles under headers that expand and
-  collapse; a collapsed group's tiles are suspended, and the choice is
-  remembered.
+- **Tile groups.** `groups` puts tiles together in a box that expands and
+  collapses; a collapsed group's tiles are suspended, and the choice is
+  remembered. On a service's page the box takes its place on the stage
+  like a big tile (its tiles' size, or `w` columns); on the bench a group
+  is a piece of any shape, outlined, and the pieces of several components
+  fit into each other like Tetris pieces instead of splitting the bench
+  into bands; each component's pieces share a colour, and the bench's side
+  list is the legend.
 - **Components from protos.** `python -m MicroserviceBase.tools.ui_component`
   writes a `component.json` from a service's protos: forms, dropdowns
   (indexes 0 to count−1), `reloadAfter` links and groups.

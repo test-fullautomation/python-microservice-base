@@ -277,6 +277,9 @@
       var reply = function (value) { post({ type: 'result', id: msg.id, value: value === undefined ? null : value }); };
       var refuse = function (e) {
         var err = { code: (e && e.code) || 'Error', message: String((e && e.message) || e) };
+        // A failed gRPC call's full status (slot 4); plain JSON across the port.
+        if (e && Array.isArray(e.details)) err.details = JSON.parse(JSON.stringify(e.details));
+        if (e && e.requestId) err.requestId = String(e.requestId);
         if (err.code === 'CapabilityDenied') showBanner('bad', label + ': ' + err.message);
         post({ type: 'result', id: msg.id, error: err });
       };
@@ -286,7 +289,7 @@
       }
       try {
         switch (msg.method) {
-          case 'call': return ctx.call(a[0], a[1]).then(reply, refuse);
+          case 'call': return ctx.call(a[0], a[1], a[2]).then(reply, refuse);
           case 'describe': return ctx.describe(a[0]).then(reply, refuse);
           case 'subscribe':
             subs[a[0]] = { names: (a[1] || []).map(String), off: null };
@@ -324,7 +327,9 @@
       if (msg.type === 'hello') {
         post({ type: 'boot', mode: spec.mode, files: spec.files, entry: spec.entryPath, fn: spec.fn,
                args: spec.args || [], theme: themeTokens(), selection: spec.selection || null,
-               component: spec.ctx && spec.ctx.component });
+               component: spec.ctx && spec.ctx.component,
+               service: (spec.ctx && spec.ctx.consulName) || '',
+               uses: (spec.ctx && spec.ctx.uses) || [] });
         return;
       }
       if (msg.type === 'ready') {

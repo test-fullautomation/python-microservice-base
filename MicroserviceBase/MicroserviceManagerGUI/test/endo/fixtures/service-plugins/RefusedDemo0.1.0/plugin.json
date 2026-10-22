@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../../../web/js/endo/contract/plugin.schema.json",
+  "plugin": "refused-demo",
+  "version": "0.1.0",
+  "title": "Refused (demo)",
+  "description": "Test bed: a service plugin the GUI must refuse. It asks for a shell view and a shell action, which only plugins shipped with the GUI may use.",
+  "requires": { "shell": "^2.3", "capabilities": [] },
+  "isolation": "frame",
+  "contributes": {
+    "navigators": [
+      { "id": "projects", "title": "Projects", "shell": "testproject" }
+    ],
+    "commands": [
+      { "id": "refused-demo.gen", "title": "Generate", "shell": "robotGen" }
+    ]
+  }
+}
