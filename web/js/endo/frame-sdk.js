@@ -130,7 +130,9 @@
     }
 
     var ctx = {
-      call: function (method, args) { return request('call', [method, args || {}]); },
+      // opts: { timeout: ms, metadata: {key: value} }. A failure rejects with
+      // an Error carrying code, details and requestId.
+      call: function (method, args, opts) { return request('call', opts ? [method, args || {}, opts] : [method, args || {}]); },
       describe: function (method) { return request('describe', [method]); },
       signals: {
         subscribe: function (names, cb) {
@@ -192,6 +194,8 @@
           if (msg.error) {
             var e = new Error(msg.error.message);
             e.code = msg.error.code;
+            if (msg.error.details) e.details = msg.error.details;
+            if (msg.error.requestId) e.requestId = msg.error.requestId;
             p.reject(e);
           } else {
             p.resolve(msg.value);
@@ -224,6 +228,10 @@
 
     function start(msg) {
       ctx.component = msg.component || '';
+      // The Consul service ctx.call reaches ('' when the tile or plugin has none).
+      ctx.service = msg.service || '';
+      // The other Consul services it may call as "<consul>:<ProtoService>/<Method>".
+      ctx.uses = Array.isArray(msg.uses) ? msg.uses.slice() : [];
       applyTheme(msg.theme);
       selection = msg.selection || null;
       setTimeout(reportSize, 0);

@@ -73,6 +73,16 @@
   --l-signals: #BFC3F5;
   --l-bits: #9DB4D6;
 
+  /* Bench pieces: one colour per component on a bench, in bench order
+     (bench.js). Muted, apart from the accent green and from each other;
+     each holds 3.6:1 or more against --content-bg and white, for outlines. */
+  --piece-1: #2F6FB0;
+  --piece-2: #C2611F;
+  --piece-3: #7B4FB3;
+  --piece-4: #1D7F8C;
+  --piece-5: #B23A7A;
+  --piece-6: #8A6D0B;
+
   /* Bootstrap 5.3 */
   --bs-body-font-family: var(--font-family);
   --bs-font-monospace: var(--font-mono);

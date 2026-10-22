@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../../../web/js/endo/contract/plugin.schema.json",
+  "plugin": "sessions-demo",
+  "version": "0.1.0",
+  "title": "Sessions (demo)",
+  "description": "Test bed: what a session manager service delivers to the Manager GUI. A Sessions tab with a list and a console page, bound to the service that delivered it.",
+  "requires": { "shell": "^2.3", "capabilities": ["grpc.call", "session.read"] },
+  "isolation": "frame",
+  "binds": { "grpc": ["session.v1.SessionManager"], "uses": ["catalog"] },
+  "contributes": {
+    "navigators": [
+      { "id": "sessions", "title": "Sessions", "icon": "collection-play", "entry": "nav.js" }
+    ],
+    "stage.views": [
+      { "id": "sessions", "title": "Session console", "entry": "view.js" }
+    ]
+  }
+}

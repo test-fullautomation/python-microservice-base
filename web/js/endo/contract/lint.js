@@ -545,6 +545,56 @@
     if (Array.isArray(c.renderers) && c.renderers.length) {
       add('K', 'warn', 'contributes.renderers', 'renderers are not loaded by shell ' + shell + ' yet (milestone M5)');
     }
+    // A plugin a service delivers (plugin.json in its ServiceGui package,
+    // Meta.gui_plugin) is code from another team: it runs only in frames,
+    // reaches only that service, and uses nothing the shell itself has.
+    var bound = manifest.binds && Array.isArray(manifest.binds.grpc) ? manifest.binds.grpc : [];
+    if (opts.source === 'service') {
+      if (manifest.isolation !== 'frame') {
+        add('P', 'error', 'isolation', 'a plugin a service delivers runs in frames: "isolation": "frame"');
+      }
+      ['main', 'preload'].forEach(function (k) {
+        if (manifest[k]) add('P', 'error', k, 'a plugin a service delivers has no main-process code');
+      });
+      ['kinds', 'navigators', 'stage.views', 'dock.sections', 'drawer.tabs', 'file.views', 'commands', 'renderers'].forEach(function (point) {
+        (Array.isArray(c[point]) ? c[point] : []).forEach(function (e, i) {
+          if (e && (e.shell || e.window)) {
+            add('P', 'error', 'contributes["' + point + '"][' + i + ']',
+                'a plugin a service delivers brings its own module: use "entry", not ' + (e.shell ? '"shell"' : '"window"'));
+          }
+        });
+      });
+      // A kind renders in another component's tiles, with that component's
+      // ctx: the plugin's own capabilities and bindings would not hold there.
+      (Array.isArray(c.kinds) ? c.kinds : []).forEach(function (e, i) {
+        add('P', 'error', 'contributes.kinds[' + i + ']',
+            'a plugin a service delivers adds no tile kinds: a kind runs with the ctx of the component that uses it, not with the plugin\'s bindings');
+      });
+      (req.capabilities || []).forEach(function (cap, i) {
+        if (cap === 'files.project' || cap === 'process.spawn') {
+          add('P', 'error', 'requires.capabilities[' + i + ']',
+              '"' + cap + '" reaches this PC (test projects, processes); a plugin a service delivers may not ask for it');
+        }
+      });
+      if ((req.capabilities || []).indexOf('grpc.call') >= 0 && !bound.length) {
+        add('P', 'warn', 'binds.grpc', 'grpc.call without binds.grpc: name the proto services of the service it calls');
+      }
+      // Other services it calls: by Consul name, each once (slot 3).
+      var uses = manifest.binds && Array.isArray(manifest.binds.uses) ? manifest.binds.uses : [];
+      uses.forEach(function (name, i) {
+        var at = 'binds.uses[' + i + ']';
+        if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+          add('P', 'error', at, '"' + name + '" is not a Consul service name (no address, port or proto service)');
+        } else if (uses.indexOf(name) !== i) {
+          add('P', 'warn', at, '"' + name + '" is listed twice');
+        }
+      });
+      if (uses.length && (req.capabilities || []).indexOf('grpc.call') < 0) {
+        add('P', 'warn', 'binds.uses', 'binds.uses without grpc.call: it can call none of them');
+      }
+    } else if (bound.length || (manifest.binds && manifest.binds.uses)) {
+      add('P', 'warn', 'binds', 'binds is used only by a plugin a service delivers; this one has no service to call');
+    }
     return issues;
   }
 

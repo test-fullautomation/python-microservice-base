@@ -242,6 +242,21 @@ class Test_ServiceRunner:
         assert gui_proto.FULL_SERVICE_NAME not in listed
         assert all(k == "file_descriptor_response" for k in kinds.values()), kinds
 
+    @staticmethod
+    def _meta(**settings):
+        from MicroserviceBase.runtime.server import ServiceRunner
+        from MicroserviceBase.runtime.settings import BaseServiceSettings
+        return ServiceRunner(servicers=[], settings=BaseServiceSettings(service_name="meta-test", **settings)).consul_meta()
+
+    def test_meta_names_the_gui_folder_and_its_plugin(self):
+        meta = self._meta(gui="SessionsDemo0.1.0", gui_plugin="sessions-demo")
+        assert meta["gui"] == "SessionsDemo0.1.0" and meta["gui_plugin"] == "sessions-demo"
+
+    def test_a_plugin_without_a_gui_folder_is_not_registered(self):
+        # The plugin lives in the folder Meta.gui names; alone it points nowhere.
+        assert "gui_plugin" not in self._meta(gui_plugin="sessions-demo")
+        assert "gui" not in self._meta()
+
 
 class Test_Extract:
 

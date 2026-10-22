@@ -30,12 +30,15 @@
 
 import asyncio
 import base64
+import getpass
 import importlib.metadata
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
+import uuid
 import zipfile
 
 from ...ports.ui_bridge import UIBridgePort
@@ -430,6 +433,60 @@ Raises ``ValueError`` if *name* contains path separators or ``..``.
       raise ValueError(f"Name must not contain path separators: {name!r}")
    if '..' in name:
       raise ValueError(f"Name must not contain '..': {name!r}")
+
+
+_METADATA_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+#: Keys the bridge sets itself; a caller cannot send them.
+BRIDGE_METADATA = ("x-request-id", "x-mm-user")
+MAX_CALL_METADATA = 16
+MAX_CALL_TIMEOUT = 300.0
+
+
+def _local_user():
+   try:
+      return getpass.getuser()
+   except Exception:   # noqa: BLE001 -- no login name (a service account without one)
+      return ""
+
+
+def call_metadata(metadata, request_id=""):
+   """
+Request metadata of a gRPC call made for the GUI, and its request id.
+
+The caller's ``metadata`` (``{key: value}``) is checked: lowercase keys,
+no ``grpc-`` keys, no binary (``-bin``) keys, printable values, at most
+:data:`MAX_CALL_METADATA` entries. The bridge then adds ``x-request-id``
+(``request_id`` when it is a valid id, a new one otherwise) and
+``x-mm-user`` (the login name of this PC), so a service can log who did
+what. Raises ``ValueError`` naming the bad key.
+
+**Returns:** ``(list of (key, value), request_id)``
+   """
+   metadata = metadata or {}
+   if not isinstance(metadata, dict):
+      raise ValueError("metadata must be an object of key: value")
+   if len(metadata) > MAX_CALL_METADATA:
+      raise ValueError("at most %d metadata entries" % MAX_CALL_METADATA)
+   out = []
+   for key, value in metadata.items():
+      key = str(key)
+      if not _METADATA_KEY.match(key):
+         raise ValueError("metadata key %r: use lowercase letters, digits, '.', '_' or '-'" % key)
+      if key.startswith("grpc-") or key.endswith("-bin") or key in BRIDGE_METADATA:
+         raise ValueError("metadata key %r is reserved" % key)
+      value = str(value)
+      if len(value) > 1024 or any(not (32 <= ord(c) < 127) for c in value):
+         raise ValueError("metadata %r: the value must be printable ASCII of at most 1024 characters" % key)
+      out.append((key, value))
+   rid = request_id if request_id and _REQUEST_ID.match(request_id) else uuid.uuid4().hex
+   out.append(("x-request-id", rid))
+   user = _local_user()
+   # Optional: a login name that is no valid metadata value (non-ASCII,
+   # such as "jörg") is left out rather than failing every call.
+   if user and len(user) <= 1024 and all(32 <= ord(c) < 127 for c in user):
+      out.append(("x-mm-user", user))
+   return out, rid
 
 
 class FastAPIBridge(UIBridgePort):
@@ -2534,15 +2591,32 @@ the bridge is what serves ``web/``.
          proto_path: str = ""   # GUI-supplied proto search dir; used as
                                 # an additional search path for the
                                 # LocalProtoClient fallback.
+         timeout: float = 0     # seconds; 0 = the client's default
+         metadata: Dict[str, str] = {}
+         request_id: str = ""   # the GUI's id of this call; a new one when empty
 
       @app.post("/api/grpc/call")
       def grpc_call(body: GrpcCallBody):
-         """Invoke a unary gRPC method and return the JSON response."""
+         """Invoke a unary gRPC method and return the JSON response.
+
+         A failed call answers ``{"ok": false, "error": "CODE: message",
+         "code": "CODE", "details": [...]}``: ``code`` is the gRPC status
+         name ("" when the bridge failed before the service answered) and
+         ``details`` the decoded ``google.rpc.Status`` details. Every
+         answer carries the ``request_id`` sent to the service.
+         """
          from ..grpc_bridge import GrpcReflectError
+
+         try:
+            metadata, request_id = call_metadata(body.metadata, body.request_id)
+         except ValueError as e:
+            return {"ok": False, "code": "", "details": [], "error": str(e)}
+         base = {"request_id": request_id}
+         timeout = min(max(body.timeout, 0.0), MAX_CALL_TIMEOUT) or None
 
          target_info = _find_service_target(body.consul_name, consul=body.consul)
          if target_info is None:
-            return {"ok": False,
+            return {**base, "ok": False, "code": "", "details": [],
                     "error": "Service '%s' not found in Consul" % body.consul_name}
          host, port, _ = target_info
          target = "%s:%d" % (host, port)
@@ -2551,24 +2625,27 @@ the bridge is what serves ``web/``.
             client, source = _open_grpc_client(target, body.consul_name,
                                                 proto_path=body.proto_path)
          except GrpcReflectError as e:
-            return {"ok": False, "target": target, "error": str(e)}
+            return {**base, "ok": False, "target": target, "code": "", "details": [],
+                    "error": str(e)}
 
          try:
             with client:
                envelope = client.call_method(
-                   body.grpc_service, body.method, body.args_json or "{}"
+                   body.grpc_service, body.method, body.args_json or "{}",
+                   timeout=timeout, metadata=metadata,
                )
             # call_method returns either:
             #   {"streaming": False, "result": <dict>}
             #   {"streaming": True,  "events": [...], "truncated": bool, "error"?: str}
-            return {"ok": True, "target": target,
+            return {**base, "ok": True, "target": target,
                     "discovery_source": source, **envelope}
          except GrpcReflectError as e:
-            return {"ok": False, "target": target,
-                    "discovery_source": source, "error": str(e)}
+            return {**base, "ok": False, "target": target,
+                    "discovery_source": source, "error": str(e),
+                    "code": e.code, "details": e.details}
          except Exception as e:
-            return {"ok": False, "target": target,
-                    "discovery_source": source,
+            return {**base, "ok": False, "target": target,
+                    "discovery_source": source, "code": "", "details": [],
                     "error": "%s: %s" % (type(e).__name__, e)}
 
       # ---- Service Scaffolding endpoint ----
