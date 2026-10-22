@@ -259,6 +259,21 @@
       <div class="sidebar-mode" id="sidebarBench">
         <div class="sidebar-content bench-nav" id="benchNav"></div>
       </div>
+      <!-- Testbench and Infrastructure configuration (shared sidebar) -->
+      <div class="sidebar-mode" id="sidebarTestbench">
+        <div id="testbenchSidebar">
+          <div class="tb-side-switch" id="tbSideSwitch">
+            <button type="button" class="tb-side-tab active" id="tbSideTabTb">
+              <i class="bi bi-boxes"></i><span>Testbenches</span>
+            </button>
+            <button type="button" class="tb-side-tab" id="tbSideTabInfra">
+              <i class="bi bi-hdd-network"></i><span>Infrastructure</span>
+            </button>
+          </div>
+          <div id="testbenchSidePane" class="tb-side-pane"></div>
+          <div id="infraSidePane" class="tb-side-pane" style="display:none;"></div>
+        </div>
+      </div>
       <!-- Test project sidebar: file tree of the open test project -->
       <div class="sidebar-mode" id="sidebarTestProject">
         <div class="tpv-tree" id="testProjectTree"></div>
@@ -304,6 +319,8 @@
         </div>
       </div>
       <div id="benchContent" style="display:none;"></div>
+      <div id="testbenchContent" style="display:none;"></div>
+      <div id="infraContent" style="display:none;"></div>
       <div id="creatorContent" style="display:none;"></div>
       <div id="testProjectContent" style="display:none;"></div>
       <div id="helpContent" style="display:none;"></div>

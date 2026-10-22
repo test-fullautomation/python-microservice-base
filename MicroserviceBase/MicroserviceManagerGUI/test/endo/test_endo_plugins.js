@@ -415,6 +415,10 @@ const rules = (issues, sev) => issues.filter((i) => !sev || i.severity === sev).
     check('P: binds.uses without grpc.call warns', lintS(uc).some((i) => i.path === 'binds.uses' && i.severity === 'warn'));
     const ud = clone(u); ud.binds.other = 1;
     check('S: binds takes only grpc and uses', rules(lintS(ud), 'error').includes('S'));
+
+    // ---------- configuration-hub platform service plugin ----------
+    const confighubManifest = readJson(path.join(SP, 'ConfigurationHub1.0.0', 'plugin.json'));
+    check('configuration-hub platform service plugin lints clean as a service plugin', lintS(confighubManifest).length === 0, lintS(confighubManifest).map(C.formatIssue));
   }
 
   // ---------- slots 3 and 4: ctx.call to other services, options, full errors ----------

@@ -1,0 +1,50 @@
+{
+  "$schema": "endo/plugin.schema.json",
+  "plugin": "configuration-hub",
+  "version": "1.0.0",
+  "title": "Configuration Hub",
+  "description": "Testbench and Infrastructure configurations",
+  "requires": {
+    "shell": "^2.3",
+    "capabilities": []
+  },
+  "isolation": "schema",
+  "contributes": {
+    "navigators": [
+      {
+        "id": "testbenches",
+        "title": "Testbenches",
+        "icon": "boxes",
+        "shell": "testbench"
+      }
+    ],
+    "stage.views": [
+      {
+        "id": "testbenches",
+        "title": "Testbenches",
+        "shell": "testbench"
+      }
+    ],
+    "commands": [
+      {
+        "id": "configuration-hub.testbench",
+        "title": "Testbenches",
+        "shell": "testbenchView"
+      }
+    ],
+    "ribbon.groups": [
+      {
+        "tab": "user",
+        "group": "Configuration",
+        "commands": [
+          {
+            "id": "configuration-hub.testbench",
+            "label": "Testbenches",
+            "icon": "boxes",
+            "title": "Create and edit testbench and infrastructure configurations"
+          }
+        ]
+      }
+    ]
+  }
+}

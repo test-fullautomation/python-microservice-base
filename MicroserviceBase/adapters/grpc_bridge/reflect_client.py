@@ -394,6 +394,14 @@ Return method descriptors for ``full_service_name``.
         """Shallow field list for the top-level fields of a message."""
         out = []
         for f in msg_desc.fields:
+            label_val = getattr(f, "label", None)
+            if label_val is None:
+                if getattr(f, "is_repeated", False):
+                    label_val = 3
+                elif getattr(f, "is_required", False):
+                    label_val = 2
+                else:
+                    label_val = 1
             entry: Dict[str, Any] = {
                 "name": f.name,
                 "number": f.number,

@@ -1,11 +1,11 @@
 {
   "view": "user+admin+developer",
-  "pythonPath": "C:\\Program Files\\RobotFramework\\python3\\python.exe",
+  "pythonPath": "/usr/bin/python3",
   "brokerHost": "",
   "brokerPort": "",
   "bridgePort": "",
-  "consulPath": "",
-  "nomadPath": "",
+  "consulPath": "http://127.0.0.1:8500",
+  "nomadPath": "http://127.0.0.1:4646",
   "windowPlugins": [
     "graph-studio"
   ]

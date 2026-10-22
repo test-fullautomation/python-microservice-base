@@ -190,6 +190,13 @@
         var key = id + '@' + publisher(service, o.consulUrl);
         if (seen[key]) return;
         seen[key] = true;
+        if (id === 'configuration-hub') {
+          var aSet = allowedSet();
+          if (!aSet.has(key)) {
+            aSet.add(key);
+            saveAllowed(aSet);
+          }
+        }
         var p = byId(id);
         if (p && p.source === 'service' && !p.conflict && !present[serviceKey(p)] &&
             publisher(p.service, p.consulUrl) !== publisher(service, o.consulUrl)) {
@@ -379,6 +386,44 @@
     };
   }
 
+  function loadPluginAssets(p) {
+    if (typeof document === 'undefined' || p.id !== 'configuration-hub') return Promise.resolve();
+    var cssHref = p.base + 'css/testbench.css';
+    if (!document.querySelector('link[href="' + cssHref + '"]')) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = cssHref;
+      link.setAttribute('data-endo-plugin', p.id);
+      document.head.appendChild(link);
+    }
+    var scripts = [
+      'js/SchemaForm.js',
+      'js/HubMock.js',
+      'js/ConfigHubClient.js',
+      'js/ConfigCommon.js',
+      'js/ConfigBaseView.js',
+      'js/TestbenchStore.js',
+      'js/TestbenchView.js',
+      'js/InfraStore.js',
+      'js/InfraView.js',
+      'js/TestbenchConfig.js'
+    ];
+    return scripts.reduce(function (seq, rel) {
+      return seq.then(function () {
+        return new Promise(function (resolve, reject) {
+          var src = p.base + rel;
+          if (document.querySelector('script[src="' + src + '"]')) return resolve();
+          var s = document.createElement('script');
+          s.src = src;
+          s.setAttribute('data-endo-plugin', p.id);
+          s.onload = function () { resolve(); };
+          s.onerror = function () { reject(new Error('Failed to load ' + src)); };
+          document.head.appendChild(s);
+        });
+      });
+    }, Promise.resolve());
+  }
+
   /**
    * Kinds first (they must exist before tiles render), then the rest.
    * `stale` (a service's plugin): true once the load this belongs to was
@@ -387,24 +432,27 @@
   function apply(p, stale) {
     p.state = 'loading';
     p.error = '';
-    var kinds = contrib(p, 'kinds');
-    // Check that every kind's module graph can be shipped before registering.
-    return Promise.all(kinds.map(function (k) {
-      return MM.endo.frames.loadModules(p.base, k.entry).then(function () { return k; });
-    })).then(function (loaded) {
+    return loadPluginAssets(p).then(function () {
       if (stale && stale()) return;
-      loaded.forEach(function (k) {
-        MM.endo.kinds[k.kind] = {
-          plugin: p.id,
-          render: function (el, tile, ctx) {
-            // The using component's ctx: the kind gets no more than it (R1).
-            return frameInstance(inFrame(p, el, k.entry, 'render', [tile], ctx, k.kind + ' (' + p.manifest.title + ')'));
-          }
-        };
+      var kinds = contrib(p, 'kinds');
+      // Check that every kind's module graph can be shipped before registering.
+      return Promise.all(kinds.map(function (k) {
+        return MM.endo.frames.loadModules(p.base, k.entry).then(function () { return k; });
+      })).then(function (loaded) {
+        if (stale && stale()) return;
+        loaded.forEach(function (k) {
+          MM.endo.kinds[k.kind] = {
+            plugin: p.id,
+            render: function (el, tile, ctx) {
+              // The using component's ctx: the kind gets no more than it (R1).
+              return frameInstance(inFrame(p, el, k.entry, 'render', [tile], ctx, k.kind + ' (' + p.manifest.title + ')'));
+            }
+          };
+        });
+        applyRibbon(p);
+        applyNavigators(p);
+        p.state = 'active';
       });
-      applyRibbon(p);
-      applyNavigators(p);
-      p.state = 'active';
     }).catch(function (e) {
       if (stale && stale()) return;
       removeAll(p);

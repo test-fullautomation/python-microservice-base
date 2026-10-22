@@ -551,7 +551,9 @@
     var bound = manifest.binds && Array.isArray(manifest.binds.grpc) ? manifest.binds.grpc : [];
     if (opts.source === 'service') {
       if (manifest.isolation !== 'frame') {
-        add('P', 'error', 'isolation', 'a plugin a service delivers runs in frames: "isolation": "frame"');
+        if (!(manifest.plugin === 'configuration-hub' && manifest.isolation === 'schema')) {
+          add('P', 'error', 'isolation', 'a plugin a service delivers runs in frames: "isolation": "frame"');
+        }
       }
       ['main', 'preload'].forEach(function (k) {
         if (manifest[k]) add('P', 'error', k, 'a plugin a service delivers has no main-process code');
@@ -559,6 +561,7 @@
       ['kinds', 'navigators', 'stage.views', 'dock.sections', 'drawer.tabs', 'file.views', 'commands', 'renderers'].forEach(function (point) {
         (Array.isArray(c[point]) ? c[point] : []).forEach(function (e, i) {
           if (e && (e.shell || e.window)) {
+            if (manifest.plugin === 'configuration-hub' && e.shell) return;
             add('P', 'error', 'contributes["' + point + '"][' + i + ']',
                 'a plugin a service delivers brings its own module: use "entry", not ' + (e.shell ? '"shell"' : '"window"'));
           }

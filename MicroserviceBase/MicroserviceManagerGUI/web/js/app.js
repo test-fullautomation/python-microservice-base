@@ -4906,6 +4906,17 @@
     if (sidebarBench) sidebarBench.classList.toggle('active', mode === 'bench');
     var benchContent = document.getElementById('benchContent');
     if (benchContent) benchContent.style.display = mode === 'bench' ? '' : 'none';
+    var sidebarTestbench = document.getElementById('sidebarTestbench');
+    if (sidebarTestbench) sidebarTestbench.classList.toggle('active', mode === 'testbench');
+    var testbenchContent = document.getElementById('testbenchContent');
+    if (testbenchContent) testbenchContent.style.display = (mode === 'testbench' && (!MM.testbenchConfig || MM.testbenchConfig.getActiveSubTab() === 'tb')) ? '' : 'none';
+    var infraContent = document.getElementById('infraContent');
+    if (infraContent) infraContent.style.display = (mode === 'testbench' && (MM.testbenchConfig && MM.testbenchConfig.getActiveSubTab() === 'infra')) ? '' : 'none';
+    var btnTestbench = document.getElementById('btnModeTestbench');
+    if (btnTestbench) btnTestbench.classList.toggle('active', mode === 'testbench');
+    document.querySelectorAll('[data-endo-command="configuration-hub.testbench"]').forEach(function (btn) {
+      btn.classList.toggle('active', mode === 'testbench');
+    });
     // Plugin views (navigators and stage views with their own containers).
     document.querySelectorAll('[data-endo-mode]').forEach(function (el) {
       var on = el.getAttribute('data-endo-mode') === mode;
@@ -4929,7 +4940,7 @@
     var btnServices = document.getElementById('btnModeServices');
     var btnDevTools = document.getElementById('btnDevTools');
     var btnAdminTools = document.getElementById('btnAdminTools');
-    if (btnServices) btnServices.classList.toggle('active', mode === 'services' || mode === 'bench');
+    if (btnServices) btnServices.classList.toggle('active', mode === 'services' || mode === 'bench' || mode === 'testbench');
     var btnBench = document.getElementById('btnModeBench');
     if (btnBench) btnBench.classList.toggle('active', mode === 'bench');
     if (btnDevTools) btnDevTools.classList.toggle('active', mode === 'creator' || mode === 'testproject');
@@ -4948,6 +4959,9 @@
       activateCreatorMode();
     } else if (mode === 'testproject') {
       renderTestProjectView();
+    } else if (mode === 'testbench') {
+      if (MM.testbenchConfig) MM.testbenchConfig.activate();
+      else if (MM.testbench) MM.testbench.activate();
     } else if (mode === 'services') {
       if (_reopenOnServices) _reopenSelectedService();
       else _resumeActiveComponent();
@@ -8569,6 +8583,8 @@
   _wire('sidebarSwitchServices', function () { switchMode('services'); });
   _wire('sidebarSwitchBench', function () { switchMode('bench'); });
   _wire('btnModeBench', function () { switchMode('bench'); });
+  _wire('sidebarSwitchTestbench', function () { switchMode('testbench'); });
+  _wire('btnModeTestbench', function () { switchMode('testbench'); });
   _syncSidebarSwitch();
 
   /************************************************************
@@ -8592,7 +8608,7 @@
   function _ribbonTabForMode(mode) {
     if (mode === 'fleet') return 'admin';
     if (mode === 'creator' || mode === 'testproject') return 'dev';
-    if (mode === 'services' || mode === 'bench') return 'user';
+    if (mode === 'services' || mode === 'bench' || mode === 'testbench') return 'user';
     return _ribbonTab;
   }
 
@@ -8672,7 +8688,7 @@
       // early for the current mode), e.g. Developer -> User on Services.
       _setRibbonTab(key);
       // User keeps the bench when it is showing: its components' commands are on this tab.
-      if (key === 'user' && _currentMode !== 'bench') switchMode('services');
+      if (key === 'user' && _currentMode !== 'bench' && _currentMode !== 'testbench') switchMode('services');
       else if (key === 'admin') switchToFleetSubTab('tabConsul');
       if (closeIt) _closeRibbon(); else _openRibbon(key);
     });
@@ -8731,10 +8747,12 @@
         robotGen: function () { _runRobotGen('', null); },
         openGraphStudio: _openGraphStudio,
         testProjectView: _testProjectView,
-        openTestProject: function () { return openTestProject(); }
+        openTestProject: function () { return openTestProject(); },
+        testbenchView: function () { switchMode('testbench'); }
       },
       views: {
-        testproject: { sidebar: 'sidebarTestProject', content: 'testProjectContent' }
+        testproject: { sidebar: 'sidebarTestProject', content: 'testProjectContent' },
+        testbench: { sidebar: 'sidebarTestbench', content: 'testbenchContent' }
       },
       switchMode: function (mode) { switchMode(mode); },
       currentMode: function () { return _currentMode; },
@@ -9204,7 +9222,7 @@
     // A pinned ribbon reserves its height; with the ribbon hidden, give it back.
     document.body.classList.add('help-open');
 
-    ['serviceContent', 'fleetContent', 'creatorContent', 'testProjectContent', 'benchContent'].forEach(function (id) {
+    ['serviceContent', 'fleetContent', 'creatorContent', 'testProjectContent', 'benchContent', 'testbenchContent', 'infraContent'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -9686,7 +9704,7 @@
 
   function _viewAllows(mode) {
     if (!_roles) return true;
-    if (mode === 'services' || mode === 'bench' || mode === '__help__') return true;
+    if (mode === 'services' || mode === 'bench' || mode === 'testbench' || mode === '__help__') return true;
     if (mode === 'fleet') return _roles.admin;
     return _roles.developer;   // Service Creator, test projects, plugin views
   }
