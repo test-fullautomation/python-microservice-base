@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<!--
+  Stand-alone demo of Testbenches & Infrastructure with an in-memory Catalog + Hub:
+
+    cd web && python3 -m http.server 8099
+    open http://localhost:8099/configuration-gui/test/harness.html
+
+  Add ?catalog=down or ?hub=down to see the outage states.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Configuration Hub Test Harness</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  <link rel="stylesheet" href="../css/testbench.css">
+  <style>
+    body { margin: 0; height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    .harness-app { display: grid; grid-template-columns: 280px 1fr; height: 100%; overflow: hidden; }
+    #sidebarTestbench { background: var(--sidebar-bg); height: 100%; width: 100%; }
+  </style>
+</head>
+<body>
+  <div style="background: #111915; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1);">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <i class="bi bi-boxes text-success"></i>
+      <strong style="color: #fff; font-size: 0.9rem;">Testbenches & Infrastructure Configuration</strong>
+    </div>
+    <span class="badge bg-secondary" style="font-size: 0.75rem;">Standalone Test Harness</span>
+  </div>
+  <div class="harness-app">
+    <aside>
+      <div class="sidebar-mode active" id="sidebarTestbench">
+        <div id="testbenchSidebar">
+          <div class="tb-side-switch" id="tbSideSwitch">
+            <button type="button" class="tb-side-tab active" id="tbSideTabTb">
+              <i class="bi bi-boxes"></i><span>Testbenches</span>
+            </button>
+            <button type="button" class="tb-side-tab" id="tbSideTabInfra">
+              <i class="bi bi-hdd-network"></i><span>Infrastructure</span>
+            </button>
+          </div>
+          <div id="testbenchSidePane" class="tb-side-pane"></div>
+          <div id="infraSidePane" class="tb-side-pane" style="display:none;"></div>
+        </div>
+      </div>
+    </aside>
+    <main>
+      <div id="testbenchContent"></div>
+      <div id="infraContent" style="display:none;"></div>
+    </main>
+  </div>
+
+  <script>
+    window.MicroserviceManager = {};
+    var q = new URLSearchParams(location.search);
+    localStorage.setItem('mm_catalog_mock', q.get('catalog') === 'down' ? '0' : '1');
+    localStorage.setItem("mm_hub_mock", q.get("hub") === "down" ? "0" : "1");
+    localStorage.removeItem("mm_hub_mock_data");
+    var SCHEMA = {
+      type: 'object', required: ['channels', 'port'],
+      properties: {
+        channels: { type: 'integer', default: 4, minimum: 1, maximum: 8, description: 'Number of channels in use' },
+        port: { type: 'string', enum: ['usb', 'serial'], default: 'usb', description: 'Connection type' }
+      }
+    };
+    var models = [
+      { catalogId: 'cleware-usb-switch-4', manufacturer: 'Cleware', model: 'USB Switch 4', description: '4-channel USB switch',
+        adapter: 'cleware_usb_switch', staticConfig: { power_switch_channels: 4 }, capabilities: ['power_switch'], userConfigSchema: SCHEMA }
+    ];
+    var docs = { testbench: {}, infrastructure: {} };
+    function ok(result) { return Promise.resolve({ ok: true, result: result }); }
+    function fail(code, msg) { return Promise.resolve({ ok: false, error: '_InactiveRpcError StatusCode.' + code + ' details = "' + msg + '"' }); }
+    MicroserviceManager.grpcClient = { callMethod: function (o) {
+      var a = JSON.parse(o.argsJson || '{}');
+      var isCat = o.grpcService.indexOf('catalog') === 0;
+      if (isCat && q.get('catalog') === 'down') return Promise.resolve({ ok: false, error: "Service 'catalog' not found in Consul" });
+      if (!isCat && q.get('hub') === 'down') return Promise.resolve({ ok: false, error: "Service 'configuration_hub' not found in Consul" });
+      var d = docs[a.config_type];
+      switch (o.method) {
+        case 'ListDeviceModels': return ok({ models: models.map(function (m) { return { catalogId: m.catalogId, manufacturer: m.manufacturer, model: m.model, description: m.description }; }) });
+        case 'GetDeviceModel': var m = models.filter(function (x) { return x.catalogId === a.catalog_id; })[0];
+          return m ? ok({ model: m }) : fail('NOT_FOUND', 'unknown catalog_id');
+        case 'GetCatalogVersion': return ok({ version: 'demo-1' });
+        case 'ListConfigurations': return ok({ configurations: Object.keys(d || {}).map(function (id) { return { id: id, name: d[id][d[id].length - 1].name, latestVersion: d[id].length }; }) });
+        case 'GetConfiguration':
+          if (!d || !d[a.config_id]) return fail('NOT_FOUND', 'no such config');
+          var v = a.version || d[a.config_id].length;
+          return ok({ id: a.config_id, name: d[a.config_id][v - 1].name, version: v, payload: d[a.config_id][v - 1].payload });
+        case 'GetDefaultConfiguration': return ok({ id: a.config_type, name: a.config_type, version: 0, payload: { node: 'client1', datacenters: ['dc1'] } });
+        case 'CreateConfiguration':
+          if (d[a.config_id]) return fail('ALREADY_EXISTS', 'already exists');
+          d[a.config_id] = [{ name: a.name, payload: a.payload }];
+          return ok({ id: a.config_id, name: a.name, version: 1, payload: a.payload });
+        case 'UpdateConfiguration':
+          d[a.config_id] = (d[a.config_id] || []).concat([{ name: a.name, payload: a.payload }]);
+          return ok({ id: a.config_id, name: a.name, version: d[a.config_id].length, payload: a.payload });
+        case 'ListConfigurationVersions': return ok({ versions: (d[a.config_id] || []).map(function (_, i) { return i + 1; }) });
+        case 'DeleteConfiguration':
+          if (!d || !d[a.config_id]) return fail('NOT_FOUND', 'no such config');
+          delete d[a.config_id];
+          return ok({ ok: true, id: a.config_id });
+      }
+      return fail('UNIMPLEMENTED', o.method);
+    } };
+    window.__docs = docs;
+
+    // Coordinator handles sub-tabs and views
+  </script>
+  <script src="../js/SchemaForm.js"></script>
+  <script src="../js/HubMock.js"></script>
+  <script src="../js/ConfigHubClient.js"></script>
+  <script src="../js/ConfigCommon.js"></script>
+  <script src="../js/ConfigBaseView.js"></script>
+  <script src="../js/TestbenchStore.js"></script>
+  <script src="../js/TestbenchView.js"></script>
+  <script src="../js/InfraStore.js"></script>
+  <script src="../js/InfraView.js"></script>
+  <script src="../js/TestbenchConfig.js"></script>
+  <script>
+    MicroserviceManager.testbenchConfig.activate();
+  </script>
+</body>
+</html>

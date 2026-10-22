@@ -1,0 +1,378 @@
+{
+  "version": "1",
+  "entries": [
+    {
+      "catalog_id": "abacom-usb-lrb-8",
+      "manufacturer": "Abacom",
+      "model": "USB-LRB-8",
+      "description": "Abacom USB Logic-Relay-Board, 8 relays (CH341A based)",
+      "adapter": "AbacomUsbLrbAdapter",
+      "static_config": {
+        "relay_channels": 8
+      },
+      "capabilities": [
+        "Relay"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config for the ABACOM USB-LRB.",
+        "properties": {
+          "lib_path": {
+            "default": "",
+            "description": "Path to the CH341 library; empty = default path resolver",
+            "title": "Lib Path",
+            "type": "string"
+          },
+          "device_index": {
+            "default": 0,
+            "description": "Windows-only index of the target CH341 device",
+            "minimum": 0,
+            "title": "Device Index",
+            "type": "integer"
+          },
+          "device_path": {
+            "default": "",
+            "description": "Linux-only device node, e.g. '/dev/ch34x_pis0'",
+            "title": "Device Path",
+            "type": "string"
+          }
+        },
+        "title": "UserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "cleware-usb-relay-8",
+      "manufacturer": "Cleware",
+      "model": "USB-Relay-8",
+      "description": "Cleware USB relay board, 8 channels",
+      "adapter": "ClewareUsbRelayAdapter",
+      "static_config": {
+        "relay_channels": 8
+      },
+      "capabilities": [
+        "Relay"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config shared by the Cleware USB relay and switch.",
+        "properties": {
+          "lib_path": {
+            "default": "",
+            "description": "Path to the Cleware USBaccess library; empty = default path resolver",
+            "title": "Lib Path",
+            "type": "string"
+          },
+          "serial_number": {
+            "default": 0,
+            "description": "0 = first found device; set a specific serial number for multi-device setups",
+            "minimum": 0,
+            "title": "Serial Number",
+            "type": "integer"
+          }
+        },
+        "title": "ClewareUserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "cleware-usb-switch-1",
+      "manufacturer": "Cleware",
+      "model": "USB-Switch-1",
+      "description": "Cleware USB switch board, 1 channel",
+      "adapter": "ClewareUsbSwitchAdapter",
+      "static_config": {
+        "power_switch_channels": 4
+      },
+      "capabilities": [
+        "PowerSwitch"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config shared by the Cleware USB relay and switch.",
+        "properties": {
+          "lib_path": {
+            "default": "",
+            "description": "Path to the Cleware USBaccess library; empty = default path resolver",
+            "title": "Lib Path",
+            "type": "string"
+          },
+          "serial_number": {
+            "default": 0,
+            "description": "0 = first found device; set a specific serial number for multi-device setups",
+            "minimum": 0,
+            "title": "Serial Number",
+            "type": "integer"
+          }
+        },
+        "title": "ClewareUserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "cleware-usb-switch-4",
+      "manufacturer": "Cleware",
+      "model": "USB-Switch-4",
+      "description": "Cleware USB switch board, 4 channels",
+      "adapter": "ClewareUsbSwitchAdapter",
+      "static_config": {
+        "power_switch_channels": 4
+      },
+      "capabilities": [
+        "PowerSwitch"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config shared by the Cleware USB relay and switch.",
+        "properties": {
+          "lib_path": {
+            "default": "",
+            "description": "Path to the Cleware USBaccess library; empty = default path resolver",
+            "title": "Lib Path",
+            "type": "string"
+          },
+          "serial_number": {
+            "default": 0,
+            "description": "0 = first found device; set a specific serial number for multi-device setups",
+            "minimum": 0,
+            "title": "Serial Number",
+            "type": "integer"
+          }
+        },
+        "title": "ClewareUserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "conrad-relay-card-8",
+      "manufacturer": "Conrad",
+      "model": "Relay Card 8-Port",
+      "description": "Conrad 8-port relay card over serial",
+      "adapter": "conrad_relay_card_8",
+      "static_config": {
+        "relay_channels": 8
+      },
+      "capabilities": [
+        "Relay"
+      ],
+      "user_config_schema": {
+        "type": "object",
+        "properties": {
+          "com_port": {
+            "type": "string",
+            "default": "auto",
+            "description": "Serial port, e.g. 'COM3' or '/dev/ttyUSB0'; 'auto' to auto-detect"
+          },
+          "baudrate": {
+            "type": "integer",
+            "default": 9600,
+            "description": "Baud rate for serial communication"
+          }
+        },
+        "required": [
+          "com_port"
+        ]
+      }
+    },
+    {
+      "catalog_id": "gwinstek-psp-2010",
+      "manufacturer": "GW Instek",
+      "model": "PSP-2010",
+      "description": "GW Instek programmable power supply over serial, 1 channel",
+      "adapter": "PspGwInstek2010HardwareAdapter",
+      "static_config": {
+        "pps_channels": 1
+      },
+      "capabilities": [
+        "PPS"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config for the GW Instek PSP-2010.",
+        "properties": {
+          "com_port": {
+            "default": "auto",
+            "description": "Serial port, e.g. '/dev/ttyUSB0'; 'auto' to auto-detect",
+            "title": "Com Port",
+            "type": "string"
+          },
+          "baudrate": {
+            "default": 2400,
+            "description": "Baud rate for serial communication",
+            "maximum": 115200,
+            "minimum": 1200,
+            "title": "Baudrate",
+            "type": "integer"
+          },
+          "timeout": {
+            "default": 2.0,
+            "description": "Serial read timeout in seconds",
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Timeout",
+            "type": "number"
+          }
+        },
+        "title": "UserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "kmtronic-usb-relay-8",
+      "manufacturer": "KMtronic",
+      "model": "USB Relay 8",
+      "description": "KMtronic 8-channel relay board over serial",
+      "adapter": "KmtronicUsb8RelayAdapter",
+      "static_config": {
+        "relay_channels": 8
+      },
+      "capabilities": [
+        "Relay"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config for the KMtronic USB-8 relay.",
+        "properties": {
+          "com_port": {
+            "default": "auto",
+            "description": "Serial port, e.g. 'COM3' or '/dev/ttyUSB0'; 'auto' to auto-detect",
+            "title": "Com Port",
+            "type": "string"
+          },
+          "baudrate": {
+            "default": 9600,
+            "description": "Baud rate for serial communication",
+            "maximum": 115200,
+            "minimum": 1200,
+            "title": "Baudrate",
+            "type": "integer"
+          },
+          "timeout": {
+            "default": 1.0,
+            "description": "Serial read timeout in seconds",
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Timeout",
+            "type": "number"
+          }
+        },
+        "title": "UserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "ni-daq",
+      "manufacturer": "National Instruments",
+      "model": "NI DAQ (generic)",
+      "description": "National Instruments DAQ device (e.g. NI USB-6002); channel counts are discovered from hardware",
+      "adapter": "NiDaqmxHardwareAdapter",
+      "static_config": {},
+      "capabilities": [
+        "AnalogInput",
+        "AnalogOutput",
+        "DigitalInput",
+        "DigitalOutput"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config for NI DAQ.",
+        "properties": {
+          "device_name": {
+            "default": "Dev1",
+            "description": "NI-DAQmx identifier of the device",
+            "title": "Device Name",
+            "type": "string"
+          }
+        },
+        "title": "UserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "toellner-toe-8952",
+      "manufacturer": "Toellner",
+      "model": "TOE 8952",
+      "description": "Toellner programmable power supply over serial, 2 channels",
+      "adapter": "Pps8952HardwareAdapter",
+      "static_config": {
+        "pps_channels": 2
+      },
+      "capabilities": [
+        "PPS"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config for the Toellner TOE 8952.",
+        "properties": {
+          "com_port": {
+            "default": "auto",
+            "description": "Serial port, e.g. 'COM3' or '/dev/ttyUSB0'; 'auto' to auto-detect",
+            "title": "Com Port",
+            "type": "string"
+          },
+          "baudrate": {
+            "default": 9600,
+            "description": "Baud rate for serial communication",
+            "maximum": 115200,
+            "minimum": 1200,
+            "title": "Baudrate",
+            "type": "integer"
+          },
+          "timeout": {
+            "default": 2.0,
+            "description": "Serial read timeout in seconds",
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Timeout",
+            "type": "number"
+          }
+        },
+        "title": "UserConfig",
+        "type": "object"
+      }
+    },
+    {
+      "catalog_id": "voltcraft-pps-11810",
+      "manufacturer": "Voltcraft",
+      "model": "PPS-11810",
+      "description": "Voltcraft programmable power supply over serial, 1 channel",
+      "adapter": "Pps11810HardwareAdapter",
+      "static_config": {
+        "pps_channels": 1
+      },
+      "capabilities": [
+        "PPS"
+      ],
+      "user_config_schema": {
+        "additionalProperties": false,
+        "description": "User-editable config for the Voltcraft PPS-11810.",
+        "properties": {
+          "com_port": {
+            "default": "auto",
+            "description": "Serial port, e.g. 'COM3' or '/dev/ttyUSB0'; 'auto' to auto-detect",
+            "title": "Com Port",
+            "type": "string"
+          },
+          "baudrate": {
+            "default": 9600,
+            "description": "Baud rate for serial communication",
+            "maximum": 115200,
+            "minimum": 1200,
+            "title": "Baudrate",
+            "type": "integer"
+          },
+          "timeout": {
+            "default": 2.0,
+            "description": "Serial read timeout in seconds",
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Timeout",
+            "type": "number"
+          }
+        },
+        "title": "UserConfig",
+        "type": "object"
+      }
+    }
+  ]
+}

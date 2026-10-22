@@ -1,0 +1,171 @@
+diff --git a/MicroserviceBase/MicroserviceManagerGUI/web/index.html b/MicroserviceBase/MicroserviceManagerGUI/web/index.html
+index c67a583..970d1f9 100644
+--- a/MicroserviceBase/MicroserviceManagerGUI/web/index.html
++++ b/MicroserviceBase/MicroserviceManagerGUI/web/index.html
+@@ -10,6 +10,7 @@
+   <link rel="stylesheet" href="css/creator.css">
+   <link rel="stylesheet" href="css/docs.css">
+   <link rel="stylesheet" href="css/endo.css">
++  <link rel="stylesheet" href="configuration-gui/css/testbench.css">
+   <!-- Bench theme: palette, fonts and Bootstrap overrides. Keep it last. -->
+   <link rel="stylesheet" href="css/theme.css">
+   <title>Microservice Manager</title>
+@@ -132,6 +133,16 @@
+         <div class="ribbon-group-label">Bench</div>
+       </div>
+ 
++      <div class="ribbon-group">
++        <div class="ribbon-group-items">
++          <button class="ribbon-btn" id="btnModeTestbench" type="button"
++                  title="Create and edit testbench and infrastructure configurations stored in the Configuration Hub">
++            <i class="bi bi-boxes"></i><span>Testbenches</span>
++          </button>
++        </div>
++        <div class="ribbon-group-label">Configuration</div>
++      </div>
++
+       <div class="ribbon-group ribbon-group-grow">
+         <div class="ribbon-group-items">
+           <button class="btn-connect" id="btnConnect" title="Connect to Consul">
+@@ -246,6 +257,21 @@
+       <div class="sidebar-mode" id="sidebarBench">
+         <div class="sidebar-content bench-nav" id="benchNav"></div>
+       </div>
++      <!-- Testbench and Infrastructure configuration (shared sidebar) -->
++      <div class="sidebar-mode" id="sidebarTestbench">
++        <div id="testbenchSidebar">
++          <div class="tb-side-switch" id="tbSideSwitch">
++            <button type="button" class="tb-side-tab active" id="tbSideTabTb">
++              <i class="bi bi-boxes"></i><span>Testbenches</span>
++            </button>
++            <button type="button" class="tb-side-tab" id="tbSideTabInfra">
++              <i class="bi bi-hdd-network"></i><span>Infrastructure</span>
++            </button>
++          </div>
++          <div id="testbenchSidePane" class="tb-side-pane"></div>
++          <div id="infraSidePane" class="tb-side-pane" style="display:none;"></div>
++        </div>
++      </div>
+       <!-- Test project sidebar: file tree of the open test project -->
+       <div class="sidebar-mode" id="sidebarTestProject">
+         <div class="tpv-tree" id="testProjectTree"></div>
+@@ -279,6 +305,10 @@
+                   role="tab" aria-selected="false" data-mode="bench">
+             <i class="bi bi-grid-1x2"></i><span>Bench</span>
+           </button>
++          <button type="button" class="sidebar-switch-tab" id="sidebarSwitchTestbench" title="Testbench and Infrastructure configurations"
++                  role="tab" aria-selected="false" data-mode="testbench">
++            <i class="bi bi-boxes"></i><span>Testbenches</span>
++          </button>
+         </div>
+       </div>
+     </aside>
+@@ -291,6 +321,8 @@
+         </div>
+       </div>
+       <div id="benchContent" style="display:none;"></div>
++      <div id="testbenchContent" style="display:none;"></div>
++      <div id="infraContent" style="display:none;"></div>
+       <div id="creatorContent" style="display:none;"></div>
+       <div id="testProjectContent" style="display:none;"></div>
+       <div id="helpContent" style="display:none;"></div>
+@@ -533,6 +565,16 @@
+   <script src="js/InfraStatus.js"></script>
+   <script src="js/GrpcClient.js"></script>
+   <script src="js/TestProjectClient.js"></script>
++  <script src="configuration-gui/js/SchemaForm.js"></script>
++  <script src="configuration-gui/js/HubMock.js"></script>
++  <script src="configuration-gui/js/ConfigHubClient.js"></script>
++  <script src="configuration-gui/js/ConfigCommon.js"></script>
++  <script src="configuration-gui/js/ConfigBaseView.js"></script>
++  <script src="configuration-gui/js/TestbenchStore.js"></script>
++  <script src="configuration-gui/js/TestbenchView.js"></script>
++  <script src="configuration-gui/js/InfraStore.js"></script>
++  <script src="configuration-gui/js/InfraView.js"></script>
++  <script src="configuration-gui/js/TestbenchConfig.js"></script>
+   <!-- Bench Endoskeleton: component contract v1, core tile kinds, host -->
+   <script src="js/endo/contract/lint.js"></script>
+   <script src="js/endo/kinds-core.js"></script>
+diff --git a/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js b/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js
+index f29a344..595a762 100644
+--- a/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js
++++ b/MicroserviceBase/MicroserviceManagerGUI/web/js/app.js
+@@ -4841,6 +4841,14 @@
+     if (sidebarBench) sidebarBench.classList.toggle('active', mode === 'bench');
+     var benchContent = document.getElementById('benchContent');
+     if (benchContent) benchContent.style.display = mode === 'bench' ? '' : 'none';
++    var sidebarTestbench = document.getElementById('sidebarTestbench');
++    if (sidebarTestbench) sidebarTestbench.classList.toggle('active', mode === 'testbench');
++    var testbenchContent = document.getElementById('testbenchContent');
++    if (testbenchContent) testbenchContent.style.display = (mode === 'testbench' && (!MM.testbenchConfig || MM.testbenchConfig.getActiveSubTab() === 'tb')) ? '' : 'none';
++    var infraContent = document.getElementById('infraContent');
++    if (infraContent) infraContent.style.display = (mode === 'testbench' && (MM.testbenchConfig && MM.testbenchConfig.getActiveSubTab() === 'infra')) ? '' : 'none';
++    var btnTestbench = document.getElementById('btnModeTestbench');
++    if (btnTestbench) btnTestbench.classList.toggle('active', mode === 'testbench');
+     // Plugin views (navigators and stage views with their own containers).
+     document.querySelectorAll('[data-endo-mode]').forEach(function (el) {
+       var on = el.getAttribute('data-endo-mode') === mode;
+@@ -4864,7 +4872,7 @@
+     var btnServices = document.getElementById('btnModeServices');
+     var btnDevTools = document.getElementById('btnDevTools');
+     var btnAdminTools = document.getElementById('btnAdminTools');
+-    if (btnServices) btnServices.classList.toggle('active', mode === 'services' || mode === 'bench');
++    if (btnServices) btnServices.classList.toggle('active', mode === 'services' || mode === 'bench' || mode === 'testbench');
+     var btnBench = document.getElementById('btnModeBench');
+     if (btnBench) btnBench.classList.toggle('active', mode === 'bench');
+     if (btnDevTools) btnDevTools.classList.toggle('active', mode === 'creator' || mode === 'testproject');
+@@ -4883,6 +4891,9 @@
+       activateCreatorMode();
+     } else if (mode === 'testproject') {
+       renderTestProjectView();
++    } else if (mode === 'testbench') {
++      if (MM.testbenchConfig) MM.testbenchConfig.activate();
++      else if (MM.testbench) MM.testbench.activate();
+     } else if (mode === 'services') {
+       if (_reopenOnServices) _reopenSelectedService();
+       else _resumeActiveComponent();
+@@ -8064,6 +8075,8 @@
+   _wire('sidebarSwitchServices', function () { switchMode('services'); });
+   _wire('sidebarSwitchBench', function () { switchMode('bench'); });
+   _wire('btnModeBench', function () { switchMode('bench'); });
++  _wire('sidebarSwitchTestbench', function () { switchMode('testbench'); });
++  _wire('btnModeTestbench', function () { switchMode('testbench'); });
+   _syncSidebarSwitch();
+ 
+   /************************************************************
+@@ -8087,7 +8100,7 @@
+   function _ribbonTabForMode(mode) {
+     if (mode === 'fleet') return 'admin';
+     if (mode === 'creator' || mode === 'testproject') return 'dev';
+-    if (mode === 'services' || mode === 'bench') return 'user';
++    if (mode === 'services' || mode === 'bench' || mode === 'testbench') return 'user';
+     return _ribbonTab;
+   }
+ 
+@@ -8167,7 +8180,7 @@
+       // early for the current mode), e.g. Developer -> User on Services.
+       _setRibbonTab(key);
+       // User keeps the bench when it is showing: its components' commands are on this tab.
+-      if (key === 'user' && _currentMode !== 'bench') switchMode('services');
++      if (key === 'user' && _currentMode !== 'bench' && _currentMode !== 'testbench') switchMode('services');
+       else if (key === 'admin') switchToFleetSubTab('tabConsul');
+       if (closeIt) _closeRibbon(); else _openRibbon(key);
+     });
+@@ -8693,7 +8706,7 @@
+     // A pinned ribbon reserves its height; with the ribbon hidden, give it back.
+     document.body.classList.add('help-open');
+ 
+-    ['serviceContent', 'fleetContent', 'creatorContent', 'testProjectContent', 'benchContent'].forEach(function (id) {
++    ['serviceContent', 'fleetContent', 'creatorContent', 'testProjectContent', 'benchContent', 'testbenchContent', 'infraContent'].forEach(function (id) {
+       var el = document.getElementById(id);
+       if (el) el.style.display = 'none';
+     });
+@@ -9175,7 +9188,7 @@
+ 
+   function _viewAllows(mode) {
+     if (!_roles) return true;
+-    if (mode === 'services' || mode === 'bench' || mode === '__help__') return true;
++    if (mode === 'services' || mode === 'bench' || mode === 'testbench' || mode === '__help__') return true;
+     if (mode === 'fleet') return _roles.admin;
+     return _roles.developer;   // Service Creator, test projects, plugin views
+   }
