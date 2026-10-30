@@ -2,25 +2,18 @@
 
 Why a hook instead of moving the files
 --------------------------------------
-The Manager GUI docs and the examples docs cannot simply be relocated into
-``docs/``:
+``examples/docs/`` cannot simply be relocated into ``docs/``: it is meant
+to sit next to the example code it describes.
 
-* ``MicroserviceManagerGUI/docs/html/*.html`` are **shipped runtime assets** --
-  the in-app help (``web/docs/help.html``) links to them and
-  ``package.json`` bundles ``docs/html/**/*`` into the Electron installer.
-* ``examples/docs/`` is bundled into the installer too (``extraResources``)
-  and is meant to sit next to the example code it describes.
-
-Their Markdown is nevertheless the canonical source for those guides, so we
+Its Markdown is nevertheless the canonical source for those guides, so we
 copy it into ``docs/`` at build time and rewrite the links that only made
 sense from the original location. The copies are gitignored; the originals
-stay put and keep working for the GUI and the installer.
+stay put. The Manager GUI's guides are in the microservice-gui repo; links
+to them point there.
 
 Copied trees
 ------------
-    MicroserviceBase/MicroserviceManagerGUI/docs/md/*.md -> docs/gui/
-    MicroserviceBase/MicroserviceManagerGUI/docs/img/*   -> docs/gui/img/
-    examples/docs/md/*.md                                -> docs/examples/
+    examples/docs/md/*.md -> docs/examples/
 """
 
 from __future__ import annotations
@@ -94,12 +87,12 @@ def _absolutize_escaping_links(text: str, src_rel_dir: str) -> str:
 
     return LINK_RE.sub(repl, text)
 
-GUI_MD = REPO / "MicroserviceBase" / "MicroserviceManagerGUI" / "docs" / "md"
-GUI_IMG = REPO / "MicroserviceBase" / "MicroserviceManagerGUI" / "docs" / "img"
 EX_MD = REPO / "examples" / "docs" / "md"
 
-# Destination dirs (relative to docs_dir). Both are gitignored.
-GUI_DEST = "gui"
+# The Manager GUI's guides, in their own repo.
+GUI_DOCS = "https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md"
+
+# Destination dir (relative to docs_dir). Gitignored.
 EX_DEST = "examples"
 
 # Marker dropped into every generated dir so it is obvious in a file
@@ -117,29 +110,12 @@ README_STAMP = """\
 """
 
 
-def _rewrite_gui(text: str) -> str:
-    """Fix links in Manager GUI docs copied from docs/md/ to docs/gui/."""
-    # ../../../../examples/docs/md/X.md  ->  ../examples/X.md
-    text = re.sub(
-        r"\((?:\.\./)+examples/docs/md/([A-Za-z0-9_\-]+\.md)\)",
-        r"(../examples/\1)",
-        text,
-    )
-    # ../img/X.png -> img/X.png   (images are copied into docs/gui/img/)
-    text = re.sub(r"\(\.\./img/", "(img/", text)
-    # ../html/X.html -> X.md   (the shipped HTML twin is not part of this site)
-    text = re.sub(r"\(\.\./html/([A-Za-z0-9_\-]+)\.html\)", r"(\1.md)", text)
-    # ../../../../docs/X.md -> ../X.md   (repo-level docs are in this site)
-    text = _site_docs_link(text, 4)
-    return text
-
-
 def _rewrite_examples(text: str) -> str:
     """Fix links in examples docs copied from examples/docs/md/ to docs/examples/."""
-    # ../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/X.md -> ../gui/X.md
+    # ../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/X.md -> the GUI repo
     text = re.sub(
         r"\((?:\.\./)+MicroserviceBase/MicroserviceManagerGUI/docs/md/([A-Za-z0-9_\-]+\.md)\)",
-        r"(../gui/\1)",
+        lambda m: f"({GUI_DOCS}/{m.group(1)})",
         text,
     )
     text = re.sub(r"\(\.\./img/", "(img/", text)
@@ -170,37 +146,17 @@ def _sync_markdown(src_dir: Path, dest_dir: Path, rewriter) -> int:
     return count
 
 
-def _sync_images(src_dir: Path, dest_dir: Path) -> int:
-    if not src_dir.is_dir():
-        return 0
-    images = [p for p in src_dir.iterdir() if p.is_file()]
-    if not images:
-        return 0
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    for img in images:
-        shutil.copy2(img, dest_dir / img.name)
-    return len(images)
-
-
 def on_pre_build(config, **kwargs):
-    """Populate docs/gui/ and docs/examples/ before MkDocs collects files."""
+    """Populate docs/examples/ before MkDocs collects files."""
     docs_dir = Path(config["docs_dir"])
-
-    gui_dest = docs_dir / GUI_DEST
     ex_dest = docs_dir / EX_DEST
 
     # Wipe first so a deleted source file does not linger as a stale page.
-    for d in (gui_dest, ex_dest):
+    # docs/gui/ is what older builds left behind.
+    for d in (docs_dir / "gui", ex_dest):
         if d.exists():
             shutil.rmtree(d)
 
-    n_gui = _sync_markdown(GUI_MD, gui_dest, _rewrite_gui)
-    n_img = _sync_images(GUI_IMG, gui_dest / "img")
     n_ex = _sync_markdown(EX_MD, ex_dest, _rewrite_examples)
 
-    log.info(
-        "copy_external_docs: %d GUI page(s) + %d image(s), %d example page(s)",
-        n_gui,
-        n_img,
-        n_ex,
-    )
+    log.info("copy_external_docs: %d example page(s)", n_ex)

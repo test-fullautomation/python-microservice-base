@@ -403,7 +403,7 @@ For the curious:
 
 - **[Service creation guide](service_creation.md)** — once your scaffold
   is generated, the long-form tutorial for filling in the domain.
-- **[Service Creator wizard](../../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md)** — generate the scaffold
+- **[Service Creator wizard](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/service_creator.md)** — generate the scaffold
   from the Manager GUI's 4-step wizard (pick the third gRPC stack
   option in step 2).
 - **[MinGW Setup (MSYS2)](mingw_setup.md)** — the alternative

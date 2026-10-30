@@ -16,8 +16,8 @@ import pytest
 # WARNING; our own MicroserviceBase logs are unaffected.
 logging.getLogger("pika").setLevel(logging.WARNING)
 
-# Ensure the project root is on sys.path so we can import MicroserviceBase
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+# Import MicroserviceBase from this checkout's python/ folder
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "python"))
 
 from MicroserviceBase.ports.transport import TransportPort
 from MicroserviceBase.ports.registry import ServiceRegistryPort

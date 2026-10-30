@@ -359,6 +359,6 @@ Rejected because:
 - Source: `ProcessHub/fleet/orchestrator.py`, `ProcessHub/fleet/hub_agent.py`, `ProcessHub/fleet/hub_registry.py`
 - Source: `ProcessHub/fleet/fleet_web_api.py`
 - Source: `ProcessHub/transport/eventbus_transport.py`
-- Source: `MicroserviceBase/adapters/local_hub/local_hub_manager.py` (three modes)
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/FleetClient.js`, `FleetDashboard.js`
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/local_hub/local_hub_manager.py` (three modes)
+- Source: `microservice-gui/web/js/FleetClient.js`, `FleetDashboard.js`
 - Related: ADR-009 (Service Executor with RPC Shutdown), ADR-010 (Local Hub Manager)

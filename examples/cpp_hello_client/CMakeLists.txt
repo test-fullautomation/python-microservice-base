@@ -13,7 +13,7 @@ find_package(Protobuf CONFIG REQUIRED)
 # MicroserviceBase runtime — provides ServiceClient<T> with Consul discovery.
 # Adjust this path if your project lives outside the examples/ directory.
 add_subdirectory(
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/runtime_cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/runtime"
     "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime"
 )
 

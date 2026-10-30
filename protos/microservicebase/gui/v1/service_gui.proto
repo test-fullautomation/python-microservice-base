@@ -1,0 +1,55 @@
+// ServiceGui: how a service hands the Manager GUI its own screen (ADR-031).
+//
+// Both runtimes serve it: the Python runtime from a descriptor built in
+// code (python/MicroserviceBase/runtime/gui_proto.py), the C++ runtime with
+// hand-written wire encoding (cpp/runtime/src/ServiceGui.cpp). Neither runs
+// protoc, so this file is the reference for both (the Python descriptor is
+// checked against it by pytest/Contracts/test_ServiceGuiContract.py) and
+// what a service in any other language compiles.
+//
+// It is served without server reflection: the GUI's bridge knows it.
+//
+// Checksum: sha256 over the folder's files sorted by relative path (with
+// forward slashes, caches such as __pycache__ and .git left out), each as
+// path + "\0" + bytes; the first 32 hex digits.
+
+syntax = "proto3";
+
+package microservicebase.gui.v1;
+
+service ServiceGui {
+  // The folder name and a checksum of its contents, so a client that
+  // already has that version downloads nothing.
+  rpc GetGuiInfo(GuiInfoRequest) returns (GuiInfo);
+
+  // The folder as a ZIP, streamed in chunks of at most 256 KiB.
+  rpc GetGuiFiles(GuiFilesRequest) returns (stream GuiChunk);
+}
+
+message GuiInfoRequest {}
+
+message GuiInfo {
+  // The folder the files belong in, i.e. what Consul's Meta.gui says.
+  string folder = 1;
+  // Stable hash of the folder's contents; the client's cache key.
+  string checksum = 2;
+  uint64 size_bytes = 3;
+  uint32 file_count = 4;
+  // False when the service ships no GUI; the client then shows the
+  // runtime card instead of waiting for files that never come.
+  bool available = 5;
+}
+
+message GuiFilesRequest {
+  // What the client already has. Matching it ends the stream at once.
+  string known_checksum = 1;
+}
+
+message GuiChunk {
+  bytes data = 1;
+  // Repeated on every chunk so a client that joined late still knows
+  // what it is assembling.
+  string checksum = 2;
+  // True when the client's known_checksum was current: no data follows.
+  bool unchanged = 3;
+}

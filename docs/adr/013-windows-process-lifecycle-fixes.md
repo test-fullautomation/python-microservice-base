@@ -122,6 +122,6 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (signal handling, consume loop)
-- Source: `MicroserviceBase/adapters/local_hub/service_executor.py` (log redirection)
+- Source: `python/MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (signal handling, consume loop)
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/local_hub/service_executor.py` (log redirection)
 - Related: ADR-009 (Service Executor)

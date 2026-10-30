@@ -241,7 +241,7 @@ Deferred because:
 
 ## References
 
-- Source: `MicroserviceBase/MicroserviceManagerGUI/electron/`, `MicroserviceBase/MicroserviceManagerGUI/web/`
+- Source: `microservice-gui/electron/`, `microservice-gui/web/`
 - Related: ADR-005 (Dual-Host GUI Architecture), ADR-006 (FastAPI Bridge for Browser GUI)
 - Qt WebEngine docs: https://doc.qt.io/qt-6/qtwebengine-overview.html
 - Electron docs: https://www.electronjs.org/docs

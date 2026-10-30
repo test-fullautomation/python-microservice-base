@@ -31,7 +31,7 @@ moment — they're synchronised by hand-edit (no autogeneration).
 This folder contains **toolchain setup** + **per-feature walkthrough**
 guides. The Manager GUI docs (Service Network ops, Service Creator
 wizard) live alongside the GUI itself at
-[`../../MicroserviceBase/MicroserviceManagerGUI/docs/`](../../MicroserviceBase/MicroserviceManagerGUI/docs/).
+[`../../MicroserviceBase/MicroserviceManagerGUI/docs/`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/).
 
 ## Contents
 
@@ -48,8 +48,8 @@ wizard) live alongside the GUI itself at
 
 | Topic | Markdown | HTML |
 |---|---|---|
-| Operating Consul + Nomad | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) |
-| Service Creator Wizard | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) |
+| Operating Consul + Nomad | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md) | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md) |
+| Service Creator Wizard | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/service_creator.md) | [`../../MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/service_creator.md) |
 
 Start at the **overview / decision tree** if you're not sure which
 guide applies.

@@ -10,7 +10,7 @@ Demonstrates:
 - Hexagonal layout (`domain/`, `adapters/`, `context.py`, `main.py`)
 - `ServiceRunner` with async gRPC server
 - Consul registration + gRPC health check
-- gRPC reflection (so `grpcurl` and the [Manager GUI](../../MicroserviceBase/MicroserviceManagerGUI/README.md) can enumerate methods)
+- gRPC reflection (so `grpcurl` and the [Manager GUI](https://github.com/test-fullautomation/microservice-gui/blob/develop/README.md) can enumerate methods)
 - Dynamic port allocation (`HELLO_GRPC_PORT=0`)
 - Three RPCs: unary (`Greet`), unary (`Echo`), server streaming (`Tick`)
 
@@ -50,7 +50,7 @@ framework-level rationale.
 - Python 3.10+
 - MicroserviceBase installed (`pip install -e ..` from repo root)
 - Consul agent running locally — `consul agent -dev` or via the
-  [Manager GUI Service Network tab](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md)
+  [Manager GUI Service Network tab](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md)
 
 ## First run
 
@@ -98,7 +98,7 @@ as `Meta.gui`, and the Manager GUI then shows
 selected.
 
 Or **Submit Job** in the Manager GUI's Nomad tab. See
-[`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
+[`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md).
 
 ## Verify
 

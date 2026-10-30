@@ -479,7 +479,7 @@ Rejected because:
 - HashiCorp Consul ACL system:
   <https://developer.hashicorp.com/consul/docs/security/acl>
 - Existing relevant source files:
-  - `MicroserviceBase/runtime/settings.py` — `BaseServiceSettings.consul_token` (already exists; needs `auth_endpoint` field added)
-  - `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py` — needs `consul_token` plumbed through `/api/grpc/*` and `/api/consul/*`
+  - `python/MicroserviceBase/runtime/settings.py` — `BaseServiceSettings.consul_token` (already exists; needs `auth_endpoint` field added)
+  - `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py` — needs `consul_token` plumbed through `/api/grpc/*` and `/api/consul/*`
   - `QConnectBase/grpc/grpc_client.py` — needs `consul_token` and `auth_endpoint` fields in `GrpcClientConfig`
-  - `MicroserviceBase/MicroserviceManagerGUI/web/js/app.js` — needs Login button + sessionStorage token handling
+  - `microservice-gui/web/js/app.js` — needs Login button + sessionStorage token handling

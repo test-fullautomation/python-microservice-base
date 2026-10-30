@@ -1,0 +1,15 @@
+
+:: ----- Deploy Qt runtime for the GUI (Qt6*.dll, platforms\, styles\, ...) -----
+if exist "%DIST%\@@{snake_name}_gui.exe" (
+    if defined QT_DIR (
+        if exist "%QT_DIR%\bin\windeployqt.exe" (
+            echo Running windeployqt for @@{snake_name}_gui.exe ...
+            "%QT_DIR%\bin\windeployqt.exe" --release --no-translations --no-system-d3d-compiler --no-opengl-sw "%DIST%\@@{snake_name}_gui.exe" >nul
+        ) else (
+            echo WARNING: windeployqt not found at %QT_DIR%\bin\windeployqt.exe
+            echo          Qt DLLs will not be deployed; @@{snake_name}_gui.exe may fail to start.
+        )
+    ) else (
+        echo WARNING: QT_DIR is not set; skipping windeployqt.
+    )
+)

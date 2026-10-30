@@ -231,7 +231,7 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/transport/rabbitmq_adapter.py`
-- Source: `MicroserviceBase/adapters/registry/amqp_registry_adapter.py`
-- Source: `MicroserviceBase/ports/transport.py`
+- Source: `python/MicroserviceBase/adapters/transport/rabbitmq_adapter.py`
+- Source: `python/MicroserviceBase/adapters/registry/amqp_registry_adapter.py`
+- Source: `python/MicroserviceBase/ports/transport.py`
 - Related: ADR-001 (Hexagonal Architecture), ADR-003 (Custom Service Registry)

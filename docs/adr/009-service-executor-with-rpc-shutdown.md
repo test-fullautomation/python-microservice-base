@@ -136,7 +136,7 @@ Deferred because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/local_hub/service_executor.py`
-- Source: `MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (signal handling)
-- Source: `MicroserviceBase/domain/service_base.py` (svc_api_shutdown)
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/local_hub/service_executor.py`
+- Source: `python/MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (signal handling)
+- Source: `python/MicroserviceBase/domain/service_base.py` (svc_api_shutdown)
 - Related: ADR-010 (Local Hub Manager)

@@ -274,6 +274,6 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/domain/service_base.py` (lines 51-54, 96-103, 211-278, 445-495)
-- Source: `MicroserviceBase/domain/models.py` (ServiceInfo, ServiceMethod, MethodArgument)
+- Source: `python/MicroserviceBase/domain/service_base.py` (lines 51-54, 96-103, 211-278, 445-495)
+- Source: `python/MicroserviceBase/domain/models.py` (ServiceInfo, ServiceMethod, MethodArgument)
 - Related: ADR-001 (Hexagonal Architecture), ADR-018 (Alias Routing)

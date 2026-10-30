@@ -53,7 +53,7 @@
    "TOC" : {
             "introduction"  : "./additional_docs/Introduction.tex",
             "description"   : "./additional_docs/Description.tex",
-            "INTERFACE"     : "../###PACKAGENAME###",
+            "INTERFACE"     : "../python/###PACKAGENAME###",
             "appendix"      : "./additional_docs/Appendix.rst",
             "history"       : "./additional_docs/History.tex",
             "DOCUMENTPARTS" : ["introduction","description","INTERFACE","appendix","history"]

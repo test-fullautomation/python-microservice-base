@@ -282,9 +282,10 @@ class Test_Bridge:
 
    @pytest.fixture
    def app(self):
-      pytest.importorskip("fastapi")
       pytest.importorskip("httpx")
-      from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
+      # The bridge is in the microservice-gui repo; runs when it is installed.
+      FastAPIBridge = pytest.importorskip(
+         "microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge").FastAPIBridge
       bridge = FastAPIBridge(host="localhost", port=1112, allowed_origins=["http://gui.example"])
       return bridge._build_app() or bridge._app
 

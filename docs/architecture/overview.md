@@ -40,9 +40,9 @@ Inside any one service binary or the framework itself:
 
 | Layer | Lives in | Imports | Imported by |
 |---|---|---|---|
-| **Domain** | `MicroserviceBase/domain/` and `<service>/src/<svc>/domain/` | nothing infra | adapters via ports |
-| **Ports** | `MicroserviceBase/ports/` | typing only | both |
-| **Adapters** | `MicroserviceBase/adapters/` and `<service>/src/<svc>/adapters/` | grpc, consul, fastapi, etc. | top-level wiring (`main.cpp`/`main.py`) |
+| **Domain** | `python/MicroserviceBase/domain/` and `<service>/src/<svc>/domain/` | nothing infra | adapters via ports |
+| **Ports** | `python/MicroserviceBase/ports/` | typing only | both |
+| **Adapters** | `python/MicroserviceBase/adapters/` and `<service>/src/<svc>/adapters/` | grpc, consul, fastapi, etc. | top-level wiring (`main.cpp`/`main.py`) |
 
 The hexagonal split means: changing the transport (e.g. swapping a
 service from MSYS2's gRPC to vcpkg's gRPC) is purely an adapter
@@ -101,7 +101,7 @@ schemas at runtime without any `.proto` file:
 Fallback: when reflection isn't available (older servers, custom
 builds), the bridge can compile local `.proto` files via
 `grpc_tools.protoc` and use the descriptors that way. See the
-`LocalProtoClient` in `MicroserviceBase/adapters/grpc_bridge/reflect_client.py`.
+`LocalProtoClient` in `python/MicroserviceBase/adapters/grpc_bridge/reflect_client.py`.
 
 ## The FastAPI bridge
 
@@ -119,7 +119,7 @@ The GUI is a thin client over this — every button maps to one or two
 endpoints. Same endpoints are usable from `curl` / scripts when
 automating.
 
-Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`. Full
+Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py`. Full
 endpoint list: see "CLI equivalents" in
 [`ops_consul_nomad.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
 
@@ -132,7 +132,7 @@ a complete service project from a small spec:
 !include diagrams/overview_scaffold_flow.puml
 ```
 
-Source: `MicroserviceBase/adapters/scaffold/cpp_tmpl.py` (~7000 lines
+Source: `python/MicroserviceBase/adapters/scaffold/cpp_tmpl.py` (~7000 lines
 of templated emitters — one function per output file). The same code
 backs both the GUI wizard and the CLI.
 

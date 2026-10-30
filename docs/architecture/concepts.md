@@ -20,7 +20,7 @@ import third-party libraries (grpc, consul, fastapi, qt, etc.).
 
 ### Bridge (FastAPI bridge)
 
-The Python process at `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`.
+The Python process at `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py`.
 Single HTTP front-end at `http://127.0.0.1:1112` that the Manager GUI
 talks to. Wraps the scaffold generator, gRPC reflection client,
 Consul/Nomad agent management, and Consul/Nomad HTTP API
@@ -52,7 +52,7 @@ deserialize messages without compile-time-generated stubs.
 
 The innermost layer — pure business logic, zero infrastructure
 imports. Plain functions and value types. Unit-testable by
-construction. Lives in `domain/` directories (framework-level: `MicroserviceBase/domain/`;
+construction. Lives in `domain/` directories (framework-level: `python/MicroserviceBase/domain/`;
 service-level: `<service>/src/<svc>/domain/`).
 
 ### gRPC reflection
@@ -79,7 +79,7 @@ gone; the term may still appear in old ADRs and `_legacy/CONCEPT.md`.
 ### Manager GUI
 
 The Bootstrap-based desktop / browser app at
-`MicroserviceBase/MicroserviceManagerGUI/`. Three modes: **Services**
+`microservice-gui/`. Three modes: **Services**
 (browse + invoke registered services), **Service Network** (start /
 stop Consul + Nomad), **Service Creator** (the scaffold wizard).
 See [`MicroserviceManagerGUI/README.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/MicroserviceBase/MicroserviceManagerGUI/README.md).
@@ -139,8 +139,8 @@ The convenience helper for outbound calls. Resolves via Consul,
 opens a channel, uses reflection to discover methods, dynamically
 builds + sends + parses messages. See
 [`runtime_model.md`](runtime-model.md). Source:
-`MicroserviceBase/runtime/service_client.py` (Python),
-`MicroserviceBase/runtime_cpp/include/MicroserviceBase/ClientRegistry.h` (C++).
+`python/MicroserviceBase/runtime/service_client.py` (Python),
+`cpp/runtime/include/MicroserviceBase/ClientRegistry.h` (C++).
 
 ### Service Registry *(legacy)*
 
@@ -156,8 +156,8 @@ The boot helper every generated service uses. Builds the gRPC
 server, registers in Consul, installs signal handlers, blocks until
 shutdown, deregisters on exit. See
 [`runtime_model.md`](runtime-model.md). Source:
-`MicroserviceBase/runtime/service_runner.py` (Python),
-`MicroserviceBase/runtime_cpp/include/MicroserviceBase/ServiceRunner.h` (C++).
+`python/MicroserviceBase/runtime/service_runner.py` (Python),
+`cpp/runtime/include/MicroserviceBase/ServiceRunner.h` (C++).
 
 ### Triplet (vcpkg)
 

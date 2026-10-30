@@ -32,16 +32,16 @@ produces new services in Python or C++/Qt.
 
 | You want to… | Read |
 |---|---|
-| Learn the Manager GUI | [Manager GUI overview](gui/index.md) |
-| Run Consul + Nomad without two terminals | [Operating Consul + Nomad](gui/ops_consul_nomad.md) |
+| Learn the Manager GUI | [Manager GUI overview](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/index.md) |
+| Run Consul + Nomad without two terminals | [Operating Consul + Nomad](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md) |
 | Diagnose a problem | [Troubleshooting](reference/troubleshooting.md) |
 
 **Develop**
 
 | You want to… | Read |
 |---|---|
-| Generate a new service | [Service Creator wizard](gui/service_creator.md) |
-| Generate Robot Framework keywords from `.proto` | [Robot resource generator](gui/robot_generator.md) |
+| Generate a new service | [Service Creator wizard](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/service_creator.md) |
+| Generate Robot Framework keywords from `.proto` | [Robot resource generator](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/robot_generator.md) |
 | Walk through building a service by hand | [Creating a service](examples/service_creation.md) |
 | Set up a C++ toolchain | [Examples and toolchain](examples/index.md) |
 | Install the C++ runtime as a CMake / vcpkg package | [C++ runtime install](guides/runtime-cpp-install.md) |
@@ -61,7 +61,7 @@ produces new services in Python or C++/Qt.
 | [Runtime model](architecture/runtime-model.md) | `ServiceRunner` lifecycle (boot → register → serve → graceful shutdown), `ServiceClient` discovery, channel pooling, dynamic invocation via reflection |
 | [Diagrams](architecture/diagrams.md) | Every `.puml` in the repo, rendered — architecture, class structure, runtime sequences, GUI internals, Qt templates |
 | [Concepts](architecture/concepts.md) | Glossary: bridge, runtime, port, adapter, scaffold, hub (legacy) |
-| [Manager GUI](gui/index.md) | The Electron + web GUI: service creation, Consul/Nomad operation, Robot generation |
+| [Manager GUI](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/index.md) | The Electron + web GUI: service creation, Consul/Nomad operation, Robot generation |
 | [Examples and toolchain](examples/index.md) | MinGW, vcpkg, Qt + gRPC setup; building a service end to end; the WASM Cleware walkthrough |
 | [Architecture decisions](adr/README.md) | One record per significant choice, dated and marked Active / Superseded / Archived |
 | [Changelog](reference/changelog.md) | Migration history — RabbitMQ → gRPC, ServiceRegistry → Consul, ProcessHub → Nomad, Manager GUI rewrite |
@@ -82,8 +82,8 @@ pre-migration
 side by side to map old terms onto new.
 
 **Operator who just needs to run things** —
-[Manager GUI overview](gui/index.md) →
-[Operating Consul + Nomad](gui/ops_consul_nomad.md). The GUI-driven path
+[Manager GUI overview](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/index.md) →
+[Operating Consul + Nomad](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md). The GUI-driven path
 replaces the CLI operations entirely.
 
 ---

@@ -290,6 +290,6 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/local_hub/local_hub_manager.py`
-- Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py` (hub endpoints)
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/local_hub/local_hub_manager.py`
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py` (hub endpoints)
 - Related: ADR-009 (Service Executor), ADR-011 (Service Import)

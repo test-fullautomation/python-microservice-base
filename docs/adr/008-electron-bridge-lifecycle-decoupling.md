@@ -90,6 +90,6 @@ function isBridgeRunning() {
 
 ## References
 
-- Source: `MicroserviceBase/MicroserviceManagerGUI/electron/preload.js`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/electron/main.js`
+- Source: `microservice-gui/electron/preload.js`
+- Source: `microservice-gui/electron/main.js`
 - Related: ADR-005 (Dual-Host GUI), ADR-006 (FastAPI Bridge)

@@ -15,32 +15,40 @@
 #  demo_cluster.nomad), whose server listens on http://127.0.0.1:4746 --
 #  not on the bootstrap agent the GUI starts.
 #
-#  One setting is yours: base_repo, where this repository is checked out
-#  (forward slashes, no spaces). The taf_repo_proposal checkout comes from
+#  Two settings are yours: base_repo, where this repository is checked
+#  out, and gui_repo, where the microservice-gui repository is (forward
+#  slashes, no spaces). The taf_repo_proposal checkout comes from
 #  the node itself (meta.repo_root, which demo_cluster.nomad sets on every
 #  client), so nothing else names a local path.
 #
 #  In the Manager GUI: Nomad -> Connect to Existing Cluster ->
 #  http://127.0.0.1:4746 -> Submit Job -> this file, replace the
-#  <path-to-this-repository> placeholder below with your checkout, Submit.
+#  <path-to-this-repository> and <path-to-microservice-gui> placeholders
+#  below with your checkouts, Submit.
 #  From a terminal:
 #
 #      nomad job run -address=http://127.0.0.1:4746 \
-#          -var base_repo=<path-to-this-repository> examples/ara_demo.nomad.hcl
+#          -var base_repo=<path-to-this-repository> #          -var gui_repo=<path-to-microservice-gui> examples/ara_demo.nomad.hcl
 #      nomad job stop -address=http://127.0.0.1:4746 -purge ara-demo
 #
 #  The walkthrough is in
-#  MicroserviceBase/MicroserviceManagerGUI/docs/md/bench_demo.md.
+#  microservice-gui/docs/md/bench_demo.md.
 #
 #  Both groups run on client1, so every service of the demo registers in
 #  the same Consul agent (127.0.0.1:8500).
 
 variable "base_repo" {
-  description = "python-microservice-base checkout (hello service, run_cluster.py), forward slashes, no spaces"
+  description = "python-microservice-base checkout (hello service), forward slashes, no spaces"
   type        = string
   # Placeholder: a job submitted with it unchanged fails its tasks with
   # "can't open file '<path-to-this-repository>/...'" in the task log.
   default = "<path-to-this-repository>"
+}
+
+variable "gui_repo" {
+  description = "microservice-gui checkout (graph-studio/tools/run_cluster.py), forward slashes, no spaces"
+  type        = string
+  default     = "<path-to-microservice-gui>"
 }
 
 variable "python" {
@@ -105,7 +113,7 @@ job "ara-demo" {
       driver = "raw_exec"
       config {
         command = var.python
-        args = ["${var.base_repo}/MicroserviceBase/MicroserviceManagerGUI/graph-studio/tools/run_cluster.py",
+        args = ["${var.gui_repo}/graph-studio/tools/run_cluster.py",
           "--signals-root", "${node.meta.repo_root}/services/signals",
         "--all", "--discovery-port", "50210"]
       }
@@ -187,7 +195,7 @@ job "ara-demo" {
         args    = ["${var.base_repo}/examples/hello_service/main.py"]
       }
       env {
-        PYTHONPATH           = "${var.base_repo}/examples/hello_service;${var.base_repo}"
+        PYTHONPATH           = "${var.base_repo}/examples/hello_service;${var.base_repo}/python"
         PYTHONUNBUFFERED     = "1"
         HELLO_SERVICE_NAME   = "hello-demo"
         HELLO_GRPC_PORT      = "${NOMAD_PORT_grpc}"

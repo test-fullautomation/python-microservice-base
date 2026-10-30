@@ -21,8 +21,6 @@ on:
       - 'docs_hooks/**'
       - 'properdocs.yml'
       - 'tools/verify_diagrams.py'
-      - 'MicroserviceBase/MicroserviceManagerGUI/docs/md/**'
-      - 'MicroserviceBase/MicroserviceManagerGUI/docs/img/**'
       - 'examples/docs/md/**'
       - '.github/workflows/docs.yml'
   pull_request:

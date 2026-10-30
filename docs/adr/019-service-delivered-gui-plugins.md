@@ -281,8 +281,8 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/domain/service_base.py` (lines 292-322, svc_api_get_gui_files)
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/app.js` (lines 388-454, 1607-1660)
-- Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py` (lines 207-266)
+- Source: `python/MicroserviceBase/domain/service_base.py` (lines 292-322, svc_api_get_gui_files)
+- Source: `microservice-gui/web/js/app.js` (lines 388-454, 1607-1660)
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py` (lines 207-266)
 - Related: ADR-004 (Electron over Qt — service-delivered GUI is the decisive argument)
 - Related: ADR-005 (Dual-Host GUI), ADR-017 (svc_api_ Convention)

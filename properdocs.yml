@@ -51,11 +51,10 @@ plugins:
       zoomable: true
       draggable: true
 
-# Manager GUI docs and examples docs cannot be moved into docs/ -- their
-# HTML twins are shipped runtime assets (in-app help + Electron bundle),
-# and examples/docs/ ships in the installer. The hook copies their
-# Markdown into docs/gui/ and docs/examples/ at build time and rewrites
-# the links. Both destinations are gitignored build artefacts.
+# examples/docs/ is meant to sit next to the example code it describes,
+# so the hook copies its Markdown into docs/examples/ at build time and
+# rewrites the links. The destination is a gitignored build artefact.
+# The Manager GUI's docs are in the microservice-gui repo.
 hooks:
   - docs_hooks/copy_external_docs.py
 
@@ -68,7 +67,6 @@ hooks:
 # file watcher sees no modification after the first pass.)
 watch:
   - docs_hooks
-  - MicroserviceBase/MicroserviceManagerGUI/docs/md
   - examples/docs/md
 
 # docs/_legacy/ holds pre-migration (RabbitMQ-era) material kept for
@@ -96,12 +94,13 @@ nav:
       - "C++ runtime install": guides/runtime-cpp-install.md
       - "Adding a test runner": guides/test-runners.md
   # --- generated at build time by docs_hooks/copy_external_docs.py ---
+  # The Manager GUI and its docs are in the microservice-gui repo.
   - Manager GUI:
-      - Overview: gui/index.md
-      - Service Creator wizard: gui/service_creator.md
-      - Robot resource generator: gui/robot_generator.md
-      - "Operating Consul + Nomad": gui/ops_consul_nomad.md
-      - "Bench demo": gui/bench_demo.md
+      - Overview: https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/index.md
+      - Service Creator wizard: https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/service_creator.md
+      - Robot resource generator: https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/robot_generator.md
+      - "Operating Consul + Nomad": https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md
+      - "Bench demo": https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/bench_demo.md
   - Examples and toolchain:
       - Overview: examples/index.md
       - Creating a service: examples/service_creation.md

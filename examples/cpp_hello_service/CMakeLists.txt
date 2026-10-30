@@ -15,7 +15,7 @@ find_package(CURL     CONFIG REQUIRED)
 # MicroserviceBase runtime library (shared with other C++ services)
 # ---------------------------------------------------------------------------
 add_subdirectory(
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/runtime_cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/runtime"
     "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime"
 )
 

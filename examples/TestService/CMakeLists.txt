@@ -58,12 +58,13 @@ if(NOT MicroserviceBase_FOUND)
     set(_mb_candidates "")
     if(DEFINED ENV{MICROSERVICEBASE_DIR})
         list(APPEND _mb_candidates
+            "$ENV{MICROSERVICEBASE_DIR}/cpp/runtime"
             "$ENV{MICROSERVICEBASE_DIR}/MicroserviceBase/runtime_cpp"
             "$ENV{MICROSERVICEBASE_DIR}/runtime_cpp"
             "$ENV{MICROSERVICEBASE_DIR}")
     endif()
     list(APPEND _mb_candidates
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/runtime_cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/runtime")
     set(_mb_in_tree "")
     foreach(_p IN LISTS _mb_candidates)
         if(EXISTS "${_p}/CMakeLists.txt")

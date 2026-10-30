@@ -144,5 +144,5 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/MicroserviceManagerGUI/electron/`, `MicroserviceBase/MicroserviceManagerGUI/web/`
+- Source: `microservice-gui/electron/`, `microservice-gui/web/`
 - Related: ADR-006 (FastAPI Bridge)

@@ -96,5 +96,5 @@ Deferred because:
 
 ## References
 
-- Source: `MicroserviceBase/domain/service_registry.py`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/app.js`
+- Source: `python/MicroserviceBase/domain/service_registry.py`
+- Source: `microservice-gui/web/js/app.js`

@@ -411,14 +411,14 @@ with declared capabilities. Qt UIs now fit there too:
 
 ## References
 
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/SchemaRenderer.js`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/SchemaAutoGen.js`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/QtWasmLoader.js`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/QtShellManager.js`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/WidgetShellManager.js`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/app.js`
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/ServiceCreator.js`
-- Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`
+- Source: `microservice-gui/web/js/SchemaRenderer.js`
+- Source: `microservice-gui/web/js/SchemaAutoGen.js`
+- Source: `microservice-gui/web/js/QtWasmLoader.js`
+- Source: `microservice-gui/web/js/QtShellManager.js`
+- Source: `microservice-gui/web/js/WidgetShellManager.js`
+- Source: `microservice-gui/web/js/app.js`
+- Source: `microservice-gui/web/js/ServiceCreator.js`
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py`
 - Template: `examples/cpp_qml_service_template/`
 - Template: `examples/cpp_widget_service_template/`
 - Template: `examples/qt_wasm_service_template/`
