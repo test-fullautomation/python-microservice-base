@@ -22,9 +22,9 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.insert(0, REPO)
 
-from MicroserviceBase.adapters import test_project as tp  # noqa: E402
+from microservice_gui_bridge.adapters import test_project as tp  # noqa: E402
 
-HELLO_PROTO = os.path.join(REPO, "examples", "hello_service", "proto", "hello.proto")
+HELLO_PROTO = os.path.join(REPO, "..", "examples", "hello_test_project", "proto", "hello", "hello.proto")
 HELLO_FQN = "hello.v1.HelloService"
 CONSUL = "http://127.0.0.1:8501"
 
@@ -269,7 +269,7 @@ class Test_ExportFromReflection:
 class Test_ProtoDiscovery:
 
     def test_locates_the_declaring_file(self):
-        found = tp.locate_service_proto([HELLO_FQN], [os.path.join(REPO, "examples")])
+        found = tp.locate_service_proto([HELLO_FQN], [os.path.join(REPO, "..", "examples")])
         assert found and found.endswith("hello.proto")
         assert HELLO_FQN in tp.proto_services(found)
 
@@ -290,7 +290,7 @@ class Test_ProtoDiscovery:
         assert len(first) == 2
 
     def test_unknown_service_is_not_found(self):
-        assert tp.locate_service_proto(["nope.v1.Missing"], [os.path.join(REPO, "examples")]) is None
+        assert tp.locate_service_proto(["nope.v1.Missing"], [os.path.join(REPO, "..", "examples")]) is None
 
     def test_exclusion_callback_is_honoured(self):
         assert tp.locate_service_proto([HELLO_FQN], [HELLO_PROTO]) is not None
@@ -360,7 +360,7 @@ class Test_BridgeEndpoints:
         pytest.importorskip("fastapi")
         pytest.importorskip("httpx")
         from fastapi.testclient import TestClient
-        from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
+        from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
         bridge = FastAPIBridge(host="localhost", port=1112, allowed_origins="*")
         return TestClient(bridge._build_app() or bridge._app)
 
@@ -455,7 +455,7 @@ class Test_ProjectView:
         assert f["path"] == SUITE and f["content"] == _read(project, SUITE)
 
     def test_read_file_refuses_escape_binary_missing_and_large(self, project, monkeypatch):
-        from MicroserviceBase.adapters.test_project import engine
+        from microservice_gui_bridge.adapters.test_project import engine
         with pytest.raises(tp.TestProjectError, match="escapes"):
             tp.read_project_file(str(project), "../outside.txt")
         with pytest.raises(tp.TestProjectError, match="No such file"):

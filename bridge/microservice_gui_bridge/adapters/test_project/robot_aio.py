@@ -53,7 +53,7 @@ from ...ports.test_project import (
     TestProjectError,
     TestProjectRunner,
 )
-from ..scaffold.robot_tmpl import (
+from MicroserviceBase.adapters.scaffold.robot_tmpl import (
     RobotGenError,
     emit_resources,
     keyword_name,

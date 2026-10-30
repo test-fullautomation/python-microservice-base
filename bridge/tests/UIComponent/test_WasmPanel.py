@@ -28,7 +28,7 @@ from MicroserviceBase.adapters.scaffold.generator import (
 )
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-LINT = os.path.join(REPO, "MicroserviceBase", "MicroserviceManagerGUI", "tools", "endo-lint.js")
+LINT = os.path.join(REPO, "..", "tools", "endo-lint.js")
 
 PANEL = ["gui_wasm/CMakeLists.txt", "gui_wasm/main.cpp", "gui_wasm/panel_spec.h",
          "gui_wasm/ServicePanel.h", "gui_wasm/ServicePanel.cpp",

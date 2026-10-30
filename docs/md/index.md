@@ -85,10 +85,10 @@ chamber, the bench signals and the hello service on one stage:
 
 | When you need… | Go to |
 |---|---|
-| The actual framework architecture (hexagonal layers, runtime model) | [`../../../../docs/architecture/`](../../../../docs/architecture/overview.md) (repo-level) |
-| A toolchain setup guide (MSYS2, Qt6::Grpc, vcpkg + Qt MinGW) | [`../../../../examples/docs/md/index.md`](../../../../examples/docs/md/index.md) |
+| The actual framework architecture (hexagonal layers, runtime model) | [MicroserviceBase `docs/architecture/`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/architecture/overview.md) (repo-level) |
+| A toolchain setup guide (MSYS2, Qt6::Grpc, vcpkg + Qt MinGW) | [MicroserviceBase `examples/docs/md/index.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/docs/md/index.md) |
 | The lighter in-app help (loaded inside the running GUI) | `../../web/docs/help.html` (or click the **?** in the navbar when the GUI is running) |
-| Worked examples (C++ and Python services, a client, multi-proto projects) | [`../../../../examples/README.md`](../../../../examples/README.md) |
+| Worked examples (C++ and Python services, a client, multi-proto projects) | [MicroserviceBase `examples/README.md`](https://github.com/test-fullautomation/python-microservice-base/blob/develop/examples/README.md) |
 
 ## Views: user, admin, developer
 
@@ -452,7 +452,7 @@ services, and in which order, is a **composition**:
   closes it when no tile needs it. Names the catalog does not know show
   *unknown signal* and fill in once their service is up. How the host bus
   in the window and the bridge share this work is drawn in
-  [Diagrams → Live signals](../../../../docs/architecture/diagrams.md#live-signals-host-bus-and-bridge).
+  [Diagrams → Live signals](https://github.com/test-fullautomation/python-microservice-base/blob/develop/docs/architecture/diagrams.md#live-signals-host-bus-and-bridge).
 - `node tools/endo-lint.js <composition.json>` lints a composition in CI.
   `test/endo/fixtures/bench/` holds the proposal's prototype modules and
   compositions; `test/endo/test_endo_bench.js` tests them.

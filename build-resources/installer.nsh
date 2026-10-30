@@ -22,6 +22,7 @@
 ;   build/installers/otp_win64_<ver>.exe
 ;   build/installers/rabbitmq-server-<ver>.exe
 ;   build/installers/microservicebase-<ver>-py3-none-any.whl
+;   build/installers/microservice_gui_bridge-<ver>-py3-none-any.whl
 ;   build/installers/processhub-<ver>-py3-none-any.whl
 ;
 ; ---- Set to 1 to re-enable the legacy Erlang+RabbitMQ install flow ----
@@ -49,11 +50,13 @@
 
 !define ERLANG_VER  "26.2.5"
 !define RABBITMQ_VER "4.0.5"
-!define MSB_VER     "2.2.0"
+!define MSB_VER     "3.0.0"
+!define BRIDGE_VER  "1.0.0"
 !define PHB_VER     "1.1.0"
 !define ERLANG_INSTALLER  "otp_win64_${ERLANG_VER}.exe"
 !define RABBITMQ_INSTALLER "rabbitmq-server-${RABBITMQ_VER}.exe"
 !define MSB_WHEEL   "microservicebase-${MSB_VER}-py3-none-any.whl"
+!define BRIDGE_WHEEL "microservice_gui_bridge-${BRIDGE_VER}-py3-none-any.whl"
 !define PHB_WHEEL   "processhub-${PHB_VER}-py3-none-any.whl"
 !define ERLANG_URL  "https://github.com/erlang/otp/releases/download/OTP-${ERLANG_VER}/${ERLANG_INSTALLER}"
 !define RABBITMQ_URL "https://github.com/rabbitmq/rabbitmq-server/releases/download/v${RABBITMQ_VER}/${RABBITMQ_INSTALLER}"
@@ -883,6 +886,7 @@ Function InstallMicroserviceBase
 
   ; Try bundled wheel
   StrCpy $R2 "$INSTDIR\resources\installers\${MSB_WHEEL}"
+  IfFileExists "$INSTDIR\resources\installers\${BRIDGE_WHEEL}" 0 msb_install_pypi
   IfFileExists $R2 msb_install_wheel
 
   ; No bundled wheel — install from PyPI
@@ -891,7 +895,7 @@ Function InstallMicroserviceBase
 
   msb_install_wheel:
   DetailPrint "Found bundled wheel: $R2"
-  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install --upgrade "$R2[rabbitmq,web]"'
+  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install --upgrade "$R2[rabbitmq]" "$INSTDIR\resources\installers\${BRIDGE_WHEEL}"'
   Pop $R0
   Pop $R1
   ${If} $R0 == "0"
@@ -901,7 +905,7 @@ Function InstallMicroserviceBase
   DetailPrint "Bundled wheel install failed (exit code $R0) — falling back to PyPI..."
 
   msb_install_pypi:
-  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install "MicroserviceBase[rabbitmq,web]"'
+  nsExec::ExecToStack '"$MSB_PythonPath" -m pip install "MicroserviceBase[rabbitmq]==${MSB_VER}" "microservice-gui-bridge==${BRIDGE_VER}"'
   Pop $R0
   Pop $R1
   ${If} $R0 == "0"
@@ -911,7 +915,7 @@ Function InstallMicroserviceBase
     MessageBox MB_OK|MB_ICONEXCLAMATION \
       "Failed to install MicroserviceBase Python library.$\n$\n\
       Please install manually by running:$\n\
-      $MSB_PythonPath -m pip install $\"MicroserviceBase[rabbitmq,web]$\""
+      $MSB_PythonPath -m pip install MicroserviceBase==${MSB_VER} microservice-gui-bridge==${BRIDGE_VER}"
   ${EndIf}
 FunctionEnd
 

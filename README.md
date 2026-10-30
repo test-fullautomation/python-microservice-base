@@ -5,8 +5,9 @@ a friendly UX for **operating** the runtime (start/stop Consul + Nomad,
 inspect services, submit jobs) and **building** new ones (the Service
 Creator wizard, equivalent to `mb-scaffold`).
 
-> ↑ Repo root: [`../../`](../..) — framework architecture lives in
-> [`../../docs/`](../../docs).
+> The services, their runtime and the framework architecture live in the
+> MicroserviceBase repo (`test-fullautomation/python-microservice-base`);
+> this repo holds the GUI and its bridge (`bridge/`).
 
 ## What you can do here
 
@@ -24,9 +25,9 @@ Creator wizard, equivalent to `mb-scaffold`).
 | **Python** 3.10+ | FastAPI bridge that the GUI talks to | `python --version` |
 | **Node.js** 18 LTS or newer + **npm** | Electron desktop wrapper + dependency install | `node --version` &nbsp; `npm --version` |
 | **Consul** + **Nomad** binaries on `%PATH%` | The GUI's Service Network tab launches and connects to them | `consul --version` &nbsp; `nomad --version` |
-| **MicroserviceBase** (this repo's Python package) | Provides the FastAPI bridge module | `python -c "import MicroserviceBase; print(MicroserviceBase.__version__)"` |
+| **MicroserviceBase** 3.x + this repo's bridge | The bridge (`bridge/`, package `microservice_gui_bridge`) the GUI talks to, on MicroserviceBase | `python -c "import microservice_gui_bridge, MicroserviceBase"` |
 
-For Consul + Nomad install steps see the [repo README](../../README.md#consul--nomad-install) — won't repeat them here.
+For Consul + Nomad install steps see the MicroserviceBase README (section *Consul + Nomad install*) — won't repeat them here.
 
 ## Install (step-by-step)
 

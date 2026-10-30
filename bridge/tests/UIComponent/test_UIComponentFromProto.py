@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..")))
 
 from MicroserviceBase.tools import ui_component as uc  # noqa: E402
 
-GUI = os.path.abspath(os.path.join(HERE, "..", "..", "MicroserviceBase", "MicroserviceManagerGUI"))
+GUI = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
 SUPPLY = """
 syntax = "proto3";

@@ -27,7 +27,7 @@ from MicroserviceBase.adapters.scaffold.generator import (
 )
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-GUI = os.path.join(REPO, "MicroserviceBase", "MicroserviceManagerGUI")
+GUI = os.path.join(REPO, "..")
 LINT = os.path.join(GUI, "tools", "endo-lint.js")
 
 
@@ -111,7 +111,7 @@ class Test_Bridge:
         import io
         import zipfile
         from fastapi.testclient import TestClient
-        from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
+        from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
 
         bridge = FastAPIBridge(host="localhost", port=1112)
         client = TestClient(bridge._build_app() or bridge._app)

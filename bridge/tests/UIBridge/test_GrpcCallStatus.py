@@ -23,7 +23,7 @@ from google.protobuf import descriptor_pb2, descriptor_pool, message_factory  # 
 
 from MicroserviceBase.adapters.grpc_bridge import GrpcReflectError, rpc_status  # noqa: E402
 from MicroserviceBase.adapters.grpc_bridge.reflect_client import _invoke_method  # noqa: E402
-from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import BRIDGE_METADATA, call_metadata  # noqa: E402
+from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import BRIDGE_METADATA, call_metadata  # noqa: E402
 
 SERVICE = "demo.v1.Orders"
 
@@ -185,7 +185,7 @@ class Test_Metadata:
             call_metadata({"note": "x" * 1025})
 
     def test_a_login_name_that_is_no_metadata_value_is_left_out(self, monkeypatch):
-        from MicroserviceBase.adapters.ui_bridge import fastapi_bridge
+        from microservice_gui_bridge.adapters.ui_bridge import fastapi_bridge
         monkeypatch.setattr(fastapi_bridge, "_local_user", lambda: "jörg")
         md, _rid = call_metadata({})
         assert "x-mm-user" not in dict(md)

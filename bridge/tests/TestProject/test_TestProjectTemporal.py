@@ -23,11 +23,11 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.insert(0, REPO)
 
-from MicroserviceBase.adapters import test_project as tp  # noqa: E402
-from MicroserviceBase.adapters.test_project import engine  # noqa: E402
-from MicroserviceBase.ports.test_project import RunOptions, RunSettings  # noqa: E402
+from microservice_gui_bridge.adapters import test_project as tp  # noqa: E402
+from microservice_gui_bridge.adapters.test_project import engine  # noqa: E402
+from microservice_gui_bridge.ports.test_project import RunOptions, RunSettings  # noqa: E402
 
-HELLO_PROTO = os.path.join(REPO, "examples", "hello_service", "proto", "hello.proto")
+HELLO_PROTO = os.path.join(REPO, "..", "examples", "hello_test_project", "proto", "hello", "hello.proto")
 HELLO_FQN = "hello.v1.HelloService"
 CONSUL = "http://127.0.0.1:8501"
 RUNNER = "temporal-python"

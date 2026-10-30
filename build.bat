@@ -22,27 +22,15 @@ if not exist node_modules (
     )
 )
 
-echo [3/4] Building MicroserviceBase wheel...
+echo [3/4] Getting the MicroserviceBase and bridge wheels...
+REM MSB_SRC: a checkout of the base repo to build MicroserviceBase from;
+REM without it the version installer.nsh names comes from the package index.
 if not exist "%PYTHON_PATH%" (
-    echo WARNING: Python not found at %PYTHON_PATH%, skipping wheel build
+    echo WARNING: Python not found at %PYTHON_PATH%, skipping the wheels
     goto skip_wheel
 )
-REM Drop any previously-built MSB wheels so the installers folder only ever
-REM ships the version this build produces.  Without this, version bumps leave
-REM the old wheel behind and the bundle silently grows.
-del /q "%~dp0build-resources\installers\microservicebase-*.whl" 2>nul
-set "SKIP_DOCBUILD=1"
-REM --no-build-isolation skips pip's per-build venv (which would re-download
-REM setuptools / wheel / colorama from PyPI on every run).  Faster and works
-REM offline; assumes the active Python already has those build deps from
-REM `pyproject.toml`'s [build-system].requires.
-"%PYTHON_PATH%" -m pip wheel --no-deps --no-build-isolation -w "%~dp0build-resources\installers" "%~dp0..\.."
-set "SKIP_DOCBUILD="
-if errorlevel 1 (
-    echo WARNING: Wheel build failed, installer will fall back to PyPI
-) else (
-    echo Wheel built to build-resources\installers\
-)
+"%PYTHON_PATH%" "%~dp0build-resources\fetch_wheels.py"
+if errorlevel 1 echo WARNING: wheels missing, the installer will fall back to the package index
 :skip_wheel
 
 echo [4/4] Building...

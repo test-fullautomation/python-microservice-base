@@ -26,7 +26,7 @@ pytest.importorskip("httpx")
 psutil = pytest.importorskip("psutil")
 from fastapi.testclient import TestClient  # noqa: E402
 
-from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import FastAPIBridge  # noqa: E402
+from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import FastAPIBridge  # noqa: E402
 
 AGENT_SELF = {"member": {"Name": "demo-server"},
               "config": {"Version": "1.9.0", "Datacenter": "dc1", "Server": {"Enabled": True}}}
@@ -146,6 +146,6 @@ def test_a_local_agent_is_reached_past_the_proxy(monkeypatch, agents):
     consul = client.get("/api/consul/health", params={"consul": "http://127.0.0.1:%d" % ok_port}).json()
     assert consul["ok"] is True and consul["leader"] == "127.0.0.1:8300", consul
 
-    from MicroserviceBase.adapters.nomad_hub.nomad_client import is_loopback_url
+    from microservice_gui_bridge.adapters.nomad_hub.nomad_client import is_loopback_url
     assert is_loopback_url("http://localhost:4646") and is_loopback_url("http://[::1]:4646")
     assert not is_loopback_url("http://nomad.example.com:4646")

@@ -20,7 +20,7 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.insert(0, REPO)
 
-from MicroserviceBase.adapters import test_project as tp  # noqa: E402
+from microservice_gui_bridge.adapters import test_project as tp  # noqa: E402
 
 pytest.importorskip("robot")
 
@@ -394,7 +394,7 @@ class Test_BridgeEndpoints:
     @pytest.fixture
     def client(self):
         from fastapi.testclient import TestClient
-        from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
+        from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
         bridge = FastAPIBridge(host="localhost", port=1112, allowed_origins="*")
         return TestClient(bridge._build_app() or bridge._app)
 

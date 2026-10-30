@@ -10,12 +10,11 @@ name: Build DevAtServGUI installers
 on:
   push:
     branches: [develop]
-    paths:
-      - 'MicroserviceBase/**'
-      - 'pyproject.toml'
-      - 'setup.py'
-      - '.github/workflows/build-installer.yml'
   workflow_dispatch:
+    inputs:
+      msb_ref:
+        description: 'Ref of the MicroserviceBase repo to build the bundled wheel from'
+        default: 'develop'
 
 permissions:
   contents: read
@@ -28,12 +27,12 @@ jobs:
   # The version guard runs once, on Linux, before either installer is
   # built -- no point burning two runners on a mismatch.
   #
-  # installer.nsh hard-codes the wheel filename it installs:
-  #   !define MSB_VER   "2.2.0"
-  #   !define MSB_WHEEL "microservicebase-${MSB_VER}-py3-none-any.whl"
-  # When that drifted from pyproject.toml, the installer could not find
-  # its bundled wheel, silently fell back to PyPI, and shipped 2.1.0
-  # while the wheel was 2.2.0. Fail loudly instead.
+  # installer.nsh hard-codes the wheel filenames it installs (MSB_VER,
+  # BRIDGE_VER). When MSB_VER drifted from the wheel, the installer could
+  # not find its bundled wheel, silently fell back to PyPI, and shipped
+  # 2.1.0 while the wheel was 2.2.0. build-resources/fetch_wheels.py
+  # checks both wheels; this job checks the bridge and the app version
+  # before any runner builds.
   version-check:
     runs-on: ubuntu-latest
     outputs:
@@ -42,8 +41,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - id: check
-        name: pyproject / installer.nsh / package.json must agree
-        working-directory: MicroserviceBase/MicroserviceManagerGUI
+        name: bridge/pyproject.toml and installer.nsh must agree; package.json has one version
         run: |
           # sed everywhere, for two reasons:
           #  - `grep -oP` needs PCRE, which is unavailable in some locales
@@ -52,8 +50,8 @@ jobs:
           #    on a Node toolchain it otherwise has no use for. The build
           #    job pins Node 20; this one would have picked up whatever
           #    the runner image happened to ship.
-          proj=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ../../pyproject.toml | head -1)
-          nsh=$(sed -n 's/.*!define[[:space:]]\{1,\}MSB_VER[[:space:]]\{1,\}"\([^"]*\)".*/\1/p' build-resources/installer.nsh | head -1)
+          proj=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' bridge/pyproject.toml | head -1)
+          nsh=$(sed -n 's/.*!define[[:space:]]\{1,\}BRIDGE_VER[[:space:]]\{1,\}"\([^"]*\)".*/\1/p' build-resources/installer.nsh | head -1)
 
           # No JSON parser here, so make the assumption explicit: bail out
           # if "version" is not unique rather than silently taking the
@@ -67,19 +65,19 @@ jobs:
           fi
           pkg=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -1)
 
-          echo "pyproject.toml : $proj"
-          echo "installer.nsh  : $nsh"
-          echo "package.json   : $pkg"
+          echo "bridge/pyproject.toml : $proj"
+          echo "installer.nsh         : $nsh"
+          echo "package.json          : $pkg"
 
           if [ -z "$proj" ] || [ -z "$nsh" ] || [ -z "$pkg" ]; then
             echo "::error::Could not read one of the versions"; exit 1
           fi
-          if [ "$proj" != "$nsh" ] || [ "$proj" != "$pkg" ]; then
-            echo "::error::Version mismatch - the installer would bundle a wheel it cannot find"
+          if [ "$proj" != "$nsh" ]; then
+            echo "::error::Version mismatch - the installer would bundle a bridge wheel it cannot find"
             exit 1
           fi
-          echo "OK - versions agree ($proj)"
-          echo "version=$proj" >> "$GITHUB_OUTPUT"
+          echo "OK - bridge $proj, app $pkg"
+          echo "version=$pkg" >> "$GITHUB_OUTPUT"
 
   build:
     needs: version-check
@@ -91,30 +89,35 @@ jobs:
             name: windows
             builder_flags: '--win --x64'
             artifact_glob: |
-              MicroserviceBase/MicroserviceManagerGUI/dist/*.exe
-              MicroserviceBase/MicroserviceManagerGUI/dist/*.exe.blockmap
+              dist/*.exe
+              dist/*.exe.blockmap
           - os: ubuntu-latest
             name: linux
             builder_flags: '--linux'
             artifact_glob: |
-              MicroserviceBase/MicroserviceManagerGUI/dist/*.AppImage
-              MicroserviceBase/MicroserviceManagerGUI/dist/*.deb
+              dist/*.AppImage
+              dist/*.deb
 
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: MicroserviceBase/MicroserviceManagerGUI
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # MicroserviceBase is built from its own repo, at the ref the run
+      # asks for, until the installers pin a released version.
+      - name: Checkout MicroserviceBase
+        uses: actions/checkout@v4
+        with:
+          repository: test-fullautomation/python-microservice-base
+          ref: ${{ inputs.msb_ref || 'develop' }}
+          path: _msb
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: MicroserviceBase/MicroserviceManagerGUI/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -130,29 +133,15 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # SKIP_DOCBUILD avoids the GenPackageDoc/LaTeX step in setup.py,
-      # which the bundled wheel does not need.
-      - name: Build MicroserviceBase wheel
+      # fetch_wheels.py fails when a wheel is missing or its version is
+      # not the one installer.nsh installs.
+      - name: Build the MicroserviceBase and bridge wheels
         shell: bash
         env:
-          SKIP_DOCBUILD: '1'
+          MSB_SRC: _msb
         run: |
-          mkdir -p build-resources/installers
-          rm -f build-resources/installers/microservicebase-*.whl
           python -m pip install --upgrade pip wheel setuptools colorama
-          python -m pip wheel --no-deps --no-build-isolation -w build-resources/installers ../..
-          ls -la build-resources/installers/
-
-      - name: Verify the bundled wheel is the one the installer expects
-        shell: bash
-        run: |
-          expected="microservicebase-${{ needs.version-check.outputs.version }}-py3-none-any.whl"
-          if [ ! -f "build-resources/installers/$expected" ]; then
-            echo "::error::Expected $expected but it is missing - the installer would fall back to PyPI"
-            ls -la build-resources/installers/
-            exit 1
-          fi
-          echo "OK - $expected present"
+          python build-resources/fetch_wheels.py
 
       - name: Build installer (${{ matrix.name }})
         run: npx electron-builder ${{ matrix.builder_flags }}

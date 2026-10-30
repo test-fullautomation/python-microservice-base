@@ -18,8 +18,8 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.insert(0, REPO)
 
-from MicroserviceBase.adapters import test_project as tp  # noqa: E402
-from MicroserviceBase.adapters.test_project import debugging  # noqa: E402
+from microservice_gui_bridge.adapters import test_project as tp  # noqa: E402
+from microservice_gui_bridge.adapters.test_project import debugging  # noqa: E402
 
 FLOW_SRC = os.environ.get("MB_FLOW_SRC", "")
 HAS_FLOW = bool(FLOW_SRC) and os.path.isfile(os.path.join(FLOW_SRC, "robot", "flow", "__init__.py"))

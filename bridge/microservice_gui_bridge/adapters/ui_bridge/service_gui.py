@@ -75,13 +75,13 @@ def services_dir() -> str:
 Where extracted GUI folders go.
 
 ``MB_GUI_SERVICES_DIR`` wins; otherwise the Manager GUI's
-``web/services`` next to this package.
+``web/services`` in the GUI folder (:func:`microservice_gui_bridge.gui_dir`).
     """
     override = os.environ.get(SERVICES_DIR_ENV, "").strip()
     if override:
         return os.path.abspath(override)
-    return os.path.abspath(os.path.join(
-        os.path.dirname(__file__), "..", "..", "MicroserviceManagerGUI", "web", "services"))
+    from ...paths import gui_dir
+    return os.path.abspath(os.path.join(gui_dir(), "web", "services"))
 
 
 def _channel(host: str, port: int):
@@ -98,7 +98,7 @@ Raises :class:`ServiceGuiError` when the service does not serve
     """
     import grpc
 
-    from ...runtime import gui_proto
+    from MicroserviceBase.runtime import gui_proto
 
     req_cls, resp_cls, _ = gui_proto.method_types("GetGuiInfo")
     with _channel(host, port) as channel:
@@ -155,7 +155,7 @@ Download the GUI package.
     """
     import grpc
 
-    from ...runtime import gui_proto
+    from MicroserviceBase.runtime import gui_proto
 
     req_cls, resp_cls, _ = gui_proto.method_types("GetGuiFiles")
     chunks = []

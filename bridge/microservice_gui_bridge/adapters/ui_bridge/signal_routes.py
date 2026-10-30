@@ -44,7 +44,7 @@ import asyncio
 import logging
 from typing import Any, Callable, Optional
 
-from ..signals import HubRegistry, SignalError, resolve_discovery
+from MicroserviceBase.adapters.signals import HubRegistry, SignalError, resolve_discovery
 
 logger = logging.getLogger(__name__)
 

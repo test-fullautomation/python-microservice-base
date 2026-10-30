@@ -309,7 +309,7 @@ Everything runner-specific -- file names, layout, generated code, syntax
 checks, the run command, how results are read -- lives in the
 implementation; the engine, the run manager and the GUI only use this
 interface. A runner is registered with
-``MicroserviceBase.adapters.test_project.register_runner`` or, from another
+``microservice_gui_bridge.adapters.test_project.register_runner`` or, from another
 package, as an entry point in the group :data:`RUNNER_ENTRY_POINTS`.
    """
 

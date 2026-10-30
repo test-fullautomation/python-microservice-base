@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realp
 
 grpc = pytest.importorskip("grpc")
 
-from MicroserviceBase.adapters.ui_bridge import service_gui  # noqa: E402
+from microservice_gui_bridge.adapters.ui_bridge import service_gui  # noqa: E402
 from MicroserviceBase.runtime import gui_proto, gui_server  # noqa: E402
 
 

@@ -12,7 +12,7 @@ module owns everything that does not depend on the test runner:
 
 What gets generated (resources, starter suites, runner config) is the
 runner adapter's business; see
-:class:`MicroserviceBase.ports.test_project.TestProjectRunner`.
+:class:`microservice_gui_bridge.ports.test_project.TestProjectRunner`.
 """
 
 from __future__ import annotations
@@ -247,7 +247,7 @@ def _layout(runner: TestProjectRunner, manifest: dict) -> Dict[str, str]:
 def walk_files(root: str, max_depth: int = 4) -> Iterable[Tuple[str, List[str]]]:
     """``(dirpath, filenames)`` of a folder, at most ``max_depth`` deep,
     skipping results, caches and virtual environments -- for runners'
-    :meth:`~MicroserviceBase.ports.test_project.TestProjectRunner.detect`."""
+    :meth:`~microservice_gui_bridge.ports.test_project.TestProjectRunner.detect`."""
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
         if os.path.relpath(dirpath, root).count(os.sep) >= max_depth:
@@ -1157,7 +1157,7 @@ def write_project_file(root: str, rel: str, content: str, *,
     Refuses generated files and the manifest (exports own them), paths
     outside the project, and -- unless ``force`` -- a file whose bytes on
     disk no longer match ``expected_sha256``
-    (:class:`~MicroserviceBase.ports.test_project.TestProjectConflict`).
+    (:class:`~microservice_gui_bridge.ports.test_project.TestProjectConflict`).
     With ``create=True`` the file must not exist and must be of a file type
     the runner lets the GUI create. Returns the new hash and any syntax
     problems.

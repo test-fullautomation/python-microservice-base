@@ -19,7 +19,7 @@ this module does everything in between, the same for every runner:
 
 One run per project at a time: two runs against one bench would fight
 over it. A *group* run is one run of several processes started together
-(:class:`~MicroserviceBase.ports.test_project.RunGroup`): each member gets
+(:class:`~microservice_gui_bridge.ports.test_project.RunGroup`): each member gets
 its own folder, ``<run id>/<member>/``, the console interleaves their
 lines tagged ``[member]``, and the run's verdict combines theirs.
 """

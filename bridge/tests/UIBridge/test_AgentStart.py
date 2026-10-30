@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 
-from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import (  # noqa: E402
+from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import (  # noqa: E402
     _agent_start_failure,
     _port_open,
 )

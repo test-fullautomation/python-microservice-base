@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 
-from MicroserviceBase.adapters.ui_bridge.compositions import (  # noqa: E402
+from microservice_gui_bridge.adapters.ui_bridge.compositions import (  # noqa: E402
     COMPOSITIONS_DIR_ENV,
     CompositionError,
     CompositionStore,
@@ -29,7 +29,7 @@ from MicroserviceBase.adapters.ui_bridge.compositions import (  # noqa: E402
 )
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FIXTURES = os.path.join(REPO, "MicroserviceBase", "MicroserviceManagerGUI", "test", "endo", "fixtures", "bench",
+FIXTURES = os.path.join(REPO, "..", "test", "endo", "fixtures", "bench",
                         "compositions")
 
 COMP = {
@@ -103,7 +103,7 @@ class Test_Endpoints:
         pytest.importorskip("fastapi")
         pytest.importorskip("httpx")
         from fastapi.testclient import TestClient
-        from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
+        from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
         monkeypatch.setenv(COMPOSITIONS_DIR_ENV, str(tmp_path))
         bridge = FastAPIBridge(host="localhost", port=1112)
         return TestClient(bridge._build_app() or bridge._app)

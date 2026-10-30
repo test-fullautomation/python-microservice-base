@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "microservice-gui-bridge"
+version = "1.0.0"
+description = "The Manager GUI's bridge: FastAPI server between the GUI and MicroserviceBase services"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    { name = "Nguyen Huynh Tri Cuong", email = "Cuong.NguyenHuynhTri@vn.bosch.com" }
+]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+    # Registry, gRPC reflection client, scaffold, signals and the
+    # ServiceGui contract. 3.0 is the first release without the bridge.
+    "MicroserviceBase>=3.0,<4",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "httpx>=0.25.0",
+    "psutil>=5.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.10.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["microservice_gui_bridge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

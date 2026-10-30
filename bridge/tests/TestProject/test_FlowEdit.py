@@ -30,7 +30,7 @@ HAS_FLOW = bool(FLOW_SRC) and os.path.isdir(os.path.join(FLOW_SRC, "robot", "flo
 if HAS_FLOW and FLOW_SRC not in sys.path:
     sys.path.insert(0, FLOW_SRC)
 
-_here = os.path.join(os.path.dirname(__file__), "..", "..", "MicroserviceBase", "adapters",
+_here = os.path.join(os.path.dirname(__file__), "..", "..", "microservice_gui_bridge", "adapters",
                      "test_project", "flow_edit.py")
 _spec = importlib.util.spec_from_file_location("flow_edit_under_test", _here)
 fe = importlib.util.module_from_spec(_spec)

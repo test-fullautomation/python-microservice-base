@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 
-from MicroserviceBase.adapters.local_hub.local_hub_manager import (
+from microservice_gui_bridge.adapters.local_hub.local_hub_manager import (
     _validate_safe_name,
     _ensure_path_within,
 )

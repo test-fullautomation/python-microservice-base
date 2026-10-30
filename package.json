@@ -84,7 +84,7 @@
         "to": "icon.png"
       },
       {
-        "from": "../../examples",
+        "from": "examples",
         "to": "examples",
         "filter": [
           "**/*",

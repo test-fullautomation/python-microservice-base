@@ -47,7 +47,7 @@ from ...ports.test_project import (
     TestProjectError,
     TestProjectRunner,
 )
-from ..scaffold.robot_tmpl import (
+from MicroserviceBase.adapters.scaffold.robot_tmpl import (
     RobotGenError,
     _snake,
     parse_proto_folder,

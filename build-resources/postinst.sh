@@ -38,17 +38,18 @@ if [[ -f "$APP_DIR/chrome-sandbox" ]]; then
     chmod 4755 "$APP_DIR/chrome-sandbox" || true
 fi
 
-# MicroserviceBase for the bridge, in a venv of its own: Debian 12 and
+# MicroserviceBase and the bridge, in a venv of its own: Debian 12 and
 # Ubuntu 23.04+ refuse pip installs into the system Python (PEP 668).
 # Offline from the bundled wheelhouse when it has this Python's wheels,
 # else from the package index (through apt's proxy if one is set).
 PY_ENV="$APP_DIR/python-env"
 PY_BIN="$PY_ENV/bin/python3"
 MSB_WHEEL="$(ls "$APP_RESOURCES"/installers/microservicebase-*-py3-none-any.whl 2>/dev/null | head -n1 || true)"
+BRIDGE_WHEEL="$(ls "$APP_RESOURCES"/installers/microservice_gui_bridge-*-py3-none-any.whl 2>/dev/null | head -n1 || true)"
 echo
-echo "DevAtServGUI: installing MicroserviceBase into $PY_ENV"
-if [[ -z "$MSB_WHEEL" ]]; then
-    echo "  (no MicroserviceBase wheel in $APP_RESOURCES/installers; skipped)"
+echo "DevAtServGUI: installing MicroserviceBase and the bridge into $PY_ENV"
+if [[ -z "$MSB_WHEEL" || -z "$BRIDGE_WHEEL" ]]; then
+    echo "  (the MicroserviceBase or bridge wheel is missing in $APP_RESOURCES/installers; skipped)"
 elif ! command -v python3 >/dev/null 2>&1; then
     echo "  python3 NOT FOUND; install it, then: sudo dpkg-reconfigure devatservgui"
 elif ! { [[ -x "$PY_BIN" ]] || python3 -m venv "$PY_ENV"; }; then
@@ -57,7 +58,7 @@ elif ! { [[ -x "$PY_BIN" ]] || python3 -m venv "$PY_ENV"; }; then
 else
     PIP=("$PY_BIN" -m pip install --quiet --no-cache-dir --disable-pip-version-check --upgrade)
     if [[ -d "$APP_RESOURCES/wheelhouse" ]] && \
-       "${PIP[@]}" --no-index --find-links "$APP_RESOURCES/wheelhouse" "$MSB_WHEEL[web]"; then
+       "${PIP[@]}" --no-index --find-links "$APP_RESOURCES/wheelhouse" "$MSB_WHEEL" "$BRIDGE_WHEEL"; then
         echo "  installed from the bundled wheels"
     else
         echo "  bundled wheels do not fit this Python; downloading the dependencies"
@@ -66,7 +67,7 @@ else
             _proxy="$(eval "$_proxy"; echo "${P:-}")"
             [[ -n "$_proxy" && "$_proxy" != DIRECT ]] && export https_proxy="$_proxy" http_proxy="$_proxy"
         fi
-        if "${PIP[@]}" "$MSB_WHEEL[web]"; then
+        if "${PIP[@]}" "$MSB_WHEEL" "$BRIDGE_WHEEL"; then
             echo "  installed"
         else
             echo "  FAILED; retry with network access: sudo dpkg-reconfigure devatservgui"

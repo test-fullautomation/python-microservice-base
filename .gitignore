@@ -1,0 +1,43 @@
+.idea/
+__pycache__/
+*.pyc
+*.egg-info
+*.log
+build/
+dist/
+node_modules/
+nul
+*.tmp.*
+*.user
+.pytest_cache/
+.ruff_cache/
+
+# Bridge runtime state
+python/bridge.pid
+python/hub_processes.json
+python/services/
+electron/alias.json
+
+# Wheels build-resources/fetch_wheels.py puts here
+build-resources/installers/*.whl
+
+tools/*
+# Component linter for service CI (node tools/endo-lint.js <component.json>)
+!tools/endo-lint.js
+
+web/services/*
+!web/services/ServiceAlias*/
+# Reference GUI plugin for the hello_service example
+!web/services/HelloService1.0.0/
+
+# Robot Framework output of the sample test project
+examples/hello_test_project/results/
+
+# Qt WASM shells
+build-wasm/
+CMakeUserPresets.json
+CMakeFiles/
+CMakeCache.txt
+
+# Screenshots of failed GUI probes
+test/gui/output/

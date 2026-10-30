@@ -41,12 +41,14 @@ import sys
 import threading
 from pathlib import Path
 
-# Try pip-installed package first; fall back to repo-relative path for development.
+from MicroserviceBase.factory import create_transport, create_registry
+
+# The bridge: installed, or this checkout's bridge/ folder.
 try:
-    from MicroserviceBase.factory import create_transport, create_registry, create_ui_bridge
+    from microservice_gui_bridge import GUI_DIR_ENV, create_ui_bridge
 except ImportError:
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
-    from MicroserviceBase.factory import create_transport, create_registry, create_ui_bridge
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'bridge'))
+    from microservice_gui_bridge import GUI_DIR_ENV, create_ui_bridge
 
 
 def _load_config(config_path):
@@ -101,6 +103,11 @@ def main():
     os.environ['DASGUI_HUB_CONFIG'] = str(
         Path(config_dir) / 'hub_processes.json'
     )
+    # The GUI folder the bridge serves web/ from, when running from a
+    # checkout (a packaged app's resources have no web/ folder).
+    gui_root = Path(__file__).resolve().parent.parent
+    if (gui_root / 'web').is_dir():
+        os.environ.setdefault(GUI_DIR_ENV, str(gui_root))
 
     # Merge: CLI args > config.json > built-in defaults
     broker_host = args.host or config.get('broker_host', 'localhost')

@@ -20,7 +20,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient  # noqa: E402
 from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
-from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import (  # noqa: E402
+from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import (  # noqa: E402
     ALLOWED_ORIGINS_ENV,
     FILE_ORIGIN,
     NULL_ORIGIN,

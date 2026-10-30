@@ -41,8 +41,9 @@ import threading
 import uuid
 import zipfile
 
-from ...ports.ui_bridge import UIBridgePort
+from MicroserviceBase.ports.ui_bridge import UIBridgePort
 from . import service_gui as _service_gui
+from ...paths import gui_dir
 
 logger = logging.getLogger(__name__)
 
@@ -815,10 +816,7 @@ Download service GUI resources and extract them to the web/services/ directory.
          if result.get("result") != "pass" or not result["result_data"]:
             return {"error": "Service returned no GUI files (check GUIs/ folder)"}
 
-         gui_web_path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'MicroserviceManagerGUI', 'web', 'services'
-         )
+         gui_web_path = os.path.join(gui_dir(), 'web', 'services')
 
          zip_fd, zip_path = tempfile.mkstemp(suffix='.zip')
          os.close(zip_fd)
@@ -880,10 +878,7 @@ Download service GUI resources and extract them to the web/services/ directory.
       @app.get("/api/list-dir/{dir_path:path}")
       def list_service_gui_dir(dir_path: str):
          """List files in a service GUI subdirectory under web/."""
-         gui_web_path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'MicroserviceManagerGUI', 'web'
-         )
+         gui_web_path = os.path.join(gui_dir(), 'web')
          target = os.path.realpath(os.path.join(gui_web_path, dir_path))
          allowed = os.path.realpath(gui_web_path)
          if not target.startswith(allowed + os.sep):
@@ -908,10 +903,7 @@ Otherwise, auto-generate a schema from the service's methods_info metadata.
             return {"error": str(exc)}
 
          # Look for gui_schema.json in the service's GUI folder
-         gui_web_path = os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'MicroserviceManagerGUI', 'web', 'services'
-         )
+         gui_web_path = os.path.join(gui_dir(), 'web', 'services')
 
          services_info = bridge._services_info_provider() if bridge._services_info_provider else {}
          version = ""
@@ -1134,10 +1126,7 @@ Forward a request to the FleetWebAPI.
                hub_config_path = os.environ.get('DASGUI_HUB_CONFIG')
                if not hub_config_path:
                   hub_config_path = os.path.join(
-                     os.path.dirname(__file__), '..', '..',
-                     'MicroserviceManagerGUI', 'python',
-                     'hub_processes.json'
-                  )
+                     gui_dir(), 'python', 'hub_processes.json')
                bridge._local_hub_manager = LocalHubManager(
                   config_path=hub_config_path
                )
@@ -2449,8 +2438,7 @@ the bridge is what serves ``web/``.
             if p and p not in paths:
                paths.append(p)
          # Sensible defaults — common locations for generated scaffolds.
-         here = os.path.dirname(os.path.abspath(__file__))
-         repo_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+         repo_root = gui_dir()
          for default in [
             os.path.join(repo_root, "examples"),
             os.path.join(repo_root, "SampleServices"),
@@ -2472,7 +2460,7 @@ the bridge is what serves ``web/``.
             * ``"local_proto:<paths>"``  — compiled from disk
          Raises :class:`GrpcReflectError` if both paths fail.
          """
-         from ..grpc_bridge import (
+         from MicroserviceBase.adapters.grpc_bridge import (
             GrpcReflectClient, GrpcReflectError, LocalProtoClient,
          )
          import logging as _lg
@@ -2532,7 +2520,7 @@ the bridge is what serves ``web/``.
               ]
             }
          """
-         from ..grpc_bridge import GrpcReflectError
+         from MicroserviceBase.adapters.grpc_bridge import GrpcReflectError
          import os
 
          target_info = _find_service_target(consul_name, consul=consul)
@@ -2605,7 +2593,7 @@ the bridge is what serves ``web/``.
          ``details`` the decoded ``google.rpc.Status`` details. Every
          answer carries the ``request_id`` sent to the service.
          """
-         from ..grpc_bridge import GrpcReflectError
+         from MicroserviceBase.adapters.grpc_bridge import GrpcReflectError
 
          try:
             metadata, request_id = call_metadata(body.metadata, body.request_id)
@@ -3249,7 +3237,7 @@ Generate scaffolding for a new microservice project.
 
          See :mod:`MicroserviceBase.adapters.scaffold.robot_tmpl`.
          """
-         from ..scaffold.robot_tmpl import (
+         from MicroserviceBase.adapters.scaffold.robot_tmpl import (
             RobotGenError, generate_robot_resources,
          )
          logger.info("[robot-gen] request proto_dir=%r out_dir=%r services=%r force=%s",
@@ -3687,7 +3675,7 @@ Generate scaffolding for a new microservice project.
          then ``MB_PROTO_SEARCH_PATH`` + defaults); otherwise resources are
          generated from server reflection and no protos are copied.
          """
-         from ..grpc_bridge import GrpcReflectClient, GrpcReflectError, LocalProtoClient
+         from MicroserviceBase.adapters.grpc_bridge import GrpcReflectClient, GrpcReflectError, LocalProtoClient
          from ..test_project import (
             TestProjectError, collect_proto_set, export_service,
             find_service_protos, validate_name,
@@ -3769,8 +3757,8 @@ Generate scaffolding for a new microservice project.
       @app.post("/api/scaffold/generate-v2")
       def scaffold_generate_v2(body: ScaffoldV2Request):
          """Generate scaffolding for a new microservice (v2 — Python/C++, multi-GUI)."""
-         from ..scaffold import generate_scaffold, ScaffoldSpec
-         from ..scaffold.generator import MethodSpec, MethodParam, ServiceBlock
+         from MicroserviceBase.adapters.scaffold import generate_scaffold, ScaffoldSpec
+         from MicroserviceBase.adapters.scaffold.generator import MethodSpec, MethodParam, ServiceBlock
 
          try:
             _validate_safe_name(body.service_name)
@@ -3923,10 +3911,7 @@ Generate scaffolding for a new microservice project.
          logger.warning("Live signals disabled: %s", exc)
 
       # Mount static files for the GUI web application
-      gui_path = os.path.join(
-         os.path.dirname(__file__), '..', '..',
-         'MicroserviceManagerGUI', 'web'
-      )
+      gui_path = os.path.join(gui_dir(), 'web')
       if os.path.isdir(gui_path):
          from fastapi.staticfiles import StaticFiles
          app.mount("/gui", StaticFiles(directory=gui_path, html=True), name="gui")

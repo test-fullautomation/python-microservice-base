@@ -17,7 +17,7 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.insert(0, REPO)
 
-from MicroserviceBase.adapters import test_project as tp  # noqa: E402
+from microservice_gui_bridge.adapters import test_project as tp  # noqa: E402
 
 pytest.importorskip("robot")
 
@@ -296,7 +296,7 @@ class Test_Edit:
 
     def test_bridge_endpoint(self, project):
         from fastapi.testclient import TestClient
-        from MicroserviceBase.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
+        from microservice_gui_bridge.adapters.ui_bridge.fastapi_bridge import FastAPIBridge
         bridge = FastAPIBridge(host="localhost", port=1112, allowed_origins="*")
         client = TestClient(bridge._build_app() or bridge._app)
         res = client.post("/api/test-project/view-edit", json={
@@ -455,7 +455,7 @@ class Test_Thread:
         from robot.parsing.model import blocks
         if not hasattr(blocks, "Thread"):
             pytest.skip("this Robot has no THREAD (RobotFramework AIO)")
-        from MicroserviceBase.adapters.test_project import robot_grid
+        from microservice_gui_bridge.adapters.test_project import robot_grid
         return robot_grid
 
     def test_read_add_and_change(self, project, grid_mod):

@@ -14,8 +14,8 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from MicroserviceBase.adapters import test_project as tp  # noqa: E402
-from MicroserviceBase.adapters.test_project import resmon  # noqa: E402
+from microservice_gui_bridge.adapters import test_project as tp  # noqa: E402
+from microservice_gui_bridge.adapters.test_project import resmon  # noqa: E402
 
 psutil = pytest.importorskip("psutil")
 
