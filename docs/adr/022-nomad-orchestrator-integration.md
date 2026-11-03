@@ -375,9 +375,9 @@ Deferred because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/local_hub/local_hub_manager.py` (existing hub manager)
-- Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py` (hub endpoints)
-- Source: `MicroserviceBase/ports/` (existing port interfaces)
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/local_hub/local_hub_manager.py` (existing hub manager)
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py` (hub endpoints)
+- Source: `python/MicroserviceBase/ports/` (existing port interfaces)
 - Related: ADR-010 (Local Hub Manager), ADR-009 (RPC Shutdown), ADR-015 (Fleet Orchestrator)
 - External: [Nomad HTTP API](https://developer.hashicorp.com/nomad/api-docs)
 - External: [Nomad Job Specification](https://developer.hashicorp.com/nomad/docs/job-specification)

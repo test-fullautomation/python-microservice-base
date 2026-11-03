@@ -4,7 +4,7 @@
 #  Manager GUI which plugin to show for it (HELLO_GUI -> Consul Meta.gui).
 #  Selecting the service in the Manager GUI's Services view then opens the
 #  panel shipped in
-#      MicroserviceBase/MicroserviceManagerGUI/web/services/HelloService1.0.0/
+#      microservice-gui/web/services/HelloService1.0.0/
 #  instead of the runtime card. Runs alongside examples/demo.nomad.hcl
 #  (service "hello", no GUI) so both cases can be shown side by side.
 #

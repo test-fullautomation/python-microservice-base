@@ -5,6 +5,31 @@ Significant changes since the framework's RabbitMQ-era origins.
 Architectural records (one file per decision) live in [`adr/`](../adr);
 this is the chronological summary.
 
+## 3.0.0 — The GUI in its own repo; Python and C++ side by side
+
+- **Manager GUI moved out.** The Electron/web GUI, its FastAPI bridge, the
+  local and Nomad hubs, test projects and their tests are in the
+  [microservice-gui](https://github.com/test-fullautomation/microservice-gui)
+  repo, history included. The bridge is the package
+  `microservice-gui-bridge` there; `create_ui_bridge()` here delegates to it
+  and says what to install when it is missing. FastAPI and uvicorn are no
+  longer dependencies; the `web` extra installs the bridge. Removed from
+  `MicroserviceBase.ports`: `HubManagerPort` (now
+  `microservice_gui_bridge.ports.hub_manager`).
+- **Layout.** The Python package is in `python/MicroserviceBase/`
+  (`pip install .` from the root as before), the C++ runtime in
+  `cpp/runtime/` (was `MicroserviceBase/runtime_cpp/`), the vcpkg port in
+  `cpp/ports/`, the RabbitMQ-era C++ base in `cpp/legacy/service_base/`.
+  Generated C++ projects look for `cpp/runtime` first and still find a
+  pre-3.0 checkout.
+- **Contracts.** `protos/microservicebase/gui/v1/service_gui.proto` is the
+  `ServiceGui` contract both runtimes implement; a test checks the Python
+  descriptor against it.
+- **Fix: C++ scaffold templates shipped.** The 13 build-script templates
+  in `templates/cpp/build/` were never committed (the `build/` ignore rule
+  matched them), so a fresh checkout or the PyPI wheel could not generate
+  a C++ service.
+
 ## Unreleased — Manager GUI: flows, views, live signals
 
 - **View roles.** The GUI opens in a view made of roles — *user* (Services,
@@ -313,7 +338,7 @@ written for the RabbitMQ-era framework needed minor adjustments
 - `docs/` now contains framework-level reference (architecture,
   runtime model, concepts, troubleshooting, changelog).
 - Manager GUI docs live next to the GUI at
-  `MicroserviceBase/MicroserviceManagerGUI/docs/`.
+  `microservice-gui/docs/`.
 - Per-example tutorials live at `examples/docs/`.
 - Legacy examples (RabbitMQ-era `01_…08_*.py`, `cpp_*_template/`,
   `fleet_demo/`, etc.) moved to `examples/_legacy/`.

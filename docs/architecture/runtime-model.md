@@ -9,8 +9,8 @@ big picture (where Consul, Nomad, and the bridge sit) see
 ## Server-side: ServiceRunner
 
 `ServiceRunner` is the boot helper every generated service uses. C++
-version lives in `MicroserviceBase/runtime_cpp/include/MicroserviceBase/ServiceRunner.h`,
-Python version in `MicroserviceBase/runtime/service_runner.py` —
+version lives in `cpp/runtime/include/MicroserviceBase/ServiceRunner.h`,
+Python version in `python/MicroserviceBase/runtime/service_runner.py` —
 identical lifecycle.
 
 ### Lifecycle
@@ -71,7 +71,7 @@ main()
 
 ## Client-side: ServiceClient
 
-`ServiceClient` (Python: `MicroserviceBase/runtime/service_client.py`,
+`ServiceClient` (Python: `python/MicroserviceBase/runtime/service_client.py`,
 C++: same name in `runtime_cpp/`) is the typical client-side helper.
 
 ### Discovery + invoke flow
@@ -201,5 +201,5 @@ rotation in the `.hcl` `logs` block).
 - [`architecture.md`](overview.md) — overall layering
 - [`concepts.md`](concepts.md) — terminology
 - [`troubleshooting.md`](../reference/troubleshooting.md) — symptom-keyed problems + fixes
-- `MicroserviceBase/adapters/grpc_bridge/reflect_client.py` — `GrpcReflectClient` + `LocalProtoClient` source
-- `MicroserviceBase/runtime_cpp/include/MicroserviceBase/ServiceRunner.h` — the canonical lifecycle
+- `python/MicroserviceBase/adapters/grpc_bridge/reflect_client.py` — `GrpcReflectClient` + `LocalProtoClient` source
+- `cpp/runtime/include/MicroserviceBase/ServiceRunner.h` — the canonical lifecycle

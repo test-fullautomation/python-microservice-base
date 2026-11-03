@@ -69,12 +69,21 @@ class Test_CreateRegistry:
 class Test_CreateUiBridge:
     """Tests for create_ui_bridge factory."""
 
-    @patch('MicroserviceBase.adapters.ui_bridge.fastapi_bridge.FastAPIBridge')
-    def test_create_ui_bridge_fastapi(self, mock_bridge_cls):
+    def test_create_ui_bridge_fastapi(self):
+        """Delegates to the GUI's bridge package (microservice-gui repo)."""
         mock_bridge = MagicMock()
-        mock_bridge_cls.return_value = mock_bridge
-        result = create_ui_bridge(bridge_type='fastapi', host='0.0.0.0', port=9000)
+        fake = MagicMock()
+        fake.create_ui_bridge.return_value = mock_bridge
+        with patch.dict(sys.modules, {'microservice_gui_bridge': fake}):
+            result = create_ui_bridge(bridge_type='fastapi', host='0.0.0.0', port=9000)
         assert result is mock_bridge
+        fake.create_ui_bridge.assert_called_once_with('fastapi', host='0.0.0.0', port=9000,
+                                                      allowed_origins=None)
+
+    def test_create_ui_bridge_without_the_bridge_package(self):
+        with patch.dict(sys.modules, {'microservice_gui_bridge': None}):
+            with pytest.raises(ImportError, match="microservice-gui-bridge"):
+                create_ui_bridge(bridge_type='fastapi')
 
     def test_create_ui_bridge_unknown_type(self):
         with pytest.raises(ValueError, match="Unknown UI bridge type"):

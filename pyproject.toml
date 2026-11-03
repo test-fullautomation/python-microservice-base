@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "MicroserviceBase"
-version = "2.2.0"
-description = "Microservice base framework with pluggable transport, registry adapters, and Manager GUI"
+version = "3.0.0"
+description = "Microservice base framework: Python and C++ runtimes, gRPC + Consul, scaffold generator"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
@@ -45,21 +45,13 @@ dependencies = [
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "psutil>=5.9.0",
-    # The Manager GUI's bridge (adapters/ui_bridge/fastapi_bridge.py, which
-    # the GUI's "Start bridge" runs through MicroserviceManagerGUI/python/launcher.py).
-    # Was only the `web` extra, so a plain `pip install` gave a GUI whose
-    # bridge could not start; the GUI ships in this package, so its bridge's
-    # server is a base dependency, like grpcio-tools above.
-    "fastapi>=0.100.0",
-    "uvicorn>=0.20.0",
 ]
 
 [project.optional-dependencies]
-# Kept so `pip install MicroserviceBase[web]` still works; both are base
-# dependencies now.
+# The Manager GUI and its FastAPI bridge are in the microservice-gui repo
+# (package microservice-gui-bridge); `web` stays so old install lines work.
 web = [
-    "fastapi>=0.100.0",
-    "uvicorn>=0.20.0",
+    "microservice-gui-bridge",
 ]
 dev = [
     "pytest>=7.0.0",
@@ -68,7 +60,7 @@ dev = [
     "colorama>=0.4.0",
 ]
 all = [
-    "MicroserviceBase[web,dev]",
+    "MicroserviceBase[dev]",
 ]
 
 [project.urls]
@@ -76,13 +68,14 @@ Homepage = "https://github.com/test-fullautomation/python-microservice-base"
 Documentation = "https://github.com/test-fullautomation/python-microservice-base#readme"
 Repository = "https://github.com/test-fullautomation/python-microservice-base.git"
 
+# The Python package lives in python/, next to cpp/ (the C++ runtime).
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["python"]
 include = ["MicroserviceBase*"]
 
 [tool.setuptools.package-data]
 # Scaffold generator reads template files at runtime from
-# `MicroserviceBase/adapters/scaffold/templates/`.  Without this glob
+# `python/MicroserviceBase/adapters/scaffold/templates/`.  Without this glob
 # setuptools would only ship .py files in the wheel, causing the
 # generator to fail with FileNotFoundError on installed copies.
 "MicroserviceBase.adapters.scaffold" = ["templates/**/*.tmpl"]

@@ -122,6 +122,6 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py`
 - Related: ADR-005 (Dual-Host GUI)
 - Diagram: `docs/diagrams/component.puml`

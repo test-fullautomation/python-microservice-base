@@ -16,7 +16,7 @@ A registry mirror or remote cache, where a network needs one, is set in
 
 module(
     name = "microservice_base",
-    version = "2.2.0",
+    version = "3.0.0",
 )
 
 bazel_dep(name = "rules_python", version = "1.9.0")

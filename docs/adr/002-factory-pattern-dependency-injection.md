@@ -95,5 +95,5 @@ Deferred because:
 
 ## References
 
-- Source: `MicroserviceBase/factory.py`
+- Source: `python/MicroserviceBase/factory.py`
 - Related: ADR-001 (Hexagonal Architecture)

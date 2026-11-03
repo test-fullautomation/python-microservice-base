@@ -110,55 +110,48 @@ Detailed write-ups in [`docs/architecture/overview.md`](docs/architecture/overvi
 
 ### Project Structure
 
+The Python and C++ runtimes sit side by side and implement the same
+contracts (the `ServiceGui` proto, the Consul `Meta` keys, registration and
+health); `protos/` holds those contracts as `.proto` files, and the tests in
+`pytest/Contracts/` check the Python runtime against them. The Manager GUI
+and its FastAPI bridge are in the [microservice-gui](https://github.com/test-fullautomation/microservice-gui) repo.
+
 ```
-microsoft-base-develop/
-+-- MicroserviceBase/
-|   +-- __init__.py
-|   +-- factory.py                  # Factory for creating components
-|   +-- domain/                     # Zero-dependency domain types
-|   +-- ports/                      # Protocol abstractions
-|   +-- adapters/
-|   |   +-- grpc_bridge/            # reflect_client, LocalProtoClient
-|   |   +-- ui_bridge/
-|   |   |   +-- fastapi_bridge.py   # FastAPI REST front + agent supervisor
-|   |   +-- scaffold/
-|   |       +-- cpp_tmpl.py         # The scaffold generator (~7000 LoC)
-|   +-- runtime/                    # Python ServiceRunner + ServiceClient
-|   +-- runtime_cpp/                # C++ ServiceRunner (header library + CMake)
-|   +-- tools/
-|   |   +-- scaffold_cli.py         # mb-scaffold (CLI front-end to the generator)
-|   +-- MicroserviceManagerGUI/
-|       +-- README.md               # GUI overview + entry-point
-|       +-- docs/                   # Long-form GUI guides
-|       +-- electron/               # Electron wrapper
-|       +-- web/                    # Browser-compatible HTML/CSS/JS
-|       |   +-- js/                 # App logic, dashboards, clients
-|       |   +-- css/                # Styles
-|       |   +-- services/           # Dynamically loaded service plugins
-|       |   +-- docs/help.html      # Embedded in-app help
-|       +-- build.bat / build.sh    # Bundle scripts
+python-microservice-base/
++-- python/
+|   +-- MicroserviceBase/           # the Python package (pip install .)
+|       +-- factory.py              # Factory for creating components
+|       +-- domain/                 # Zero-dependency domain types
+|       +-- ports/                  # Protocol abstractions
+|       +-- adapters/
+|       |   +-- grpc_bridge/        # reflect_client, LocalProtoClient, rpc_status
+|       |   +-- signals/            # live signals hub
+|       |   +-- scaffold/           # The scaffold generator (Python + C++ templates)
+|       +-- runtime/                # Python ServiceRunner + ServiceClient + ServiceGui
+|       +-- tools/
+|           +-- scaffold_cli.py     # mb-scaffold (CLI front-end to the generator)
++-- cpp/
+|   +-- runtime/                    # C++ ServiceRunner, ServiceGui, Consul (CMake)
+|   +-- ports/                      # vcpkg overlay port for the C++ runtime
+|   +-- legacy/service_base/        # RabbitMQ-era C++ ServiceBase
++-- protos/                         # The contracts both runtimes implement
 +-- examples/
 |   +-- cpp_hello_service/          # Single C++ service
 |   +-- cpp_hello_client/           # Matching console + Qt client
 |   +-- hello_service/              # Single Python service
-|   +-- hello_test_project/         # Robot Framework AIO tests for hello_service
 |   +-- MultiProto/                 # Two gRPC services in one C++ binary (mb-scaffold output)
 |   +-- docs/                       # Toolchain setup + tutorials
 |   +-- _legacy/                    # Pre-gRPC-migration examples
++-- pytest/                         # Python unit and contract tests
++-- test/                           # Robot Framework + pytest suites (MSB_*)
 +-- docs/
 |   +-- index.md                    # Repo docs landing
-|   +-- architecture/
-|   |   +-- overview.md             # Hexagonal layers + Consul + Nomad + reflection
-|   |   +-- runtime-model.md        # ServiceRunner lifecycle + dynamic invoke
-|   |   +-- concepts.md             # Glossary
+|   +-- architecture/               # Hexagonal layers, runtime model, glossary
 |   +-- guides/                     # How-tos (C++ runtime install, ...)
-|   +-- reference/
-|   |   +-- changelog.md            # Migration history
-|   |   +-- troubleshooting.md      # Symptom-indexed problems + fixes
+|   +-- reference/                  # Changelog, troubleshooting
 |   +-- adr/                        # Architecture Decision Records
 |   +-- diagrams/                   # PlantUML diagrams
-|   +-- _legacy/                    # Pre-gRPC-migration docs (CONCEPT.md etc.)
-+-- pyproject.toml
++-- pyproject.toml / setup.py       # build the Python package from python/
 ```
 
 ## Installation
@@ -177,9 +170,8 @@ pip install -e .
 
 - Python 3.10 or higher
 - gRPC + protobuf (`grpcio`, `grpcio-tools`, `protobuf` — pulled in by `pip install`)
-- FastAPI + uvicorn (for the bridge — also a transitive dep)
 - **Consul** + **Nomad** binaries on `%PATH%` — see the dedicated section below for download + setup steps
-- Node.js + npm (for GUI development / Electron build)
+- For the Manager GUI: see the [microservice-gui](https://github.com/test-fullautomation/microservice-gui) repo
 - For C++ services: a toolchain — pick one of MSYS2, Qt-installer MinGW, or vcpkg + Qt MinGW (see [`examples/docs/`](examples/docs/README.md))
 
 ### Consul & Nomad install
@@ -247,7 +239,7 @@ brew install hashicorp/tap/consul hashicorp/tap/nomad
 
 ### Consul + Nomad Setup
 
-The Manager GUI's **Service Network** tab can launch both agents in dev mode with one click each — no CLI needed. Walkthrough: [`ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
+The Manager GUI's **Service Network** tab can launch both agents in dev mode with one click each — no CLI needed. Walkthrough: [`ops_consul_nomad.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md).
 
 If you prefer the terminal:
 
@@ -305,7 +297,7 @@ python -m MicroserviceBase.tools.scaffold_cli \
     --name HelloService --language cpp --gui widget --output ./out
 ```
 
-Generates a complete project with `proto/`, `src/`, `deploy/<svc>.nomad.hcl`, build scripts, and a matching client. See [`MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) for the GUI wizard equivalent and the YAML config schema.
+Generates a complete project with `proto/`, `src/`, `deploy/<svc>.nomad.hcl`, build scripts, and a matching client. See [`microservice-gui/docs/md/service_creator.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/service_creator.md) for the GUI wizard equivalent and the YAML config schema.
 
 ### 2. Build the service
 
@@ -339,8 +331,10 @@ curl http://127.0.0.1:8500/v1/health/service/hello_service?passing=true
 
 ### 5. Launch the Manager GUI
 
+The GUI is in its own repo; from a checkout of [microservice-gui](https://github.com/test-fullautomation/microservice-gui):
+
 ```bash
-cd MicroserviceBase/MicroserviceManagerGUI
+pip install ./bridge
 npm install
 npm start
 ```
@@ -351,41 +345,13 @@ For more than one service in a project, see [`examples/MultiProto/`](examples/Mu
 
 ## Manager GUI
 
-The MicroserviceManagerGUI provides a desktop application for monitoring and controlling microservices.
-
-### Features
-
-- **Services Mode** — sidebar list of all Consul-registered services; click to invoke methods via gRPC reflection
-- **Service Network Mode** — start/stop Consul + Nomad agents, browse the service catalog, view jobs, submit new jobs from a file picker
-- **Service Creator Mode** — 4-step wizard to generate a new service scaffold (proto + domain + adapter + clients + Nomad HCL)
-- **Multi-Cluster** — connect to multiple Consul clusters simultaneously
-- **Live Infra Status** — green/amber/red LEDs in the navbar for Bridge, Consul, and Nomad health
-- **Service GUI Plugins** — services can ship their own custom HTML+JS panel (loaded dynamically from `web/services/<ServiceName>/`)
-- **Embedded Help** — click the **?** in the navbar for the in-app help; long-form docs at `docs/`
-
-### Dual Hosting
-
-The GUI runs in two modes:
-- **Electron** — Desktop application with native window, system tray, auto-launch of the FastAPI bridge
-- **Browser** — Open `http://127.0.0.1:1112` after starting the FastAPI bridge with `python -m MicroserviceBase.adapters.ui_bridge.fastapi_bridge`
-
-Both modes share the same web front-end and connect to the same FastAPI bridge.
-
-### Standalone Installer
-
-Package the GUI as a standalone Windows application:
-
-```bash
-cd MicroserviceBase/MicroserviceManagerGUI
-
-# Build installer
-build.bat
-
-# Or build unpacked (for testing)
-build.bat --pack
-```
-
-The installer creates a desktop application at `C:\Program Files\MicroserviceManager\` with user data at `%APPDATA%\microservice-manager\` (settings, config, service plugins).
+The Manager GUI (Electron + browser) and its FastAPI bridge live in the
+[microservice-gui](https://github.com/test-fullautomation/microservice-gui) repo: services mode (call any
+Consul-registered service through gRPC reflection), service network mode
+(Consul + Nomad), the Service Creator wizard on top of this repo's scaffold,
+test projects, and service-delivered GUI panels (`ServiceGui`, served by
+both runtimes here). The installers bundle a MicroserviceBase wheel built
+from this repo.
 
 ## Service Orchestration with Nomad
 
@@ -434,7 +400,7 @@ Bridge endpoints to manage Nomad jobs:
 | `/api/nomad/jobs/{id}/logs` | GET | Tail allocation logs |
 | `/api/nomad/jobs/submit` | POST | Submit a new HCL job |
 
-Same set exists for Consul under `/api/consul/...`. Full list in [`MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md).
+Same set exists for Consul under `/api/consul/...`. Full list in [`microservice-gui/docs/md/ops_consul_nomad.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md).
 
 ## Examples
 
@@ -445,7 +411,7 @@ The `examples/` directory contains the modern (Consul + Nomad + gRPC) examples:
 | [`cpp_hello_service/`](examples/cpp_hello_service/README.md) | Single C++ service — minimal walkthrough |
 | [`cpp_hello_client/`](examples/cpp_hello_client/README.md) | Console + Qt-Widget client matched to the C++ service |
 | [`hello_service/`](examples/hello_service/README.md) | Single Python service equivalent |
-| [`hello_test_project/`](examples/hello_test_project/README.md) | Robot Framework AIO test project for `hello_service`, exported by the Manager GUI |
+| [`hello_test_project/`](https://github.com/test-fullautomation/microservice-gui/blob/develop/examples/hello_test_project/README.md) | Robot Framework AIO test project for `hello_service`, exported by the Manager GUI |
 | [`MultiProto/`](examples/MultiProto/README.md) | Two gRPC services (two protos) in one C++ binary, one Consul registration — generated by `mb-scaffold` |
 
 Pre-migration examples (RabbitMQ-era — `01_basic_service.py` … `08_fleet_demo.py`, `cpp_qml_service_template/`, `fleet_demo/`, etc.) live at [`examples/_legacy/`](examples/_legacy/README.md) for reference only — not maintained.
@@ -553,10 +519,10 @@ Cross-reference of where to find each kind of doc across the repo.
 
 | I want to… | Go to |
 |---|---|
-| Manager GUI overview & install | [`MicroserviceBase/MicroserviceManagerGUI/README.md`](MicroserviceBase/MicroserviceManagerGUI/README.md) |
-| All Manager GUI guides (long-form) | [`MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/index.md) — index of GUI walkthroughs |
-| Operate Consul + Nomad from the GUI | [`ops_consul_nomad.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md) — one-click agent launch |
-| Walk through the Service Creator wizard | [`service_creator.md`](MicroserviceBase/MicroserviceManagerGUI/docs/md/service_creator.md) — 5-step UI + YAML schema |
+| Manager GUI overview & install | [`microservice-gui/README.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/README.md) |
+| All Manager GUI guides (long-form) | [`microservice-gui/docs/md/index.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/index.md) — index of GUI walkthroughs |
+| Operate Consul + Nomad from the GUI | [`ops_consul_nomad.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md) — one-click agent launch |
+| Walk through the Service Creator wizard | [`service_creator.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/service_creator.md) — 5-step UI + YAML schema |
 
 **Examples**
 

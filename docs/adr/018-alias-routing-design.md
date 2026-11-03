@@ -242,7 +242,7 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/domain/service_registry.py` (lines 86-93, 199-260)
-- Source: `MicroserviceBase/domain/service_base.py` (lines 419-495)
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/services/ServiceAlias1.0.0/`
+- Source: `python/MicroserviceBase/domain/service_registry.py` (lines 86-93, 199-260)
+- Source: `python/MicroserviceBase/domain/service_base.py` (lines 419-495)
+- Source: `microservice-gui/web/services/ServiceAlias1.0.0/`
 - Related: ADR-003 (Custom Service Registry), ADR-017 (svc_api_ Convention)

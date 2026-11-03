@@ -294,7 +294,7 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/domain/service_registry.py`
-- Source: `MicroserviceBase/adapters/registry/amqp_registry_adapter.py`
-- Source: `MicroserviceBase/ports/registry.py`
+- Source: `python/MicroserviceBase/domain/service_registry.py`
+- Source: `python/MicroserviceBase/adapters/registry/amqp_registry_adapter.py`
+- Source: `python/MicroserviceBase/ports/registry.py`
 - Related: ADR-001 (Hexagonal Architecture), ADR-010 (Local Hub Manager)

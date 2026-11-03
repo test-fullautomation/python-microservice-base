@@ -30,7 +30,7 @@ generated keyword resources and a starter suite, edits and checks the
 suites, and runs them.
 
 A port for runners already existed
-(`MicroserviceBase/ports/test_project.py`, `TestProjectRunner`): export,
+(`microservice-gui/bridge/microservice_gui_bridge/ports/test_project.py`, `TestProjectRunner`): export,
 templates, run plan and results went through it. But Robot Framework still
 leaked past it in a dozen places:
 

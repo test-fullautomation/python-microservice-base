@@ -332,7 +332,7 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (lines 150-183, 220-266)
-- Source: `MicroserviceBase/adapters/registry/amqp_registry_adapter.py` (lines 49-51, 134-159, 206-270)
-- Source: `MicroserviceBase/domain/service_base.py` (line 70, `_SERVICE_REQUEST_EXCHANGE`)
+- Source: `python/MicroserviceBase/adapters/transport/rabbitmq_adapter.py` (lines 150-183, 220-266)
+- Source: `python/MicroserviceBase/adapters/registry/amqp_registry_adapter.py` (lines 49-51, 134-159, 206-270)
+- Source: `python/MicroserviceBase/domain/service_base.py` (line 70, `_SERVICE_REQUEST_EXCHANGE`)
 - Related: ADR-016 (RabbitMQ as Message Broker), ADR-001 (Hexagonal Architecture)

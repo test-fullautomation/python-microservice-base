@@ -166,10 +166,10 @@ A missing folder never sends a stored checksum, or the bridge would answer
 
 ## References
 
-- Contract: `MicroserviceBase/runtime/gui_proto.py`
-- Service side: `MicroserviceBase/runtime/gui_server.py`, `runtime/server.py`
-- Bridge side: `MicroserviceBase/adapters/ui_bridge/service_gui.py`
+- Contract: `python/MicroserviceBase/runtime/gui_proto.py`
+- Service side: `python/MicroserviceBase/runtime/gui_server.py`, `runtime/server.py`
+- Bridge side: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/service_gui.py`
 - Client side: `MicroserviceManagerGUI/web/js/app.js` (`_fetchGuiFromService`)
-- Tests: `pytest/UIBridge/test_ServiceGui.py`
+- Tests: `microservice-gui/bridge/tests/UIBridge/test_ServiceGui.py`
 - Extends: ADR-019 (Service-Delivered GUI Plugin Architecture)
 - Related: ADR-005 (Dual-Host GUI), ADR-028 (gRPC reflection as primary RPC)

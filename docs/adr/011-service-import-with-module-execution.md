@@ -161,6 +161,6 @@ Rejected because:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/local_hub/local_hub_manager.py` (import_service, _validate_service_structure)
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/LocalHubDashboard.js` (import UI)
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/local_hub/local_hub_manager.py` (import_service, _validate_service_structure)
+- Source: `microservice-gui/web/js/LocalHubDashboard.js` (import UI)
 - Related: ADR-009 (Service Executor), ADR-010 (Local Hub Manager)

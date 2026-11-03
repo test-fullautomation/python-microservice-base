@@ -9,7 +9,7 @@ Demonstrates:
 - Hexagonal layout (`domain/`, `adapters/`, `Settings.h`, `main.cpp`)
 - `microservice_base::ServiceRunner` with graceful shutdown
 - Consul registration via libcurl (`ConsulRegistration`)
-- gRPC reflection enabled by the runtime automatically (so `grpcurl` and the [Manager GUI](../../MicroserviceBase/MicroserviceManagerGUI/README.md) can enumerate methods at runtime)
+- gRPC reflection enabled by the runtime automatically (so `grpcurl` and the [Manager GUI](https://github.com/test-fullautomation/microservice-gui/blob/develop/README.md) can enumerate methods at runtime)
 - Dynamic port allocation (`HELLO_GRPC_PORT=0`)
 
 ## Layout
@@ -44,7 +44,7 @@ framework-level rationale.
   - **MSYS2**: `pacman -S mingw-w64-x86_64-grpc mingw-w64-x86_64-protobuf mingw-w64-x86_64-curl` (see [`../docs/md/mingw_setup.md`](../docs/md/mingw_setup.md))
   - **vcpkg + Qt MinGW**: `vcpkg install grpc protobuf curl` (see [`../docs/md/vcpkg_setup.md`](../docs/md/vcpkg_setup.md) — recommended for new teams)
 - MicroserviceBase C++ runtime (built automatically via `add_subdirectory`)
-- Consul agent running locally — start with `consul agent -dev` or the [Manager GUI Service Network tab](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md)
+- Consul agent running locally — start with `consul agent -dev` or the [Manager GUI Service Network tab](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md)
 
 ## Build
 
@@ -114,7 +114,7 @@ the generated `deploy/<svc>.nomad.hcl`.)
 3. **Service Network → Nomad → Submit Job → pick `hello.nomad.hcl`**
 4. Switch to **Services** mode → click `hello_service` → invoke `Greet` with `{"name": "Cuong"}`
 
-See [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md)
+See [`../../MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md`](https://github.com/test-fullautomation/microservice-gui/blob/develop/docs/md/ops_consul_nomad.md)
 for the full GUI walkthrough.
 
 ## Verify with `grpcurl`

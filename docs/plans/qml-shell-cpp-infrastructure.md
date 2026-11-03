@@ -48,7 +48,7 @@ A C++ microservice has **two runtime components**:
 
 ## Part 1: C++ ServiceBase Library
 
-Mirrors Python `MicroserviceBase/domain/service_base.py`. Located at `MicroserviceBase/domain/service_base_cpp/`.
+Mirrors Python `python/MicroserviceBase/domain/service_base.py`. Located at `cpp/legacy/service_base/`.
 
 ### Class Design
 
@@ -140,7 +140,7 @@ User clicks service → app.js fetches service folder
 ### Shell C++ Classes
 
 ```
-MicroserviceBase/MicroserviceManagerGUI/qt_qml_shell/src/
+microservice-gui/qt_qml_shell/src/
 
 main.cpp
   └─ Registers ServiceBridge as QML singleton
@@ -316,7 +316,7 @@ examples/cpp_qml_service_template/
 
 ## Files to Create
 
-### C++ ServiceBase Library (`MicroserviceBase/domain/service_base_cpp/`)
+### C++ ServiceBase Library (`cpp/legacy/service_base/`)
 
 | # | File | Purpose |
 |---|------|---------|
@@ -328,7 +328,7 @@ examples/cpp_qml_service_template/
 | 6 | `src/ServiceBase.cpp` | Lifecycle, dispatch, registration |
 | 7 | `src/RabbitMQConnection.cpp` | Connection management |
 
-### QML Shell (`MicroserviceBase/MicroserviceManagerGUI/qt_qml_shell/`)
+### QML Shell (`microservice-gui/qt_qml_shell/`)
 
 | # | File | Purpose |
 |---|------|---------|

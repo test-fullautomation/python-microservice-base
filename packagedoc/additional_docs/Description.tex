@@ -216,7 +216,7 @@ without any \texttt{.proto} file.  Fallback: when reflection is not available
 (older servers, custom builds), the bridge can compile local \texttt{.proto}
 files via \texttt{grpc\_tools.protoc} and use the descriptors that way -- see
 \texttt{LocalProtoClient} in
-\texttt{MicroserviceBase/adapters/grpc\_bridge/reflect\_client.py}.
+\texttt{python/MicroserviceBase/adapters/grpc\_bridge/reflect\_client.py}.
 
 \begin{figure}[!htb]
 \centering
@@ -247,7 +247,7 @@ The bridge is a single Python process that:
 \noindent
 The GUI is a thin client over this -- every button maps to one or two endpoints.  The
 same endpoints are usable from \texttt{curl} or scripts when automating.  Source:
-\texttt{MicroserviceBase/adapters/ui\_bridge/fastapi\_bridge.py}.
+\texttt{python/MicroserviceBase/adapters/ui\_bridge/fastapi\_bridge.py}.
 
 \subsubsection{The Scaffold Generator}
 
@@ -270,7 +270,7 @@ optional \texttt{deploy/} (Nomad job + \texttt{*\_service\_config.json} for Cons
 \texttt{GUIs/} (HTML + JS plugin) directories.  For C++ it additionally emits
 \texttt{CMakeLists.txt}, \texttt{vcpkg.json}, the \texttt{vcpkg-overlay-ports/grpc/}
 folder, and \texttt{build\_msvc.bat} / \texttt{build\_msys2.bat} wrappers.  Source:
-\texttt{MicroserviceBase/adapters/scaffold/} (cpp\_tmpl.py + python\_tmpl.py).
+\texttt{python/MicroserviceBase/adapters/scaffold/} (cpp\_tmpl.py + python\_tmpl.py).
 
 \subsubsection{Generated Service Layout}
 
@@ -694,7 +694,7 @@ non-interactively for you.
 
 \begin{itemize}
    \item Run \texttt{build.bat} (Windows, NSIS) or \texttt{build.sh} (Linux) inside
-         \texttt{MicroserviceBase/MicroserviceManagerGUI/}
+         \texttt{microservice-gui/}
    \item The Windows installer detects existing Consul / Nomad and offers
          \texttt{winget install} when missing
    \item The Linux installer ships \texttt{bootstrap.sh} for AppImage users; \texttt{.deb}

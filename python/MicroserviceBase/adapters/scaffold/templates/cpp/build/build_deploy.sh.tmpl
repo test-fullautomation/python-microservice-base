@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/set_env.sh"
+
+# ----- Generate proto stubs (idempotent) -----
+if [ ! -f "$SCRIPT_DIR/proto/@@{snake_name}.pb.h" ]; then
+    bash "$SCRIPT_DIR/proto/generate_stubs.sh"
+fi
+
+# ----- Build service -----
+SERVICE_BUILD="$SCRIPT_DIR/build"
+mkdir -p "$SERVICE_BUILD"
+cmake -S "$SCRIPT_DIR" -B "$SERVICE_BUILD" \
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+    -DCMAKE_BUILD_TYPE=Release
+cmake --build "$SERVICE_BUILD" --parallel $(nproc)
+
+# ----- Build client -----
+# Seed CMAKE_PREFIX_PATH with QT_DIR so the GUI target can locate Qt6
+# without requiring edits to client/CMakeLists.txt.
+QT_PREFIX_ARG=()
+if [ -n "${QT_DIR:-}" ]; then QT_PREFIX_ARG=(-DCMAKE_PREFIX_PATH="$QT_DIR"); fi
+
+CLIENT_BUILD="$SCRIPT_DIR/client/build"
+mkdir -p "$CLIENT_BUILD"
+cmake -S "$SCRIPT_DIR/client" -B "$CLIENT_BUILD" \
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+    "${QT_PREFIX_ARG[@]}" \
+    -DCMAKE_BUILD_TYPE=Release
+cmake --build "$CLIENT_BUILD" --parallel $(nproc)
+
+# ----- Collect binaries + shared libraries into dist/ -----
+DIST="$SCRIPT_DIR/dist"
+mkdir -p "$DIST"
+cp "$SERVICE_BUILD/@@{snake_name}"       "$DIST/" 2>/dev/null || true
+cp "$CLIENT_BUILD/@@{snake_name}_client" "$DIST/" 2>/dev/null || true
+@@{gui_copy}
+# Copy any *.so / *.so.* shared libraries next to the binaries. vcpkg
+# deploys dynamic libs under lib/, plus CMake may leave runtime libs in
+# the build trees themselves.
+for d in \
+    "$VCPKG_ROOT/installed/x64-linux/lib" \
+    "$SERVICE_BUILD" "$CLIENT_BUILD"; do
+    [ -d "$d" ] || continue
+    find "$d" -maxdepth 2 -name "*.so*" -type f -exec cp -f {} "$DIST/" \; 2>/dev/null || true
+done
+
+# Deploy Qt plugins for the Widgets GUI on Linux.  Qt needs
+# platforms/libqxcb.so (or Wayland equivalents) next to the binary.
+if [ -f "$DIST/@@{snake_name}_gui" ] && [ -n "${QT_DIR:-}" ] && [ -d "$QT_DIR/plugins" ]; then
+    mkdir -p "$DIST/platforms"
+    cp -rf "$QT_DIR/plugins/platforms/"* "$DIST/platforms/" 2>/dev/null || true
+    [ -d "$QT_DIR/plugins/xcbglintegrations" ] && \
+        cp -rf "$QT_DIR/plugins/xcbglintegrations" "$DIST/" 2>/dev/null || true
+fi
+
+echo ""
+echo "Build complete. Binaries + libraries collected in: $DIST"

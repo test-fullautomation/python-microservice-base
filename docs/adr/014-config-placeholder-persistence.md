@@ -92,5 +92,5 @@ class LocalHubManager:
 
 ## References
 
-- Source: `MicroserviceBase/adapters/local_hub/local_hub_manager.py`
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/local_hub/local_hub_manager.py`
 - Related: ADR-010 (Local Hub Manager)

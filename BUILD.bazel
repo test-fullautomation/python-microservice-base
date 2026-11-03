@@ -15,10 +15,9 @@ exports_files([
     "properdocs.yml",
 ])
 
-# Docs inputs. docs/gui and docs/examples are excluded: they are
-# generated at build time by docs_hooks/copy_external_docs.py from the
-# Manager GUI and examples trees, so listing them would declare a
-# build output as an input.
+# Docs inputs. docs/examples is excluded: it is generated at build time
+# by docs_hooks/copy_external_docs.py from the examples tree, so listing
+# it would declare a build output as an input.
 filegroup(
     name = "docs_sources",
     srcs = glob(
@@ -33,15 +32,19 @@ filegroup(
         ],
     ) + glob(
         [
-            "MicroserviceBase/MicroserviceManagerGUI/docs/md/**",
-            "MicroserviceBase/MicroserviceManagerGUI/docs/img/**",
             "examples/docs/md/**",
         ],
         allow_empty = True,
     ),
 )
 
-# The framework itself, importable as `MicroserviceBase`.
+# The contracts both runtimes implement (see protos/README.md).
+filegroup(
+    name = "protos",
+    srcs = glob(["protos/**/*.proto"]),
+)
+
+# The framework itself, importable as `MicroserviceBase` (from python/).
 #
 # Templates under adapters/scaffold/templates are `data`, not `srcs`:
 # the scaffold generator reads them from disk at runtime, so they must
@@ -49,17 +52,14 @@ filegroup(
 py_library(
     name = "microservicebase_lib",
     srcs = glob(
-        ["MicroserviceBase/**/*.py"],
-        exclude = [
-            "MicroserviceBase/**/__pycache__/**",
-            "MicroserviceBase/MicroserviceManagerGUI/**",
-        ],
+        ["python/MicroserviceBase/**/*.py"],
+        exclude = ["python/MicroserviceBase/**/__pycache__/**"],
     ),
     data = glob(
-        ["MicroserviceBase/adapters/scaffold/templates/**"],
+        ["python/MicroserviceBase/adapters/scaffold/templates/**"],
         allow_empty = True,
     ),
-    imports = ["."],
+    imports = ["python"],
     deps = [
         "@pypi//grpcio",
         "@pypi//grpcio-health-checking",
@@ -75,19 +75,12 @@ py_library(
 )
 
 # The whole MicroserviceBase package as data, for targets that need the
-# source tree rather than an importable library (wheel build, installer).
+# source tree rather than an importable library (wheel build).
 filegroup(
     name = "microservicebase_sources",
     srcs = glob(
-        ["MicroserviceBase/**"],
-        exclude = [
-            "MicroserviceBase/**/__pycache__/**",
-            "MicroserviceBase/MicroserviceManagerGUI/node_modules/**",
-            "MicroserviceBase/MicroserviceManagerGUI/dist/**",
-            # The installer targets copy //products:wheel here; a wheel left
-            # in the tree (one is committed) must never be what they bundle.
-            "MicroserviceBase/MicroserviceManagerGUI/build-resources/installers/*.whl",
-        ],
+        ["python/MicroserviceBase/**"],
+        exclude = ["python/MicroserviceBase/**/__pycache__/**"],
     ),
 )
 

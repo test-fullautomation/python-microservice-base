@@ -269,7 +269,7 @@ flowchart TD
       This service depends on the <strong>MicroserviceBase</strong> runtime
       (C++ library + CMake package).  <code>CMakeLists.txt</code> calls
       <code>find_package(MicroserviceBase CONFIG)</code> first and falls
-      back to <code>add_subdirectory(.../MicroserviceBase/runtime_cpp)</code>
+      back to <code>add_subdirectory(.../cpp/runtime)</code>
       for in-tree builds.  Pick one of three setups (any satisfies the
       dependency):
     </p>
@@ -281,7 +281,7 @@ flowchart TD
         <td>Clone the framework so this scaffold sits at
             <code>&lt;framework&gt;/examples/&lt;svc&gt;/</code> &mdash;
             the relative path
-            <code>../../MicroserviceBase/runtime_cpp</code> resolves
+            <code>../../cpp/runtime</code> resolves
             automatically.</td>
       </tr>
       <tr>
@@ -296,7 +296,7 @@ flowchart TD
       <tr>
         <td><strong>B. CMake install</strong></td>
         <td>Standalone service, no vcpkg</td>
-        <td><code>cmake -S &lt;framework&gt;/MicroserviceBase/runtime_cpp -B build/mb &amp;&amp; cmake --build build/mb &amp;&amp; cmake --install build/mb --prefix $HOME/.local/microservice-base</code>,
+        <td><code>cmake -S &lt;framework&gt;/cpp/runtime -B build/mb &amp;&amp; cmake --build build/mb &amp;&amp; cmake --install build/mb --prefix $HOME/.local/microservice-base</code>,
             then pass
             <code>-DCMAKE_PREFIX_PATH=$HOME/.local/microservice-base</code>
             on configure.</td>
@@ -319,7 +319,7 @@ flowchart TD
     https://github.com/test-fullautomation/python-microservice-base.git</code></pre>
     <p>What you get:</p>
     <ul>
-      <li><code>MicroserviceBase/runtime_cpp/</code> &mdash; C++ runtime,
+      <li><code>cpp/runtime/</code> &mdash; C++ runtime,
           used by setups A, B, C.</li>
       <li><code>ports/microservice-base/</code> &mdash; vcpkg overlay-port
           for setup C.</li>

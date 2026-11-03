@@ -382,8 +382,8 @@ brew install hashicorp/tap/consul hashicorp/tap/nomad</code></pre>
 <h3 id="consul--nomad-setup">Consul + Nomad Setup</h3>
 
 <p>The Manager GUI&rsquo;s <strong>Service Network</strong> tab can launch both agents in dev mode with one click each &mdash; no CLI needed.  Walkthrough:
-<a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a>
-(or the <a href="MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md">Markdown version</a>).</p>
+<a href="microservice-gui/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a>
+(or the <a href="microservice-gui/docs/md/ops_consul_nomad.md">Markdown version</a>).</p>
 
 <p>If you prefer the terminal:</p>
 
@@ -432,7 +432,7 @@ nomad node status</code></pre>
     --name HelloService --language cpp --gui widget --output ./out
 </code></pre>
 
-<p>Generates a complete project with <code>proto/</code>, <code>src/</code>, <code>deploy/&lt;svc&gt;.nomad.hcl</code>, build scripts, and a matching client. See <a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html"><code>service_creator.html</code></a> for the GUI wizard equivalent and the YAML config schema.</p>
+<p>Generates a complete project with <code>proto/</code>, <code>src/</code>, <code>deploy/&lt;svc&gt;.nomad.hcl</code>, build scripts, and a matching client. See <a href="microservice-gui/docs/html/service_creator.html"><code>service_creator.html</code></a> for the GUI wizard equivalent and the YAML config schema.</p>
 
 <h3 id="2-build-the-service">2. Build the service</h3>
 
@@ -559,7 +559,7 @@ build.bat --pack
   <tr><td><code>/api/nomad/jobs/submit</code></td><td>POST</td><td>Submit a new HCL job</td></tr>
 </table>
 
-<p>Same set exists for Consul under <code>/api/consul/...</code>. Full list in <a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> (or the <a href="MicroserviceBase/MicroserviceManagerGUI/docs/md/ops_consul_nomad.md">Markdown version</a>).</p>
+<p>Same set exists for Consul under <code>/api/consul/...</code>. Full list in <a href="microservice-gui/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> (or the <a href="microservice-gui/docs/md/ops_consul_nomad.md">Markdown version</a>).</p>
 
 <h2 id="examples">Examples</h2>
 
@@ -678,10 +678,10 @@ build.bat --pack
   <tr><td>Scaffold and run a first service end-to-end</td><td><a href="#quick-start">Quick Start</a> &mdash; 5 numbered steps</td></tr>
 
   <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Manager GUI</td></tr>
-  <tr><td>Manager GUI overview &amp; install</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/README.html"><code>MicroserviceManagerGUI/README.html</code></a></td></tr>
-  <tr><td>All Manager GUI guides (long-form)</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/index.html"><code>MicroserviceManagerGUI/docs/</code></a> &mdash; index of GUI walkthroughs</td></tr>
-  <tr><td>Operate Consul + Nomad from the GUI</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> &mdash; one-click agent launch + service network tab</td></tr>
-  <tr><td>Walk through the Service Creator wizard</td><td><a href="MicroserviceBase/MicroserviceManagerGUI/docs/html/service_creator.html"><code>service_creator.html</code></a> &mdash; 5-step UI + YAML schema</td></tr>
+  <tr><td>Manager GUI overview &amp; install</td><td><a href="microservice-gui/README.html"><code>MicroserviceManagerGUI/README.html</code></a></td></tr>
+  <tr><td>All Manager GUI guides (long-form)</td><td><a href="microservice-gui/docs/html/index.html"><code>MicroserviceManagerGUI/docs/</code></a> &mdash; index of GUI walkthroughs</td></tr>
+  <tr><td>Operate Consul + Nomad from the GUI</td><td><a href="microservice-gui/docs/html/ops_consul_nomad.html"><code>ops_consul_nomad.html</code></a> &mdash; one-click agent launch + service network tab</td></tr>
+  <tr><td>Walk through the Service Creator wizard</td><td><a href="microservice-gui/docs/html/service_creator.html"><code>service_creator.html</code></a> &mdash; 5-step UI + YAML schema</td></tr>
 
   <tr><td colspan="2" style="background:#0b1220;color:var(--accent);font-size:0.78em;text-transform:uppercase;letter-spacing:0.6px;padding:8px 12px;">Examples</td></tr>
   <tr><td>Several services in one C++ binary</td><td><a href="examples/MultiProto/README.html"><code>examples/MultiProto/</code></a> &mdash; two protos, one Consul registration</td></tr>

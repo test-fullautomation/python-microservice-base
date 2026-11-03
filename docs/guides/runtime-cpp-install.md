@@ -27,7 +27,7 @@ The generator emits this hybrid pattern:
 ```cmake
 find_package(MicroserviceBase CONFIG QUIET)
 if(NOT MicroserviceBase_FOUND)
-    set(_mb_in_tree "${CMAKE_CURRENT_SOURCE_DIR}/../../MicroserviceBase/runtime_cpp")
+    set(_mb_in_tree "${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/runtime")
     if(EXISTS "${_mb_in_tree}/CMakeLists.txt")
         add_subdirectory("${_mb_in_tree}" "${CMAKE_CURRENT_BINARY_DIR}/microservice_base_runtime")
     else()
@@ -48,14 +48,14 @@ One-time per machine (or per CI agent):
 
 ```bash
 # Configure
-cmake -S MicroserviceBase/runtime_cpp -B build/runtime_cpp \
+cmake -S cpp/runtime -B build/cpp_runtime \
       -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
       -DVCPKG_TARGET_TRIPLET=x64-mingw-qt \
       -DCMAKE_INSTALL_PREFIX=$HOME/.local/microservice-base
 
 # Build + install
-cmake --build build/runtime_cpp
-cmake --install build/runtime_cpp
+cmake --build build/cpp_runtime
+cmake --install build/cpp_runtime
 ```
 
 The toolchain file ensures `find_package(gRPC)` etc. resolve via
@@ -149,7 +149,7 @@ resolves through the same vcpkg toolchain that resolves the others.
 `portfile.cmake` reads from one of:
 
 1. `VCPKG_MICROSERVICE_BASE_SOURCE` env var if set
-2. Otherwise: `<overlay-path>/../MicroserviceBase/runtime_cpp` (assumes
+2. Otherwise: `<overlay-path>/../cpp/runtime` (assumes
    the overlay is part of the framework repo checkout)
 
 For CI or dev machines that don't have the framework cloned, point
@@ -166,7 +166,7 @@ export VCPKG_MICROSERVICE_BASE_SOURCE=/opt/microservice-base-snapshot/runtime_cp
 The generator's CMakeLists falls back to `add_subdirectory()` when
 `find_package(MicroserviceBase)` fails. This works automatically when
 the generated service lives at `<framework>/examples/<svc>/` (the
-relative path `../../MicroserviceBase/runtime_cpp` resolves).
+relative path `../../cpp/runtime` resolves).
 
 No setup needed — it's the default for examples shipped with the
 framework. Generated services that **leave** the repo lose this

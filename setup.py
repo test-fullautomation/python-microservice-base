@@ -220,8 +220,9 @@ setuptools.setup(
                 str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters",
                 str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.config",
                 str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.transport",
-                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.registry",
-                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.ui_bridge"],
+                str(oRepositoryConfig.Get('PACKAGENAME')) + ".adapters.registry"],
+    # The package lives in python/, next to cpp/ (the C++ runtime).
+    package_dir = {"": "python"},
     include_package_data=True,
     classifiers = [
         str(oRepositoryConfig.Get('PROGRAMMINGLANGUAGE')),

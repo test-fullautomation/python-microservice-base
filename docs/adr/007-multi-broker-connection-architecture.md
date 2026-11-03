@@ -119,6 +119,6 @@ Deferred because:
 
 ## References
 
-- Source: `MicroserviceBase/MicroserviceManagerGUI/web/js/app.js`
-- Source: `MicroserviceBase/adapters/ui_bridge/fastapi_bridge.py`
+- Source: `microservice-gui/web/js/app.js`
+- Source: `microservice-gui/bridge/microservice_gui_bridge/adapters/ui_bridge/fastapi_bridge.py`
 - Related: ADR-005 (Dual-Host GUI), ADR-006 (FastAPI Bridge)

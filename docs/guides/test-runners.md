@@ -102,7 +102,7 @@ protos (`export.proto_rel_dir`) and fall back to server reflection.
 
 ## Testing a runner
 
-`pytest/TestProject/test_TestProjectTemporal.py` is the pattern: describe /
+`microservice-gui/bridge/tests/TestProject/test_TestProjectTemporal.py` is the pattern: describe /
 init / export through the engine, the tree's kinds and groups, the syntax
 check, new files, the run plan, results from a sample report, a dry run
 through the run manager, the entry-point loading — and a live run that

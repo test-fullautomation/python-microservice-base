@@ -37,9 +37,9 @@ import os, sys, platform, json
 import importlib.util
 import colorama as col
 
-# Load version directly from file to avoid triggering MicroserviceBase/__init__.py
+# Load version directly from file to avoid triggering python/MicroserviceBase/__init__.py
 # which imports runtime dependencies (pika, etc.) not available during build
-_version_path = os.path.join(os.path.dirname(__file__), "..", "MicroserviceBase", "version.py")
+_version_path = os.path.join(os.path.dirname(__file__), "..", "python", "MicroserviceBase", "version.py")
 _spec = importlib.util.spec_from_file_location("MicroserviceBase.version", _version_path)
 _version_mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_version_mod)
@@ -148,7 +148,7 @@ class CRepositoryConfig():
         self.__dictRepositoryConfig['DOCUMENTATIONBUILDER'] = normalize_path(f"{self.__sReferencePath}/genpackagedoc.py")
 
         # - folder containing the package source files (will also contain the PDF documentation)
-        self.__dictRepositoryConfig['PACKAGESOURCEFOLDER'] = normalize_path(f"{self.__sReferencePath}/{self.__dictRepositoryConfig['PACKAGENAME']}")
+        self.__dictRepositoryConfig['PACKAGESOURCEFOLDER'] = normalize_path(f"{self.__sReferencePath}/python/{self.__dictRepositoryConfig['PACKAGENAME']}")
 
         # ====== 2. setuptools
 
