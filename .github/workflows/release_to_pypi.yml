@@ -22,6 +22,8 @@ jobs:
       steps:
         - name: Checkout source
           uses: actions/checkout@v4
+          with:
+            ref: ${{ inputs.tag_name || github.ref }}
 
         - name: Set up Python
           uses: actions/setup-python@v6
@@ -50,10 +52,10 @@ jobs:
             fi
             if [ -f "./pyproject.toml" ]; then
               if [ -f "./genpackagedoc.py" ]; then
-                python -m pip install .
+                python -m pip install --no-build-isolation .
                 python genpackagedoc.py
               fi
-              python -m build
+              python -m build --no-isolation
             elif [ -f "./setup.py" ]; then
               python setup.py sdist bdist_wheel
             else
@@ -71,19 +73,26 @@ jobs:
 
         - name: Determine tag
           id: tag
+          env:
+            INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           run: |
             TAG_NAME=""
-            if [[ "${{ github.event.inputs.tag_name }}" != "" ]]; then
-              TAG_NAME="${{ github.event.inputs.tag_name }}"
-            elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            if [[ -n "$INPUT_TAG_NAME" ]]; then
+              TAG_NAME="$INPUT_TAG_NAME"
+            elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
               TAG_NAME="${GITHUB_REF#refs/tags/}"
+            fi
+
+            if [[ -n "$TAG_NAME" ]] && ! git check-ref-format "refs/tags/$TAG_NAME"; then
+              echo "Invalid tag name."
+              exit 1
             fi
 
             if [[ -z "$TAG_NAME" ]]; then
               echo "No valid tag provided. Skipping release."
               exit 0
             else
-              echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+              printf 'TAG_NAME=%s\n' "$TAG_NAME" >> "$GITHUB_ENV"
             fi
 
         - name: Create/Update GitHub Release
